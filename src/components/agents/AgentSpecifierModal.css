@@ -1,0 +1,197 @@
+/* src/components/agents/AgentSpecifierModal.css */
+.agent-specifier-modal {
+    background-color: white;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 700px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  }
+  
+  .modal-content {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  
+  .specifier-intro {
+    background-color: #f3f4f6;
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+  
+  .specifier-intro p {
+    margin: 0;
+    color: #4b5563;
+    line-height: 1.5;
+  }
+  
+  .drop-zone {
+    border: 2px dashed #d1d5db;
+    border-radius: 8px;
+    padding: 40px;
+    text-align: center;
+    background-color: #f9fafb;
+    transition: all 0.2s;
+    cursor: pointer;
+  }
+  
+  .drop-zone:hover {
+    border-color: #9ca3af;
+    background-color: #f3f4f6;
+  }
+  
+  .drop-zone p {
+    margin: 0 0 8px 0;
+    color: #6b7280;
+  }
+  
+  .file-types {
+    font-size: 0.9rem;
+    color: #9ca3af;
+  }
+  
+  .btn-upload {
+    display: inline-block;
+    margin-top: 16px;
+    padding: 8px 20px;
+    background-color: #6366f1;
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  
+  .btn-upload:hover {
+    background-color: #4f46e5;
+  }
+  
+  .uploaded-files {
+    margin-top: 16px;
+  }
+  
+  .uploaded-files h4 {
+    margin: 0 0 12px 0;
+    font-size: 0.95rem;
+    color: #374151;
+  }
+  
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background-color: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    margin-bottom: 8px;
+  }
+  
+  .file-icon {
+    font-size: 1.2rem;
+  }
+  
+  .file-name {
+    flex: 1;
+    font-size: 0.95rem;
+    color: #374151;
+  }
+  
+  .file-size {
+    font-size: 0.85rem;
+    color: #6b7280;
+  }
+  
+  .btn-remove {
+    background: none;
+    border: none;
+    color: #ef4444;
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    padding: 0 4px;
+  }
+  
+  .btn-remove:hover {
+    color: #dc2626;
+  }
+  
+  .form-section textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-family: inherit;
+    resize: vertical;
+  }
+  
+  .specifier-options {
+    margin-top: 24px;
+  }
+  
+  .specifier-options h3 {
+    margin: 0 0 16px 0;
+    font-size: 1.1rem;
+    color: #374151;
+  }
+  
+  .options-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  
+  .options-grid label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 0.95rem;
+    color: #4b5563;
+  }
+  
+  .options-grid input[type="checkbox"] {
+    margin-right: 8px;
+  }
+  
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 20px 24px;
+    border-top: 1px solid #e5e7eb;
+  }
+  
+  .btn-specify {
+    background-color: #8b5cf6;
+    color: white;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .btn-specify:hover {
+    background-color: #7c3aed;
+  }
+  
+  .btn-specify:disabled {
+    background-color: #d1d5db;
+    cursor: not-allowed;
+  }
+  
+  .spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ffffff;
+    border-radius: 50%;
+    border-top-color: transparent;
+    animation: spin 0.6s linear infinite;
+  }
+  
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }

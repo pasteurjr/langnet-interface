@@ -1,3 +1,4 @@
+// src/components/layout/AppLayout.tsx (SUBSTITUIR ARQUIVO ATUAL)
 import React from 'react';
 import { Outlet } from 'react-router-dom';
 import Header from './Header';
@@ -8,33 +9,8 @@ const AppLayout: React.FC = () => {
   const [collapsed, setCollapsed] = React.useState(false);
   const [notifications, setNotifications] = React.useState<Notification[]>([]);
 
-  // Menu items para a sidebar
-  const menuItems: MenuItem[] = [
-    {
-      id: 'dashboard',
-      label: 'Dashboard',
-      icon: '📊',
-      path: '/'
-    },
-    {
-      id: 'projects',
-      label: 'Projetos',
-      icon: '📁',
-      path: '/projects'
-    },
-    {
-      id: 'settings',
-      label: 'Configurações',
-      icon: '⚙️',
-      path: '/settings'
-    },
-    {
-      id: 'help',
-      label: 'Ajuda',
-      icon: '❓',
-      path: '/help'
-    }
-  ];
+  // Menu items vazios - o Sidebar agora gerencia internamente
+  const menuItems: MenuItem[] = [];
 
   const handleToggleCollapse = () => {
     setCollapsed(!collapsed);
@@ -59,7 +35,7 @@ const AppLayout: React.FC = () => {
   return (
     <div className="app-container">
       <Sidebar 
-        menuItems={menuItems} 
+        menuItems={menuItems} // Mantido para compatibilidade
         collapsed={collapsed} 
         onToggleCollapse={handleToggleCollapse} 
       />

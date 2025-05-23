@@ -1,22 +1,44 @@
+// src/components/layout/Sidebar.tsx (SUBSTITUIR ARQUIVO ATUAL)
 import React from 'react';
 import { Link } from 'react-router-dom';
 import { MenuItem } from '../../types';
+import { useNavigation } from '../../contexts/NavigationContext';
+import './Sidebar.css';
 
 interface SidebarProps {
-  menuItems: MenuItem[];
+  menuItems: MenuItem[]; // Mantido para compatibilidade, mas será sobrescrito
   collapsed: boolean;
   onToggleCollapse: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ menuItems, collapsed, onToggleCollapse }) => {
+const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggleCollapse }) => {
+  const { menuItems, projectContext, exitProjectContext } = useNavigation();
+
   return (
     <div className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
       <div className="sidebar-header">
-        <h2 className="logo">LangNet</h2>
+        <h2 className="logo">
+          {projectContext.isInProject && !collapsed ? projectContext.projectName : 'LangNet'}
+        </h2>
         <button className="collapse-btn" onClick={onToggleCollapse}>
           {collapsed ? '→' : '←'}
         </button>
       </div>
+
+      {/* Botão de Voltar - apenas quando em contexto de projeto */}
+      {projectContext.isInProject && (
+        <div className="back-section">
+          <button 
+            className="back-button"
+            onClick={exitProjectContext}
+            title="Voltar ao Dashboard"
+          >
+            <span className="back-icon">←</span>
+            {!collapsed && <span>Voltar ao Dashboard</span>}
+          </button>
+        </div>
+      )}
+
       <nav className="sidebar-nav">
         <ul>
           {menuItems.map((item) => (
@@ -41,6 +63,16 @@ const Sidebar: React.FC<SidebarProps> = ({ menuItems, collapsed, onToggleCollaps
           ))}
         </ul>
       </nav>
+
+      {/* Status do Projeto - apenas quando em contexto de projeto */}
+      {projectContext.isInProject && !collapsed && (
+        <div className="project-status">
+          <div className="status-item">
+            <span className="status-label">ID do Projeto:</span>
+            <span className="status-value">{projectContext.projectId}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -1,3 +1,4 @@
+/* src/components/projects/CreateProjectModal.css (CORREÇÕES ESPECÍFICAS) */
 .modal-overlay {
   position: fixed;
   top: 0;
@@ -19,6 +20,7 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
+  /* REMOVIDO max-height e overflow-y */
 }
 
 .modal-header {
@@ -27,17 +29,21 @@
   align-items: center;
   padding: 16px 20px;
   border-bottom: 1px solid #eee;
+  background-color: #f8f8f8;
+  /* REMOVIDO position sticky */
 }
 
 .modal-header h2 {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.3rem;
   font-weight: 600;
+  color: #333;
 }
 
 .modal-actions {
   display: flex;
   align-items: center;
+  gap: 8px;
 }
 
 .close-button {
@@ -45,48 +51,83 @@
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
-  margin-right: 10px;
+  color: #666;
+  padding: 4px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.close-button:hover {
+  color: #333;
 }
 
 .cancel-button {
   background: none;
-  border: none;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 6px 12px;
   cursor: pointer;
   color: #666;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+}
+
+.cancel-button:hover {
+  background-color: #f5f5f5;
+  color: #333;
 }
 
 form {
-  padding: 20px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  /* IMPORTANTE: remover overflow */
+  overflow: visible;
 }
 
 .form-group {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
-label {
+.form-group label {
   display: block;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   font-weight: 500;
+  color: #444;
+  font-size: 0.95rem;
 }
 
 input[type="text"],
 textarea,
 select {
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: 1px solid #ddd;
   border-radius: 4px;
   font-size: 1rem;
+  font-family: inherit;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+input[type="text"]:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
 }
 
 textarea {
   resize: vertical;
+  min-height: 80px;
 }
 
 .start-from-group .radio-options {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  margin-top: 8px;
 }
 
 .radio-option {
@@ -95,36 +136,46 @@ textarea {
   gap: 8px;
 }
 
+.radio-option input[type="radio"] {
+  margin: 0;
+}
+
 .radio-option label {
   margin-bottom: 0;
-  margin-right: 10px;
+  font-weight: normal;
+  cursor: pointer;
 }
 
 .template-select {
-  margin-left: 10px;
-  width: auto;
+  margin-left: 24px;
+  width: calc(100% - 24px);
+  margin-top: 8px;
 }
 
 .advanced-options {
-  margin-top: 20px;
+  margin-top: 24px;
   margin-bottom: 20px;
 }
 
 .advanced-options h3 {
-  font-size: 1rem;
-  margin-bottom: 10px;
+  font-size: 0.95rem;
+  margin-bottom: 12px;
+  color: #555;
+  font-weight: 600;
 }
 
 .advanced-options-content {
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
   padding: 16px;
+  background-color: #fafafa;
 }
 
 .advanced-option {
   display: flex;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  gap: 12px;
 }
 
 .advanced-option:last-child {
@@ -132,38 +183,99 @@ textarea {
 }
 
 .advanced-option label {
-  width: 120px;
+  width: 140px;
   margin-bottom: 0;
+  font-size: 0.9rem;
+  color: #555;
 }
 
 .advanced-option select {
   flex: 1;
+  padding: 8px 12px;
 }
 
 .form-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   gap: 12px;
-  margin-top: 20px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #eee;
 }
 
+/* ALTERNATIVA - Botão voltar estilo link */
 .back-button {
-  padding: 8px 16px;
-  background-color: #f0f0f0;
-  border: 1px solid #ddd;
-  border-radius: 4px;
+  padding: 4px 8px;
+  background: none;
+  border: none;
   cursor: pointer;
+  font-size: 0.85rem;
+  color: #666;
+  text-decoration: underline;
+  transition: color 0.2s;
 }
 
+.back-button:hover {
+  color: #0066cc;
+}
 .create-button {
-  padding: 8px 16px;
+  padding: 8px 20px; /* Ajustado para ficar proporcional */
   background-color: #0066cc;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background-color 0.2s;
 }
 
 .create-button:hover {
   background-color: #0055aa;
+}
+
+.create-button:active {
+  background-color: #004499;
+}
+
+/* Responsividade - Apenas se necessário scroll */
+@media (max-height: 700px) {
+  .create-project-modal {
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .create-project-modal {
+    width: 95%;
+  }
+  
+  form {
+    padding: 16px;
+  }
+  
+  .advanced-option {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .advanced-option label {
+    width: 100%;
+    margin-bottom: 4px;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+    gap: 8px;
+  }
+  
+  .back-button,
+  .create-button {
+    width: 100%;
+    justify-content: center;
+  }
 }

@@ -1,15 +1,23 @@
+// src/components/projects/ProjectCard.tsx (SUBSTITUIR ARQUIVO ATUAL)
 import React from 'react';
 import { Project } from '../../types';
+import { useNavigation } from '../../contexts/NavigationContext';
 import './ProjectCard.css';
 
 interface ProjectCardProps {
   project: Project;
-  onClick: (id: string) => void;
+  onClick: (id: string) => void; // Mantido para compatibilidade
 }
 
 const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) => {
+  const { enterProjectContext } = useNavigation();
+
   const handleClick = () => {
+    // Chama o onClick original para compatibilidade
     onClick(project.id);
+    
+    // E também entra no contexto do projeto
+    enterProjectContext(project.id, project.name);
   };
 
   return (

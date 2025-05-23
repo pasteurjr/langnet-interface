@@ -1,4 +1,6 @@
+// src/components/projects/CreateProjectModal.tsx (VERSÃO EM PORTUGUÊS)
 import React, { useState } from 'react';
+import { useNavigation } from '../../contexts/NavigationContext';
 import './CreateProjectModal.css';
 
 interface CreateProjectModalProps {
@@ -23,6 +25,8 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
   onClose, 
   onCreateProject 
 }) => {
+  const { enterProjectContext } = useNavigation();
+  
   const [formData, setFormData] = useState<ProjectFormData>({
     name: '',
     description: '',
@@ -55,7 +59,34 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onCreateProject(formData);
+    
+    // 1. Gerar ID único para o projeto
+    const projectId = `proj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // 2. Criar o projeto (lógica original) - incluindo o ID gerado
+    const projectWithId = {
+      ...formData,
+      id: projectId
+    };
+    onCreateProject(projectWithId);
+    
+    // 3. Entrar no contexto do projeto e mudar a sidebar (SEM navegar ainda)
+    enterProjectContext(projectId, formData.name);
+    
+    // 4. Fechar o modal
+    onClose();
+    
+    // 5. Limpar formulário para próxima vez
+    setFormData({
+      name: '',
+      description: '',
+      domain: '',
+      startFrom: 'blank',
+      defaultLLM: 'OpenAI GPT-4',
+      framework: 'CrewAI',
+      memorySystem: 'LangChain'
+    });
+    setShowTemplateSelect(false);
   };
 
   if (!isOpen) return null;
@@ -64,46 +95,49 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     <div className="modal-overlay">
       <div className="create-project-modal">
         <div className="modal-header">
-          <h2>CREATE NEW PROJECT</h2>
+          <h2>CRIAR NOVO PROJETO</h2>
           <div className="modal-actions">
             <button className="close-button" onClick={onClose}>×</button>
-            <button className="cancel-button" onClick={onClose}>Cancel</button>
+            <button className="cancel-button" onClick={onClose}>Cancelar</button>
           </div>
         </div>
         
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="name">PROJECT NAME:</label>
+            <label htmlFor="name">NOME DO PROJETO:</label>
             <input
               type="text"
               id="name"
               name="name"
               value={formData.name}
               onChange={handleInputChange}
+              placeholder="Digite o nome do projeto"
               required
             />
           </div>
           
           <div className="form-group">
-            <label htmlFor="description">DESCRIPTION:</label>
+            <label htmlFor="description">DESCRIÇÃO:</label>
             <textarea
               id="description"
               name="description"
               value={formData.description}
               onChange={handleInputChange}
-              rows={2}
+              placeholder="Descreva brevemente o objetivo do projeto"
+              rows={3}
             />
           </div>
           
           <div className="form-group">
-            <label htmlFor="domain">DOMAIN:</label>
+            <label htmlFor="domain">DOMÍNIO:</label>
             <select
               id="domain"
               name="domain"
               value={formData.domain}
               onChange={handleInputChange}
+              required
             >
-              <option value="" disabled>Select domain</option>
+              <option value="" disabled>Selecione o domínio</option>
               {domains.map(domain => (
                 <option key={domain} value={domain}>{domain}</option>
               ))}
@@ -111,7 +145,7 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
           </div>
           
           <div className="form-group start-from-group">
-            <label>START FROM:</label>
+            <label>INICIAR A PARTIR DE:</label>
             <div className="radio-options">
               <div className="radio-option">
                 <input
@@ -122,7 +156,7 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                   checked={formData.startFrom === 'blank'}
                   onChange={handleRadioChange}
                 />
-                <label htmlFor="blank">Blank Project</label>
+                <label htmlFor="blank">Projeto em Branco</label>
               </div>
               
               <div className="radio-option">
@@ -134,7 +168,7 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                   checked={formData.startFrom === 'template'}
                   onChange={handleRadioChange}
                 />
-                <label htmlFor="template">Template</label>
+                <label htmlFor="template">Modelo</label>
                 
                 {showTemplateSelect && (
                   <select
@@ -143,7 +177,7 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                     onChange={handleInputChange}
                     className="template-select"
                   >
-                    <option value="" disabled>Select template</option>
+                    <option value="" disabled>Selecione um modelo</option>
                     {templates.map(template => (
                       <option key={template} value={template}>{template}</option>
                     ))}
@@ -154,10 +188,10 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
           </div>
           
           <div className="advanced-options">
-            <h3>ADVANCED OPTIONS:</h3>
+            <h3>OPÇÕES AVANÇADAS:</h3>
             <div className="advanced-options-content">
               <div className="advanced-option">
-                <label htmlFor="defaultLLM">Default LLM:</label>
+                <label htmlFor="defaultLLM">LLM Padrão:</label>
                 <select
                   id="defaultLLM"
                   name="defaultLLM"
@@ -185,7 +219,7 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
               </div>
               
               <div className="advanced-option">
-                <label htmlFor="memorySystem">Memory System:</label>
+                <label htmlFor="memorySystem">Sistema de Memória:</label>
                 <select
                   id="memorySystem"
                   name="memorySystem"
@@ -201,8 +235,8 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
           </div>
           
           <div className="form-actions">
-            <button type="button" className="back-button" onClick={onClose}>BACK</button>
-            <button type="submit" className="create-button">CREATE ▶</button>
+            <button type="button" className="back-button" onClick={onClose}>VOLTAR</button>
+            <button type="submit" className="create-button">CRIAR ▶</button>
           </div>
         </form>
       </div>

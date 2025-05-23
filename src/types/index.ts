@@ -20,6 +20,7 @@ export enum ProjectStatus {
 }
 
 // Tipos para Agentes
+// src/types/index.ts
 export interface Agent {
   id: string;
   name: string;
@@ -27,7 +28,14 @@ export interface Agent {
   goal: string;
   backstory: string;
   tools: string[];
-  projectId: string;
+  verbose: boolean;
+  allow_delegation: boolean;
+  allow_code_execution?: boolean;
+  max_iter?: number;
+  max_rpm?: number;
+  status: AgentStatus;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Tipos para Tarefas
@@ -125,4 +133,36 @@ export interface LogEntry {
   timestamp: string;
   source: string;
   metadata?: Record<string, any>;
+}
+
+// src/types/index.ts (ADICIONAR ao arquivo existente)
+
+export enum AgentStatus {
+  ACTIVE = 'active',
+  INACTIVE = 'inactive',
+  DRAFT = 'draft'
+}
+
+export interface Agent {
+  id: string;
+  name: string;
+  role: string;
+  goal: string;
+  backstory: string;
+  tools: string[];
+  verbose: boolean;
+  allow_delegation: boolean;
+  allow_code_execution?: boolean;
+  max_iter?: number;
+  max_rpm?: number;
+  status: AgentStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Tool {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
 }
