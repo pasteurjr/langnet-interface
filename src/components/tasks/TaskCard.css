@@ -1,0 +1,174 @@
+/* src/components/tasks/TaskCard.css */
+.task-card {
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    padding: 20px;
+    transition: all 0.2s;
+  }
+  
+  .task-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+  }
+  
+  .task-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  
+  .task-name {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #333;
+    font-family: 'Courier New', monospace;
+    word-break: break-word;
+  }
+  
+  .task-status {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  
+  .status-active {
+    background-color: #d1fae5;
+    color: #065f46;
+  }
+  
+  .status-inactive {
+    background-color: #fee2e2;
+    color: #991b1b;
+  }
+  
+  .status-draft {
+    background-color: #dbeafe;
+    color: #1e40af;
+  }
+  
+  .task-card-content {
+    margin-bottom: 16px;
+  }
+  
+  .task-field {
+    margin-bottom: 12px;
+  }
+  
+  .task-field label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #666;
+    margin-bottom: 4px;
+  }
+  
+  .task-field p {
+    margin: 0;
+    font-size: 0.95rem;
+    color: #333;
+    line-height: 1.4;
+  }
+  
+  .agent-name {
+    font-family: 'Courier New', monospace;
+    color: #4f46e5;
+    font-weight: 500;
+  }
+  
+  .context-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  
+  .context-badge {
+    background-color: #e0e7ff;
+    color: #4338ca;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-family: 'Courier New', monospace;
+  }
+  
+  .task-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  
+  .tool-badge {
+    background-color: #f3f4f6;
+    color: #4b5563;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-family: 'Courier New', monospace;
+  }
+  
+  .task-properties {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  
+  .property-badge {
+    background-color: #fef3c7;
+    color: #92400e;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  
+  .task-card-footer {
+    display: flex;
+    gap: 8px;
+    padding-top: 16px;
+    border-top: 1px solid #e5e7eb;
+  }
+  
+  .btn-toggle-status,
+  .btn-duplicate,
+  .btn-edit,
+  .btn-delete {
+    padding: 6px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+  }
+  
+  .btn-toggle-status:hover {
+    background-color: #f9fafb;
+  }
+  
+  .btn-duplicate:hover {
+    background-color: #e0e7ff;
+    border-color: #a5b4fc;
+    color: #4338ca;
+  }
+  
+  .btn-edit:hover {
+    background-color: #dbeafe;
+    border-color: #60a5fa;
+    color: #1e40af;
+  }
+  
+  .btn-delete:hover {
+    background-color: #fee2e2;
+    border-color: #fca5a5;
+    color: #991b1b;
+  }

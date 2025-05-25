@@ -38,17 +38,7 @@ export interface Agent {
   updatedAt: string;
 }
 
-// Tipos para Tarefas
-export interface Task {
-  id: string;
-  name: string;
-  description: string;
-  inputs: TaskIO[];
-  outputs: TaskIO[];
-  steps: TaskStep[];
-  agentId: string;
-  projectId: string;
-}
+
 
 export interface TaskIO {
   name: string;
@@ -165,4 +155,91 @@ export interface Tool {
   name: string;
   description: string;
   category: string;
+}
+
+// src/types/index.ts (ADICIONAR ao arquivo existente)
+
+export enum TaskStatus {
+  ACTIVE = 'active',
+  INACTIVE = 'inactive',
+  DRAFT = 'draft'
+}
+
+
+
+export interface Task {
+  id: string;
+  projectId: string;
+  name: string;
+  description: string;
+  expected_output: string;
+  agentId: string; // ID do agente responsável
+  agent: string; // Alias para compatibilidade
+  context: string[]; // IDs de outras tarefas que servem como contexto
+  tools: string[];
+  human_input: boolean;
+  async_execution: boolean;
+  output_json?: string;
+  output_file?: string;
+  inputs: TaskIO[];
+  outputs: TaskIO[];
+  steps: TaskStep[];
+  status: TaskStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Adicionar ao arquivo src/types/index.ts
+
+export enum DocumentStatus {
+  UPLOADED = 'uploaded',
+  ANALYZING = 'analyzing',
+  ANALYZED = 'analyzed',
+  ERROR = 'error'
+}
+
+export interface ExtractedEntity {
+  name: string;
+  type: 'actor' | 'system' | 'process' | 'rule' | 'concept';
+  description: string;
+  confidence: number;
+}
+
+export interface RequirementItem {
+  id: string;
+  type: 'functional' | 'non_functional' | 'business_rule' | 'constraint';
+  title: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  source: string; // Nome do documento de origem
+}
+
+export interface AnalysisIssue {
+  type: 'warning' | 'error' | 'suggestion';
+  title: string;
+  description: string;
+  documentName?: string;
+  location?: string;
+}
+
+export interface Document {
+  id: string;
+  projectId: string;
+  name: string;
+  originalName: string;
+  size: number;
+  type: string; // MIME type
+  uploadedAt: string;
+  status: DocumentStatus;
+  url?: string;
+  extractedEntities: ExtractedEntity[];
+  requirements: RequirementItem[];
+  analysisIssues: AnalysisIssue[];
+  analysisInstructions?: string;
+  analysisProgress?: number;
+  analysisResults?: {
+    summary: string;
+    keyFindings: string[];
+    recommendedActions: string[];
+  };
 }

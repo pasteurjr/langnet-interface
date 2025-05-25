@@ -1,0 +1,240 @@
+.document-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 16px;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .document-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    border-color: #3b82f6;
+  }
+  
+  .document-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  
+  .document-icon {
+    font-size: 2rem;
+    flex-shrink: 0;
+  }
+  
+  .document-info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .document-name {
+    margin: 0 0 8px 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1f2937;
+    font-family: 'Courier New', monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .document-meta {
+    display: flex;
+    gap: 16px;
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+  
+  .file-size,
+  .upload-date {
+    display: flex;
+    align-items: center;
+  }
+  
+  .document-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  
+  .status-uploaded {
+    background-color: #fef3c7;
+    color: #d97706;
+  }
+  
+  .status-analyzing {
+    background-color: #dbeafe;
+    color: #2563eb;
+  }
+  
+  .status-analyzed {
+    background-color: #d1fae5;
+    color: #059669;
+  }
+  
+  .status-error {
+    background-color: #fee2e2;
+    color: #dc2626;
+  }
+  
+  .analysis-progress {
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  
+  .progress-bar {
+    flex: 1;
+    height: 8px;
+    background-color: #e5e7eb;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  
+  .progress-fill {
+    height: 100%;
+    background-color: #3b82f6;
+    transition: width 0.3s ease;
+  }
+  
+  .progress-text {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #374151;
+    min-width: 40px;
+  }
+  
+  .analysis-summary {
+    margin-bottom: 16px;
+    padding: 16px;
+    background-color: #f9fafb;
+    border-radius: 6px;
+  }
+  
+  .summary-stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 12px;
+  }
+  
+  .stat {
+    text-align: center;
+  }
+  
+  .stat-number {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1f2937;
+  }
+  
+  .stat-label {
+    display: block;
+    font-size: 0.75rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  
+  .analysis-preview {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 12px;
+  }
+  
+  .summary-text {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #4b5563;
+    line-height: 1.5;
+  }
+  
+  .document-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  
+  .btn-view,
+  .btn-reanalyze,
+  .btn-delete {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .btn-view {
+    background-color: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+  }
+  
+  .btn-view:hover:not(:disabled) {
+    background-color: #2563eb;
+  }
+  
+  .btn-reanalyze {
+    background-color: #f59e0b;
+    color: white;
+    border-color: #f59e0b;
+  }
+  
+  .btn-reanalyze:hover {
+    background-color: #d97706;
+  }
+  
+  .btn-delete {
+    background-color: #ef4444;
+    color: white;
+    border-color: #ef4444;
+  }
+  
+  .btn-delete:hover:not(:disabled) {
+    background-color: #dc2626;
+  }
+  
+  .btn-view:disabled,
+  .btn-reanalyze:disabled,
+  .btn-delete:disabled {
+    background-color: #d1d5db;
+    border-color: #d1d5db;
+    color: #9ca3af;
+    cursor: not-allowed;
+  }
+  
+  @media (max-width: 768px) {
+    .document-header {
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .summary-stats {
+      justify-content: space-around;
+    }
+    
+    .document-actions {
+      flex-direction: column;
+    }
+    
+    .btn-view,
+    .btn-reanalyze,
+    .btn-delete {
+      width: 100%;
+      justify-content: center;
+    }
+  }
