@@ -3,6 +3,16 @@ import React, { createContext, useContext, useState, useCallback, ReactNode } fr
 import { useNavigate, useLocation } from 'react-router-dom';
 import { MenuItem } from '../types';
 
+import { 
+  LayoutDashboard, 
+  FolderOpen, 
+  Users, 
+  ListTodo, 
+  FileText,
+  FileCode,  // Adicione esta linha
+  Settings 
+} from 'lucide-react';
+
 interface ProjectContext {
   projectId: string;
   projectName: string;

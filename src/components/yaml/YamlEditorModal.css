@@ -1,0 +1,414 @@
+/* src/components/yaml/YamlEditorModal.css */
+.yaml-editor-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  
+  .yaml-editor-modal {
+    background: white;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 1200px;
+    height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+  
+  .yaml-editor-header {
+    padding: 20px;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .yaml-editor-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    color: #333;
+  }
+  
+  .yaml-editor-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #666;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: all 0.2s;
+  }
+  
+  .yaml-editor-close:hover {
+    background-color: #f5f5f5;
+    color: #333;
+  }
+  
+  .yaml-editor-content {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  
+  .yaml-editor-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .yaml-editor-toolbar {
+    padding: 12px 20px;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  
+  .yaml-editor-toolbar button {
+    background-color: white;
+    border: 1px solid #ddd;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+  }
+  
+  .yaml-editor-toolbar button:hover {
+    background-color: #f5f5f5;
+    border-color: #ccc;
+  }
+  
+  .yaml-editor-toolbar button:active {
+    background-color: #e9ecef;
+  }
+  
+  .yaml-editor-toolbar button svg {
+    width: 16px;
+    height: 16px;
+  }
+  
+  .yaml-editor-toolbar .separator {
+    width: 1px;
+    height: 24px;
+    background-color: #ddd;
+    margin: 0 5px;
+  }
+  
+  .yaml-editor-tabs {
+    display: flex;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 0 20px;
+  }
+  
+  .yaml-editor-tab {
+    padding: 12px 20px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    color: #666;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  
+  .yaml-editor-tab:hover {
+    color: #333;
+    background-color: rgba(0, 0, 0, 0.02);
+  }
+  
+  .yaml-editor-tab.active {
+    color: #4a90e2;
+    border-bottom-color: #4a90e2;
+    font-weight: 500;
+  }
+  
+  .yaml-code-editor {
+    flex: 1;
+    padding: 20px;
+    font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace;
+    overflow: auto;
+  }
+  
+  .yaml-code-editor textarea {
+    width: 100%;
+    height: 100%;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.6;
+    resize: none;
+    background-color: #f8f9fa;
+    padding: 16px;
+    border-radius: 4px;
+  }
+  
+  .yaml-visual-editor {
+    flex: 1;
+    padding: 20px;
+    overflow: auto;
+  }
+  
+  .yaml-visual-section {
+    margin-bottom: 24px;
+    padding: 20px;
+    background-color: #f8f9fa;
+    border-radius: 8px;
+  }
+  
+  .yaml-visual-section h3 {
+    margin: 0 0 16px 0;
+    font-size: 1.1rem;
+    color: #333;
+  }
+  
+  .yaml-visual-field {
+    margin-bottom: 16px;
+  }
+  
+  .yaml-visual-field label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: #555;
+    font-size: 14px;
+  }
+  
+  .yaml-visual-field input,
+  .yaml-visual-field textarea,
+  .yaml-visual-field select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.2s;
+  }
+  
+  .yaml-visual-field input:focus,
+  .yaml-visual-field textarea:focus,
+  .yaml-visual-field select:focus {
+    outline: none;
+    border-color: #4a90e2;
+  }
+  
+  .yaml-visual-field textarea {
+    min-height: 100px;
+    resize: vertical;
+  }
+  
+  .yaml-tools-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  
+  .yaml-tool-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background-color: #e3f2fd;
+    border-radius: 16px;
+    font-size: 14px;
+    color: #1976d2;
+  }
+  
+  .yaml-tool-chip button {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #1976d2;
+    padding: 0;
+    font-size: 16px;
+    line-height: 1;
+  }
+  
+  .yaml-tool-chip button:hover {
+    color: #0d47a1;
+  }
+  
+  .yaml-add-tool {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  
+  .yaml-add-tool input {
+    flex: 1;
+  }
+  
+  .yaml-add-tool button {
+    padding: 6px 16px;
+    background-color: #4a90e2;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+  }
+  
+  .yaml-add-tool button:hover {
+    background-color: #357abd;
+  }
+  
+  .yaml-editor-sidebar {
+    width: 300px;
+    border-left: 1px solid #e0e0e0;
+    display: flex;
+    flex-direction: column;
+    background-color: #f8f9fa;
+  }
+  
+  .yaml-validation-panel {
+    flex: 1;
+    padding: 20px;
+    overflow: auto;
+  }
+  
+  .yaml-validation-panel h3 {
+    margin: 0 0 16px 0;
+    font-size: 1.1rem;
+    color: #333;
+  }
+  
+  .yaml-validation-item {
+    margin-bottom: 12px;
+    padding: 12px;
+    background-color: white;
+    border-radius: 4px;
+    border-left: 4px solid;
+    font-size: 14px;
+  }
+  
+  .yaml-validation-item.error {
+    border-left-color: #dc3545;
+    color: #721c24;
+    background-color: #f8d7da;
+  }
+  
+  .yaml-validation-item.warning {
+    border-left-color: #ffc107;
+    color: #856404;
+    background-color: #fff3cd;
+  }
+  
+  .yaml-validation-item.info {
+    border-left-color: #17a2b8;
+    color: #0c5460;
+    background-color: #d1ecf1;
+  }
+  
+  .yaml-validation-item.success {
+    border-left-color: #28a745;
+    color: #155724;
+    background-color: #d4edda;
+  }
+  
+  .yaml-editor-footer {
+    padding: 16px 20px;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: #f8f9fa;
+  }
+  
+  .yaml-editor-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: #666;
+  }
+  
+  .yaml-editor-status.valid {
+    color: #28a745;
+  }
+  
+  .yaml-editor-status.invalid {
+    color: #dc3545;
+  }
+  
+  .yaml-editor-actions {
+    display: flex;
+    gap: 10px;
+  }
+  
+  .yaml-editor-actions button {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .yaml-editor-actions button.primary {
+    background-color: #4a90e2;
+    color: white;
+  }
+  
+  .yaml-editor-actions button.primary:hover {
+    background-color: #357abd;
+  }
+  
+  .yaml-editor-actions button.secondary {
+    background-color: white;
+    color: #333;
+    border: 1px solid #ddd;
+  }
+  
+  .yaml-editor-actions button.secondary:hover {
+    background-color: #f5f5f5;
+    border-color: #ccc;
+  }
+  
+  /* Animations */
+  @keyframes modalFadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  
+  @keyframes modalSlideIn {
+    from {
+      transform: translateY(20px);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  
+  .yaml-editor-modal-overlay {
+    animation: modalFadeIn 0.2s ease-out;
+  }
+  
+  .yaml-editor-modal {
+    animation: modalSlideIn 0.2s ease-out;
+  }

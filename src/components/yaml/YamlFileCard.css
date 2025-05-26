@@ -1,0 +1,338 @@
+.yaml-file-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .yaml-file-card:hover {
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+    border-color: #3b82f6;
+    transform: translateY(-2px);
+  }
+  
+  .file-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  
+  .file-icon {
+    font-size: 2.5rem;
+    flex-shrink: 0;
+  }
+  
+  .file-info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .file-name {
+    margin: 0 0 8px 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #1f2937;
+    font-family: 'Courier New', monospace;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  
+  .file-meta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  
+  .file-type {
+    font-size: 0.875rem;
+    color: #6b7280;
+    font-weight: 500;
+  }
+  
+  .file-version {
+    background-color: #f3f4f6;
+    color: #374151;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+  }
+  
+  .auto-generated-badge {
+    background-color: #dbeafe;
+    color: #1d4ed8;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+  
+  .file-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  
+  .status-generated {
+    background-color: #ecfdf5;
+    color: #059669;
+    border: 1px solid #10b981;
+  }
+  
+  .status-modified {
+    background-color: #fef3c7;
+    color: #d97706;
+    border: 1px solid #f59e0b;
+  }
+  
+  .status-validated {
+    background-color: #dcfce7;
+    color: #16a34a;
+    border: 1px solid #22c55e;
+  }
+  
+  .status-error {
+    background-color: #fee2e2;
+    color: #dc2626;
+    border: 1px solid #ef4444;
+  }
+  
+  .file-content-preview {
+    margin-bottom: 20px;
+    background-color: #f9fafb;
+    border-radius: 8px;
+    padding: 16px;
+  }
+  
+  .content-stats {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+  
+  .stat {
+    text-align: center;
+  }
+  
+  .stat-number {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1f2937;
+    font-family: 'Courier New', monospace;
+  }
+  
+  .stat-label {
+    display: block;
+    font-size: 0.75rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+  
+  .code-preview {
+    margin-top: 16px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 16px;
+  }
+  
+  .yaml-snippet {
+    margin: 0;
+    padding: 12px;
+    background-color: #1f2937;
+    color: #f9fafb;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  
+  .validation-summary {
+    margin-bottom: 16px;
+    padding: 12px 16px;
+    background-color: #fef2f2;
+    border-radius: 8px;
+    border-left: 4px solid #ef4444;
+  }
+  
+  .issues-count {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  
+  .error-count,
+  .warning-count,
+  .suggestion-count {
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+  
+  .error-count {
+    color: #dc2626;
+  }
+  
+  .warning-count {
+    color: #d97706;
+  }
+  
+  .suggestion-count {
+    color: #2563eb;
+  }
+  
+  .file-dates {
+    display: flex;
+    gap: 24px;
+    margin-bottom: 20px;
+    padding: 12px 0;
+    border-top: 1px solid #f3f4f6;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  
+  .date-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  
+  .date-label {
+    font-size: 0.75rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
+  }
+  
+  .date-value {
+    font-size: 0.875rem;
+    color: #374151;
+    font-family: 'Courier New', monospace;
+  }
+  
+  .file-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  
+  .btn-preview,
+  .btn-edit,
+  .btn-validate,
+  .btn-download,
+  .btn-regenerate {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  
+  .btn-preview {
+    background-color: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+  }
+  
+  .btn-preview:hover {
+    background-color: #2563eb;
+  }
+  
+  .btn-edit {
+    background-color: #f59e0b;
+    color: white;
+    border-color: #f59e0b;
+  }
+  
+  .btn-edit:hover {
+    background-color: #d97706;
+  }
+  
+  .btn-validate {
+    background-color: #8b5cf6;
+    color: white;
+    border-color: #8b5cf6;
+  }
+  
+  .btn-validate:hover {
+    background-color: #7c3aed;
+  }
+  
+  .btn-download {
+    background-color: #10b981;
+    color: white;
+    border-color: #10b981;
+  }
+  
+  .btn-download:hover {
+    background-color: #059669;
+  }
+  
+  .btn-regenerate {
+    background-color: #ef4444;
+    color: white;
+    border-color: #ef4444;
+  }
+  
+  .btn-regenerate:hover {
+    background-color: #dc2626;
+  }
+  
+  @media (max-width: 768px) {
+    .yaml-file-card {
+      padding: 16px;
+    }
+    
+    .file-header {
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .file-meta {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    
+    .content-stats {
+      justify-content: space-around;
+    }
+    
+    .file-dates {
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .file-actions {
+      flex-direction: column;
+    }
+    
+    .btn-preview,
+    .btn-edit,
+    .btn-validate,
+    .btn-download,
+    .btn-regenerate {
+      width: 100%;
+      justify-content: center;
+    }
+  }

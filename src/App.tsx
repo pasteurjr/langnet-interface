@@ -41,6 +41,7 @@ const App: React.FC = () => {
             <Route path="projects/:id/chat" element={<ChatPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="help" element={<HelpPage />} />
+            <Route path="/yaml" element={<YamlPage />} />
             
             {/* Rotas específicas do novo sistema de contexto de projeto */}
             <Route path="/project/:projectId/documents" element={<DocumentsPage />} />
