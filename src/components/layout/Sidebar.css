@@ -58,3 +58,41 @@
   color: #333;
   word-break: break-all;
 }
+
+
+/* ADICIONE ESTAS LINHAS AO FINAL DO SEU Sidebar.css EXISTENTE */
+
+/* Correção de espaçamento dos itens do menu */
+.sidebar-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.sidebar-nav .nav-item {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.sidebar-nav .nav-link {
+  display: block;
+  padding: 12px 20px;
+  margin: 0;
+  border-bottom: none;
+}
+
+/* Se estiver colapsado */
+.sidebar-collapsed .nav-link {
+  padding: 12px 0;
+  text-align: center;
+}
+
+/* Remover espaçamentos extras que podem estar sendo aplicados */
+.sidebar-nav li {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.sidebar-nav a {
+  margin: 0 !important;
+}

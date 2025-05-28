@@ -1,0 +1,556 @@
+/* src/pages/SettingsPage.css */
+
+/* Container principal */
+.page-container {
+    min-height: 100vh;
+    background-color: #f8fafc;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Header da página */
+  .page-header {
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    padding: 1.5rem 2rem;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  
+  .page-header-content {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .page-title-section {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+  
+  .page-icon {
+    width: 3rem;
+    height: 3rem;
+    background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    border-radius: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+  }
+  
+  .page-title {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #1a202c;
+  }
+  
+  .page-description {
+    margin: 0.25rem 0 0 0;
+    color: #64748b;
+    font-size: 0.875rem;
+  }
+  
+  .page-actions {
+    display: flex;
+    gap: 0.75rem;
+  }
+  
+  /* Conteúdo principal */
+  .page-content {
+    flex: 1;
+    display: flex;
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+    gap: 2rem;
+    padding: 2rem;
+  }
+  
+  /* Sidebar */
+  .page-sidebar {
+    width: 300px;
+    flex-shrink: 0;
+  }
+  
+  .sidebar-section {
+    background: white;
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .sidebar-section h3 {
+    margin: 0 0 1rem 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #1a202c;
+  }
+  
+  /* Status do Sistema */
+  .system-health-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .health-overview {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  
+  .health-status-indicator {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+  }
+  
+  .health-text {
+    flex: 1;
+  }
+  
+  .health-status {
+    font-weight: 600;
+    color: #1a202c;
+    text-transform: capitalize;
+  }
+  
+  .health-time {
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+  
+  .health-components {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
+  }
+  
+  .health-component {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem;
+    background-color: #f8fafc;
+    border-radius: 0.5rem;
+    font-size: 0.75rem;
+  }
+  
+  .component-name {
+    color: #64748b;
+    text-transform: capitalize;
+  }
+  
+  .component-status {
+    display: flex;
+    align-items: center;
+  }
+  
+  /* Métricas Rápidas */
+  .quick-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .quick-metric {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    background-color: #f8fafc;
+    border-radius: 0.5rem;
+  }
+  
+  .quick-metric svg {
+    color: #3b82f6;
+  }
+  
+  .metric-value {
+    font-weight: 700;
+    color: #1a202c;
+    font-size: 1.125rem;
+  }
+  
+  .metric-label {
+    color: #64748b;
+    font-size: 0.75rem;
+    margin-left: auto;
+  }
+  
+  /* Navegação Sidebar */
+  .sidebar-nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+  
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    border: none;
+    background: none;
+    color: #64748b;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    width: 100%;
+  }
+  
+  .nav-item:hover {
+    background-color: #f1f5f9;
+    color: #3b82f6;
+  }
+  
+  .nav-item.active {
+    background-color: #dbeafe;
+    color: #3b82f6;
+    font-weight: 600;
+  }
+  
+  .nav-item svg {
+    flex-shrink: 0;
+  }
+  
+  /* Área principal */
+  .page-main {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .main-header {
+    background: white;
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  .main-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #1a202c;
+  }
+  
+  .main-content {
+    background: white;
+    border-radius: 0.75rem;
+    min-height: 600px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Botões */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+    text-decoration: none;
+  }
+  
+  .btn-primary {
+    background-color: #3b82f6;
+    color: white;
+  }
+  
+  .btn-primary:hover {
+    background-color: #2563eb;
+  }
+  
+  .btn-secondary {
+    background-color: white;
+    color: #374151;
+    border-color: #d1d5db;
+  }
+  
+  .btn-secondary:hover {
+    background-color: #f9fafb;
+    border-color: #9ca3af;
+  }
+  
+  .btn-outline {
+    background-color: white;
+    color: #374151;
+    border-color: #d1d5db;
+  }
+  
+  .btn-outline:hover {
+    background-color: #f9fafb;
+    border-color: #9ca3af;
+  }
+  
+  .btn-sm {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+  }
+  
+  .btn-danger {
+    background-color: #ef4444;
+    color: white;
+  }
+  
+  .btn-danger:hover {
+    background-color: #dc2626;
+  }
+  
+  /* Responsividade */
+  @media (max-width: 1024px) {
+    .page-content {
+      flex-direction: column;
+      gap: 1.5rem;
+    }
+  
+    .page-sidebar {
+      width: 100%;
+    }
+  
+    .sidebar-nav {
+      flex-direction: row;
+      overflow-x: auto;
+      gap: 0.5rem;
+      padding-bottom: 0.5rem;
+    }
+  
+    .nav-item {
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+  
+    .health-components {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  
+    .quick-metrics {
+      flex-direction: row;
+      overflow-x: auto;
+      gap: 1rem;
+    }
+  
+    .quick-metric {
+      flex-shrink: 0;
+      min-width: 150px;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .page-header {
+      padding: 1rem;
+    }
+  
+    .page-content {
+      padding: 1rem;
+    }
+  
+    .page-header-content {
+      flex-direction: column;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+  
+    .page-actions {
+      width: 100%;
+      justify-content: flex-start;
+    }
+  
+    .page-title-section {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+  
+    .page-title {
+      font-size: 1.5rem;
+    }
+  
+    .sidebar-section {
+      padding: 1rem;
+    }
+  
+    .main-header {
+      padding: 1rem;
+    }
+  
+    .health-components {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  
+    .quick-metrics {
+      flex-direction: column;
+    }
+  
+    .quick-metric {
+      min-width: auto;
+    }
+  
+    .sidebar-nav {
+      flex-direction: column;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .page-header {
+      padding: 0.75rem;
+    }
+  
+    .page-content {
+      padding: 0.75rem;
+      gap: 1rem;
+    }
+  
+    .page-title {
+      font-size: 1.25rem;
+    }
+  
+    .page-icon {
+      width: 2.5rem;
+      height: 2.5rem;
+    }
+  
+    .sidebar-section {
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+    }
+  
+    .main-header {
+      padding: 0.75rem;
+      margin-bottom: 1rem;
+    }
+  
+    .main-header h2 {
+      font-size: 1.25rem;
+    }
+  
+    .btn {
+      padding: 0.625rem 0.875rem;
+      font-size: 0.8rem;
+    }
+  
+    .health-components {
+      grid-template-columns: 1fr;
+    }
+  
+    .quick-metric {
+      padding: 0.5rem;
+    }
+  
+    .metric-value {
+      font-size: 1rem;
+    }
+  }
+  
+  /* Animações */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .main-content > * {
+    animation: fadeIn 0.3s ease-out;
+  }
+  
+  /* Estados de loading */
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+  
+  .btn:disabled:hover {
+    background-color: inherit;
+    border-color: inherit;
+  }
+  
+  /* Focus states para acessibilidade */
+  .btn:focus,
+  .nav-item:focus {
+    outline: 2px solid #3b82f6;
+    outline-offset: 2px;
+  }
+  
+  /* Melhorias de contraste */
+  @media (prefers-contrast: high) {
+    .page-description,
+    .health-time,
+    .metric-label,
+    .component-name {
+      color: #374151;
+    }
+    
+    .nav-item {
+      border: 1px solid transparent;
+    }
+    
+    .nav-item:hover,
+    .nav-item.active {
+      border-color: #3b82f6;
+    }
+  }
+  
+  /* Modo escuro (se necessário) */
+  @media (prefers-color-scheme: dark) {
+    .page-container {
+      background-color: #0f172a;
+    }
+    
+    .page-header,
+    .sidebar-section,
+    .main-header,
+    .main-content {
+      background-color: #1e293b;
+      border-color: #334155;
+    }
+    
+    .page-title,
+    .health-status,
+    .metric-value,
+    .main-header h2 {
+      color: #f1f5f9;
+    }
+    
+    .page-description,
+    .health-time,
+    .metric-label,
+    .component-name,
+    .nav-item {
+      color: #94a3b8;
+    }
+    
+    .nav-item:hover,
+    .nav-item.active {
+      color: #60a5fa;
+      background-color: #1e40af20;
+    }
+    
+    .quick-metric,
+    .health-component {
+      background-color: #334155;
+    }
+  }

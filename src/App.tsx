@@ -1,4 +1,4 @@
-// src/App.tsx (ATUALIZAR - adicionar o Provider)
+// src/App.tsx (ATUALIZAR - adicionar as novas rotas de geração de código)
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { NavigationProvider } from './contexts/NavigationContext';
@@ -18,6 +18,8 @@ import ChatPage from "./pages/ChatPage";
 import SettingsPage from "./pages/SettingsPage";
 import HelpPage from "./pages/HelpPage";
 import NotFoundPage from "./pages/NotFoundPage";
+import DeploymentPage from "./pages/DeploymentPage";
+
 import "./App.css";
 
 const App: React.FC = () => {
@@ -41,19 +43,31 @@ const App: React.FC = () => {
             <Route path="projects/:id/chat" element={<ChatPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="help" element={<HelpPage />} />
+            
+            {/* Rotas standalone para acesso direto */}
             <Route path="/yaml" element={<YamlPage />} />
+            <Route path="/specification" element={<SpecificationPage />} />
+            <Route path="/code" element={<CodePage />} />
+            <Route path="/monitoring" element={<MonitoringPage />} />
+            <Route path="/deployment" element={<DeploymentPage />} />
+            
             
             {/* Rotas específicas do novo sistema de contexto de projeto */}
             <Route path="/project/:projectId/documents" element={<DocumentsPage />} />
             <Route path="/project/:projectId/spec" element={<SpecificationPage />} />
+            <Route path="/project/:projectId/specification" element={<SpecificationPage />} />
             <Route path="/project/:projectId/agents" element={<AgentsPage />} />
             <Route path="/project/:projectId/tasks" element={<TasksPage />} />
             <Route path="/project/:projectId/yaml" element={<YamlPage />} />
             <Route path="/project/:projectId/petri-net" element={<PetriNetPage />} />
             <Route path="/project/:projectId/code" element={<CodePage />} />
-            <Route path="/project/:projectId/deploy" element={<div>Deployment</div>} />
+            <Route path="/project/:projectId/code-generation" element={<CodePage />} />
+            <Route path="/project/:projectId/deploy" element={<DeploymentPage/>} />
             <Route path="/project/:projectId/monitoring" element={<MonitoringPage />} />
-            
+            <Route path="/monitoring" element={<MonitoringPage />} />
+            <Route path="/project/:projectId/monitoring" element={<MonitoringPage />} />
+            <Route path="/project/:projectId/langfuse" element={<MonitoringPage />} />
+
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>

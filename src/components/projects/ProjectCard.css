@@ -1,0 +1,315 @@
+/* src/components/projects/ProjectCard.css (VERSÃO MELHORADA) */
+
+/* Base do card */
+.project-card {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border: 1px solid #f0f0f0;
+  }
+  
+  .project-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  }
+  
+  /* Variante Dashboard (original) */
+  .project-card-dashboard {
+    padding: 20px;
+  }
+  
+  /* Variante List (expandida) */
+  .project-card-list {
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  }
+  
+  .project-card-list:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+    border-color: #e0e0e0;
+  }
+  
+  /* Header do card */
+  .project-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 12px;
+    gap: 16px;
+  }
+  
+  .project-card-list .project-card-header {
+    margin-bottom: 16px;
+  }
+  
+  .project-title {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #333;
+    line-height: 1.3;
+    flex: 1;
+  }
+  
+  .project-card-list .project-title {
+    font-size: 1.25rem;
+  }
+  
+  /* Status */
+  .project-status {
+    font-size: 0.8rem;
+    padding: 4px 8px;
+    border-radius: 12px;
+    text-transform: uppercase;
+    font-weight: 500;
+    white-space: nowrap;
+    letter-spacing: 0.5px;
+  }
+  
+  .project-card-list .project-status {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  
+  .status-draft {
+    background-color: #f0f0f0;
+    color: #666;
+  }
+  
+  .status-in-progress {
+    background-color: #e1f5fe;
+    color: #0277bd;
+  }
+  
+  .project-card-list .status-in-progress {
+    background-color: #e3f2fd;
+    color: #1976d2;
+  }
+  
+  .status-completed {
+    background-color: #e8f5e9;
+    color: #2e7d32;
+  }
+  
+  .project-card-list .status-completed {
+    background-color: #e8f5e9;
+    color: #388e3c;
+  }
+  
+  .status-archived {
+    background-color: #eeeeee;
+    color: #757575;
+  }
+  
+  .project-card-list .status-archived {
+    background-color: #fafafa;
+    color: #757575;
+  }
+  
+  /* Descrição */
+  .project-description {
+    color: #555;
+    margin-bottom: 16px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.4;
+  }
+  
+  .project-card-list .project-description {
+    margin-bottom: 20px;
+    -webkit-line-clamp: 3;
+    line-height: 1.5;
+  }
+  
+  /* Metadados - Versão Dashboard (simples) */
+  .project-meta-simple {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    color: #777;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  /* Metadados - Versão List (detalhada) */
+  .project-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+    padding: 16px;
+    background-color: #fafafa;
+    border-radius: 8px;
+  }
+  
+  .meta-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .meta-label {
+    font-size: 0.85rem;
+    color: #666;
+    font-weight: 500;
+  }
+  
+  .meta-value {
+    font-size: 0.85rem;
+    color: #333;
+    font-weight: 500;
+  }
+  
+  /* Progresso */
+  .project-progress {
+    margin-top: 12px;
+  }
+  
+  .project-card-list .project-progress {
+    margin-bottom: 20px;
+  }
+  
+  .progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  
+  .progress-label {
+    font-size: 0.9rem;
+    color: #666;
+    font-weight: 500;
+  }
+  
+  .progress-percentage {
+    font-size: 0.9rem;
+    color: #0066cc;
+    font-weight: 600;
+  }
+  
+  .progress-bar {
+    height: 8px;
+    background-color: #f0f0f0;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+  
+  .project-card-list .progress-bar {
+    margin-bottom: 0;
+  }
+  
+  .progress-fill {
+    height: 100%;
+    background-color: #0066cc;
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+  
+  .project-card-list .progress-fill {
+    background: linear-gradient(90deg, #0066cc, #0088ff);
+  }
+  
+  .progress-text {
+    font-size: 0.8rem;
+    color: #666;
+    text-align: right;
+    display: block;
+  }
+  
+  /* Ações (apenas na versão list) */
+  .project-actions {
+    display: flex;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid #f0f0f0;
+  }
+  
+  .action-button {
+    flex: 1;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 1px solid;
+  }
+  
+  .action-button.primary {
+    background-color: #0066cc;
+    color: white;
+    border-color: #0066cc;
+  }
+  
+  .action-button.primary:hover {
+    background-color: #0055aa;
+    border-color: #0055aa;
+  }
+  
+  .action-button.secondary {
+    background-color: white;
+    color: #666;
+    border-color: #ddd;
+  }
+  
+  .action-button.secondary:hover {
+    background-color: #f8f9fa;
+    color: #333;
+  }
+  
+  /* Responsividade */
+  @media (max-width: 768px) {
+    .project-meta-simple {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+    
+    .project-card-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    
+    .project-status {
+      align-self: flex-start;
+    }
+    
+    .project-meta {
+      padding: 12px;
+    }
+    
+    .action-button {
+      font-size: 0.85rem;
+      padding: 8px 12px;
+    }
+  }
+  
+  @media (max-width: 480px) {
+    .project-card-dashboard {
+      padding: 16px;
+    }
+    
+    .project-card-list {
+      padding: 20px;
+    }
+    
+    .project-title {
+      font-size: 1.1rem;
+    }
+    
+    .project-card-list .project-title {
+      font-size: 1.15rem;
+    }
+  }
