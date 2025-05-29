@@ -1,0 +1,620 @@
+/* src/pages/McpProjectIntegrationPage.css */
+.mcp-project-integration-container {
+  padding: 20px;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.page-header h1 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 1.75rem;
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* Project Overview */
+.project-overview {
+  margin-bottom: 32px;
+}
+
+.overview-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+
+.overview-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.card-icon {
+  font-size: 2rem;
+}
+
+.card-info h3 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.card-info p {
+  margin: 4px 0 0 0;
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+/* Sections */
+.enabled-services-section,
+.mappings-section,
+.sync-rules-section,
+.exposed-services-section {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.section-header h2 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 1.25rem;
+}
+
+/* Tables */
+.services-table,
+.mappings-table,
+.endpoints-table {
+  overflow-x: auto;
+}
+
+.services-table table,
+.mappings-table table,
+.endpoints-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.services-table th,
+.mappings-table th,
+.endpoints-table th {
+  background-color: #f9fafb;
+  padding: 12px 16px;
+  text-align: left;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.services-table td,
+.mappings-table td,
+.endpoints-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.services-table tr:last-child td,
+.mappings-table tr:last-child td,
+.endpoints-table tr:last-child td {
+  border-bottom: none;
+}
+
+.service-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.service-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.service-icon {
+  font-size: 1.125rem;
+}
+
+.service-name {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.service-provider {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.service-purpose {
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.usage-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.usage-level {
+  font-weight: 500;
+  color: #1f2937;
+  font-size: 0.875rem;
+  text-transform: capitalize;
+}
+
+.usage-details {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: white;
+}
+
+.status-badge.small {
+  padding: 2px 6px;
+  font-size: 0.625rem;
+}
+
+/* Mappings */
+.local-model {
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.mcp-service {
+  color: #0066cc;
+  font-weight: 500;
+}
+
+.endpoint code {
+  background-color: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.875rem;
+  color: #1f2937;
+}
+
+.format-badge {
+  background-color: #e5e7eb;
+  color: #374151;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.method-badge {
+  background-color: #0066cc;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Sync Rules */
+.config-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.config-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.config-group label {
+  font-weight: 500;
+  color: #374151;
+  font-size: 0.875rem;
+}
+
+.config-group input,
+.config-group select {
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  transition: border-color 0.2s;
+}
+
+.config-group input:focus,
+.config-group select:focus {
+  outline: none;
+  border-color: #0066cc;
+  box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
+}
+
+.checkbox-group {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.checkbox-group input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.domain-rules {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.domain-rules h3 {
+  margin: 0 0 16px 0;
+  color: #1f2937;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.rules-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.rule-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background-color: #f9fafb;
+  border-radius: 6px;
+}
+
+.rule-key {
+  font-weight: 500;
+  color: #374151;
+  min-width: 120px;
+}
+
+.rule-value {
+  color: #6b7280;
+  flex: 1;
+}
+
+/* Project Status */
+.project-status-section {
+  margin-bottom: 32px;
+}
+
+.status-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.status-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.status-card h3 {
+  margin: 0 0 16px 0;
+  color: #1f2937;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.status-info,
+.usage-stats,
+.isolation-info {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.status-item,
+.usage-item,
+.isolation-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.status-label,
+.usage-service,
+.isolation-label {
+  font-size: 0.875rem;
+  color: #6b7280;
+}
+
+.status-value,
+.usage-value,
+.isolation-value {
+  font-size: 0.875rem;
+  color: #1f2937;
+  font-weight: 500;
+}
+
+/* Common Button Styles */
+.btn-primary {
+  background-color: #0066cc;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  font-size: 0.875rem;
+}
+
+.btn-primary:hover {
+  background-color: #0055aa;
+}
+
+.btn-secondary {
+  background-color: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+}
+
+.btn-secondary:hover {
+  background-color: #e5e7eb;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.btn-icon:hover {
+  background-color: #f3f4f6;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+/* Page Actions */
+.page-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding-top: 24px;
+  border-top: 1px solid #e5e7eb;
+}
+
+/* Modal Styles */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: white;
+  border-radius: 8px;
+  width: 600px;
+  max-width: 90%;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.modal-header h3 {
+  margin: 0;
+  color: #1f2937;
+  font-size: 1.25rem;
+}
+
+.btn-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-close:hover {
+  color: #374151;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  padding: 20px 24px;
+  border-top: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #374151;
+  font-size: 0.875rem;
+}
+
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  box-sizing: border-box;
+}
+
+.form-group textarea {
+  min-height: 80px;
+  resize: vertical;
+}
+
+/* Available Services in Modal */
+.available-services {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.service-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background-color: #f9fafb;
+}
+
+.service-option .service-info {
+  flex: 1;
+}
+
+.service-option .service-header {
+  margin-bottom: 4px;
+}
+
+.service-option .service-description {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin-bottom: 2px;
+}
+
+.service-option .service-provider {
+  font-size: 0.75rem;
+  color: #9ca3af;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .mcp-project-integration-container {
+    padding: 16px;
+  }
+  
+  .page-header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-start;
+  }
+  
+  .header-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+  
+  .overview-cards {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+  
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .status-cards {
+    grid-template-columns: 1fr;
+  }
+  
+  .services-table,
+  .mappings-table,
+  .endpoints-table {
+    overflow-x: auto;
+  }
+  
+  .page-actions {
+    flex-direction: column;
+  }
+  
+  .modal-content {
+    width: 95%;
+    margin: 20px;
+  }
+  
+  .service-option {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+}

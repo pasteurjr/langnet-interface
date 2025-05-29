@@ -598,3 +598,589 @@ export * from './deployment';
 
 // Adicionar exports dos tipos de settings
 export * from './settings';
+
+// src/types/index.ts - ADICIONAR AO ARQUIVO EXISTENTE
+
+// ========================
+// TIPOS MCP COMPLETOS
+// ========================
+
+// Configuração de Servidor MCP
+
+// Credenciais de Autenticação
+export interface McpCredentials {
+  type: 'api_key' | 'oauth' | 'certificate' | 'basic_auth';
+  apiKey?: string;
+  clientId?: string;
+  clientSecret?: string;
+  certificate?: string;
+  username?: string;
+  password?: string;
+  scope?: string[];
+}
+
+// Configuração de Segurança
+export interface McpSecurityConfig {
+  tls: boolean;
+  validateCertificates: boolean;
+  allowedIPs?: string[];
+  rateLimiting?: {
+    requestsPerMinute: number;
+    burstSize: number;
+  };
+  encryption?: {
+    algorithm: string;
+    keyRotation: boolean;
+  };
+}
+
+// Circuit Breaker Configuration
+export interface McpCircuitBreakerConfig {
+  enabled: boolean;
+  failureThreshold: number;
+  timeoutMs: number;
+  resetTimeoutMs: number;
+  monitoringEnabled: boolean;
+}
+
+// Serviço MCP
+// Corrigir McpServer - adicionar campos faltantes
+export interface McpServer {
+  id: string;
+  name: string;
+  url: string;
+  status: 'connected' | 'disconnected' | 'error' | 'connecting' | 'online' | 'offline' | 'local';
+  type?: 'production' | 'staging' | 'development';
+  version?: string;
+  description?: string;
+  lastPing?: string;
+  responseTime?: number;
+  services?: McpService[];
+  credentials?: McpCredentials;
+  security?: McpSecurityConfig;
+  circuitBreaker?: McpCircuitBreakerConfig;
+  // Campos adicionais que estavam sendo usados:
+  provider?: string;
+  latency?: number;
+  uptime?: number;
+  lastHealthCheck?: string;
+}
+
+// Corrigir McpService - adicionar campos faltantes
+export interface McpService {
+  id: string;
+  name: string;
+  category: McpServiceCategory;
+  version: string;
+  description: string;
+  serverId?: string;
+  endpoints: string[] | McpEndpoint[]; // Aceitar tanto string[] quanto McpEndpoint[]
+  status: 'active' | 'inactive' | 'deprecated' | 'maintenance' | 'up' | 'down' | 'slow';
+  compatibility?: McpCompatibility;
+  performance?: McpPerformanceMetrics;
+  documentation?: string;
+  tags?: string[];
+  dependencies?: string[];
+  // Campos adicionais que estavam sendo usados:
+  provider?: string;
+  usage?: 'high' | 'medium' | 'low' | 'none';
+  capabilities?: string[];
+  rateLimits?: {
+    requestsPerMinute: number;
+    requestsPerHour: number;
+  };
+  sla?: {
+    uptime: number;
+    responseTime: number;
+  };
+}
+
+
+
+export type McpServiceCategory = 
+  | 'authentication'
+  | 'data_storage' 
+  | 'ml_services'
+  | 'analytics'
+  | 'communication'
+  | 'file_management'
+  | 'workflow'
+  | 'integration'
+  | 'monitoring'
+  | 'security'
+  | 'custom'
+  | 'auth'      // Valores adicionais usados nas páginas
+  | 'storage'
+  | 'ai'
+  | 'other';
+// Endpoint de Serviço
+export interface McpEndpoint {
+  id: string;
+  name: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  path: string;
+  description: string;
+  parameters?: McpParameter[];
+  responses?: McpResponse[];
+  authentication: boolean;
+  rateLimit?: {
+    limit: number;
+    window: string;
+  };
+}
+
+// Parâmetros de Endpoint
+export interface McpParameter {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'object' | 'array';
+  required: boolean;
+  description: string;
+  example?: any;
+  validation?: {
+    min?: number;
+    max?: number;
+    pattern?: string;
+    enum?: string[];
+  };
+}
+
+// Respostas de Endpoint
+export interface McpResponse {
+  statusCode: number;
+  description: string;
+  schema?: any;
+  example?: any;
+}
+
+// Compatibilidade de Versões
+export interface McpCompatibility {
+  minVersion: string;
+  maxVersion?: string;
+  deprecated: boolean;
+  breakingChanges?: string[];
+  migrationGuide?: string;
+}
+
+// Métricas de Performance
+export interface McpPerformanceMetrics {
+  averageResponseTime: number;
+  successRate: number;
+  requestsPerMinute: number;
+  errorRate: number;
+  uptime: number;
+  lastUpdated: string;
+}
+
+// Configuração Global MCP
+export interface McpGlobalConfig {
+  discoveryEnabled: boolean;
+  discoveryInterval: number;
+  maxConcurrentConnections?: number;
+  defaultTimeout: number;
+  retryAttempts: number;
+  retryDelay?: number;
+  healthCheckInterval: number;
+  logLevel?: 'debug' | 'info' | 'warn' | 'error';
+  cache?: McpCacheConfig;
+  monitoring?: McpMonitoringConfig;
+  // Campos adicionais que estavam sendo usados:
+  maxRetryAttempts?: number;
+  circuitBreakerEnabled?: boolean;
+  circuitBreakerThreshold?: number;
+  rateLimitDefault?: number;
+  tlsVersion?: string;
+  discoveryProtocol?: string;
+  serviceCacheTtl?: number;
+}
+
+// Configuração de Cache
+export interface McpCacheConfig {
+  enabled: boolean;
+  ttl: number;
+  maxSize: number;
+  strategy: 'lru' | 'fifo' | 'lfu';
+  compression: boolean;
+}
+
+// Configuração de Monitoramento
+export interface McpMonitoringConfig {
+  enabled: boolean;
+  metrics: string[];
+  alerting: {
+    enabled: boolean;
+    thresholds: {
+      responseTime: number;
+      errorRate: number;
+      uptime: number;
+    };
+    channels: ('email' | 'slack' | 'webhook')[];
+  };
+  tracing: {
+    enabled: boolean;
+    sampleRate: number;
+  };
+}
+
+// Configuração de Projeto MCP
+export interface McpProjectConfig {
+  projectId: string;
+  enabledServices: string[];
+  serviceMappings: McpServiceMappingSimple[]; // Usar a versão simples
+  syncRules: {
+    frequency: number;
+    conflictResolution: 'merge_local' | 'merge_remote' | 'local_wins' | 'remote_wins' | 'manual';
+    retryPolicy: {
+      maxAttempts: number;
+      backoffStrategy: 'linear' | 'exponential';
+    };
+    batchSize: number;
+    compressionEnabled: boolean;
+    domainRules: Record<string, string>;
+  };
+  exposedEndpoints?: McpExposedEndpoint[];
+  namespaceIsolation?: boolean;
+  namespace?: string;
+  dataRetention?: {
+    enabled: boolean;
+    days: number;
+  };
+  // Campos adicionais que estavam sendo usados:
+  isolationNamespace?: string;
+  customEndpoints?: McpCustomEndpoint[];
+}
+
+// Mapeamento de Serviço
+export interface McpServiceMapping {
+  id: string;
+  serviceId: string;
+  localModel: string;
+  remoteModel: string;
+  transformations: McpTransformation[];
+  bidirectional: boolean;
+  conflictResolution: McpConflictResolution;
+  enabled: boolean;
+}
+
+// Transformação de Dados
+export interface McpTransformation {
+  field: string;
+  type: 'rename' | 'format' | 'calculate' | 'filter' | 'aggregate';
+  source: string;
+  target: string;
+  expression?: string;
+  conditions?: McpCondition[];
+}
+
+// Condições para Transformações
+export interface McpCondition {
+  field: string;
+  operator: 'equals' | 'not_equals' | 'greater' | 'less' | 'contains' | 'regex';
+  value: any;
+}
+
+// Resolução de Conflitos
+export interface McpConflictResolution {
+  strategy: 'local_wins' | 'remote_wins' | 'newest_wins' | 'manual' | 'merge';
+  customLogic?: string;
+  notifyOnConflict: boolean;
+}
+
+// Regras de Sincronização
+export interface McpSyncRule {
+  id: string;
+  name: string;
+  sourceType: 'local' | 'remote';
+  targetType: 'local' | 'remote';
+  schedule: McpSyncSchedule;
+  filters: McpSyncFilter[];
+  enabled: boolean;
+  lastRun?: string;
+  nextRun?: string;
+  status: 'idle' | 'running' | 'success' | 'error';
+}
+
+// Agendamento de Sincronização
+export interface McpSyncSchedule {
+  type: 'immediate' | 'interval' | 'cron';
+  interval?: number; // em minutos
+  cronExpression?: string;
+  timezone?: string;
+}
+
+// Filtros de Sincronização
+export interface McpSyncFilter {
+  field: string;
+  operator: 'equals' | 'not_equals' | 'greater' | 'less' | 'contains' | 'in' | 'not_in';
+  value: any;
+  logicalOperator?: 'AND' | 'OR';
+}
+
+// Endpoint Exposto
+export interface McpExposedEndpoint {
+  id: string;
+  name: string;
+  path: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  description: string;
+  authentication: boolean;
+  rateLimit?: {
+    requestsPerMinute: number;
+    requestsPerHour: number;
+  };
+  enabled: boolean;
+  handler: string; // referência à função/classe que processa
+  documentation?: string;
+}
+
+// Status de Conexão MCP
+export interface McpConnectionStatus {
+  serverId: string;
+  status: 'connected' | 'disconnected' | 'error' | 'connecting';
+  lastAttempt: string;
+  lastSuccess?: string;
+  errorMessage?: string;
+  connectionCount: number;
+  activeRequests: number;
+  queuedRequests: number;
+}
+
+// Estatísticas de Descoberta
+export interface McpDiscoveryStats {
+  totalServers: number;
+  connectedServers: number;
+  totalServices: number;
+  activeServices: number;
+  lastDiscovery: string;
+  discoveryDuration: number;
+  errors: McpDiscoveryError[];
+}
+
+// Erros de Descoberta
+export interface McpDiscoveryError {
+  serverId: string;
+  serverName: string;
+  error: string;
+  timestamp: string;
+  resolved: boolean;
+}
+
+// Log de Atividade MCP
+export interface McpActivityLog {
+  id: string;
+  timestamp: string;
+  type: 'connection' | 'sync' | 'error' | 'config_change' | 'service_call';
+  serverId?: string;
+  serviceId?: string;
+  message: string;
+  details?: any;
+  level: 'info' | 'warn' | 'error' | 'debug';
+}
+
+// Configuração de Exportação/Importação
+export interface McpExportConfig {
+  includeCredentials: boolean;
+  includePerformanceData: boolean;
+  includeProjectConfigs: boolean;
+  format: 'json' | 'yaml' | 'xml';
+  encryption: boolean;
+}
+
+// Dados de Exportação
+export interface McpExportData {
+  version: string;
+  timestamp: string;
+  servers: McpServer[];
+  globalConfig: McpGlobalConfig;
+  projectConfigs?: McpProjectConfig[];
+  checksum: string;
+}
+
+// Estado da Interface MCP
+export interface McpUIState {
+  selectedServer?: string;
+  selectedService?: string;
+  activeTab: 'servers' | 'services' | 'config' | 'logs' | 'monitoring';
+  filters: {
+    serverStatus?: string[];
+    serviceCategory?: string[];
+    searchTerm?: string;
+  };
+  loading: boolean;
+  errors: string[];
+}
+
+// Props para Componentes MCP
+export interface McpServerFormProps {
+  server?: McpServer;
+  onSave: (server: McpServer) => void;
+  onCancel: () => void;
+}
+
+export interface McpServiceListProps {
+  services: McpService[];
+  onServiceSelect: (service: McpService) => void;
+  onServiceToggle: (serviceId: string, enabled: boolean) => void;
+  selectedServices: string[];
+}
+
+export interface McpConnectionPanelProps {
+  connections: McpConnectionStatus[];
+  onRefresh: () => void;
+  onDisconnect: (serverId: string) => void;
+  onConnect: (serverId: string) => void;
+}
+
+// Hooks Props
+export interface UseMcpConfigProps {
+  projectId?: string;
+}
+
+export interface UseMcpServicesProps {
+  serverId?: string;
+  category?: McpServiceCategory;
+  enabled?: boolean;
+}
+
+// ADICIONAR AO FINAL DO ARQUIVO src/types/index.ts
+// ========================
+// TIPOS MCP FALTANTES
+// ========================
+
+// Conexão MCP (usado em McpServiceDiscoveryPage)
+export interface McpConnection {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  status: 'connected' | 'disconnected' | 'error' | 'connecting';
+  latency: number;
+  lastActivity: string;
+  requestsPerHour: number;
+  errorRate: number;
+}
+
+// Status de saúde MCP (usado em McpGlobalConfigPage)
+export interface McpHealthStatus {
+  overall: 'healthy' | 'warning' | 'critical';
+  services: Record<string, string>;
+  connections: {
+    total: number;
+    active: number;
+    errors: number;
+  };
+  performance: {
+    avgLatency: number;
+    throughput: number;
+    errorRate: number;
+  };
+}
+
+// Resultado da descoberta (usado em McpGlobalConfigPage e McpServiceDiscoveryPage)
+export interface McpDiscoveryResult {
+  totalServices: number;
+  onlineServices: number;
+  lastScan: string;
+  networkHealth: number;
+  avgLatency: number;
+  servicesByCategory: Record<string, number>;
+  usageStats: Record<string, {
+    projectsUsing: number;
+    avgLoad: number;
+    peakUsagePerDay: number;
+  }>;
+}
+
+// Endpoint customizado (usado em McpProjectIntegrationPage)
+export interface McpCustomEndpoint {
+  id: string;
+  name: string;
+  endpoint: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  status: 'active' | 'inactive' | 'testing';
+  clientsConnected: number;
+  requestsPerHour: number;
+  authentication: 'none' | 'api_key' | 'bearer_token' | 'oauth';
+  rateLimiting: {
+    enabled: boolean;
+    requestsPerMinute: number;
+    requestsPerHour?: number;
+  };
+  monitoring: {
+    enabled: boolean;
+    successRate: number;
+    avgResponseTime: number;
+  };
+}
+
+// Estender interfaces existentes com campos que estavam faltando
+
+// Campos adicionais para McpServer
+export interface McpServerExtended extends McpServer {
+  provider?: string;
+  latency?: number;
+  uptime?: number;
+  lastHealthCheck?: string;
+}
+
+// Campos adicionais para McpService
+export interface McpServiceExtended extends McpService {
+  provider?: string;
+  usage?: 'high' | 'medium' | 'low' | 'none';
+  capabilities?: string[];
+  rateLimits?: {
+    requestsPerMinute: number;
+    requestsPerHour: number;
+  };
+  sla?: {
+    uptime: number;
+    responseTime: number;
+  };
+  dependencies?: string[];
+}
+
+// Campos adicionais para McpGlobalConfig
+export interface McpGlobalConfigExtended extends McpGlobalConfig {
+  tlsVersion?: string;
+  discoveryProtocol?: string;
+  serviceCacheTtl?: number;
+  circuitBreakerThreshold?: number;
+}
+
+// Status de servidor específico (usado nas páginas)
+export type McpServerStatus = 'online' | 'offline' | 'local' | 'error' | 'connected' | 'disconnected' | 'connecting';
+
+// Status de serviço específico (usado nas páginas)
+export type McpServiceStatus = 'up' | 'down' | 'slow' | 'maintenance' | 'active' | 'inactive' | 'deprecated';
+
+// Atualizar a interface McpProjectConfig com estrutura correta
+export interface McpProjectConfigExtended extends Omit<McpProjectConfig, 'syncRules'> {
+  syncRules: {
+    frequency: number;
+    conflictResolution: 'merge_local' | 'merge_remote' | 'local_wins' | 'remote_wins' | 'manual';
+    retryPolicy: {
+      maxAttempts: number;
+      backoffStrategy: 'linear' | 'exponential';
+    };
+    batchSize: number;
+    compressionEnabled: boolean;
+    domainRules: Record<string, string>;
+  };
+  isolationNamespace: string;
+  customEndpoints: McpCustomEndpoint[];
+}
+
+// Mapeamento de serviço simples (usado em McpProjectIntegrationPage)
+export interface McpServiceMappingSimple {
+  localModel: string;
+  mcpService: string;
+  endpoint: string;
+  format: string;
+}
+// Dados para novo servidor (usado em McpGlobalConfigPage)
+export interface McpNewServerData {
+  name: string;
+  url: string;
+  provider: string;
+  description: string;
+}
+
+

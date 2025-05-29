@@ -1,4 +1,4 @@
-// src/App.tsx (ATUALIZAR - adicionar as novas rotas de geração de código)
+// src/App.tsx (ATUALIZAÇÃO - adicionar as novas rotas)
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { NavigationProvider } from './contexts/NavigationContext';
@@ -19,6 +19,9 @@ import SettingsPage from "./pages/SettingsPage";
 import HelpPage from "./pages/HelpPage";
 import NotFoundPage from "./pages/NotFoundPage";
 import DeploymentPage from "./pages/DeploymentPage";
+import McpGlobalConfigPage from "./pages/McpGlobalConfigPage";
+import McpServiceDiscoveryPage from "./pages/McpServiceDiscoveryPage";
+import McpProjectIntegrationPage from "./pages/McpProjectIntegrationPage";
 
 import "./App.css";
 
@@ -41,6 +44,11 @@ const App: React.FC = () => {
             <Route path="projects/:id/code" element={<CodePage />} />
             <Route path="projects/:id/monitor" element={<MonitoringPage />} />
             <Route path="projects/:id/chat" element={<ChatPage />} />
+            
+            {/* Rotas MCP Globais */}
+            <Route path="mcp/config" element={<McpGlobalConfigPage />} />
+            <Route path="mcp/services" element={<McpServiceDiscoveryPage />} />
+            
             <Route path="settings" element={<SettingsPage />} />
             <Route path="help" element={<HelpPage />} />
             
@@ -51,8 +59,7 @@ const App: React.FC = () => {
             <Route path="/monitoring" element={<MonitoringPage />} />
             <Route path="/deployment" element={<DeploymentPage />} />
             
-            
-            {/* Rotas específicas do novo sistema de contexto de projeto */}
+            {/* Rotas específicas do contexto de projeto */}
             <Route path="/project/:projectId/documents" element={<DocumentsPage />} />
             <Route path="/project/:projectId/spec" element={<SpecificationPage />} />
             <Route path="/project/:projectId/specification" element={<SpecificationPage />} />
@@ -64,9 +71,10 @@ const App: React.FC = () => {
             <Route path="/project/:projectId/code-generation" element={<CodePage />} />
             <Route path="/project/:projectId/deploy" element={<DeploymentPage/>} />
             <Route path="/project/:projectId/monitoring" element={<MonitoringPage />} />
-            <Route path="/monitoring" element={<MonitoringPage />} />
-            <Route path="/project/:projectId/monitoring" element={<MonitoringPage />} />
             <Route path="/project/:projectId/langfuse" element={<MonitoringPage />} />
+            
+            {/* Rota MCP específica por projeto */}
+            <Route path="/project/:projectId/mcp" element={<McpProjectIntegrationPage />} />
 
             <Route path="*" element={<NotFoundPage />} />
           </Route>
@@ -75,5 +83,4 @@ const App: React.FC = () => {
     </Router>
   );
 };
-
 export default App;

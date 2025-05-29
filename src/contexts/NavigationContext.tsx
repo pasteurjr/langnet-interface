@@ -42,6 +42,26 @@ const GLOBAL_MENU_ITEMS: MenuItem[] = [
     path: '/projects'
   },
   {
+    id: 'mcp',
+    label: 'MCP',
+    icon: '🔗',
+    path: '/mcp',
+    children: [
+      {
+        id: 'mcp-config',
+        label: 'Configuração Global',
+        icon: '🌐',
+        path: '/mcp/config'
+      },
+      {
+        id: 'mcp-services',
+        label: 'Descoberta de Serviços',
+        icon: '🔍',
+        path: '/mcp/services'
+      }
+    ]
+  },
+  {
     id: 'settings',
     label: 'Configurações',
     icon: '⚙️',
@@ -97,6 +117,12 @@ const PROJECT_MENU_ITEMS: MenuItem[] = [
     label: 'Código',
     icon: '💻',
     path: '/code'
+  },
+  {
+    id: 'mcp-project',
+    label: 'MCP',
+    icon: '🔌',
+    path: '/mcp'
   },
   {
     id: 'deploy',

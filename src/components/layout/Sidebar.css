@@ -96,3 +96,71 @@
 .sidebar-nav a {
   margin: 0 !important;
 }
+
+/* ADICIONAR ao final do arquivo Sidebar.css existente */
+
+/* Suporte a items com submenu */
+.nav-parent {
+  cursor: pointer;
+  user-select: none;
+}
+
+.nav-parent .nav-arrow {
+  margin-left: auto;
+  font-size: 0.75rem;
+  transition: transform 0.2s;
+}
+
+.nav-parent .nav-arrow.expanded {
+  transform: rotate(180deg);
+}
+
+/* Submenus */
+.nav-item-with-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-children {
+  background-color: #111827;
+  border-left: 2px solid #374151;
+  margin-left: 16px;
+}
+
+.nav-child-item {
+  margin-bottom: 1px;
+}
+
+.nav-child-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px 8px 20px;
+  color: #9ca3af;
+  text-decoration: none;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+}
+
+.nav-child-link:hover {
+  background-color: #1f2937;
+  color: #d1d5db;
+}
+
+.nav-child-link.active {
+  background-color: #0066cc;
+  color: white;
+}
+
+.nav-child-icon {
+  font-size: 0.875rem;
+  min-width: 16px;
+  text-align: center;
+}
+
+.nav-child-label {
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
