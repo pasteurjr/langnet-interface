@@ -1,0 +1,377 @@
+/* src/components/agents/InterventionControls.css */
+.intervention-controls {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    max-height: 600px;
+    overflow-y: auto;
+  }
+  
+  .controls-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    border-bottom: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+  }
+  
+  .controls-header h3 {
+    margin: 0;
+    color: #1f2937;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+  
+  .manual-mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  
+  .manual-mode-toggle label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.875rem;
+    color: #374151;
+    cursor: pointer;
+  }
+  
+  .manual-mode-toggle input[type="checkbox"] {
+    margin: 0;
+  }
+  
+  .control-section {
+    padding: 16px 20px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+  
+  .control-section:last-child {
+    border-bottom: none;
+  }
+  
+  .control-section h4 {
+    margin: 0 0 12px 0;
+    color: #1f2937;
+    font-size: 0.95rem;
+    font-weight: 600;
+  }
+  
+  .emergency-section {
+    background-color: #fef2f2;
+    border-left: 4px solid #ef4444;
+  }
+  
+  .intervention-section {
+    background-color: #fefce8;
+    border-left: 4px solid #eab308;
+  }
+  
+  .tuning-section {
+    background-color: #f0f9ff;
+    border-left: 4px solid #0ea5e9;
+  }
+  
+  .status-section {
+    background-color: #f9fafb;
+    border-left: 4px solid #6b7280;
+  }
+  
+  .emergency-buttons,
+  .intervention-buttons,
+  .tuning-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 8px;
+  }
+  
+  .emergency-btn,
+  .intervention-btn,
+  .tuning-btn {
+    padding: 8px 12px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    text-align: center;
+  }
+  
+  .emergency-btn {
+    background-color: #ef4444;
+    color: white;
+  }
+  
+  .emergency-btn:hover {
+    background-color: #dc2626;
+  }
+  
+  .emergency-btn.stop-btn {
+    background-color: #dc2626;
+  }
+  
+  .emergency-btn.pause-btn {
+    background-color: #f59e0b;
+  }
+  
+  .emergency-btn.restart-btn {
+    background-color: #059669;
+  }
+  
+  .intervention-btn {
+    background-color: #f59e0b;
+    color: white;
+  }
+  
+  .intervention-btn:hover:not(:disabled) {
+    background-color: #d97706;
+  }
+  
+  .intervention-btn:disabled {
+    background-color: #d1d5db;
+    color: #9ca3af;
+    cursor: not-allowed;
+  }
+  
+  .tuning-btn {
+    background-color: #0ea5e9;
+    color: white;
+  }
+  
+  .tuning-btn:hover {
+    background-color: #0284c7;
+  }
+  
+  .network-status {
+    background-color: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 16px;
+  }
+  
+  .status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  
+  .status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    background-color: white;
+    border-radius: 4px;
+    border: 1px solid #e5e7eb;
+  }
+  
+  .status-label {
+    font-size: 0.875rem;
+    color: #6b7280;
+    font-weight: 500;
+  }
+  
+  .status-value {
+    font-size: 0.875rem;
+    color: #1f2937;
+    font-weight: 600;
+  }
+  
+  .bottlenecks {
+    margin-top: 12px;
+  }
+  
+  .bottlenecks h5 {
+    margin: 0 0 8px 0;
+    color: #dc2626;
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  
+  .bottlenecks ul {
+    margin: 0;
+    padding-left: 16px;
+  }
+  
+  .bottlenecks li {
+    font-size: 0.875rem;
+    color: #374151;
+    margin-bottom: 4px;
+  }
+  
+  /* Advanced Parameters Modal */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  
+  .advanced-params-modal {
+    background: white;
+    border-radius: 8px;
+    width: 500px;
+    max-width: 90%;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 24px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  
+  .modal-header h3 {
+    margin: 0;
+    color: #1f2937;
+    font-size: 1.25rem;
+  }
+  
+  .btn-close {
+    background: none;
+    border: none;
+    font-size: 1.5rem;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 0;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  .btn-close:hover {
+    color: #374151;
+  }
+  
+  .modal-content {
+    padding: 24px;
+  }
+  
+  .param-group {
+    margin-bottom: 16px;
+  }
+  
+  .param-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: #374151;
+    font-size: 0.875rem;
+  }
+  
+  .param-group input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    box-sizing: border-box;
+  }
+  
+  .modal-actions {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    padding: 20px 24px;
+    border-top: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+  }
+  
+  .btn-primary {
+    background-color: #0066cc;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: background-color 0.2s;
+    font-size: 0.875rem;
+  }
+  
+  .btn-primary:hover {
+    background-color: #0055aa;
+  }
+  
+  .btn-secondary {
+    background-color: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s;
+    font-size: 0.875rem;
+  }
+  
+  .btn-secondary:hover {
+    background-color: #e5e7eb;
+  }
+  
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    .intervention-controls {
+      max-height: none;
+    }
+    
+    .controls-header {
+      flex-direction: column;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    
+    .control-section {
+      padding: 12px 16px;
+    }
+    
+    .emergency-buttons,
+    .intervention-buttons,
+    .tuning-buttons {
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+    
+    .emergency-btn,
+    .intervention-btn,
+    .tuning-btn {
+      padding: 10px 12px;
+      font-size: 0.8rem;
+    }
+    
+    .status-grid {
+      grid-template-columns: 1fr;
+      gap: 6px;
+    }
+    
+    .status-item {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+    
+    .advanced-params-modal {
+      width: 95%;
+      margin: 20px;
+    }
+    
+    .modal-header,
+    .modal-content,
+    .modal-actions {
+      padding: 16px;
+    }
+  }
