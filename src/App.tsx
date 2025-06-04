@@ -1,4 +1,4 @@
-// src/App.tsx (CORRIGIDO - Rotas AgentChatPage DESCOMENTADAS)
+// src/App.tsx (ATUALIZADO - AgentDesignerPage ADICIONADO)
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import { NavigationProvider } from "./contexts/NavigationContext";
@@ -25,8 +25,9 @@ import McpGlobalConfigPage from "./pages/McpGlobalConfigPage";
 import McpServiceDiscoveryPage from "./pages/McpServiceDiscoveryPage";
 import McpProjectIntegrationPage from "./pages/McpProjectIntegrationPage";
 
-// ✅ Nova página implementada - DESCOMENTADO
+// ✅ Páginas Interface Interativa implementadas
 import AgentChatPage from "./pages/AgentChatPage";
+import AgentDesignerPage from "./pages/AgentDesignerPage"; // 🆕 NOVA IMPORTAÇÃO
 
 import "./App.css";
 
@@ -49,7 +50,6 @@ const App: React.FC = () => {
             <Route path="projects/:id/code" element={<CodePage />} />
             <Route path="projects/:id/monitor" element={<MonitoringPage />} />
             <Route path="projects/:id/chat" element={<ChatPage />} />
-
             {/* ✅ ROTAS MCP GLOBAIS - MANTÉM compatibilidade */}
             <Route path="mcp/config" element={<McpGlobalConfigPage />} />
             <Route path="mcp/services" element={<McpServiceDiscoveryPage />} />
@@ -58,14 +58,14 @@ const App: React.FC = () => {
               path="mcp/state-sync"
               element={<div>McpStateSyncPage - A implementar</div>}
             />
-
-            {/* ✅ ROTAS INTERFACE INTERATIVA GLOBAL - DESCOMENTADO */}
+            {/* ✅ ROTAS INTERFACE INTERATIVA GLOBAL - ATUALIZADAS */}
             <Route path="interactive/agent-chat" element={<AgentChatPage />} />
-            {/* 🆕 Demais rotas (a implementar) */}
             <Route
               path="interactive/agent-designer"
-              element={<div>AgentDesignerPage - A implementar</div>}
-            />
+              element={<AgentDesignerPage />}
+            />{" "}
+            {/* 🆕 ROTA ATUALIZADA */}
+            {/* 🆕 Demais rotas (a implementar) */}
             <Route
               path="interactive/artifacts"
               element={<div>ArtifactManagerPage - A implementar</div>}
@@ -78,17 +78,14 @@ const App: React.FC = () => {
               path="interactive/forms"
               element={<div>DynamicFormsPage - A implementar</div>}
             />
-
             <Route path="settings" element={<SettingsPage />} />
             <Route path="help" element={<HelpPage />} />
-
             {/* Rotas standalone para acesso direto */}
             <Route path="/yaml" element={<YamlPage />} />
             <Route path="/specification" element={<SpecificationPage />} />
             <Route path="/code" element={<CodePage />} />
             <Route path="/monitoring" element={<MonitoringPage />} />
             <Route path="/deployment" element={<DeploymentPage />} />
-
             {/* ✅ ROTAS ESPECÍFICAS DO CONTEXTO DE PROJETO */}
             <Route
               path="/project/:projectId/documents"
@@ -127,7 +124,6 @@ const App: React.FC = () => {
               path="/project/:projectId/langfuse"
               element={<MonitoringPage />}
             />
-
             {/* ✅ ROTAS MCP POR PROJETO - MANTÉM compatibilidade */}
             <Route
               path="/project/:projectId/mcp"
@@ -141,15 +137,14 @@ const App: React.FC = () => {
               path="/project/:projectId/mcp/services"
               element={<div>McpProjectServicesPage - A implementar</div>}
             />
-
-            {/* ✅ ROTAS INTERFACE INTERATIVA POR PROJETO - DESCOMENTADO */}
+            {/* ✅ ROTAS INTERFACE INTERATIVA POR PROJETO - ATUALIZADAS */}
             <Route
               path="/project/:projectId/interactive/agent-chat"
               element={<AgentChatPage />}
             />
             <Route
               path="/project/:projectId/interactive/agent-designer"
-              element={<div>AgentDesignerPage - A implementar</div>}
+              element={<AgentDesignerPage />}
             />
             <Route
               path="/project/:projectId/interactive/artifacts"
@@ -163,7 +158,6 @@ const App: React.FC = () => {
               path="/project/:projectId/interactive/forms"
               element={<div>DynamicFormsPage - A implementar</div>}
             />
-
             <Route path="*" element={<NotFoundPage />} />
           </Route>
         </Routes>

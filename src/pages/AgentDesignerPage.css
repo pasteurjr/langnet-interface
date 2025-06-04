@@ -1,0 +1,545 @@
+/* src/pages/AgentDesignerPage.css - Interface Prototype Designer */
+.agent-designer-page {
+    padding: 20px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background-color: #f8f9fa;
+  }
+  
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    background-color: white;
+    padding: 16px 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  }
+  
+  .page-header h1 {
+    margin: 0;
+    color: #333;
+    font-size: 1.5rem;
+  }
+  
+  .header-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+  }
+  
+  .preview-toggle {
+    display: flex;
+    background-color: #f0f2f5;
+    border-radius: 6px;
+    padding: 2px;
+  }
+  
+  .preview-toggle button {
+    padding: 8px 12px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+  }
+  
+  .preview-toggle button.active {
+    background-color: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  
+  .btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  
+  .btn-primary {
+    background-color: #0066cc;
+    color: white;
+  }
+  
+  .btn-primary:hover {
+    background-color: #0055aa;
+  }
+  
+  .btn-secondary {
+    background-color: #f5f5f5;
+    color: #666;
+    border: 1px solid #ddd;
+  }
+  
+  .btn-secondary:hover {
+    background-color: #e8e8e8;
+  }
+  
+  /* Tabs do Designer */
+  .designer-tabs {
+    display: flex;
+    background-color: white;
+    border-radius: 8px 8px 0 0;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    margin-bottom: 0;
+  }
+  
+  .tab {
+    padding: 12px 24px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #666;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  
+  .tab:hover {
+    background-color: #f8f9fa;
+  }
+  
+  .tab.active {
+    color: #0066cc;
+    border-bottom-color: #0066cc;
+    background-color: #f8f9fa;
+  }
+  
+  /* Conteúdo do Designer */
+  .designer-content {
+    flex: 1;
+    background-color: white;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  /* Seção de Preview */
+  .preview-section {
+    flex: 1;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f8f9fa;
+  }
+  
+  .preview-main {
+    max-width: 100%;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  
+  /* Seção de Design */
+  .design-section {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+  
+  .design-sidebar {
+    width: 320px;
+    background-color: #f8f9fa;
+    border-right: 1px solid #e0e0e0;
+    padding: 20px;
+    overflow-y: auto;
+  }
+  
+  .design-panel {
+    background-color: white;
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+  
+  .design-panel h3 {
+    margin: 0 0 16px 0;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #333;
+  }
+  
+  .form-group {
+    margin-bottom: 16px;
+  }
+  
+  .form-group:last-child {
+    margin-bottom: 0;
+  }
+  
+  .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+    color: #444;
+    font-size: 0.9rem;
+  }
+  
+  .form-group input,
+  .form-group textarea,
+  .form-group select {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    font-family: inherit;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+  }
+  
+  .form-group input[type="color"] {
+    height: 36px;
+    padding: 4px;
+    cursor: pointer;
+  }
+  
+  .form-group input[type="checkbox"] {
+    width: auto;
+    margin-right: 8px;
+  }
+  
+  .form-group input:focus,
+  .form-group textarea:focus,
+  .form-group select:focus {
+    outline: none;
+    border-color: #0066cc;
+    box-shadow: 0 0 0 2px rgba(0, 102, 204, 0.1);
+  }
+  
+  .form-group textarea {
+    resize: vertical;
+    min-height: 60px;
+  }
+  
+  .design-main {
+    flex: 1;
+    padding: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    background-color: #f8f9fa;
+  }
+  
+  /* Seção de Código */
+  .code-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  
+  .code-tabs {
+    display: flex;
+    background-color: #f8f9fa;
+    border-bottom: 1px solid #e0e0e0;
+    padding: 0 20px;
+  }
+  
+  .code-tab {
+    padding: 12px 16px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: #666;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+  }
+  
+  .code-tab:hover {
+    color: #333;
+  }
+  
+  .code-tab.active {
+    color: #0066cc;
+    border-bottom-color: #0066cc;
+    background-color: white;
+  }
+  
+  .code-editor {
+    flex: 1;
+    padding: 20px;
+    background-color: #1e1e1e;
+    overflow: auto;
+  }
+  
+  .code-editor pre {
+    margin: 0;
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #d4d4d4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  
+  .code-editor code {
+    color: #d4d4d4;
+  }
+  
+  .code-actions {
+    padding: 16px 20px;
+    background-color: #f8f9fa;
+    border-top: 1px solid #e0e0e0;
+    display: flex;
+    gap: 12px;
+  }
+  
+  /* Elementos do Preview */
+  .preview-sidebar {
+    scrollbar-width: thin;
+    scrollbar-color: #c1c1c1 #f1f1f1;
+  }
+  
+  .preview-sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .preview-sidebar::-webkit-scrollbar-track {
+    background: #f1f1f1;
+  }
+  
+  .preview-sidebar::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+  }
+  
+  .preview-agent-item:hover {
+    background-color: rgba(0, 102, 204, 0.1) !important;
+    transform: translateY(-1px);
+  }
+  
+  .preview-message {
+    animation: slideIn 0.3s ease;
+  }
+  
+  @keyframes slideIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  /* Responsividade */
+  @media (max-width: 1200px) {
+    .design-section {
+      flex-direction: column;
+    }
+    
+    .design-sidebar {
+      width: 100%;
+      max-height: 300px;
+    }
+    
+    .design-main {
+      padding: 16px;
+    }
+  }
+  
+  @media (max-width: 768px) {
+    .agent-designer-page {
+      padding: 12px;
+    }
+    
+    .page-header {
+      flex-direction: column;
+      gap: 12px;
+      align-items: stretch;
+    }
+    
+    .header-actions {
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+    
+    .preview-toggle {
+      flex: 1;
+      justify-content: center;
+    }
+    
+    .designer-tabs {
+      overflow-x: auto;
+    }
+    
+    .tab {
+      white-space: nowrap;
+      min-width: 100px;
+    }
+    
+    .design-sidebar {
+      padding: 16px;
+    }
+    
+    .design-panel {
+      padding: 12px;
+    }
+    
+    .code-editor {
+      padding: 12px;
+      font-size: 0.8rem;
+    }
+    
+    .code-actions {
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .btn {
+      justify-content: center;
+    }
+  }
+  
+  /* Estados e transições */
+  .btn:focus {
+    outline: 2px solid #0066cc;
+    outline-offset: 2px;
+  }
+  
+  .form-group input:focus,
+  .form-group textarea:focus,
+  .form-group select:focus {
+    box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
+  }
+  
+  /* Loading states */
+  .loading {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+  
+  .loading::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  
+  /* Melhorias de acessibilidade */
+  .tab:focus,
+  .code-tab:focus,
+  .preview-toggle button:focus {
+    outline: 2px solid #0066cc;
+    outline-offset: -2px;
+  }
+  
+  /* Animações */
+  .preview-agent-item,
+  .btn,
+  .tab,
+  .code-tab {
+    transition: all 0.2s ease;
+  }
+  
+  .preview-message:hover {
+    transform: translateY(-1px);
+  }
+  
+  /* Syntax highlighting básico */
+  .code-editor pre .keyword {
+    color: #569cd6;
+  }
+  
+  .code-editor pre .string {
+    color: #ce9178;
+  }
+  
+  .code-editor pre .comment {
+    color: #6a9955;
+    font-style: italic;
+  }
+  
+  .code-editor pre .number {
+    color: #b5cea8;
+  }
+  
+  .code-editor pre .function {
+    color: #dcdcaa;
+  }
+  
+  /* Scrollbar customizada para o design sidebar */
+  .design-sidebar::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .design-sidebar::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+  }
+  
+  .design-sidebar::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 3px;
+  }
+  
+  .design-sidebar::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+  }
+  
+  /* Efeitos visuais adicionais */
+  .design-panel:hover {
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  }
+  
+  .preview-main:hover {
+    transform: scale(1.02);
+    transition: transform 0.3s ease;
+  }
+  
+  /* Estados específicos para diferentes tipos de input */
+  .form-group input[type="color"]:hover {
+    border-color: #0066cc;
+  }
+  
+  .form-group select:hover {
+    border-color: #999;
+  }
+  
+  /* Estilos para checkboxes customizados */
+  .form-group input[type="checkbox"] {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #ddd;
+    border-radius: 3px;
+    background-color: white;
+    position: relative;
+    cursor: pointer;
+  }
+  
+  .form-group input[type="checkbox"]:checked {
+    background-color: #0066cc;
+    border-color: #0066cc;
+  }
+  
+  .form-group input[type="checkbox"]:checked::after {
+    content: '✓';
+    position: absolute;
+    top: -2px;
+    left: 1px;
+    color: white;
+    font-size: 12px;
+    font-weight: bold;
+  }
