@@ -1,6 +1,8 @@
-// src/App.tsx (ATUALIZADO - AgentDesignerPage ADICIONADO)
+// src/App.tsx (ATUALIZADO - AgentDesignerPage ADICIONADO + Auth)
 import React from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { ToastContainer } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 import { NavigationProvider } from "./contexts/NavigationContext";
 import AppLayout from "./components/layout/AppLayout";
 import Dashboard from "./pages/Dashboard";
@@ -35,14 +37,38 @@ import SystemStatePage from "./pages/SystemStatePage";
 import DynamicFormsPage from "./pages/DynamicFormsPage";
 import McpStateSyncPage from "./pages/McpStateSyncPage";
 
+// 🔐 Páginas de Autenticação
+import LoginPage from "./pages/LoginPage";
+import RegisterPage from "./pages/RegisterPage";
+import ProtectedRoute from "./components/auth/ProtectedRoute";
+
+// 📄 Páginas de Documentos
+import RequirementsDocumentPage from "./pages/RequirementsDocumentPage";
+
 import "./App.css";
 
 const App: React.FC = () => {
   return (
     <Router>
       <NavigationProvider>
+        <ToastContainer
+          position="top-right"
+          autoClose={3000}
+          hideProgressBar={false}
+          newestOnTop
+          closeOnClick
+          rtl={false}
+          pauseOnFocusLoss
+          draggable
+          pauseOnHover
+        />
         <Routes>
-          <Route path="/" element={<AppLayout />}>
+          {/* 🔓 Public Routes */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+
+          {/* 🔐 Protected Routes */}
+          <Route path="/" element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
             <Route path="projects" element={<ProjectList />} />
             <Route path="projects/new" element={<ProjectDetail />} />
@@ -96,6 +122,10 @@ const App: React.FC = () => {
             <Route
               path="/project/:projectId/documents"
               element={<DocumentsPage />}
+            />
+            <Route
+              path="/project/:projectId/requirements/:executionId"
+              element={<RequirementsDocumentPage />}
             />
             <Route
               path="/project/:projectId/spec"

@@ -6,28 +6,49 @@ import './ProjectCard.css';
 
 interface ProjectCardProps {
   project: Project;
-  onClick: (id: string) => void; // Mantido para compatibilidade
+  onClick: (id: string) => void;
+  onEdit?: (project: Project) => void;
+  onDelete?: (id: string) => void;
 }
 
-const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick }) => {
+const ProjectCard: React.FC<ProjectCardProps> = ({ project, onClick, onEdit, onDelete }) => {
   const { enterProjectContext } = useNavigation();
 
   const handleClick = () => {
-    // Chama o onClick original para compatibilidade
     onClick(project.id);
-    
-    // E também entra no contexto do projeto
     enterProjectContext(project.id, project.name);
+  };
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onEdit) onEdit(project);
+  };
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onDelete) onDelete(project.id);
   };
 
   return (
     <div className="project-card" onClick={handleClick}>
       <div className="project-card-header">
         <h3 className="project-title">{project.name}</h3>
-        <span className={`project-status status-${project.status}`}>
-          {project.status}
-        </span>
+        <div className="project-actions">
+          {onEdit && (
+            <button className="btn-edit" onClick={handleEdit} title="Editar">
+              ✏️
+            </button>
+          )}
+          {onDelete && (
+            <button className="btn-delete" onClick={handleDelete} title="Excluir">
+              🗑️
+            </button>
+          )}
+        </div>
       </div>
+      <span className={`project-status status-${project.status}`}>
+        {project.status}
+      </span>
       <p className="project-description">{project.description}</p>
       <div className="project-meta">
         <span className="project-domain">Domínio: {project.domain}</span>

@@ -1,0 +1,70 @@
+
+================================================================================
+RELATÓRIO DE TESTES - SISTEMA DE ANÁLISE DE EDITAIS
+================================================================================
+
+📅 Data: 13/11/2025 18:02:56
+🤖 LLM Provider: DEEPSEEK
+📄 Documentos Testados: 1
+⏱️  Duração Total: 0m 0s
+
+================================================================================
+RESUMO GERAL
+================================================================================
+
+✅ Testes Concluídos: 1 (100.0%)
+❌ Testes Falhados: 0 (0.0%)
+⏱️  Duração Média: 0m 0s
+
+================================================================================
+MÉTRICAS AGREGADAS
+================================================================================
+
+📊 Total de Requisitos Funcionais: 0
+📊 Total de Requisitos Não-Funcionais: 0
+📊 Total de Regras de Negócio: 0
+📊 Total de Entidades Identificadas: 0
+🌐 Total de Queries Web Research: 0
+
+================================================================================
+RESULTADOS POR DOCUMENTO
+================================================================================
+
+
+1. ✅ Como encontrar editais de licitação abertos _ ConLicitação.pdf
+   Tamanho: 0.49 MB
+   Status: COMPLETED
+   Duração: 0m 0s
+   Requisitos Funcionais: 0
+   Requisitos Não-Funcionais: 0
+   Regras de Negócio: 0
+   Entidades: 0
+   Atores: 0
+   Web Research Queries: 0
+   Web Research Results: 0
+   Palavras no Documento: 0
+   Tamanho Doc. Requisitos: 0 chars
+
+
+================================================================================
+ANÁLISE DE DESEMPENHO
+================================================================================
+
+Tempo médio por documento: 0m 0s
+Requisitos funcionais por documento: 0.0
+Requisitos não-funcionais por documento: 0.0
+Regras de negócio por documento: 0.0
+Entidades por documento: 0.0
+Queries web research por documento: 0.0
+
+================================================================================
+CONCLUSÃO
+================================================================================
+
+Taxa de Sucesso: 100.0%
+Qualidade: EXCELENTE ✅
+Performance: EXCELENTE ✅
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

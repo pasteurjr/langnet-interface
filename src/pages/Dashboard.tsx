@@ -1,16 +1,57 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import ProjectCard from '../components/dashboard/ProjectCard';
 import { Project, ProjectStatus } from '../types';
 import './Dashboard.css';
-import { useState } from 'react';
 import CreateProjectModal from '../components/projects/CreateProjectModal';
 import ProjectCreationButton from '../components/projects/ProjectCreationButton';
+import { getProjects, deleteProject } from '../services/projectService';
+import { getCurrentUser } from '../services/authService';
+import { toast } from 'react-toastify';
 
 const Dashboard: React.FC = () => {
-  // Adicione este estado:
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  // Dados de exemplo para projetos recentes
-  const recentProjects: Project[] = [
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
+
+  // Buscar projetos do usuário
+  useEffect(() => {
+    fetchProjects();
+  }, []);
+
+  const fetchProjects = async () => {
+    try {
+      const user = await getCurrentUser();
+      if (!user) {
+        toast.error('Usuário não autenticado');
+        return;
+      }
+
+      const userProjects = await getProjects(user.id);
+
+      // Convert API projects to UI Project type
+      const uiProjects: Project[] = userProjects.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        description: p.description || '',
+        domain: p.domain || '',
+        createdAt: p.created_at,
+        updatedAt: p.updated_at,
+        status: p.status as ProjectStatus,
+        progress: 0 // Default progress, could be calculated from project data
+      }));
+
+      setProjects(uiProjects);
+    } catch (error) {
+      console.error('Erro ao buscar projetos:', error);
+      toast.error('Erro ao carregar projetos');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Dados de exemplo para projetos recentes (removido, usaremos dados reais)
+  const recentProjectsExample: Project[] = [
     {
       id: '1',
       name: 'Assistente de Atendimento ao Cliente',
@@ -64,19 +105,35 @@ const Dashboard: React.FC = () => {
 
   const handleCloseModal = () => {
     setIsCreateModalOpen(false);
+    setEditingProject(null);
   };
 
   const handleCreateProject = (projectData: any) => {
     console.log('Novo projeto:', projectData);
-    // Aqui você implementaria a lógica para criar o projeto
-    // Por exemplo, adicionar à lista de projetos recentes
+    fetchProjects(); // Recarregar projetos
     handleCloseModal();
   };
 
   const handleProjectClick = (id: string) => {
     console.log(`Navegando para o projeto ${id}`);
-    // Implementação real usaria useNavigate do react-router-dom
-    // navigate(`/projects/${id}`);
+  };
+
+  const handleEditProject = (project: Project) => {
+    setEditingProject(project);
+    setIsCreateModalOpen(true);
+  };
+
+  const handleDeleteProject = async (id: string) => {
+    if (window.confirm('Tem certeza que deseja excluir este projeto? Todos os dados associados serão perdidos.')) {
+      try {
+        await deleteProject(id);
+        toast.success('Projeto excluído com sucesso!');
+        fetchProjects(); // Recarregar lista
+      } catch (error) {
+        console.error('Erro ao excluir projeto:', error);
+        toast.error('Erro ao excluir projeto');
+      }
+    }
   };
 
   const handleNewProject = () => {
@@ -107,19 +164,25 @@ const Dashboard: React.FC = () => {
 
       <section className="recent-projects">
         <h2>Projetos Recentes</h2>
-        <div className="projects-grid">
-          {recentProjects.map(project => (
-            <ProjectCard
-              key={project.id}
-              project={project}
-              onClick={handleProjectClick}
-            />
-          ))}
-          <div className="new-project-card" onClick={handleNewProject}>
-            <div className="new-project-icon">+</div>
-            <p>Criar Novo Projeto</p>
+        {loading ? (
+          <p>Carregando projetos...</p>
+        ) : (
+          <div className="projects-grid">
+            {projects.map(project => (
+              <ProjectCard
+                key={project.id}
+                project={project}
+                onClick={handleProjectClick}
+                onEdit={handleEditProject}
+                onDelete={handleDeleteProject}
+              />
+            ))}
+            <div className="new-project-card" onClick={handleNewProject}>
+              <div className="new-project-icon">+</div>
+              <p>Criar Novo Projeto</p>
+            </div>
           </div>
-        </div>
+        )}
       </section>
 
       <section className="activity-feed">
@@ -137,6 +200,18 @@ const Dashboard: React.FC = () => {
         isOpen={isCreateModalOpen}
         onClose={handleCloseModal}
         onCreateProject={handleCreateProject}
+        editMode={!!editingProject}
+        initialData={editingProject ? {
+          id: editingProject.id,
+          name: editingProject.name,
+          description: editingProject.description,
+          domain: editingProject.domain,
+          startFrom: 'blank',
+          defaultLLM: 'OpenAI GPT-4',
+          framework: 'CrewAI',
+          memorySystem: 'LangChain',
+          status: editingProject.status
+        } : undefined}
       />
     </div>
   );

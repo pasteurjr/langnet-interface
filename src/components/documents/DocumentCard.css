@@ -164,6 +164,7 @@
   }
   
   .btn-view,
+  .btn-view-requirements,
   .btn-reanalyze,
   .btn-delete {
     padding: 8px 16px;
@@ -177,38 +178,49 @@
     align-items: center;
     gap: 6px;
   }
-  
+
   .btn-view {
     background-color: #3b82f6;
     color: white;
     border-color: #3b82f6;
   }
-  
+
   .btn-view:hover:not(:disabled) {
     background-color: #2563eb;
   }
-  
+
+  .btn-view-requirements {
+    background-color: #8b5cf6;
+    color: white;
+    border-color: #8b5cf6;
+  }
+
+  .btn-view-requirements:hover {
+    background-color: #7c3aed;
+  }
+
   .btn-reanalyze {
     background-color: #f59e0b;
     color: white;
     border-color: #f59e0b;
   }
-  
+
   .btn-reanalyze:hover {
     background-color: #d97706;
   }
-  
+
   .btn-delete {
     background-color: #ef4444;
     color: white;
     border-color: #ef4444;
   }
-  
+
   .btn-delete:hover:not(:disabled) {
     background-color: #dc2626;
   }
-  
+
   .btn-view:disabled,
+  .btn-view-requirements:disabled,
   .btn-reanalyze:disabled,
   .btn-delete:disabled {
     background-color: #d1d5db;
@@ -230,8 +242,9 @@
     .document-actions {
       flex-direction: column;
     }
-    
+
     .btn-view,
+    .btn-view-requirements,
     .btn-reanalyze,
     .btn-delete {
       width: 100%;

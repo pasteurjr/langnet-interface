@@ -1,0 +1,148 @@
+read_email:
+  description: >
+    Buscar emails não lidos usando email_fetch_tool e estruturar seu conteúdo básico.
+    Input data format: None (busca diretamente usando email_fetch_tool)
+
+    Process steps:
+      1. Usar email_fetch_tool para buscar emails não lidos, fazendo o parametro max_emails = {max_emails}
+      2. Para cada email obtido:
+         - Extrair dados básicos (remetente, assunto, conteúdo)
+         - Estruturar em formato padronizado
+      3. Retornar dados em formato JSON conforme especificado no expected_output
+
+  expected_output: >
+    Retornar um texto em formato JSON contendo as seguintes keys:
+    - timestamp: data e hora da execução
+    - total_emails: quantidade de emails processados
+    - emails: lista de emails, onde cada email deve conter as keys:
+      * email_id: identificador único
+      * from: email do remetente
+      * subject: assunto do email
+      * content: texto completo do email
+      * date: data e hora do email
+      * status: indicador se email foi lido com sucesso
+
+classify_message:
+  description: >
+    Classificar cada email identificando sua categoria específica.
+    Input data format:
+      - JSON da task read_email_task contendo:
+        * timestamp: data e hora da execução
+        * total_emails: quantidade de emails processados
+        * emails: lista onde cada email contém:
+          - email_id: identificador único
+          - from: email do remetente
+          - subject: assunto do email
+          - content: texto completo do email
+          - date: data e hora do email
+          - status: indicador se email foi lido com sucesso
+
+    Process steps:
+      1. Para cada email na lista:
+         - Analisar conteúdo e classificar em:
+           * pedidos: quando menciona produtos (potes, bombonas, tampas, regadores, alças) COM quantidades
+           * consultas_precos: perguntas sobre valores/preços
+           * duvidas: questões gerais sobre produtos
+           * informacoes_tecnicas: dúvidas sobre especificações
+           * reclamacoes: manifestações de insatisfação
+         - Se for pedido, identificar  o nome do produto que esta no conteúdo do email e a quantidade pedida. 
+           O nome do produto muitas vezes é composto (mais de uma palavra), por exemplo, "bombona 20l", "pote redondo", 
+           "regador azul", etcetera.
+         - Adicionar classificação ao registro do email
+
+  expected_output: >
+    Retornar um texto em formato JSON mantendo EXATAMENTE a mesma estrutura do input e adicionando para cada email na lista 'emails' as keys:
+    - categoria: uma das categorias definidas nos steps
+    - justificativa: texto explicando a classificação
+    - nome_produto_pedido: se categoria for pedido, nome do produto identicado no conteúdo do emails
+    - quantidade_pedido:se categoria for pedido, quantidade do produto identificada no conteúdo do email
+
+check_stock_availability:
+  description: >
+    Verificar disponibilidade em estoque dos produtos solicitados em pedidos.
+    Input data format:
+      - JSON da task classify_message contendo:
+        * timestamp
+        * total_emails
+        * emails: lista onde cada email contém:
+          - email_id, from, subject, content, date, status
+          - categoria: classificação do email
+          - justificativa: motivo da classificação
+          - nome_produto_pedido: nome do produto identicado no conteúdo do emails
+          - quantidade_pedido:se quantidade do produto identificada no conteúdo do email
+
+
+    Process steps:
+      1. Para cada email na lista:
+         - Se categoria for "pedidos":
+           * Para cada produto na lista produtos:
+             - Enviar nome do produto para natural_language_query_stock_tool
+             - Analisar produtos retornados pela ferramenta,no formato "PRODUTO: [nome], ESTOQUE: [quantidade]"
+             - Selecionar someente um produto e sua quantidade, o que você julgue mais similar ao solicitado. 
+               Repare que Alça Bombona não é Bombona, é uma Alca 
+             - Adicionar produto escolhido e sua quantidade  ao registro do email
+
+  expected_output: >
+    Retornar texto em formato JSON mantendo a estrutura do input(somente com os emails que sejam pedidos) e adicionando 
+    para cada email que tenha categoria igual a  pedido:
+    - produto_escolhido: nome do produto mais similar encontrado em estoque
+    - quantidade_disponivel: quantidade em estoque do produto escolhido
+
+generate_response:
+  description: >
+    Gerar e enviar emails de resposta para pedidos baseado na disponibilidade em estoque.
+    Input data format:
+      - JSON contendo:
+        * timestamp
+        * total_emails
+        * emails: lista onde cada email contém:
+          - email_id, from, subject, content, date, status
+          - categoria: classificação do email
+          - justificativa: motivo da classificação
+          - nome_produto_pedido: nome do produto identificado
+          - quantidade_pedido: quantidade solicitada
+          - produto_escolhido: produto similar encontrado
+          - quantidade_disponivel: quantidade em estoque
+
+    Process steps:
+      1. Para cada email no JSON:
+         - Identificar nome do cliente no content do email(nome_do_cliente)
+         - Verificar se quantidade_disponivel >= quantidade_pedido
+         - Usar um dos templates a seguir, apropriado baseado na disponibilidade:
+           * Se quantidade_disponivel >= quantidade_pedido usar esse template:
+             "Prezado [nome_do_cliente]. 
+                  
+              Informamos que seu pedido de [quantidade_pedido] [nome_produto_pedido] 
+              pode ser atendido. Aguarde retorno de nosso setor de vendas para detalhes. 
+             
+              Atenciosamente, Plásticos Tropical"
+           * Se quantidade_disponivel < quantidade_pedido usar esse template:
+             "Prezado [nome_do_cliente ]. 
+                  
+              Informamos que seu pedido de [quantidade_pedido] [nome_produto_pedido] 
+              não pode ser atendido no momento. Tão logo o produto esteja disponível, 
+              nosso setor de vendas retornar-lhe-á. 
+                  
+              Atenciosamente, Plásticos Tropical"
+         - Enviar email usando email_send_tool com esses parâmetros:
+           * to_email: email do cliente [from do email original]
+           * subject: "Resposta ao email: [subject do email original]"
+           * content: texto gerado do template bem formatado
+
+  expected_output: >
+    Relatório em formato Markdown (sem a marcação ```markdown) contendo para cada email:
+    ## Email Original
+    - ID: [email_id]
+    - De: [from]
+    - Assunto: [subject]
+    - Data: [date]
+    - Produto Pedido: [nome_produto_pedido]
+    - Quantidade Pedida: [quantidade_pedido]
+    - Produto Disponível: [produto_escolhido]
+    - Quantidade em Estoque: [quantidade_disponivel]
+
+    ### Resposta Enviada
+    - Para: [from]
+    - Assunto: [subject da resposta]
+    - Data Envio: [timestamp do envio]
+    - Conteúdo: [texto completo enviado]

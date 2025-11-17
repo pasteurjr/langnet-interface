@@ -4,7 +4,7 @@ import './DocumentUploadModal.css';
 interface DocumentUploadModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onUpload: (files: FileList, instructions?: string) => void;
+  onUpload: (files: FileList) => void;
   isUploading?: boolean;
 }
 
@@ -16,7 +16,6 @@ const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
 }) => {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
-  const [instructions, setInstructions] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleDrag = (e: React.DragEvent) => {
@@ -47,9 +46,8 @@ const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
 
   const handleUpload = () => {
     if (selectedFiles) {
-      onUpload(selectedFiles, instructions);
+      onUpload(selectedFiles);
       setSelectedFiles(null);
-      setInstructions('');
     }
   };
 
@@ -148,26 +146,6 @@ const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
               </div>
             </div>
           )}
-
-          <div className="instructions-section">
-            <h3>Instruções Adicionais para Análise</h3>
-            <textarea
-              className="instructions-textarea"
-              placeholder="Adicione instruções específicas para orientar a análise dos documentos. Por exemplo: 'Focar em requisitos de segurança', 'Identificar integrações com sistemas externos', etc."
-              value={instructions}
-              onChange={(e) => setInstructions(e.target.value)}
-              rows={4}
-            />
-            <div className="instructions-help">
-              <p>💡 Dicas para melhores resultados:</p>
-              <ul>
-                <li>Mencione o domínio da aplicação (ex: e-commerce, saúde, financeiro)</li>
-                <li>Especifique aspectos importantes (performance, segurança, usabilidade)</li>
-                <li>Indique se há padrões ou frameworks específicos a seguir</li>
-                <li>Destaque integrações ou sistemas legados existentes</li>
-              </ul>
-            </div>
-          </div>
         </div>
 
         <div className="modal-footer">
@@ -186,8 +164,8 @@ const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
             >
               Cancelar
             </button>
-            <button 
-              className="btn-upload" 
+            <button
+              className="btn-upload"
               onClick={handleUpload}
               disabled={!selectedFiles || selectedFiles.length === 0 || isUploading}
             >
@@ -198,7 +176,7 @@ const DocumentUploadModal: React.FC<DocumentUploadModalProps> = ({
                 </>
               ) : (
                 <>
-                  📤 Enviar e Analisar
+                  📤 Upload
                 </>
               )}
             </button>

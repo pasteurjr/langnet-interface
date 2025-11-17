@@ -214,6 +214,22 @@ export interface RequirementItem {
   source: string; // Nome do documento de origem
 }
 
+// Backend API Requirement response
+export interface Requirement {
+  id: number;
+  project_id: number;
+  document_id: number;
+  requirement_id: string;
+  description: string;
+  type: 'functional' | 'non_functional' | 'business_rule';
+  priority: 'high' | 'medium' | 'low';
+  status: string;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+  creator_name: string;
+}
+
 export interface AnalysisIssue {
   type: 'warning' | 'error' | 'suggestion';
   title: string;
@@ -242,6 +258,8 @@ export interface Document {
     keyFindings: string[];
     recommendedActions: string[];
   };
+  enableWebResearch?: boolean;
+  executionId?: string;
 }
 
 // Adicionar ao arquivo src/types/index.ts

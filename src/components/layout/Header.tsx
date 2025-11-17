@@ -1,5 +1,6 @@
 import React from 'react';
 import { Notification } from '../../types';
+import { getCurrentUser, logout } from '../../services/authService';
 
 interface HeaderProps {
   title: string;
@@ -18,6 +19,8 @@ const Header: React.FC<HeaderProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = React.useState('');
   const [showNotifications, setShowNotifications] = React.useState(false);
+  const [showProfileMenu, setShowProfileMenu] = React.useState(false);
+  const currentUser = getCurrentUser();
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery(e.target.value);
@@ -30,6 +33,14 @@ const Header: React.FC<HeaderProps> = ({
 
   const toggleNotifications = () => {
     setShowNotifications(!showNotifications);
+  };
+
+  const toggleProfileMenu = () => {
+    setShowProfileMenu(!showProfileMenu);
+  };
+
+  const handleLogout = () => {
+    logout();
   };
 
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -81,9 +92,33 @@ const Header: React.FC<HeaderProps> = ({
             </div>
           )}
         </div>
-        <button className="profile-btn" onClick={onProfileClick}>
-          👤
-        </button>
+        <div className="profile-container">
+          <button className="profile-btn" onClick={toggleProfileMenu}>
+            <span className="profile-icon">👤</span>
+            {currentUser && <span className="profile-name">{currentUser.name}</span>}
+          </button>
+          {showProfileMenu && (
+            <div className="profile-dropdown">
+              {currentUser && (
+                <>
+                  <div className="profile-info">
+                    <div className="profile-email">{currentUser.email}</div>
+                    {currentUser.role && (
+                      <div className="profile-role">{currentUser.role}</div>
+                    )}
+                  </div>
+                  <div className="profile-divider"></div>
+                </>
+              )}
+              <button className="profile-menu-item" onClick={onProfileClick}>
+                Perfil
+              </button>
+              <button className="profile-menu-item logout" onClick={handleLogout}>
+                Sair
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

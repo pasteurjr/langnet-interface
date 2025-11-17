@@ -1,0 +1,60 @@
+{
+  "test_suite": "editais_batch_test",
+  "total_documents": 2,
+  "llm_provider": "deepseek",
+  "start_time": "2025-11-13T19:17:12.421636",
+  "end_time": "2025-11-13T19:17:25.368587",
+  "total_duration_seconds": 12.95,
+  "tests": [
+    {
+      "document_name": "Análise estratégica de edital passo a passo - eLicitação.pdf",
+      "document_path": "/home/pasteurjr/progreact/langnet-interface/instancias/editais/Análise estratégica de edital passo a passo - eLicitação.pdf",
+      "document_size_mb": 2.0,
+      "llm_provider": "deepseek",
+      "start_time": "2025-11-13T19:17:12.421692",
+      "end_time": "2025-11-13T19:17:13.202158",
+      "duration_seconds": 0.78,
+      "status": "failed",
+      "errors": [
+        {
+          "type": "TypeError",
+          "message": "init_full_state() got an unexpected keyword argument 'document_content'",
+          "timestamp": "2025-11-13T19:17:13.202175"
+        }
+      ],
+      "warnings": [],
+      "metrics": {},
+      "state": null
+    },
+    {
+      "document_name": "Manual de Licitacoes para Micro e Pequenas Empresas.pdf",
+      "document_path": "/home/pasteurjr/progreact/langnet-interface/instancias/editais/Manual de Licitacoes para Micro e Pequenas Empresas.pdf",
+      "document_size_mb": 2.24,
+      "llm_provider": "deepseek",
+      "start_time": "2025-11-13T19:17:18.202438",
+      "end_time": "2025-11-13T19:17:25.368509",
+      "duration_seconds": 7.17,
+      "status": "failed",
+      "errors": [
+        {
+          "type": "TypeError",
+          "message": "init_full_state() got an unexpected keyword argument 'document_content'",
+          "timestamp": "2025-11-13T19:17:25.368531"
+        }
+      ],
+      "warnings": [],
+      "metrics": {},
+      "state": null
+    }
+  ],
+  "summary": {
+    "completed": 0,
+    "failed": 2,
+    "total_requirements": 0,
+    "total_nfr": 0,
+    "total_business_rules": 0,
+    "total_entities": 0,
+    "total_web_queries": 0,
+    "avg_duration_seconds": 0
+  }
+}

@@ -15,78 +15,66 @@
 .create-project-modal {
   background-color: white;
   border-radius: 8px;
-  width: 600px;
-  max-width: 90%;
+  width: 900px;
+  max-width: 95%;
+  max-height: 85vh;
+  overflow-y: auto;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   display: flex;
   flex-direction: column;
-  /* REMOVIDO max-height e overflow-y */
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid #eee;
-  background-color: #f8f8f8;
-  /* REMOVIDO position sticky */
+  padding: 24px 28px;
+  border-bottom: 2px solid #e0e0e0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
 .modal-header h2 {
   margin: 0;
-  font-size: 1.3rem;
+  font-size: 1.5rem;
   font-weight: 600;
-  color: #333;
-}
-
-.modal-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  color: white;
 }
 
 .close-button {
-  background: none;
+  background: rgba(255, 255, 255, 0.2);
   border: none;
-  font-size: 1.5rem;
+  font-size: 1.8rem;
   cursor: pointer;
-  color: #666;
-  padding: 4px;
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
-  transition: color 0.2s;
-}
-
-.close-button:hover {
-  color: #333;
-}
-
-.cancel-button {
-  background: none;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  padding: 6px 12px;
-  cursor: pointer;
-  color: #666;
-  font-size: 0.9rem;
   transition: all 0.2s;
 }
 
-.cancel-button:hover {
-  background-color: #f5f5f5;
-  color: #333;
+.close-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: rotate(90deg);
 }
 
 form {
   padding: 24px;
-  display: flex;
-  flex-direction: column;
-  /* IMPORTANTE: remover overflow */
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px 24px;
   overflow: visible;
 }
 
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 0;
+}
+
+.form-group.full-width {
+  grid-column: 1 / -1;
 }
 
 .form-group label {
@@ -120,7 +108,8 @@ select:focus {
 
 textarea {
   resize: vertical;
-  min-height: 80px;
+  min-height: 60px;
+  max-height: 120px;
 }
 
 .start-from-group .radio-options {
@@ -153,92 +142,108 @@ textarea {
 }
 
 .advanced-options {
-  margin-top: 24px;
-  margin-bottom: 20px;
+  grid-column: 1 / -1;
+  margin-top: 0;
 }
 
 .advanced-options h3 {
   font-size: 0.95rem;
-  margin-bottom: 12px;
+  margin-bottom: 16px;
   color: #555;
   font-weight: 600;
 }
 
 .advanced-options-content {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
   border: 1px solid #e0e0e0;
   border-radius: 6px;
-  padding: 16px;
+  padding: 20px;
   background-color: #fafafa;
 }
 
 .advanced-option {
   display: flex;
-  align-items: center;
-  margin-bottom: 14px;
-  gap: 12px;
-}
-
-.advanced-option:last-child {
-  margin-bottom: 0;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .advanced-option label {
-  width: 140px;
   margin-bottom: 0;
   font-size: 0.9rem;
   color: #555;
+  font-weight: 500;
 }
 
 .advanced-option select {
-  flex: 1;
+  width: 100%;
   padding: 8px 12px;
 }
 
 .form-actions {
+  grid-column: 1 / -1;
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-  margin-top: 24px;
+  margin-top: 8px;
   padding-top: 20px;
   border-top: 1px solid #eee;
 }
 
-/* ALTERNATIVA - Botão voltar estilo link */
-.back-button {
-  padding: 4px 8px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 0.85rem;
+.cancel-button-action {
+  padding: 12px 24px;
+  background: white;
   color: #666;
-  text-decoration: underline;
-  transition: color 0.2s;
-}
-
-.back-button:hover {
-  color: #0066cc;
-}
-.create-button {
-  padding: 8px 20px; /* Ajustado para ficar proporcional */
-  background-color: #0066cc;
-  color: white;
-  border: none;
-  border-radius: 4px;
+  border: 2px solid #ddd;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 500;
+  transition: all 0.2s;
+}
+
+.cancel-button-action:hover {
+  background-color: #f5f5f5;
+  border-color: #999;
+  color: #333;
+}
+
+.cancel-button-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.submit-button {
+  padding: 12px 28px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 600;
   display: flex;
   align-items: center;
-  gap: 6px;
-  transition: background-color 0.2s;
+  gap: 8px;
+  transition: all 0.2s;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
 }
 
-.create-button:hover {
-  background-color: #0055aa;
+.submit-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
 }
 
-.create-button:active {
-  background-color: #004499;
+.submit-button:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(102, 126, 234, 0.3);
+}
+
+.submit-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 /* Responsividade - Apenas se necessário scroll */
@@ -249,32 +254,43 @@ textarea {
   }
 }
 
+@media (max-width: 900px) {
+  .create-project-modal {
+    width: 95%;
+  }
+
+  form {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+
+  .advanced-options-content {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
+
 @media (max-width: 600px) {
   .create-project-modal {
     width: 95%;
   }
-  
+
   form {
     padding: 16px;
+    grid-template-columns: 1fr;
   }
-  
-  .advanced-option {
-    flex-direction: column;
-    align-items: flex-start;
+
+  .advanced-options-content {
+    grid-template-columns: 1fr;
   }
-  
-  .advanced-option label {
-    width: 100%;
-    margin-bottom: 4px;
-  }
-  
+
   .form-actions {
-    flex-direction: column;
-    gap: 8px;
+    flex-direction: column-reverse;
+    gap: 10px;
   }
-  
-  .back-button,
-  .create-button {
+
+  .cancel-button-action,
+  .submit-button {
     width: 100%;
     justify-content: center;
   }

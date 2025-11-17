@@ -1,0 +1,1375 @@
+/home/pasteurjr/miniconda3/lib/python3.13/site-packages/pydantic/fields.py:1026: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'required'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.10/migration/
+  warn(
+
+================================================================================
+SUÍTE DE TESTES - SISTEMA DE ANÁLISE DE EDITAIS
+================================================================================
+
+📂 Pasta de editais: /home/pasteurjr/progreact/langnet-interface/instancias/editais
+📄 PDFs encontrados: 9
+
+📋 Lista de documentos:
+   1. Análise estratégica de edital passo a passo - eLicitação.pdf (2.0 MB)
+   2. Como Analisar Editais de Licitações_ Guia Completo para Evitar Erros e Garantir Seu Sucesso - Concreta Licitações.pdf (1.13 MB)
+   3. Como encontrar editais de licitação abertos _ ConLicitação.pdf (0.49 MB)
+   4. Edital de Licitação_ o que é, como analisar_ _ Shopscan Distrubuidora.pdf (2.52 MB)
+   5. Manual de Licitacoes para Micro e Pequenas Empresas.pdf (2.24 MB)
+   6. Manual_do_Modelo_de_Planilhas_de_Custos_do_STJ.pdf (6.64 MB)
+   7. cartilha_nova_lei_licitacoes_contratos.pdf (3.66 MB)
+   8. guia pratico da nova lei de licitacoes e contratos - grupo jml.pdf (4.54 MB)
+   9. manual-de-boas-praticas-em-contratacoes-publicas.pdf (23.15 MB)
+
+🧪 Testando 1 documento(s) com DeepSeek...
+
+⚠️  NOTA: Este teste pode levar 10-30 minutos dependendo do tamanho dos documentos
+
+
+▶️  Executando testes automaticamente...
+
+================================================================================
+TESTE EM LOTE: 1 documentos
+LLM: DeepSeek
+================================================================================
+
+
+📄 Testando 1/1: Como encontrar editais de licitação abertos _ ConLicitação.pdf
+
+================================================================================
+TESTE: Como encontrar editais de licitação abertos _ ConLicitação.pdf
+LLM: DeepSeek
+================================================================================
+
+📄 Documento: Como encontrar editais de licitação abertos _ ConLicitação.pdf (0.49 MB)
+🆔 Document ID: doc-Como-encontrar-editais-de-lici-1763065052
+⏱️  Início: 2025-11-13T17:17:32.984335
+
+🔄 Iniciando workflow de análise...
+
+client=<openai.resources.chat.completions.completions.Completions object at 0x7bb2c3ba06e0> async_client=<openai.resources.chat.completions.completions.AsyncCompletions object at 0x7bb2c3ba1160> root_client=<openai.OpenAI object at 0x7bb2c80a5d30> root_async_client=<openai.AsyncOpenAI object at 0x7bb2c3ba0830> model_name='deepseek-chat' temperature=0.3 model_kwargs={} openai_api_key=SecretStr('**********') openai_api_base='https://api.deepseek.com' max_tokens=4096
+TOOLS
+[DocumentReaderTool()]
+client=<openai.resources.chat.completions.completions.Completions object at 0x7bb2c3ba06e0> async_client=<openai.resources.chat.completions.completions.AsyncCompletions object at 0x7bb2c3ba1160> root_client=<openai.OpenAI object at 0x7bb2c80a5d30> root_async_client=<openai.AsyncOpenAI object at 0x7bb2c3ba0830> model_name='deepseek-chat' temperature=0.3 model_kwargs={} openai_api_key=SecretStr('**********') openai_api_base='https://api.deepseek.com' max_tokens=4096
+client=<openai.resources.chat.completions.completions.Completions object at 0x7bb2c3ba06e0> async_client=<openai.resources.chat.completions.completions.AsyncCompletions object at 0x7bb2c3ba1160> root_client=<openai.OpenAI object at 0x7bb2c80a5d30> root_async_client=<openai.AsyncOpenAI object at 0x7bb2c3ba0830> model_name='deepseek-chat' temperature=0.3 model_kwargs={} openai_api_key=SecretStr('**********') openai_api_base='https://api.deepseek.com' max_tokens=4096
+TOOLS
+[]
+TaskConfig(description='[2.1.4 - Completeness Verification] Review requirements: {} and research findings: {}. Project: Sistema de Seleção e Análise de Editais. Quality checks: (1) Ambiguous/vague language needing clarification; (2) Conflicts/contradictions between requirements; (3) Missing testability criteria or acceptance conditions; (4) Incomplete actor definitions or workflows; (5) Requirements lacking priority or source traceability. Completeness evaluation: (a) Sufficiency of available information; (b) Identification of critical information gaps; (c) Solicitation of complementary information needed; (d) Verification of essential requirements coverage; (e) Comparative evaluation with completeness standards by application type (web app, API, mobile, etc.). Assign severity (critical/high/medium/low) to each issue. Provide specific recommendations with examples.\nIMPORTANT: Generate the final REQUIREMENTS DOCUMENT in Markdown format using the provided template: # Documento de Requisitos\n## {project_name}\n\n---\n\n**Versão:** 1.0\n**Data:** {generation_date}\n**Status:** {document_status}\n\n---\n\n## 1. Informações do Projeto\n\n### 1.1 Visão Geral\n**Nome do Projeto:** {project_name}\n\n**Descrição:**\n{project_description}\n\n**Objetivo:**\n{project_objectives}\n\n### 1.2 Contexto e Justificativa\n{project_context}\n\n### 1.3 Escopo\n**Inclui:**\n{scope_includes}\n\n**Exclui:**\n{scope_excludes}\n\n---\n\n## 2. Fontes de Informação\n\n### 2.1 Documentos Analisados\n\n| ID | Nome do Documento | Tipo | Data | Autor | Caminho/URL |\n|----|-------------------|------|------|-------|-------------|\n{documents_table}\n\n### 2.2 Estatísticas de Análise\n\n- **Total de documentos analisados:** {total_documents}\n- **Total de páginas processadas:** {total_pages}\n- **Total de palavras analisadas:** {total_words}\n- **Data da análise:** {analysis_date}\n- **Tempo de processamento:** {processing_time}\n\n---\n\n## 3. Requisitos Funcionais (FR)\n\n### 3.1 Requisitos Funcionais por Categoria\n\n{functional_requirements_by_category}\n\n### 3.2 Lista Completa de Requisitos Funcionais\n\n{functional_requirements_list}\n\n**Exemplo de formato:**\n\n**[FR-001]** Nome do Requisito\n**Descrição:** Descrição detalhada do requisito funcional.\n**Prioridade:** Alta | Média | Baixa\n**Atores Envolvidos:** Lista de atores\n**Fonte:** Seção X.Y do documento Z\n**Dependências:** FR-002, FR-005\n**Critérios de Aceitação:**\n- Critério 1\n- Critério 2\n\n---\n\n## 4. Requisitos Não-Funcionais (NFR)\n\n### 4.1 Requisitos por Categoria\n\n#### 4.1.1 Performance\n{nfr_performance}\n\n#### 4.1.2 Segurança\n{nfr_security}\n\n#### 4.1.3 Usabilidade\n{nfr_usability}\n\n#### 4.1.4 Confiabilidade\n{nfr_reliability}\n\n#### 4.1.5 Escalabilidade\n{nfr_scalability}\n\n#### 4.1.6 Manutenibilidade\n{nfr_maintainability}\n\n### 4.2 Lista Completa de Requisitos Não-Funcionais\n\n{non_functional_requirements_list}\n\n**Exemplo de formato:**\n\n**[NFR-001]** Nome do Requisito\n**Descrição:** Descrição detalhada do requisito não-funcional.\n**Categoria:** Performance | Segurança | Usabilidade | Confiabilidade | Escalabilidade | Manutenibilidade\n**Métrica Mensurável:** Definição clara de como medir (ex: tempo de resposta < 200ms)\n**Prioridade:** Alta | Média | Baixa\n**Critérios de Aceitação:**\n- Critério mensurável 1\n- Critério mensurável 2\n\n---\n\n## 5. Regras de Negócio (BR)\n\n### 5.1 Regras de Negócio por Domínio\n\n{business_rules_by_domain}\n\n### 5.2 Lista Completa de Regras de Negócio\n\n{business_rules_list}\n\n**Exemplo de formato:**\n\n**[BR-001]** Nome da Regra\n**Descrição:** Descrição da regra de negócio.\n**Condição:** Quando/Se [condição]\n**Ação:** Então [ação resultante]\n**Entidades Afetadas:** Lista de entidades\n**Justificativa:** Razão de negócio para esta regra\n**Exceções:** Casos excepcionais, se houver\n\n---\n\n## 6. Atores e Stakeholders\n\n### 6.1 Atores do Sistema\n\n{actors_list}\n\n**Exemplo de formato:**\n\n**[ACTOR-001]** Nome do Ator\n**Tipo:** Usuário | Sistema | Serviço Externo\n**Papel:** Descrição do papel\n**Responsabilidades:**\n- Responsabilidade 1\n- Responsabilidade 2\n\n**Pontos de Interação:**\n- Interação com funcionalidade X\n- Interação com funcionalidade Y\n\n**Requisitos Relacionados:** FR-001, FR-003, NFR-002\n\n---\n\n## 7. Entidades e Relacionamentos\n\n### 7.1 Modelo Conceitual de Dados\n\n```mermaid\nerDiagram\n{entity_relationship_diagram}\n```\n\n### 7.2 Descrição das Entidades\n\n{entities_description}\n\n**Exemplo de formato:**\n\n**[ENTITY-001]** Nome da Entidade\n**Descrição:** Descrição da entidade no domínio.\n\n**Atributos:**\n| Atributo | Tipo | Obrigatório | Descrição | Restrições |\n|----------|------|-------------|-----------|------------|\n{entity_attributes_table}\n\n**Relacionamentos:**\n- Relacionamento com ENTITY-002 (1-N): Descrição\n- Relacionamento com ENTITY-003 (N-N): Descrição\n\n**Regras de Negócio Aplicáveis:** BR-001, BR-005\n\n---\n\n## 8. Fluxos de Trabalho Identificados\n\n### 8.1 Visão Geral dos Fluxos\n\n{workflows_overview}\n\n### 8.2 Fluxos Detalhados\n\n{workflows_detailed}\n\n**Exemplo de formato:**\n\n**[WORKFLOW-001]** Nome do Fluxo\n**Descrição:** Descrição do fluxo de trabalho.\n**Gatilho/Trigger:** O que inicia este fluxo\n**Atores Envolvidos:** ACTOR-001, ACTOR-003\n\n**Fluxo Principal:**\n\n```mermaid\nsequenceDiagram\n{workflow_sequence_diagram}\n```\n\n**Passos:**\n1. **Passo 1:** Descrição\n   - Ator: ACTOR-001\n   - Ação: Descrição da ação\n   - Sistema: Resposta do sistema\n\n2. **Passo 2:** Descrição (Ponto de Decisão)\n   - Condição A → Ir para Passo 3\n   - Condição B → Ir para Passo 5\n\n**Fluxos Alternativos:**\n- **Alt-1:** Descrição do fluxo alternativo\n- **Alt-2:** Descrição de outro fluxo alternativo\n\n**Fluxos de Exceção:**\n- **Exc-1:** Tratamento de erro/exceção\n\n**Estados Finais:**\n- Sucesso: Descrição do estado final de sucesso\n- Falha: Descrição dos estados finais de falha\n\n**Requisitos Relacionados:** FR-010, FR-011, BR-003\n\n---\n\n## 9. Glossário de Termos do Domínio\n\n### 9.1 Termos e Definições\n\n{glossary_table}\n\n**Formato:**\n\n| Termo | Definição | Contexto de Uso | Sinônimos | Termos Relacionados |\n|-------|-----------|-----------------|-----------|---------------------|\n{glossary_entries}\n\n### 9.2 Abreviações e Acrônimos\n\n{abbreviations_table}\n\n---\n\n## 10. Verificações Complementares\n\n### 10.1 Consistência entre Documentos\n\n{consistency_analysis}\n\n**Conflitos Identificados:**\n\n{conflicts_table}\n\n**Exemplo de formato:**\n\n| ID | Conflito | Documentos Afetados | Severidade | Resolução Sugerida |\n|----|----------|---------------------|------------|---------------------|\n{conflicts_entries}\n\n### 10.2 Ambiguidades Detectadas\n\n{ambiguities_analysis}\n\n**Lista de Ambiguidades:**\n\n{ambiguities_list}\n\n**Exemplo de formato:**\n\n**[AMB-001]**\n**Texto Ambíguo:** "{ambiguous_text}"\n**Localização:** Documento X, Seção Y\n**Razão:** Por que é ambíguo\n**Pergunta de Clarificação:** Pergunta específica para o stakeholder\n**Requisitos Afetados:** FR-005, NFR-002\n\n### 10.3 Questões para Clarificação\n\n{clarification_questions}\n\n**Prioridade Alta:**\n{high_priority_questions}\n\n**Prioridade Média:**\n{medium_priority_questions}\n\n**Prioridade Baixa:**\n{low_priority_questions}\n\n**Formato de questão:**\n\n**[Q-001]** [Prioridade: Alta]\n**Questão:** Pergunta específica para o stakeholder\n**Contexto:** Contexto da pergunta\n**Requisitos Afetados:** FR-001, BR-003\n**Impacto se não respondida:** Descrição do impacto\n\n---\n\n## 11. Análise de Completude\n\n### 11.1 Avaliação de Suficiência\n\n**Score de Completude Geral:** {completeness_score}/100\n\n**Breakdown por Categoria:**\n- Requisitos Funcionais: {fr_completeness}/100\n- Requisitos Não-Funcionais: {nfr_completeness}/100\n- Regras de Negócio: {br_completeness}/100\n- Atores e Stakeholders: {actors_completeness}/100\n- Entidades e Dados: {entities_completeness}/100\n- Fluxos de Trabalho: {workflows_completeness}/100\n\n### 11.2 Gaps Críticos Identificados\n\n{critical_gaps}\n\n**Exemplo de formato:**\n\n**[GAP-001]** [Severidade: Crítica]\n**Área:** Categoria funcional afetada\n**Gap Identificado:** Descrição do que está faltando\n**Justificativa:** Por que isso é crítico\n**Impacto:** Impacto no projeto se não resolvido\n**Requisitos Afetados:** Lista de requisitos impactados\n**Informações Necessárias:** O que precisa ser fornecido\n\n### 11.3 Informações Complementares Necessárias\n\n{information_requests}\n\n**Lista de Solicitações:**\n\n{information_requests_list}\n\n**Formato:**\n\n**[INFO-REQ-001]** [Prioridade: Alta]\n**Informação Solicitada:** Descrição específica\n**Razão:** Por que é necessário\n**Para completar:** Requisitos ou áreas que serão completadas\n**Fonte Sugerida:** Quem pode fornecer (stakeholder, documento, sistema)\n\n### 11.4 Cobertura de Requisitos Essenciais\n\n{essential_coverage_analysis}\n\n**Checklist por Tipo de Aplicação:** {application_type}\n\n| Categoria Essencial | Status | Cobertura | Observações |\n|---------------------|--------|-----------|-------------|\n{essential_coverage_table}\n\n---\n\n## 12. Priorização e Dependências\n\n### 12.1 Matriz de Priorização\n\n```mermaid\nquadrantChart\n    title Matriz de Impacto vs Esforço\n    x-axis Baixo Esforço --> Alto Esforço\n    y-axis Baixo Impacto --> Alto Impacto\n    quadrant-1 Fazer Primeiro\n    quadrant-2 Planejar Cuidadosamente\n    quadrant-3 Fazer Depois\n    quadrant-4 Reavaliar Necessidade\n{prioritization_chart_data}\n```\n\n### 12.2 Análise de Dependências\n\n```mermaid\ngraph TD\n{dependencies_graph}\n```\n\n### 12.3 Caminho Crítico\n\n{critical_path_analysis}\n\n**Requisitos no Caminho Crítico:**\n{critical_requirements_list}\n\n---\n\n## 13. Pesquisa Complementar (Web Research)\n\n### 13.1 Melhores Práticas da Indústria\n\n{industry_best_practices}\n\n### 13.2 Padrões e Standards Recomendados\n\n{recommended_standards}\n\n**Formato:**\n\n**[STD-001]** Nome do Padrão\n**Categoria:** Security | Performance | Accessibility | Compliance\n**Descrição:** Descrição do padrão\n**Aplicabilidade:** Como se aplica ao projeto\n**Referência:** URL oficial\n**Requisitos Relacionados:** NFR-001, NFR-003\n\n### 13.3 Tecnologias Sugeridas\n\n{suggested_technologies}\n\n**Formato:**\n\n**[TECH-001]** Nome da Tecnologia\n**Caso de Uso:** Para que será usada\n**Maturidade:** Madura | Emergente | Experimental\n**Documentação:** URL\n**Prós:** Lista de vantagens\n**Contras:** Lista de desvantagens\n**Requisitos Relacionados:** FR-010, NFR-005\n\n### 13.4 Checklist de Compliance\n\n{compliance_checklist}\n\n**Formato:**\n\n| Regulação | Requisito de Compliance | Status | Requisitos Relacionados | Ações Necessárias |\n|-----------|------------------------|--------|------------------------|-------------------|\n{compliance_entries}\n\n### 13.5 Requisitos Potencialmente Faltantes (descobertos via pesquisa)\n\n{missing_requirements_discovered}\n\n---\n\n## 14. Scores de Qualidade\n\n### 14.1 Métricas de Qualidade Geral\n\n| Métrica | Score | Status | Observações |\n|---------|-------|--------|-------------|\n| **Completude** | {completeness_score}/100 | {completeness_status} | {completeness_notes} |\n| **Clareza** | {clarity_score}/100 | {clarity_status} | {clarity_notes} |\n| **Consistência** | {consistency_score}/100 | {consistency_status} | {consistency_notes} |\n| **Testabilidade** | {testability_score}/100 | {testability_status} | {testability_notes} |\n| **Rastreabilidade** | {traceability_score}/100 | {traceability_status} | {traceability_notes} |\n\n**Legenda de Status:**\n- ✅ Excelente (90-100)\n- ⚠️ Bom (70-89)\n- ⚠️ Requer Atenção (50-69)\n- ❌ Crítico (<50)\n\n### 14.2 Issues Encontradas\n\n{issues_summary}\n\n**Issues por Severidade:**\n- Críticas: {critical_issues_count}\n- Altas: {high_issues_count}\n- Médias: {medium_issues_count}\n- Baixas: {low_issues_count}\n\n### 14.3 Lista Detalhada de Issues\n\n{issues_detailed_list}\n\n**Formato:**\n\n**[ISSUE-001]** [Severidade: {severity}]\n**Tipo:** Ambiguidade | Conflito | Falta de Testabilidade | Falta de Rastreabilidade | Outro\n**Descrição:** Descrição do problema\n**Requisito Afetado:** FR-005\n**Recomendação:** Sugestão específica de correção\n**Exemplo:** Exemplo de como corrigir, se aplicável\n\n---\n\n## 15. Sugestões de Melhoria\n\n### 15.1 Recomendações Gerais\n\n{general_recommendations}\n\n### 15.2 Melhorias por Categoria\n\n**Requisitos Funcionais:**\n{fr_improvements}\n\n**Requisitos Não-Funcionais:**\n{nfr_improvements}\n\n**Regras de Negócio:**\n{br_improvements}\n\n**Documentação:**\n{documentation_improvements}\n\n---\n\n## 16. Próximos Passos\n\n### 16.1 Ações Imediatas Requeridas\n\n{immediate_actions}\n\n### 16.2 Validações Necessárias\n\n{validations_needed}\n\n### 16.3 Preparação para Especificação Funcional\n\n{spec_preparation}\n\n**Checklist para Fase 2.2 (Especificação Funcional):**\n- [ ] Todos os gaps críticos foram resolvidos\n- [ ] Questões de alta prioridade foram respondidas\n- [ ] Conflitos foram resolvidos\n- [ ] Score de completude ≥ 70%\n- [ ] Score de clareza ≥ 70%\n- [ ] Score de consistência ≥ 80%\n\n---\n\n## 17. Rastreabilidade\n\n### 17.1 Matriz de Rastreabilidade\n\n| Documento Fonte | Seção | Requisito(s) Extraído(s) | Tipo | Prioridade |\n|-----------------|-------|--------------------------|------|------------|\n{traceability_matrix}\n\n### 17.2 Mapa de Cobertura\n\n```mermaid\nmindmap\n  root((Requisitos))\n{coverage_mindmap}\n```\n\n---\n\n## 18. Metadados do Documento\n\n**Gerado por:** LangNet Multi-Agent System\n**Framework:** {framework_version}\n**Agentes Envolvidos:**\n- document_analyzer_agent\n- requirements_engineer_agent\n- web_researcher_agent\n- quality_assurance_agent\n\n**Workflow Executado:**\n1. analyze_document\n2. extract_requirements\n3. research_additional_info\n4. validate_requirements\n\n**Tempo Total de Processamento:** {total_processing_time}\n\n**Configurações de Geração:**\n- LLM Provider: {llm_provider}\n- Model: {llm_model}\n- Web Research: {web_research_enabled}\n- Additional Instructions: {has_additional_instructions}\n\n---\n\n## 19. Controle de Versões\n\n| Versão | Data | Autor | Alterações | Status |\n|--------|------|-------|------------|--------|\n| 1.0 | {generation_date} | LangNet System | Versão inicial gerada automaticamente | {document_status} |\n{version_history}\n\n---\n\n## 20. Aprovações\n\n| Papel | Nome | Data | Assinatura | Status |\n|-------|------|------|------------|--------|\n| Product Owner | | | | Pendente |\n| Tech Lead | | | | Pendente |\n| QA Lead | | | | Pendente |\n| Stakeholder | | | | Pendente |\n\n---\n\n**Fim do Documento de Requisitos**\n\n*Este documento foi gerado automaticamente pelo LangNet Multi-Agent System baseado na análise de documentação fornecida e pesquisa complementar. Requer revisão e aprovação humana antes de prosseguir para a fase de Especificação Funcional.*\n Fill in ALL placeholders (enclosed in curly braces) with actual data from the requirements and research findings. Maintain the exact structure and section numbering from the template. Generate mermaid diagrams where indicated. The final document should be complete, professional, and ready for stakeholder review.\n', expected_output="JSON validation report: (1) 'valid_requirements': approved requirements with quality scores; (2) 'issues_found': array with type, severity, description, affected_requirement_id, recommended_fix, example; (3) 'completeness_score': 0-100 with breakdown by category; (4) 'clarity_score': 0-100; (5) 'consistency_score': 0-100; (6) 'coverage_analysis': requirements coverage by functional area; (7) 'critical_gaps': array of missing critical requirements with justification; (8) 'information_requests': specific questions/information needed to fill gaps; (9) 'completeness_by_type': scores for FR/NFR/BR separately; (10) 'requirements_document_md': full Markdown document following template with all sections populated.\n", tools=[], output_json=None, output_file=None, human_input=False, async_execution=False, context=None, strategy=None, config=None, output_pydantic=None)
+Criando crew context...
+[]
+[Agent(role=Requirements Quality Assurance Specialist
+, goal=Validate extracted requirements for completeness, consistency, clarity, and testability, ensuring they follow SMART principles and are free of ambiguities.
+, backstory=You are a meticulous QA engineer with deep knowledge of requirements quality attributes. You identify ambiguities, conflicts, missing information, and inconsistencies in requirements documentation. Your expertise ensures requirements are specific, measurable, achievable, relevant, and time-bound.
+)]
+[Task(description=[2.1.4 - Completeness Verification] Review requirements: {} and research findings: {}. Project: Sistema de Seleção e Análise de Editais. Quality checks: (1) Ambiguous/vague language needing clarification; (2) Conflicts/contradictions between requirements; (3) Missing testability criteria or acceptance conditions; (4) Incomplete actor definitions or workflows; (5) Requirements lacking priority or source traceability. Completeness evaluation: (a) Sufficiency of available information; (b) Identification of critical information gaps; (c) Solicitation of complementary information needed; (d) Verification of essential requirements coverage; (e) Comparative evaluation with completeness standards by application type (web app, API, mobile, etc.). Assign severity (critical/high/medium/low) to each issue. Provide specific recommendations with examples.
+IMPORTANT: Generate the final REQUIREMENTS DOCUMENT in Markdown format using the provided template: # Documento de Requisitos
+## {project_name}
+
+---
+
+**Versão:** 1.0
+**Data:** {generation_date}
+**Status:** {document_status}
+
+---
+
+## 1. Informações do Projeto
+
+### 1.1 Visão Geral
+**Nome do Projeto:** {project_name}
+
+**Descrição:**
+{project_description}
+
+**Objetivo:**
+{project_objectives}
+
+### 1.2 Contexto e Justificativa
+{project_context}
+
+### 1.3 Escopo
+**Inclui:**
+{scope_includes}
+
+**Exclui:**
+{scope_excludes}
+
+---
+
+## 2. Fontes de Informação
+
+### 2.1 Documentos Analisados
+
+| ID | Nome do Documento | Tipo | Data | Autor | Caminho/URL |
+|----|-------------------|------|------|-------|-------------|
+{documents_table}
+
+### 2.2 Estatísticas de Análise
+
+- **Total de documentos analisados:** {total_documents}
+- **Total de páginas processadas:** {total_pages}
+- **Total de palavras analisadas:** {total_words}
+- **Data da análise:** {analysis_date}
+- **Tempo de processamento:** {processing_time}
+
+---
+
+## 3. Requisitos Funcionais (FR)
+
+### 3.1 Requisitos Funcionais por Categoria
+
+{functional_requirements_by_category}
+
+### 3.2 Lista Completa de Requisitos Funcionais
+
+{functional_requirements_list}
+
+**Exemplo de formato:**
+
+**[FR-001]** Nome do Requisito
+**Descrição:** Descrição detalhada do requisito funcional.
+**Prioridade:** Alta | Média | Baixa
+**Atores Envolvidos:** Lista de atores
+**Fonte:** Seção X.Y do documento Z
+**Dependências:** FR-002, FR-005
+**Critérios de Aceitação:**
+- Critério 1
+- Critério 2
+
+---
+
+## 4. Requisitos Não-Funcionais (NFR)
+
+### 4.1 Requisitos por Categoria
+
+#### 4.1.1 Performance
+{nfr_performance}
+
+#### 4.1.2 Segurança
+{nfr_security}
+
+#### 4.1.3 Usabilidade
+{nfr_usability}
+
+#### 4.1.4 Confiabilidade
+{nfr_reliability}
+
+#### 4.1.5 Escalabilidade
+{nfr_scalability}
+
+#### 4.1.6 Manutenibilidade
+{nfr_maintainability}
+
+### 4.2 Lista Completa de Requisitos Não-Funcionais
+
+{non_functional_requirements_list}
+
+**Exemplo de formato:**
+
+**[NFR-001]** Nome do Requisito
+**Descrição:** Descrição detalhada do requisito não-funcional.
+**Categoria:** Performance | Segurança | Usabilidade | Confiabilidade | Escalabilidade | Manutenibilidade
+**Métrica Mensurável:** Definição clara de como medir (ex: tempo de resposta < 200ms)
+**Prioridade:** Alta | Média | Baixa
+**Critérios de Aceitação:**
+- Critério mensurável 1
+- Critério mensurável 2
+
+---
+
+## 5. Regras de Negócio (BR)
+
+### 5.1 Regras de Negócio por Domínio
+
+{business_rules_by_domain}
+
+### 5.2 Lista Completa de Regras de Negócio
+
+{business_rules_list}
+
+**Exemplo de formato:**
+
+**[BR-001]** Nome da Regra
+**Descrição:** Descrição da regra de negócio.
+**Condição:** Quando/Se [condição]
+**Ação:** Então [ação resultante]
+**Entidades Afetadas:** Lista de entidades
+**Justificativa:** Razão de negócio para esta regra
+**Exceções:** Casos excepcionais, se houver
+
+---
+
+## 6. Atores e Stakeholders
+
+### 6.1 Atores do Sistema
+
+{actors_list}
+
+**Exemplo de formato:**
+
+**[ACTOR-001]** Nome do Ator
+**Tipo:** Usuário | Sistema | Serviço Externo
+**Papel:** Descrição do papel
+**Responsabilidades:**
+- Responsabilidade 1
+- Responsabilidade 2
+
+**Pontos de Interação:**
+- Interação com funcionalidade X
+- Interação com funcionalidade Y
+
+**Requisitos Relacionados:** FR-001, FR-003, NFR-002
+
+---
+
+## 7. Entidades e Relacionamentos
+
+### 7.1 Modelo Conceitual de Dados
+
+```mermaid
+erDiagram
+{entity_relationship_diagram}
+```
+
+### 7.2 Descrição das Entidades
+
+{entities_description}
+
+**Exemplo de formato:**
+
+**[ENTITY-001]** Nome da Entidade
+**Descrição:** Descrição da entidade no domínio.
+
+**Atributos:**
+| Atributo | Tipo | Obrigatório | Descrição | Restrições |
+|----------|------|-------------|-----------|------------|
+{entity_attributes_table}
+
+**Relacionamentos:**
+- Relacionamento com ENTITY-002 (1-N): Descrição
+- Relacionamento com ENTITY-003 (N-N): Descrição
+
+**Regras de Negócio Aplicáveis:** BR-001, BR-005
+
+---
+
+## 8. Fluxos de Trabalho Identificados
+
+### 8.1 Visão Geral dos Fluxos
+
+{workflows_overview}
+
+### 8.2 Fluxos Detalhados
+
+{workflows_detailed}
+
+**Exemplo de formato:**
+
+**[WORKFLOW-001]** Nome do Fluxo
+**Descrição:** Descrição do fluxo de trabalho.
+**Gatilho/Trigger:** O que inicia este fluxo
+**Atores Envolvidos:** ACTOR-001, ACTOR-003
+
+**Fluxo Principal:**
+
+```mermaid
+sequenceDiagram
+{workflow_sequence_diagram}
+```
+
+**Passos:**
+1. **Passo 1:** Descrição
+   - Ator: ACTOR-001
+   - Ação: Descrição da ação
+   - Sistema: Resposta do sistema
+
+2. **Passo 2:** Descrição (Ponto de Decisão)
+   - Condição A → Ir para Passo 3
+   - Condição B → Ir para Passo 5
+
+**Fluxos Alternativos:**
+- **Alt-1:** Descrição do fluxo alternativo
+- **Alt-2:** Descrição de outro fluxo alternativo
+
+**Fluxos de Exceção:**
+- **Exc-1:** Tratamento de erro/exceção
+
+**Estados Finais:**
+- Sucesso: Descrição do estado final de sucesso
+- Falha: Descrição dos estados finais de falha
+
+**Requisitos Relacionados:** FR-010, FR-011, BR-003
+
+---
+
+## 9. Glossário de Termos do Domínio
+
+### 9.1 Termos e Definições
+
+{glossary_table}
+
+**Formato:**
+
+| Termo | Definição | Contexto de Uso | Sinônimos | Termos Relacionados |
+|-------|-----------|-----------------|-----------|---------------------|
+{glossary_entries}
+
+### 9.2 Abreviações e Acrônimos
+
+{abbreviations_table}
+
+---
+
+## 10. Verificações Complementares
+
+### 10.1 Consistência entre Documentos
+
+{consistency_analysis}
+
+**Conflitos Identificados:**
+
+{conflicts_table}
+
+**Exemplo de formato:**
+
+| ID | Conflito | Documentos Afetados | Severidade | Resolução Sugerida |
+|----|----------|---------------------|------------|---------------------|
+{conflicts_entries}
+
+### 10.2 Ambiguidades Detectadas
+
+{ambiguities_analysis}
+
+**Lista de Ambiguidades:**
+
+{ambiguities_list}
+
+**Exemplo de formato:**
+
+**[AMB-001]**
+**Texto Ambíguo:** "{ambiguous_text}"
+**Localização:** Documento X, Seção Y
+**Razão:** Por que é ambíguo
+**Pergunta de Clarificação:** Pergunta específica para o stakeholder
+**Requisitos Afetados:** FR-005, NFR-002
+
+### 10.3 Questões para Clarificação
+
+{clarification_questions}
+
+**Prioridade Alta:**
+{high_priority_questions}
+
+**Prioridade Média:**
+{medium_priority_questions}
+
+**Prioridade Baixa:**
+{low_priority_questions}
+
+**Formato de questão:**
+
+**[Q-001]** [Prioridade: Alta]
+**Questão:** Pergunta específica para o stakeholder
+**Contexto:** Contexto da pergunta
+**Requisitos Afetados:** FR-001, BR-003
+**Impacto se não respondida:** Descrição do impacto
+
+---
+
+## 11. Análise de Completude
+
+### 11.1 Avaliação de Suficiência
+
+**Score de Completude Geral:** {completeness_score}/100
+
+**Breakdown por Categoria:**
+- Requisitos Funcionais: {fr_completeness}/100
+- Requisitos Não-Funcionais: {nfr_completeness}/100
+- Regras de Negócio: {br_completeness}/100
+- Atores e Stakeholders: {actors_completeness}/100
+- Entidades e Dados: {entities_completeness}/100
+- Fluxos de Trabalho: {workflows_completeness}/100
+
+### 11.2 Gaps Críticos Identificados
+
+{critical_gaps}
+
+**Exemplo de formato:**
+
+**[GAP-001]** [Severidade: Crítica]
+**Área:** Categoria funcional afetada
+**Gap Identificado:** Descrição do que está faltando
+**Justificativa:** Por que isso é crítico
+**Impacto:** Impacto no projeto se não resolvido
+**Requisitos Afetados:** Lista de requisitos impactados
+**Informações Necessárias:** O que precisa ser fornecido
+
+### 11.3 Informações Complementares Necessárias
+
+{information_requests}
+
+**Lista de Solicitações:**
+
+{information_requests_list}
+
+**Formato:**
+
+**[INFO-REQ-001]** [Prioridade: Alta]
+**Informação Solicitada:** Descrição específica
+**Razão:** Por que é necessário
+**Para completar:** Requisitos ou áreas que serão completadas
+**Fonte Sugerida:** Quem pode fornecer (stakeholder, documento, sistema)
+
+### 11.4 Cobertura de Requisitos Essenciais
+
+{essential_coverage_analysis}
+
+**Checklist por Tipo de Aplicação:** {application_type}
+
+| Categoria Essencial | Status | Cobertura | Observações |
+|---------------------|--------|-----------|-------------|
+{essential_coverage_table}
+
+---
+
+## 12. Priorização e Dependências
+
+### 12.1 Matriz de Priorização
+
+```mermaid
+quadrantChart
+    title Matriz de Impacto vs Esforço
+    x-axis Baixo Esforço --> Alto Esforço
+    y-axis Baixo Impacto --> Alto Impacto
+    quadrant-1 Fazer Primeiro
+    quadrant-2 Planejar Cuidadosamente
+    quadrant-3 Fazer Depois
+    quadrant-4 Reavaliar Necessidade
+{prioritization_chart_data}
+```
+
+### 12.2 Análise de Dependências
+
+```mermaid
+graph TD
+{dependencies_graph}
+```
+
+### 12.3 Caminho Crítico
+
+{critical_path_analysis}
+
+**Requisitos no Caminho Crítico:**
+{critical_requirements_list}
+
+---
+
+## 13. Pesquisa Complementar (Web Research)
+
+### 13.1 Melhores Práticas da Indústria
+
+{industry_best_practices}
+
+### 13.2 Padrões e Standards Recomendados
+
+{recommended_standards}
+
+**Formato:**
+
+**[STD-001]** Nome do Padrão
+**Categoria:** Security | Performance | Accessibility | Compliance
+**Descrição:** Descrição do padrão
+**Aplicabilidade:** Como se aplica ao projeto
+**Referência:** URL oficial
+**Requisitos Relacionados:** NFR-001, NFR-003
+
+### 13.3 Tecnologias Sugeridas
+
+{suggested_technologies}
+
+**Formato:**
+
+**[TECH-001]** Nome da Tecnologia
+**Caso de Uso:** Para que será usada
+**Maturidade:** Madura | Emergente | Experimental
+**Documentação:** URL
+**Prós:** Lista de vantagens
+**Contras:** Lista de desvantagens
+**Requisitos Relacionados:** FR-010, NFR-005
+
+### 13.4 Checklist de Compliance
+
+{compliance_checklist}
+
+**Formato:**
+
+| Regulação | Requisito de Compliance | Status | Requisitos Relacionados | Ações Necessárias |
+|-----------|------------------------|--------|------------------------|-------------------|
+{compliance_entries}
+
+### 13.5 Requisitos Potencialmente Faltantes (descobertos via pesquisa)
+
+{missing_requirements_discovered}
+
+---
+
+## 14. Scores de Qualidade
+
+### 14.1 Métricas de Qualidade Geral
+
+| Métrica | Score | Status | Observações |
+|---------|-------|--------|-------------|
+| **Completude** | {completeness_score}/100 | {completeness_status} | {completeness_notes} |
+| **Clareza** | {clarity_score}/100 | {clarity_status} | {clarity_notes} |
+| **Consistência** | {consistency_score}/100 | {consistency_status} | {consistency_notes} |
+| **Testabilidade** | {testability_score}/100 | {testability_status} | {testability_notes} |
+| **Rastreabilidade** | {traceability_score}/100 | {traceability_status} | {traceability_notes} |
+
+**Legenda de Status:**
+- ✅ Excelente (90-100)
+- ⚠️ Bom (70-89)
+- ⚠️ Requer Atenção (50-69)
+- ❌ Crítico (<50)
+
+### 14.2 Issues Encontradas
+
+{issues_summary}
+
+**Issues por Severidade:**
+- Críticas: {critical_issues_count}
+- Altas: {high_issues_count}
+- Médias: {medium_issues_count}
+- Baixas: {low_issues_count}
+
+### 14.3 Lista Detalhada de Issues
+
+{issues_detailed_list}
+
+**Formato:**
+
+**[ISSUE-001]** [Severidade: {severity}]
+**Tipo:** Ambiguidade | Conflito | Falta de Testabilidade | Falta de Rastreabilidade | Outro
+**Descrição:** Descrição do problema
+**Requisito Afetado:** FR-005
+**Recomendação:** Sugestão específica de correção
+**Exemplo:** Exemplo de como corrigir, se aplicável
+
+---
+
+## 15. Sugestões de Melhoria
+
+### 15.1 Recomendações Gerais
+
+{general_recommendations}
+
+### 15.2 Melhorias por Categoria
+
+**Requisitos Funcionais:**
+{fr_improvements}
+
+**Requisitos Não-Funcionais:**
+{nfr_improvements}
+
+**Regras de Negócio:**
+{br_improvements}
+
+**Documentação:**
+{documentation_improvements}
+
+---
+
+## 16. Próximos Passos
+
+### 16.1 Ações Imediatas Requeridas
+
+{immediate_actions}
+
+### 16.2 Validações Necessárias
+
+{validations_needed}
+
+### 16.3 Preparação para Especificação Funcional
+
+{spec_preparation}
+
+**Checklist para Fase 2.2 (Especificação Funcional):**
+- [ ] Todos os gaps críticos foram resolvidos
+- [ ] Questões de alta prioridade foram respondidas
+- [ ] Conflitos foram resolvidos
+- [ ] Score de completude ≥ 70%
+- [ ] Score de clareza ≥ 70%
+- [ ] Score de consistência ≥ 80%
+
+---
+
+## 17. Rastreabilidade
+
+### 17.1 Matriz de Rastreabilidade
+
+| Documento Fonte | Seção | Requisito(s) Extraído(s) | Tipo | Prioridade |
+|-----------------|-------|--------------------------|------|------------|
+{traceability_matrix}
+
+### 17.2 Mapa de Cobertura
+
+```mermaid
+mindmap
+  root((Requisitos))
+{coverage_mindmap}
+```
+
+---
+
+## 18. Metadados do Documento
+
+**Gerado por:** LangNet Multi-Agent System
+**Framework:** {framework_version}
+**Agentes Envolvidos:**
+- document_analyzer_agent
+- requirements_engineer_agent
+- web_researcher_agent
+- quality_assurance_agent
+
+**Workflow Executado:**
+1. analyze_document
+2. extract_requirements
+3. research_additional_info
+4. validate_requirements
+
+**Tempo Total de Processamento:** {total_processing_time}
+
+**Configurações de Geração:**
+- LLM Provider: {llm_provider}
+- Model: {llm_model}
+- Web Research: {web_research_enabled}
+- Additional Instructions: {has_additional_instructions}
+
+---
+
+## 19. Controle de Versões
+
+| Versão | Data | Autor | Alterações | Status |
+|--------|------|-------|------------|--------|
+| 1.0 | {generation_date} | LangNet System | Versão inicial gerada automaticamente | {document_status} |
+{version_history}
+
+---
+
+## 20. Aprovações
+
+| Papel | Nome | Data | Assinatura | Status |
+|-------|------|------|------------|--------|
+| Product Owner | | | | Pendente |
+| Tech Lead | | | | Pendente |
+| QA Lead | | | | Pendente |
+| Stakeholder | | | | Pendente |
+
+---
+
+**Fim do Documento de Requisitos**
+
+*Este documento foi gerado automaticamente pelo LangNet Multi-Agent System baseado na análise de documentação fornecida e pesquisa complementar. Requer revisão e aprovação humana antes de prosseguir para a fase de Especificação Funcional.*
+ Fill in ALL placeholders (enclosed in curly braces) with actual data from the requirements and research findings. Maintain the exact structure and section numbering from the template. Generate mermaid diagrams where indicated. The final document should be complete, professional, and ready for stakeholder review.
+, expected_output=JSON validation report: (1) 'valid_requirements': approved requirements with quality scores; (2) 'issues_found': array with type, severity, description, affected_requirement_id, recommended_fix, example; (3) 'completeness_score': 0-100 with breakdown by category; (4) 'clarity_score': 0-100; (5) 'consistency_score': 0-100; (6) 'coverage_analysis': requirements coverage by functional area; (7) 'critical_gaps': array of missing critical requirements with justification; (8) 'information_requests': specific questions/information needed to fill gaps; (9) 'completeness_by_type': scores for FR/NFR/BR separately; (10) 'requirements_document_md': full Markdown document following template with all sections populated.
+)]
+parent_flow=None name=None cache=True tasks=[Task(description=[2.1.4 - Completeness Verification] Review requirements: {} and research findings: {}. Project: Sistema de Seleção e Análise de Editais. Quality checks: (1) Ambiguous/vague language needing clarification; (2) Conflicts/contradictions between requirements; (3) Missing testability criteria or acceptance conditions; (4) Incomplete actor definitions or workflows; (5) Requirements lacking priority or source traceability. Completeness evaluation: (a) Sufficiency of available information; (b) Identification of critical information gaps; (c) Solicitation of complementary information needed; (d) Verification of essential requirements coverage; (e) Comparative evaluation with completeness standards by application type (web app, API, mobile, etc.). Assign severity (critical/high/medium/low) to each issue. Provide specific recommendations with examples.
+IMPORTANT: Generate the final REQUIREMENTS DOCUMENT in Markdown format using the provided template: # Documento de Requisitos
+## {project_name}
+
+---
+
+**Versão:** 1.0
+**Data:** {generation_date}
+**Status:** {document_status}
+
+---
+
+## 1. Informações do Projeto
+
+### 1.1 Visão Geral
+**Nome do Projeto:** {project_name}
+
+**Descrição:**
+{project_description}
+
+**Objetivo:**
+{project_objectives}
+
+### 1.2 Contexto e Justificativa
+{project_context}
+
+### 1.3 Escopo
+**Inclui:**
+{scope_includes}
+
+**Exclui:**
+{scope_excludes}
+
+---
+
+## 2. Fontes de Informação
+
+### 2.1 Documentos Analisados
+
+| ID | Nome do Documento | Tipo | Data | Autor | Caminho/URL |
+|----|-------------------|------|------|-------|-------------|
+{documents_table}
+
+### 2.2 Estatísticas de Análise
+
+- **Total de documentos analisados:** {total_documents}
+- **Total de páginas processadas:** {total_pages}
+- **Total de palavras analisadas:** {total_words}
+- **Data da análise:** {analysis_date}
+- **Tempo de processamento:** {processing_time}
+
+---
+
+## 3. Requisitos Funcionais (FR)
+
+### 3.1 Requisitos Funcionais por Categoria
+
+{functional_requirements_by_category}
+
+### 3.2 Lista Completa de Requisitos Funcionais
+
+{functional_requirements_list}
+
+**Exemplo de formato:**
+
+**[FR-001]** Nome do Requisito
+**Descrição:** Descrição detalhada do requisito funcional.
+**Prioridade:** Alta | Média | Baixa
+**Atores Envolvidos:** Lista de atores
+**Fonte:** Seção X.Y do documento Z
+**Dependências:** FR-002, FR-005
+**Critérios de Aceitação:**
+- Critério 1
+- Critério 2
+
+---
+
+## 4. Requisitos Não-Funcionais (NFR)
+
+### 4.1 Requisitos por Categoria
+
+#### 4.1.1 Performance
+{nfr_performance}
+
+#### 4.1.2 Segurança
+{nfr_security}
+
+#### 4.1.3 Usabilidade
+{nfr_usability}
+
+#### 4.1.4 Confiabilidade
+{nfr_reliability}
+
+#### 4.1.5 Escalabilidade
+{nfr_scalability}
+
+#### 4.1.6 Manutenibilidade
+{nfr_maintainability}
+
+### 4.2 Lista Completa de Requisitos Não-Funcionais
+
+{non_functional_requirements_list}
+
+**Exemplo de formato:**
+
+**[NFR-001]** Nome do Requisito
+**Descrição:** Descrição detalhada do requisito não-funcional.
+**Categoria:** Performance | Segurança | Usabilidade | Confiabilidade | Escalabilidade | Manutenibilidade
+**Métrica Mensurável:** Definição clara de como medir (ex: tempo de resposta < 200ms)
+**Prioridade:** Alta | Média | Baixa
+**Critérios de Aceitação:**
+- Critério mensurável 1
+- Critério mensurável 2
+
+---
+
+## 5. Regras de Negócio (BR)
+
+### 5.1 Regras de Negócio por Domínio
+
+{business_rules_by_domain}
+
+### 5.2 Lista Completa de Regras de Negócio
+
+{business_rules_list}
+
+**Exemplo de formato:**
+
+**[BR-001]** Nome da Regra
+**Descrição:** Descrição da regra de negócio.
+**Condição:** Quando/Se [condição]
+**Ação:** Então [ação resultante]
+**Entidades Afetadas:** Lista de entidades
+**Justificativa:** Razão de negócio para esta regra
+**Exceções:** Casos excepcionais, se houver
+
+---
+
+## 6. Atores e Stakeholders
+
+### 6.1 Atores do Sistema
+
+{actors_list}
+
+**Exemplo de formato:**
+
+**[ACTOR-001]** Nome do Ator
+**Tipo:** Usuário | Sistema | Serviço Externo
+**Papel:** Descrição do papel
+**Responsabilidades:**
+- Responsabilidade 1
+- Responsabilidade 2
+
+**Pontos de Interação:**
+- Interação com funcionalidade X
+- Interação com funcionalidade Y
+
+**Requisitos Relacionados:** FR-001, FR-003, NFR-002
+
+---
+
+## 7. Entidades e Relacionamentos
+
+### 7.1 Modelo Conceitual de Dados
+
+```mermaid
+erDiagram
+{entity_relationship_diagram}
+```
+
+### 7.2 Descrição das Entidades
+
+{entities_description}
+
+**Exemplo de formato:**
+
+**[ENTITY-001]** Nome da Entidade
+**Descrição:** Descrição da entidade no domínio.
+
+**Atributos:**
+| Atributo | Tipo | Obrigatório | Descrição | Restrições |
+|----------|------|-------------|-----------|------------|
+{entity_attributes_table}
+
+**Relacionamentos:**
+- Relacionamento com ENTITY-002 (1-N): Descrição
+- Relacionamento com ENTITY-003 (N-N): Descrição
+
+**Regras de Negócio Aplicáveis:** BR-001, BR-005
+
+---
+
+## 8. Fluxos de Trabalho Identificados
+
+### 8.1 Visão Geral dos Fluxos
+
+{workflows_overview}
+
+### 8.2 Fluxos Detalhados
+
+{workflows_detailed}
+
+**Exemplo de formato:**
+
+**[WORKFLOW-001]** Nome do Fluxo
+**Descrição:** Descrição do fluxo de trabalho.
+**Gatilho/Trigger:** O que inicia este fluxo
+**Atores Envolvidos:** ACTOR-001, ACTOR-003
+
+**Fluxo Principal:**
+
+```mermaid
+sequenceDiagram
+{workflow_sequence_diagram}
+```
+
+**Passos:**
+1. **Passo 1:** Descrição
+   - Ator: ACTOR-001
+   - Ação: Descrição da ação
+   - Sistema: Resposta do sistema
+
+2. **Passo 2:** Descrição (Ponto de Decisão)
+   - Condição A → Ir para Passo 3
+   - Condição B → Ir para Passo 5
+
+**Fluxos Alternativos:**
+- **Alt-1:** Descrição do fluxo alternativo
+- **Alt-2:** Descrição de outro fluxo alternativo
+
+**Fluxos de Exceção:**
+- **Exc-1:** Tratamento de erro/exceção
+
+**Estados Finais:**
+- Sucesso: Descrição do estado final de sucesso
+- Falha: Descrição dos estados finais de falha
+
+**Requisitos Relacionados:** FR-010, FR-011, BR-003
+
+---
+
+## 9. Glossário de Termos do Domínio
+
+### 9.1 Termos e Definições
+
+{glossary_table}
+
+**Formato:**
+
+| Termo | Definição | Contexto de Uso | Sinônimos | Termos Relacionados |
+|-------|-----------|-----------------|-----------|---------------------|
+{glossary_entries}
+
+### 9.2 Abreviações e Acrônimos
+
+{abbreviations_table}
+
+---
+
+## 10. Verificações Complementares
+
+### 10.1 Consistência entre Documentos
+
+{consistency_analysis}
+
+**Conflitos Identificados:**
+
+{conflicts_table}
+
+**Exemplo de formato:**
+
+| ID | Conflito | Documentos Afetados | Severidade | Resolução Sugerida |
+|----|----------|---------------------|------------|---------------------|
+{conflicts_entries}
+
+### 10.2 Ambiguidades Detectadas
+
+{ambiguities_analysis}
+
+**Lista de Ambiguidades:**
+
+{ambiguities_list}
+
+**Exemplo de formato:**
+
+**[AMB-001]**
+**Texto Ambíguo:** "{ambiguous_text}"
+**Localização:** Documento X, Seção Y
+**Razão:** Por que é ambíguo
+**Pergunta de Clarificação:** Pergunta específica para o stakeholder
+**Requisitos Afetados:** FR-005, NFR-002
+
+### 10.3 Questões para Clarificação
+
+{clarification_questions}
+
+**Prioridade Alta:**
+{high_priority_questions}
+
+**Prioridade Média:**
+{medium_priority_questions}
+
+**Prioridade Baixa:**
+{low_priority_questions}
+
+**Formato de questão:**
+
+**[Q-001]** [Prioridade: Alta]
+**Questão:** Pergunta específica para o stakeholder
+**Contexto:** Contexto da pergunta
+**Requisitos Afetados:** FR-001, BR-003
+**Impacto se não respondida:** Descrição do impacto
+
+---
+
+## 11. Análise de Completude
+
+### 11.1 Avaliação de Suficiência
+
+**Score de Completude Geral:** {completeness_score}/100
+
+**Breakdown por Categoria:**
+- Requisitos Funcionais: {fr_completeness}/100
+- Requisitos Não-Funcionais: {nfr_completeness}/100
+- Regras de Negócio: {br_completeness}/100
+- Atores e Stakeholders: {actors_completeness}/100
+- Entidades e Dados: {entities_completeness}/100
+- Fluxos de Trabalho: {workflows_completeness}/100
+
+### 11.2 Gaps Críticos Identificados
+
+{critical_gaps}
+
+**Exemplo de formato:**
+
+**[GAP-001]** [Severidade: Crítica]
+**Área:** Categoria funcional afetada
+**Gap Identificado:** Descrição do que está faltando
+**Justificativa:** Por que isso é crítico
+**Impacto:** Impacto no projeto se não resolvido
+**Requisitos Afetados:** Lista de requisitos impactados
+**Informações Necessárias:** O que precisa ser fornecido
+
+### 11.3 Informações Complementares Necessárias
+
+{information_requests}
+
+**Lista de Solicitações:**
+
+{information_requests_list}
+
+**Formato:**
+
+**[INFO-REQ-001]** [Prioridade: Alta]
+**Informação Solicitada:** Descrição específica
+**Razão:** Por que é necessário
+**Para completar:** Requisitos ou áreas que serão completadas
+**Fonte Sugerida:** Quem pode fornecer (stakeholder, documento, sistema)
+
+### 11.4 Cobertura de Requisitos Essenciais
+
+{essential_coverage_analysis}
+
+**Checklist por Tipo de Aplicação:** {application_type}
+
+| Categoria Essencial | Status | Cobertura | Observações |
+|---------------------|--------|-----------|-------------|
+{essential_coverage_table}
+
+---
+
+## 12. Priorização e Dependências
+
+### 12.1 Matriz de Priorização
+
+```mermaid
+quadrantChart
+    title Matriz de Impacto vs Esforço
+    x-axis Baixo Esforço --> Alto Esforço
+    y-axis Baixo Impacto --> Alto Impacto
+    quadrant-1 Fazer Primeiro
+    quadrant-2 Planejar Cuidadosamente
+    quadrant-3 Fazer Depois
+    quadrant-4 Reavaliar Necessidade
+{prioritization_chart_data}
+```
+
+### 12.2 Análise de Dependências
+
+```mermaid
+graph TD
+{dependencies_graph}
+```
+
+### 12.3 Caminho Crítico
+
+{critical_path_analysis}
+
+**Requisitos no Caminho Crítico:**
+{critical_requirements_list}
+
+---
+
+## 13. Pesquisa Complementar (Web Research)
+
+### 13.1 Melhores Práticas da Indústria
+
+{industry_best_practices}
+
+### 13.2 Padrões e Standards Recomendados
+
+{recommended_standards}
+
+**Formato:**
+
+**[STD-001]** Nome do Padrão
+**Categoria:** Security | Performance | Accessibility | Compliance
+**Descrição:** Descrição do padrão
+**Aplicabilidade:** Como se aplica ao projeto
+**Referência:** URL oficial
+**Requisitos Relacionados:** NFR-001, NFR-003
+
+### 13.3 Tecnologias Sugeridas
+
+{suggested_technologies}
+
+**Formato:**
+
+**[TECH-001]** Nome da Tecnologia
+**Caso de Uso:** Para que será usada
+**Maturidade:** Madura | Emergente | Experimental
+**Documentação:** URL
+**Prós:** Lista de vantagens
+**Contras:** Lista de desvantagens
+**Requisitos Relacionados:** FR-010, NFR-005
+
+### 13.4 Checklist de Compliance
+
+{compliance_checklist}
+
+**Formato:**
+
+| Regulação | Requisito de Compliance | Status | Requisitos Relacionados | Ações Necessárias |
+|-----------|------------------------|--------|------------------------|-------------------|
+{compliance_entries}
+
+### 13.5 Requisitos Potencialmente Faltantes (descobertos via pesquisa)
+
+{missing_requirements_discovered}
+
+---
+
+## 14. Scores de Qualidade
+
+### 14.1 Métricas de Qualidade Geral
+
+| Métrica | Score | Status | Observações |
+|---------|-------|--------|-------------|
+| **Completude** | {completeness_score}/100 | {completeness_status} | {completeness_notes} |
+| **Clareza** | {clarity_score}/100 | {clarity_status} | {clarity_notes} |
+| **Consistência** | {consistency_score}/100 | {consistency_status} | {consistency_notes} |
+| **Testabilidade** | {testability_score}/100 | {testability_status} | {testability_notes} |
+| **Rastreabilidade** | {traceability_score}/100 | {traceability_status} | {traceability_notes} |
+
+**Legenda de Status:**
+- ✅ Excelente (90-100)
+- ⚠️ Bom (70-89)
+- ⚠️ Requer Atenção (50-69)
+- ❌ Crítico (<50)
+
+### 14.2 Issues Encontradas
+
+{issues_summary}
+
+**Issues por Severidade:**
+- Críticas: {critical_issues_count}
+- Altas: {high_issues_count}
+- Médias: {medium_issues_count}
+- Baixas: {low_issues_count}
+
+### 14.3 Lista Detalhada de Issues
+
+{issues_detailed_list}
+
+**Formato:**
+
+**[ISSUE-001]** [Severidade: {severity}]
+**Tipo:** Ambiguidade | Conflito | Falta de Testabilidade | Falta de Rastreabilidade | Outro
+**Descrição:** Descrição do problema
+**Requisito Afetado:** FR-005
+**Recomendação:** Sugestão específica de correção
+**Exemplo:** Exemplo de como corrigir, se aplicável
+
+---
+
+## 15. Sugestões de Melhoria
+
+### 15.1 Recomendações Gerais
+
+{general_recommendations}
+
+### 15.2 Melhorias por Categoria
+
+**Requisitos Funcionais:**
+{fr_improvements}
+
+**Requisitos Não-Funcionais:**
+{nfr_improvements}
+
+**Regras de Negócio:**
+{br_improvements}
+
+**Documentação:**
+{documentation_improvements}
+
+---
+
+## 16. Próximos Passos
+
+### 16.1 Ações Imediatas Requeridas
+
+{immediate_actions}
+
+### 16.2 Validações Necessárias
+
+{validations_needed}
+
+### 16.3 Preparação para Especificação Funcional
+
+{spec_preparation}
+
+**Checklist para Fase 2.2 (Especificação Funcional):**
+- [ ] Todos os gaps críticos foram resolvidos
+- [ ] Questões de alta prioridade foram respondidas
+- [ ] Conflitos foram resolvidos
+- [ ] Score de completude ≥ 70%
+- [ ] Score de clareza ≥ 70%
+- [ ] Score de consistência ≥ 80%
+
+---
+
+## 17. Rastreabilidade
+
+### 17.1 Matriz de Rastreabilidade
+
+| Documento Fonte | Seção | Requisito(s) Extraído(s) | Tipo | Prioridade |
+|-----------------|-------|--------------------------|------|------------|
+{traceability_matrix}
+
+### 17.2 Mapa de Cobertura
+
+```mermaid
+mindmap
+  root((Requisitos))
+{coverage_mindmap}
+```
+
+---
+
+## 18. Metadados do Documento
+
+**Gerado por:** LangNet Multi-Agent System
+**Framework:** {framework_version}
+**Agentes Envolvidos:**
+- document_analyzer_agent
+- requirements_engineer_agent
+- web_researcher_agent
+- quality_assurance_agent
+
+**Workflow Executado:**
+1. analyze_document
+2. extract_requirements
+3. research_additional_info
+4. validate_requirements
+
+**Tempo Total de Processamento:** {total_processing_time}
+
+**Configurações de Geração:**
+- LLM Provider: {llm_provider}
+- Model: {llm_model}
+- Web Research: {web_research_enabled}
+- Additional Instructions: {has_additional_instructions}
+
+---
+
+## 19. Controle de Versões
+
+| Versão | Data | Autor | Alterações | Status |
+|--------|------|-------|------------|--------|
+| 1.0 | {generation_date} | LangNet System | Versão inicial gerada automaticamente | {document_status} |
+{version_history}
+
+---
+
+## 20. Aprovações
+
+| Papel | Nome | Data | Assinatura | Status |
+|-------|------|------|------------|--------|
+| Product Owner | | | | Pendente |
+| Tech Lead | | | | Pendente |
+| QA Lead | | | | Pendente |
+| Stakeholder | | | | Pendente |
+
+---
+
+**Fim do Documento de Requisitos**
+
+*Este documento foi gerado automaticamente pelo LangNet Multi-Agent System baseado na análise de documentação fornecida e pesquisa complementar. Requer revisão e aprovação humana antes de prosseguir para a fase de Especificação Funcional.*
+ Fill in ALL placeholders (enclosed in curly braces) with actual data from the requirements and research findings. Maintain the exact structure and section numbering from the template. Generate mermaid diagrams where indicated. The final document should be complete, professional, and ready for stakeholder review.
+, expected_output=JSON validation report: (1) 'valid_requirements': approved requirements with quality scores; (2) 'issues_found': array with type, severity, description, affected_requirement_id, recommended_fix, example; (3) 'completeness_score': 0-100 with breakdown by category; (4) 'clarity_score': 0-100; (5) 'consistency_score': 0-100; (6) 'coverage_analysis': requirements coverage by functional area; (7) 'critical_gaps': array of missing critical requirements with justification; (8) 'information_requests': specific questions/information needed to fill gaps; (9) 'completeness_by_type': scores for FR/NFR/BR separately; (10) 'requirements_document_md': full Markdown document following template with all sections populated.
+)] agents=[Agent(role=Requirements Quality Assurance Specialist
+, goal=Validate extracted requirements for completeness, consistency, clarity, and testability, ensuring they follow SMART principles and are free of ambiguities.
+, backstory=You are a meticulous QA engineer with deep knowledge of requirements quality attributes. You identify ambiguities, conflicts, missing information, and inconsistencies in requirements documentation. Your expertise ensures requirements are specific, measurable, achievable, relevant, and time-bound.
+)] process=<Process.sequential: 'sequential'> verbose=False memory=False memory_config=None short_term_memory=None long_term_memory=None entity_memory=None user_memory=None external_memory=None embedder=None usage_metrics=None manager_llm=None manager_agent=None function_calling_llm=None config=None id=UUID('294f82ca-f87b-4cf6-bd7c-bd8964cfa654') share_crew=False step_callback=None task_callback=None before_kickoff_callbacks=[] after_kickoff_callbacks=[] max_rpm=None prompt_file=None output_log_file=None planning=False planning_llm=None task_execution_output_json_files=None execution_logs=[] knowledge_sources=None chat_llm=None knowledge=None security_config=SecurityConfig(version='1.0.0', fingerprint=Fingerprint(uuid_str='c39d541b-db24-490f-8919-236e0024a25a', created_at=datetime.datetime(2025, 11, 13, 17, 17, 33, 254728), metadata={}))
+
+================================================================================
+✅ TESTE CONCLUÍDO COM SUCESSO
+⏱️  Duração: 0m 0s
+📊 Requisitos Funcionais: 0
+📊 Requisitos Não-Funcionais: 0
+📊 Regras de Negócio: 0
+📊 Entidades: 0
+📊 Atores: 0
+🌐 Queries Web Research: 0
+🌐 Resultados Web Research: 0
+================================================================================
+
+
+💾 Resultados JSON salvos: /home/pasteurjr/progreact/langnet-interface/backend/tests/results/editais_test_results_20251113_171733.json
+📄 Relatório salvo: /home/pasteurjr/progreact/langnet-interface/backend/tests/results/editais_test_report_20251113_171733.txt
+
+================================================================================
+RELATÓRIO DE TESTES - SISTEMA DE ANÁLISE DE EDITAIS
+================================================================================
+
+📅 Data: 13/11/2025 17:17:33
+🤖 LLM Provider: DEEPSEEK
+📄 Documentos Testados: 1
+⏱️  Duração Total: 0m 0s
+
+================================================================================
+RESUMO GERAL
+================================================================================
+
+✅ Testes Concluídos: 1 (100.0%)
+❌ Testes Falhados: 0 (0.0%)
+⏱️  Duração Média: 0m 0s
+
+================================================================================
+MÉTRICAS AGREGADAS
+================================================================================
+
+📊 Total de Requisitos Funcionais: 0
+📊 Total de Requisitos Não-Funcionais: 0
+📊 Total de Regras de Negócio: 0
+📊 Total de Entidades Identificadas: 0
+🌐 Total de Queries Web Research: 0
+
+================================================================================
+RESULTADOS POR DOCUMENTO
+================================================================================
+
+
+1. ✅ Como encontrar editais de licitação abertos _ ConLicitação.pdf
+   Tamanho: 0.49 MB
+   Status: COMPLETED
+   Duração: 0m 0s
+   Requisitos Funcionais: 0
+   Requisitos Não-Funcionais: 0
+   Regras de Negócio: 0
+   Entidades: 0
+   Atores: 0
+   Web Research Queries: 0
+   Web Research Results: 0
+   Palavras no Documento: 0
+   Tamanho Doc. Requisitos: 0 chars
+
+
+================================================================================
+ANÁLISE DE DESEMPENHO
+================================================================================
+
+Tempo médio por documento: 0m 0s
+Requisitos funcionais por documento: 0.0
+Requisitos não-funcionais por documento: 0.0
+Regras de negócio por documento: 0.0
+Entidades por documento: 0.0
+Queries web research por documento: 0.0
+
+================================================================================
+CONCLUSÃO
+================================================================================
+
+Taxa de Sucesso: 100.0%
+Qualidade: EXCELENTE ✅
+Performance: EXCELENTE ✅
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================
+
+/home/pasteurjr/miniconda3/lib/python3.13/site-packages/litellm/llms/custom_httpx/async_client_cleanup.py:66: DeprecationWarning: There is no current event loop
+  loop = asyncio.get_event_loop()

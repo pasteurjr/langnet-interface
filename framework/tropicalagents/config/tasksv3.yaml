@@ -1,0 +1,42 @@
+search_database_using_natural_language:
+  description: >
+    Use the NaturalLanguageQueryTool to process the following question: {question}. Send only key question to the tool, you do not have to generate any query..
+    Return a well-formatted result containing the results issued by tool.
+  expected_output: >
+    A well formated result of the natural language query formated to explicitly show the results returned by the tool, in columns.  Only the results not anything else.
+
+query_generation:
+  description: >
+    Transform natural language request in key {question} into optimized SQL queries following the defined process: 1) Entity extraction - identify nouns and relationships, 2) Schema mapping - match entities to tables/columns, 3) Join path determination - identify optimal table relationships, 4) Query structure creation - build base SQL structure, 5) Optimization application - apply documented optimization rules, 6) Documentation - add standardized comments. Handle edge cases including: null values, missing relationships, ambiguous entities, and complex aggregations. Flag queries exceeding complexity score of 25 for review.
+  expected_output: >
+    A documented MYSQL 5 query following the structured format: {query_text: string, complexity_score: number, table_dependencies: string[], indexes_used: string[], estimated_runtime: number, memory_required: number, documentation: {purpose: string, assumptions: string[], limitations: string[], optimization_notes: string[]}}. All queries must include inline comments explaining key decisions and meet formatting standards (proper indentation, max 80 chars per line).
+
+query_verification:
+  description: >
+    Validate SQL queries through sequential verification stages: 1) Syntax check against MYSQL 5 specification, 2) Schema validation including all referenced tables, columns, and constraints, 3) Security assessment for common vulnerabilities (injection risks, permission requirements), 4) Performance evaluation using explain plan analysis, 5) Data integrity impact assessment. Process must handle verification failures with specific error codes and remediation steps.
+  expected_output: >
+    JSON-formatted verification report containing: {status: "pass"|"fail", checks: [{type: string, status: boolean, details: string, error_code?: string, remediation?: string}], performance_metrics: {estimated_runtime: number, memory_usage: number, table_scan_count: number}, optimization_suggestions: string[]}. Failed checks must include specific error codes from standard error catalog.
+
+query_execution:
+  description: >
+    Execute queries with comprehensive monitoring and error handling: 1) Resource availability check (memory, connections), 2) Transaction boundary establishment, 3) Execution with incremental progress tracking, 4) Error handling with standardized error codes, 5) Performance metrics collection. Implement automatic rollback for failures and maintain detailed execution logs.
+  expected_output: >
+    Execution results in standardized format: {status: "success"|"error", runtime_ms: number, rows_affected: number, memory_used: number, execution_plan: object, error?: {code: string, message: string, context: object}, performance_metrics: {cpu_time: number, io_operations: number, memory_peak: number}}. All errors must reference standard error catalog.
+
+csv_generation:
+  description: >
+    Convert query results to CSV following RFC-4180 specification through defined steps: 1) Memory requirement calculation, 2) Stream buffer initialization, 3) Character encoding validation (UTF-8), 4) Type conversion with handling for all MYSQL data types, 5) Escape processing for special characters, 6) Batch writing with checksum validation. Include metadata header with column specifications.
+  expected_output: >
+    RFC-4180 compliant CSV file with metadata header containing: {column_definitions: [{name: string, type: string, format: string}], encoding: "UTF-8", delimiter: string, escape_char: string, generation_timestamp: string, checksum: string}. File must pass RFC-4180 validation and include row count verification.
+
+report_generation:
+  description: >
+    Generate reports following corporate style guide v2.0 through systematic process: 1) Template selection based on content types, 2) Data preparation for visualization, 3) Chart generation using specified types (time series = line, comparisons = bar, distributions = histogram), 4) Layout application with standard formatting, 5) Accessibility compliance check (WCAG 2.1). Include auto-generated navigation elements.
+  expected_output: >
+    PDF and DOCX reports with standardized structure: {sections: ["executive_summary", "methodology", "findings", "recommendations", "appendices"], formatting: {body_font: "Arial 12pt", header_fonts: ["18pt", "16pt", "14pt"], line_spacing: 1.5}, navigation: {toc: true, section_numbers: true}, compliance: {wcag_version: "2.1", validated: true}}. All charts must include titles, axes labels, and data source citations.
+
+data_analysis:
+  description: >
+    Analyze data following statistical methodology: 1) Quality assessment using completeness and accuracy metrics, 2) Descriptive statistics calculation with confidence intervals, 3) Pattern identification using appropriate statistical tests, 4) Anomaly detection with 2-sigma threshold, 5) Impact quantification of findings, 6) ROI calculation for recommendations. Document all assumptions and limitations.
+  expected_output: >
+    Analysis report in structured format: {quality_metrics: {completeness: number, accuracy: number}, statistical_summary: {descriptive_stats: object, confidence_intervals: object}, findings: [{pattern: string, significance: number, evidence: string, impact: object}], recommendations: [{action: string, roi: number, implementation_time: string, resources_required: object}], methodology: {assumptions: string[], limitations: string[], statistical_tests: string[]}}. All findings must include confidence levels and supporting evidence.

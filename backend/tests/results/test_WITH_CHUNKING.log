@@ -1,0 +1,175 @@
+/home/pasteurjr/miniconda3/lib/python3.13/site-packages/pydantic/fields.py:1026: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'required'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.10/migration/
+  warn(
+
+================================================================================
+SUÍTE DE TESTES - SISTEMA DE ANÁLISE DE EDITAIS
+================================================================================
+
+📂 Pasta de editais: /home/pasteurjr/progreact/langnet-interface/instancias/editais
+📄 PDFs encontrados: 9
+
+📋 Lista de documentos:
+   1. Análise estratégica de edital passo a passo - eLicitação.pdf (2.0 MB)
+   2. Como Analisar Editais de Licitações_ Guia Completo para Evitar Erros e Garantir Seu Sucesso - Concreta Licitações.pdf (1.13 MB)
+   3. Como encontrar editais de licitação abertos _ ConLicitação.pdf (0.49 MB)
+   4. Edital de Licitação_ o que é, como analisar_ _ Shopscan Distrubuidora.pdf (2.52 MB)
+   5. Manual de Licitacoes para Micro e Pequenas Empresas.pdf (2.24 MB)
+   6. Manual_do_Modelo_de_Planilhas_de_Custos_do_STJ.pdf (6.64 MB)
+   7. cartilha_nova_lei_licitacoes_contratos.pdf (3.66 MB)
+   8. guia pratico da nova lei de licitacoes e contratos - grupo jml.pdf (4.54 MB)
+   9. manual-de-boas-praticas-em-contratacoes-publicas.pdf (23.15 MB)
+
+🧪 Testando 2 documento(s) SELECIONADO(S) com DeepSeek...
+
+⚠️  NOTA: Este teste pode levar 10-30 minutos dependendo do tamanho dos documentos
+
+
+▶️  Executando testes automaticamente...
+
+================================================================================
+TESTE EM LOTE: 2 documentos
+LLM: DeepSeek
+================================================================================
+
+
+📄 Testando 1/2: Análise estratégica de edital passo a passo - eLicitação.pdf
+
+================================================================================
+TESTE: Análise estratégica de edital passo a passo - eLicitação.pdf
+LLM: DeepSeek
+================================================================================
+
+📄 Documento: Análise estratégica de edital passo a passo - eLicitação.pdf (2.0 MB)
+🆔 Document ID: doc-Análise-estratégica-de-edital--1763072113
+⏱️  Início: 2025-11-13T19:15:13.696436
+
+🔧 Processando PDF (extração + chunking)...
+
+📄 Extracting text from Análise estratégica de edital passo a passo - eLicitação.pdf...
+✂️  Chunking text (size=1000, overlap=200)...
+📝 Formatting 23 chunks...
+✅ Processed Análise estratégica de edital passo a passo - eLicitação.pdf: 23 chunks, 2120 words
+✅ PDF processado:
+   📝 Texto extraído: 18,317 chars (2,120 palavras)
+   ✂️  Chunks gerados: 23
+   📦 Tamanho médio do chunk: 988 chars
+
+🔄 Iniciando workflow de análise...
+
+
+================================================================================
+❌ TESTE FALHOU
+⏱️  Duração até falha: 0m 0s
+❌ Erro: TypeError: execute_document_analysis_workflow() got an unexpected keyword argument 'document_content'
+================================================================================
+
+
+⏳ Aguardando 5 segundos antes do próximo teste...
+
+
+📄 Testando 2/2: Manual de Licitacoes para Micro e Pequenas Empresas.pdf
+
+================================================================================
+TESTE: Manual de Licitacoes para Micro e Pequenas Empresas.pdf
+LLM: DeepSeek
+================================================================================
+
+📄 Documento: Manual de Licitacoes para Micro e Pequenas Empresas.pdf (2.24 MB)
+🆔 Document ID: doc-Manual-de-Licitacoes-para-Micr-1763072119
+⏱️  Início: 2025-11-13T19:15:19.661625
+
+🔧 Processando PDF (extração + chunking)...
+
+📄 Extracting text from Manual de Licitacoes para Micro e Pequenas Empresas.pdf...
+✂️  Chunking text (size=1000, overlap=200)...
+📝 Formatting 52 chunks...
+✅ Processed Manual de Licitacoes para Micro e Pequenas Empresas.pdf: 52 chunks, 6850 words
+✅ PDF processado:
+   📝 Texto extraído: 41,208 chars (6,850 palavras)
+   ✂️  Chunks gerados: 52
+   📦 Tamanho médio do chunk: 989 chars
+
+🔄 Iniciando workflow de análise...
+
+
+================================================================================
+❌ TESTE FALHOU
+⏱️  Duração até falha: 0m 7s
+❌ Erro: TypeError: execute_document_analysis_workflow() got an unexpected keyword argument 'document_content'
+================================================================================
+
+
+💾 Resultados JSON salvos: /home/pasteurjr/progreact/langnet-interface/backend/tests/results/editais_test_results_20251113_191527.json
+📄 Relatório salvo: /home/pasteurjr/progreact/langnet-interface/backend/tests/results/editais_test_report_20251113_191527.txt
+
+================================================================================
+RELATÓRIO DE TESTES - SISTEMA DE ANÁLISE DE EDITAIS
+================================================================================
+
+📅 Data: 13/11/2025 19:15:27
+🤖 LLM Provider: DEEPSEEK
+📄 Documentos Testados: 2
+⏱️  Duração Total: 0m 13s
+
+================================================================================
+RESUMO GERAL
+================================================================================
+
+✅ Testes Concluídos: 0 (0.0%)
+❌ Testes Falhados: 2 (100.0%)
+⏱️  Duração Média: 0m 0s
+
+================================================================================
+MÉTRICAS AGREGADAS
+================================================================================
+
+📊 Total de Requisitos Funcionais: 0
+📊 Total de Requisitos Não-Funcionais: 0
+📊 Total de Regras de Negócio: 0
+📊 Total de Entidades Identificadas: 0
+🌐 Total de Queries Web Research: 0
+
+================================================================================
+RESULTADOS POR DOCUMENTO
+================================================================================
+
+
+1. ❌ Análise estratégica de edital passo a passo - eLicitação.pdf
+   Tamanho: 2.0 MB
+   Status: FAILED
+   Duração: 0m 0s
+   ❌ Erro: TypeError: execute_document_analysis_workflow() got an unexpected keyword argument 'document_content'
+
+
+2. ❌ Manual de Licitacoes para Micro e Pequenas Empresas.pdf
+   Tamanho: 2.24 MB
+   Status: FAILED
+   Duração: 0m 7s
+   ❌ Erro: TypeError: execute_document_analysis_workflow() got an unexpected keyword argument 'document_content'
+
+
+================================================================================
+ANÁLISE DE DESEMPENHO
+================================================================================
+
+Tempo médio por documento: 0m 0s
+Requisitos funcionais por documento: 0.0
+Requisitos não-funcionais por documento: 0.0
+Regras de negócio por documento: 0.0
+Entidades por documento: 0.0
+Queries web research por documento: 0.0
+
+================================================================================
+CONCLUSÃO
+================================================================================
+
+Taxa de Sucesso: 0.0%
+Qualidade: BAIXA ❌
+Performance: EXCELENTE ✅
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================
+
+/home/pasteurjr/miniconda3/lib/python3.13/site-packages/litellm/llms/custom_httpx/async_client_cleanup.py:66: DeprecationWarning: There is no current event loop
+  loop = asyncio.get_event_loop()

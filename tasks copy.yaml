@@ -1,0 +1,35 @@
+query_generation:
+  description: >
+    Interpret natural language input and generate a SQL query that retrieves the requested data. Ensure the query aligns with the database schema and is optimized for efficiency.
+  expected_output: >
+    A well-structured MYSQL 5 query that accurately reflects the user's request and adheres to the database structure.
+
+query_verification:
+  description: >
+    Validate the SQL query generated to ensure it is free of syntax errors and adheres to the database schema. Identify and report any issues found.
+  expected_output: >
+    A validated SQL query ready for execution, or detailed feedback highlighting errors and suggested corrections.
+
+query_execution:
+  description: >
+    Execute the validated SQL query on the database and retrieve the results. Handle any execution errors and ensure data consistency.
+  expected_output: >
+    Retrieved data from the database in response to the query, or an error report if execution fails.
+
+csv_generation:
+  description: >
+    Convert the data retrieved from the query execution into a structured CSV file. Save the file to disk with an appropriate name for later use.
+  expected_output: >
+    A structured CSV file containing the query results, saved to a specified directory.
+
+report_generation:
+  description: >
+    Create a well-structured report in PDF and DOCX formats based on the data from the CSV file. Include summaries, charts, or tables as needed.
+  expected_output: >
+    Professional reports in PDF and DOCX formats, providing a clear and comprehensive view of the data.
+
+data_analysis:
+  description: >
+    Analyze the data from the CSV or PDF reports to identify trends, anomalies, and actionable insights. Generate a detailed analysis report for stakeholders.
+  expected_output: >
+    A detailed analysis report highlighting trends, anomalies, and actionable insights to inform decision-making.

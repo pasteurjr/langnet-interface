@@ -1,7 +1,10 @@
-// src/pages/ProjectList.tsx (IMPLEMENTAÇÃO COMPLETA)
-import React, { useState } from 'react';
+// src/pages/ProjectList.tsx (IMPLEMENTAÇÃO COMPLETA + API Integration)
+import React, { useState, useEffect } from 'react';
 import { Project, ProjectStatus } from '../types';
 import { useNavigation } from '../contexts/NavigationContext';
+import { toast } from 'react-toastify';
+import { getAllProjects } from '../services/projectService';
+import { getCurrentUser } from '../services/authService';
 import CreateProjectModal from '../components/projects/CreateProjectModal';
 import ProjectCreationButton from '../components/projects/ProjectCreationButton';
 import './ProjectList.css';
@@ -12,9 +15,65 @@ const ProjectList: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [domainFilter, setDomainFilter] = useState<string>('all');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // Dados de exemplo expandidos para a lista de projetos
-  const allProjects: Project[] = [
+  // Load projects from API
+  const loadProjects = async () => {
+    setLoading(true);
+    try {
+      const currentUser = getCurrentUser();
+      if (currentUser) {
+        const fetchedProjects = await getAllProjects(currentUser.id);
+        // Map API projects to frontend format
+        const mappedProjects = fetchedProjects.map((proj: any) => ({
+          id: proj.id,
+          name: proj.name,
+          description: proj.description || '',
+          domain: proj.domain || '',
+          createdAt: proj.created_at,
+          updatedAt: proj.updated_at,
+          status: mapApiStatusToFrontend(proj.status),
+          progress: calculateProgress(proj.status)
+        }));
+        setProjects(mappedProjects);
+      }
+    } catch (error) {
+      console.error('Error loading projects:', error);
+      toast.error('Erro ao carregar projetos');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const mapApiStatusToFrontend = (apiStatus: string): ProjectStatus => {
+    const statusMap: Record<string, ProjectStatus> = {
+      'draft': ProjectStatus.DRAFT,
+      'active': ProjectStatus.IN_PROGRESS,
+      'completed': ProjectStatus.COMPLETED,
+      'archived': ProjectStatus.ARCHIVED
+    };
+    return statusMap[apiStatus] || ProjectStatus.DRAFT;
+  };
+
+  const calculateProgress = (status: string): number => {
+    const progressMap: Record<string, number> = {
+      'draft': 10,
+      'active': 50,
+      'completed': 100,
+      'archived': 100
+    };
+    return progressMap[status] || 0;
+  };
+
+  useEffect(() => {
+    loadProjects();
+  }, []);
+
+  const allProjects = projects;
+
+  // OLD Mock data (commented out for reference)
+  const _oldMockData: Project[] = [
     {
       id: '1',
       name: 'Assistente de Atendimento ao Cliente',
@@ -118,9 +177,10 @@ const ProjectList: React.FC = () => {
     setIsCreateModalOpen(false);
   };
 
-  const handleCreateProject = (projectData: any) => {
+  const handleCreateProject = async (projectData: any) => {
     console.log('Novo projeto criado:', projectData);
-    // Aqui você implementaria a lógica para adicionar o projeto à lista
+    // Reload projects to show the newly created project
+    await loadProjects();
     handleCloseModal();
   };
 
@@ -222,84 +282,94 @@ const ProjectList: React.FC = () => {
         </div>
       </div>
 
-      {/* Lista de Projetos */}
-      <div className="projects-grid">
-        {filteredProjects.map(project => (
-          <div 
-            key={project.id} 
-            className="project-list-card"
-            onClick={() => handleProjectClick(project.id)}
-          >
-            <div className="project-card-header">
-              <h3 className="project-title">{project.name}</h3>
-              <span className={`project-status status-${project.status.toLowerCase().replace('_', '-')}`}>
-                {getStatusDisplay(project.status)}
-              </span>
-            </div>
-            
-            <p className="project-description">{project.description}</p>
-            
-            <div className="project-meta">
-              <div className="meta-item">
-                <span className="meta-label">Domínio:</span>
-                <span className="meta-value">{project.domain}</span>
-              </div>
-              <div className="meta-item">
-                <span className="meta-label">Criado:</span>
-                <span className="meta-value">{formatDate(project.createdAt)}</span>
-              </div>
-              <div className="meta-item">
-                <span className="meta-label">Atualizado:</span>
-                <span className="meta-value">{formatDate(project.updatedAt)}</span>
-              </div>
-            </div>
-            
-            <div className="project-progress">
-              <div className="progress-header">
-                <span className="progress-label">Progresso</span>
-                <span className="progress-percentage">{project.progress}%</span>
-              </div>
-              <div className="progress-bar">
-                <div 
-                  className="progress-fill" 
-                  style={{ width: `${project.progress}%` }}
-                ></div>
-              </div>
-            </div>
-
-            <div className="project-actions">
-              <button 
-                className="action-button primary"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleProjectClick(project.id);
-                }}
-              >
-                Abrir Projeto
-              </button>
-              <button 
-                className="action-button secondary"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  console.log('Editar projeto', project.id);
-                }}
-              >
-                Editar
-              </button>
-            </div>
-          </div>
-        ))}
-
-        {/* Card para criar novo projeto */}
-        <div className="new-project-card" onClick={handleOpenModal}>
-          <div className="new-project-icon">+</div>
-          <h3>Criar Novo Projeto</h3>
-          <p>Comece um novo projeto LangNet do zero ou usando um modelo</p>
+      {/* Loading State */}
+      {loading && (
+        <div className="loading-container">
+          <div className="loading-spinner"></div>
+          <p>Carregando projetos...</p>
         </div>
-      </div>
+      )}
+
+      {/* Lista de Projetos */}
+      {!loading && (
+        <div className="projects-grid">
+          {filteredProjects.map(project => (
+            <div
+              key={project.id}
+              className="project-list-card"
+              onClick={() => handleProjectClick(project.id)}
+            >
+              <div className="project-card-header">
+                <h3 className="project-title">{project.name}</h3>
+                <span className={`project-status status-${project.status.toLowerCase().replace('_', '-')}`}>
+                  {getStatusDisplay(project.status)}
+                </span>
+              </div>
+
+              <p className="project-description">{project.description}</p>
+
+              <div className="project-meta">
+                <div className="meta-item">
+                  <span className="meta-label">Domínio:</span>
+                  <span className="meta-value">{project.domain}</span>
+                </div>
+                <div className="meta-item">
+                  <span className="meta-label">Criado:</span>
+                  <span className="meta-value">{formatDate(project.createdAt)}</span>
+                </div>
+                <div className="meta-item">
+                  <span className="meta-label">Atualizado:</span>
+                  <span className="meta-value">{formatDate(project.updatedAt)}</span>
+                </div>
+              </div>
+
+              <div className="project-progress">
+                <div className="progress-header">
+                  <span className="progress-label">Progresso</span>
+                  <span className="progress-percentage">{project.progress}%</span>
+                </div>
+                <div className="progress-bar">
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${project.progress}%` }}
+                  ></div>
+                </div>
+              </div>
+
+              <div className="project-actions">
+                <button
+                  className="action-button primary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleProjectClick(project.id);
+                  }}
+                >
+                  Abrir Projeto
+                </button>
+                <button
+                  className="action-button secondary"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    console.log('Editar projeto', project.id);
+                  }}
+                >
+                  Editar
+                </button>
+              </div>
+            </div>
+          ))}
+
+          {/* Card para criar novo projeto */}
+          <div className="new-project-card" onClick={handleOpenModal}>
+            <div className="new-project-icon">+</div>
+            <h3>Criar Novo Projeto</h3>
+            <p>Comece um novo projeto LangNet do zero ou usando um modelo</p>
+          </div>
+        </div>
+      )}
 
       {/* Mensagem quando não há resultados */}
-      {filteredProjects.length === 0 && (
+      {!loading && filteredProjects.length === 0 && (
         <div className="no-results">
           <div className="no-results-icon">🔍</div>
           <h3>Nenhum projeto encontrado</h3>

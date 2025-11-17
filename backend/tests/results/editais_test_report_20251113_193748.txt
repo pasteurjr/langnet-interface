@@ -1,0 +1,85 @@
+
+================================================================================
+RELATÓRIO DE TESTES - SISTEMA DE ANÁLISE DE EDITAIS
+================================================================================
+
+📅 Data: 13/11/2025 19:37:48
+🤖 LLM Provider: DEEPSEEK
+📄 Documentos Testados: 2
+⏱️  Duração Total: 0m 15s
+
+================================================================================
+RESUMO GERAL
+================================================================================
+
+✅ Testes Concluídos: 2 (100.0%)
+❌ Testes Falhados: 0 (0.0%)
+⏱️  Duração Média: 0m 5s
+
+================================================================================
+MÉTRICAS AGREGADAS
+================================================================================
+
+📊 Total de Requisitos Funcionais: 0
+📊 Total de Requisitos Não-Funcionais: 0
+📊 Total de Regras de Negócio: 0
+📊 Total de Entidades Identificadas: 0
+🌐 Total de Queries Web Research: 0
+
+================================================================================
+RESULTADOS POR DOCUMENTO
+================================================================================
+
+
+1. ✅ Análise estratégica de edital passo a passo - eLicitação.pdf
+   Tamanho: 2.0 MB
+   Status: COMPLETED
+   Duração: 0m 1s
+   Requisitos Funcionais: 0
+   Requisitos Não-Funcionais: 0
+   Regras de Negócio: 0
+   Entidades: 0
+   Atores: 0
+   Web Research Queries: 0
+   Web Research Results: 0
+   Palavras no Documento: 2,884
+   Tamanho Doc. Requisitos: 0 chars
+
+
+2. ✅ Manual de Licitacoes para Micro e Pequenas Empresas.pdf
+   Tamanho: 2.24 MB
+   Status: COMPLETED
+   Duração: 0m 8s
+   Requisitos Funcionais: 0
+   Requisitos Não-Funcionais: 0
+   Regras de Negócio: 0
+   Entidades: 0
+   Atores: 0
+   Web Research Queries: 0
+   Web Research Results: 0
+   Palavras no Documento: 8,976
+   Tamanho Doc. Requisitos: 0 chars
+
+
+================================================================================
+ANÁLISE DE DESEMPENHO
+================================================================================
+
+Tempo médio por documento: 0m 5s
+Requisitos funcionais por documento: 0.0
+Requisitos não-funcionais por documento: 0.0
+Regras de negócio por documento: 0.0
+Entidades por documento: 0.0
+Queries web research por documento: 0.0
+
+================================================================================
+CONCLUSÃO
+================================================================================
+
+Taxa de Sucesso: 100.0%
+Qualidade: EXCELENTE ✅
+Performance: EXCELENTE ✅
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

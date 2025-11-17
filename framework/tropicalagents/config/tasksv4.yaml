@@ -1,0 +1,196 @@
+search_database_using_natural_language:
+  description: >
+    Use the NaturalLanguageQueryTool to process the provided question: {question}.
+    Input data format:
+      - question: Natural language query to be processed
+    Process steps:
+      1. Submit {question} to NaturalLanguageQueryTool
+      2. Format the question results  in json format.Put all query results in json key named query_results. At the end of Json, create a json key named query_used containing the sql query used to get the result
+      3- Save json results in a file using tool json writer tool
+  expected_output: >
+    Raw JSON containing query results and query used, without any markdown formatting.
+    A file saved using json writer tool
+
+csv_generation:
+  description: >
+    Convert {natural_language_json_result} to CSV following RFC-4180 specification.
+    Input data format:
+      - query results:key  {natural_language_json_result}
+      
+    Process steps:
+      1- Convert {natural_language_json_result} to csv format
+      2- Save csv format to file using csv file writer tool
+  expected_output: >
+    Raw csv generated content without any markdown formatting
+    A file saved using csv file writer tool
+
+report_generation:
+  description: >
+    Format data from  csv content in {csv_content} in  html format.
+    Input data format:
+      - csv_data: {csv_content}
+      
+    Process steps:
+      1. Read and parse the CSV data
+      2. Format data into HTML, ensuring:
+        - Proper HTML table structure
+        - Basic styling for readability
+        - Document sections with headers
+      3. Save HTML report using HTML Writer Tool
+
+      IMPORTANT: Generate content as plain text strings without metadata or additional formatting.
+
+  expected_output: >
+
+    Raw html generated content without any markdown formatting
+    Raw csv data read from csv content without any markdown formatting
+    HTML report saved to file using HTML Writer Tool
+    Report should display data in a clear, tabular format
+
+md_report_generation:
+  description: >
+    Format data from  csv content in {csv_content} in markdown md format.
+    Input data format:
+      - csv_data: {csv_content}
+      
+    Process steps:
+      1. Read and parse the CSV data
+      2. Format data into markdown, focusing on:
+        - Clear table headers
+        - Properly aligned columns
+        - Data overview section
+        - Summary section
+      3. Save markdown report using MD Writer Tool
+      
+
+      IMPORTANT: Generate content as plain text strings without metadata or additional formatting.
+
+  expected_output: >
+    Raw md generated content without any markdown formatting
+    Raw csv data read from csv content without any markdown formatting
+    Markdown report saved to file using MD Writer Tool
+    Report should display data in a clear, tabular format
+
+data_analysis:
+  description: >
+    Realizar análise detalhada dos dados da consulta, revelando insights
+    profundos e padrões significativos.
+
+    Input:
+    - Conteúdo CSV do resultado da consulta: {csv_content}
+
+    Etapas do Processo:
+    1. Preparação dos Dados:
+       - Interpretar e traduzir nomes das colunas para formato amigável
+       - Identificar tipo e natureza de cada campo
+       - Verificar qualidade e completude dos dados
+
+    2. Análise Individual por Coluna:
+       Para cada coluna:
+       - Apresentar nome amigável e significado detalhado
+       - Analisar distribuição dos valores
+       - Identificar valores extremos ou anômalos
+       - Detectar padrões temporais ou sequenciais
+       - Avaliar tendências e variações significativas
+       - Destacar comportamentos interessantes ou preocupantes
+       - Se for numérica, calcular estatísticas descritivas, valor máximo, mínimo, média, mediana, desvio padrão
+
+    3. Análise de Relacionamentos:
+       - Identificar correlações entre colunas
+       - Detectar padrões de comportamento conjunto
+       - Descobrir dependências e influências
+       - Avaliar impactos cruzados
+
+    4. Análise Temporal (se aplicável):
+       - Identificar padrões ao longo do tempo
+       - Detectar sazonalidades
+       - Avaliar tendências de longo prazo
+       - Identificar pontos de mudança
+
+    5. Geração de Relatório HTML:
+       - Criar estrutura clara e organizada
+       - Incluir tabelas formatadas com dados traduzidos
+       - Apresentar análises detalhadas por coluna
+       - Destacar descobertas significativas
+       - Incluir seção de correlações e padrões
+       - Fornecer conclusões e recomendações
+
+    6. Salvar relatório usando HTML Analysis Writer Tool
+
+  expected_output: >
+    Relatório HTML em português contendo:
+
+    1. Apresentação dos Dados:
+       - Título e descrição do conjunto de dados
+       - Tabela formatada com nomes de colunas traduzidos e todas as linhas de dados de {csv_content}
+       - Explicação detalhada do significado de cada coluna
+
+    2. Análise Individual das Colunas:
+       Para cada coluna:
+       - Nome amigável e significado
+       - Análise detalhada dos valores e distribuição
+       - Padrões identificados
+       - Anomalias ou comportamentos notáveis
+       - Tendências observadas
+       - Insights específicos
+
+    3. Análise de Relacionamentos:
+       - Correlações significativas identificadas
+       - Padrões de comportamento conjunto
+       - Influências e dependências entre campos
+
+    4. Descobertas Principais:
+       - Padrões mais relevantes
+       - Anomalias significativas
+       - Tendências importantes
+       - Comportamentos notáveis
+
+    5. Conclusões e Insights:
+       - Resumo das descobertas principais
+       - Interpretação dos padrões encontrados
+       - Implicações das análises realizadas
+       - Recomendações baseadas nos dados
+
+    O relatório deve ser salvo em arquivo HTML e também retornado
+    em formato texto sem formatação markdown, em português.
+
+data_analysisant:
+  description: >
+    Analyze data from CSV content to provide insights about the query results.
+
+    Input data:
+    - CSV content from query result: {csv_content}
+    Process steps:
+      1. Read and parse the CSV data
+      2. Format data into HTML, ensuring:
+        - Proper HTML table structure
+        - Basic styling for readability
+        - Document sections with headers
+      3- Find the meaning of the column names
+      4- For each column:
+        -Print the column name meaning
+        -Identify notable patterns or trends in the data in columns, for instance, anormal behaviour, high or low increasing
+      5- Identify associations between data of columns
+      6. Highlight key findings from the data
+      7. Summarize results insights
+
+
+      8 -Generate a well-formatted HTML report containing:
+        - Clear presentation of the data
+        - Analysis of the query results
+        - Key findings visualization
+        - Summary of insights
+      9-Save html report to file using HTML Analysis Writer Tool
+  expected_output: >
+
+    HTML report in portuguese language containing:
+    - Title and description of analyzed data
+    - Well-formatted data presentation
+    - For each column in csv:
+        -Print the column name meaning
+        -Print Identified notable patterns or trends for the data contained in rows of column, for instance, anormal behaviour, high or low increasing
+    - Print Remarkable Identified associations between data in columns, if any
+    - Analysis of key patterns and findings
+    - Summary of insights from the query results in a clear and structured format
+    HTML report saved to file using HTML Analysis Writer Tool 
+    Analysed result data, same as in HTML report, without any markdown formatting. in portuguese language, in text format

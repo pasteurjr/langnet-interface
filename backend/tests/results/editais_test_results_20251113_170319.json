@@ -1,0 +1,40 @@
+{
+  "test_suite": "editais_batch_test",
+  "total_documents": 1,
+  "llm_provider": "deepseek",
+  "start_time": "2025-11-13T17:03:19.471077",
+  "end_time": "2025-11-13T17:03:19.471184",
+  "total_duration_seconds": 0.0,
+  "tests": [
+    {
+      "document_name": "Como encontrar editais de licitação abertos _ ConLicitação.pdf",
+      "document_path": "/home/pasteurjr/progreact/langnet-interface/instancias/editais/Como encontrar editais de licitação abertos _ ConLicitação.pdf",
+      "document_size_mb": 0.49,
+      "llm_provider": "deepseek",
+      "start_time": "2025-11-13T17:03:19.471114",
+      "end_time": "2025-11-13T17:03:19.471152",
+      "duration_seconds": 0.0,
+      "status": "failed",
+      "errors": [
+        {
+          "type": "TypeError",
+          "message": "init_full_state() got an unexpected keyword argument 'project_name'. Did you mean 'project_id'?",
+          "timestamp": "2025-11-13T17:03:19.471159"
+        }
+      ],
+      "warnings": [],
+      "metrics": {},
+      "state": null
+    }
+  ],
+  "summary": {
+    "completed": 0,
+    "failed": 1,
+    "total_requirements": 0,
+    "total_nfr": 0,
+    "total_business_rules": 0,
+    "total_entities": 0,
+    "total_web_queries": 0,
+    "avg_duration_seconds": 0
+  }
+}

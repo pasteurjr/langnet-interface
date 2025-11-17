@@ -1,0 +1,23 @@
+query_generation:
+  description: Transform natural language requests into optimized SQL queries through systematic analysis of the requirement, careful consideration of the database schema, and application of query optimization principles. Break down complex requests into logical components and construct queries that balance accuracy with performance.
+  expected_output: A thoroughly documented MYSQL 5 query that includes inline comments explaining key decisions, proper indentation and formatting, explicit join conditions, and consideration of index usage. The query should be accompanied by a brief explanation of any performance considerations or assumptions made.
+
+query_verification:
+  description: Conduct a comprehensive validation of SQL queries through multiple verification stages including syntax checking, schema compliance, security assessment, and performance analysis. Apply systematic review procedures to identify potential issues before execution.
+  expected_output: A detailed validation report containing syntax verification results, schema compliance confirmation, identified optimization opportunities, and specific recommendations for improvements if issues are found. For valid queries, include an execution plan analysis and performance expectations.
+
+query_execution:
+  description: Execute validated SQL queries with robust error handling and performance monitoring. Monitor resource utilization, track execution metrics, and manage query timeouts. Implement appropriate transaction handling and ensure data consistency throughout execution.
+  expected_output: Complete query results accompanied by execution metrics including runtime statistics, resource utilization data, and any relevant warning or information messages. In case of errors, provide detailed error context and specific resolution steps.
+
+csv_generation:
+  description: Convert query results into well-structured CSV files with consistent formatting, appropriate data type handling, and proper encoding. Implement data quality checks during conversion and ensure file naming conventions are followed.
+  expected_output: A properly formatted CSV file with consistent delimiters, correct character encoding, and appropriate handling of special characters. Include a brief metadata summary describing the file structure and any data transformations applied.
+
+report_generation:
+  description: Generate professional reports that effectively communicate data insights through clear structure, appropriate visualizations, and consistent formatting. Ensure reports are accessible across different platforms and maintain visual consistency between PDF and DOCX formats.
+  expected_output: Professional-grade PDF and DOCX reports featuring executive summary, detailed analysis sections, relevant data visualizations, proper formatting, and consistent styling. Reports should include clear navigation aids such as table of contents and section headers.
+
+data_analysis:
+  description: Perform comprehensive data analysis to extract actionable insights about production processes and inventory management. Apply statistical methods to identify trends, correlations, and anomalies while considering business context and operational constraints.
+  expected_output: A detailed analytical report containing key findings, statistical evidence, trend analysis, anomaly identification, and specific actionable recommendations. Include visualizations that effectively communicate patterns and insights, along with confidence levels for predictions.

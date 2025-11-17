@@ -1,0 +1,1148 @@
+search_database_using_natural_language:
+  description: >
+    Use the NaturalLanguageQueryTool to process the provided question: {question}.
+    Input data format:
+      - question: Natural language query to be processed
+    Process steps:
+      1. Submit {question} to NaturalLanguageQueryTool
+      2. Format the question results  in json format.Put all query results in json key named query_results. At the end of Json, create a json key named query_used containing the sql query used to get the result
+      3- Save json results in a file using tool json writer tool
+  expected_output: >
+    Raw JSON containing query results and query used, without any markdown formatting.
+    A file saved using json writer tool
+
+search_database_using_sql_query:
+  description: >
+    Use the DBQueryTool to process the provided sql query: {query}.
+    Input data format:
+      - query: sql query to be processed
+    Process steps:
+      1. Submit {query} to DBQueryTool
+      2. Format the question results  in json format.Put all query results in json key named query_results. At the end of Json, create a json key named query_used containing the sql query used to get the result
+      
+  expected_output: >
+    Raw JSON containing query results and query used, without any markdown formatting.
+    
+
+
+search_database_using_sql_query_CJ:
+  description: >
+    Use the DBQueryTool to process the provided sql query: {query}.
+    Input data format:
+      - query: sql query to be processed
+    Process steps:
+      1. Submit {query} to DBQueryTool
+      2. Format the question results  in json format.Put all query results in json key named query_results. At the end of Json, create a json key named query_used containing the sql query used to get the result
+      3- Save json results in a file using tool json writer tool
+  expected_output: >
+    Raw JSON containing query results and query used, without any markdown formatting.
+    A file saved using json writer tool
+
+
+csv_generation:
+  description: >
+    Convert the json generated from previous task to CSV following RFC-4180 specification.
+    Input data format:
+      - query results: json generated from previous task
+      
+    Process steps:
+      1- Convert json generated from previous to csv format
+      2- Save csv format to file using csv file writer tool
+  expected_output: >
+    Raw csv generated content without any markdown formatting
+    A file saved using csv file writer tool
+
+report_generation:
+  description: >
+    Convert the json generated from previous task to  html format.
+    Input data format:
+      - Convert the json generated from previous task
+      
+    Process steps:
+      1. Read and parse the json data
+      2-Translate key names (columns) to a friendly name in portuguese language
+      2. Format data into HTML, ensuring:
+        - Proper HTML table structure
+        - Basic styling for readability
+        - Document sections with headers
+      3. Save HTML report using HTML Writer Tool
+
+      IMPORTANT: Generate content as plain text strings without metadata or additional formatting.
+
+  expected_output: >
+
+    Raw html generated content without any markdown formatting
+    HTML report saved to file using HTML Writer Tool
+    Report should display data in a clear, tabular format
+
+md_report_generation:
+  description: >
+    Format data from  csv content in {csv_content} in markdown md format.
+    Input data format:
+      - csv_data: {csv_content}
+      
+    Process steps:
+      1. Read and parse the CSV data
+      2. Format data into markdown, focusing on:
+        - Clear table headers
+        - Properly aligned columns
+        - Data overview section
+        - Summary section
+      3. Save markdown report using MD Writer Tool
+      
+
+      IMPORTANT: Generate content as plain text strings without metadata or additional formatting.
+
+  expected_output: >
+    Raw md generated content without any markdown formatting
+    Raw csv data read from csv content without any markdown formatting
+    Markdown report saved to file using MD Writer Tool
+    Report should display data in a clear, tabular format
+
+data_analysis:
+  description: >
+    Realizar análise detalhada dos dados da consulta, revelando insights
+    profundos e padrões significativos.
+
+    Input:
+    - json com resultados da consulta gerado na primeira task search_database_using_natural_language 
+
+    Etapas do Processo:
+    1. Preparação dos Dados:
+       - Interpretar e traduzir nomes das colunas para formato amigável
+       - Identificar tipo e natureza de cada campo
+       - Verificar qualidade e completude dos dados
+
+    2. Análise Individual por Coluna:
+       Para cada coluna:
+       - Apresentar nome amigável e significado detalhado
+       - Analisar distribuição dos valores
+       - Identificar valores extremos ou anômalos
+       - Detectar padrões temporais ou sequenciais
+       - Avaliar tendências e variações significativas
+       - Destacar comportamentos interessantes ou preocupantes
+       - Se for numérica, calcular estatísticas descritivas, valor máximo, mínimo, média, mediana, desvio padrão
+
+    3. Análise de Relacionamentos:
+       - Identificar correlações entre colunas
+       - Detectar padrões de comportamento conjunto
+       - Descobrir dependências e influências
+       - Avaliar impactos cruzados
+
+    4. Análise Temporal (se aplicável):
+       - Identificar padrões ao longo do tempo
+       - Detectar sazonalidades
+       - Avaliar tendências de longo prazo
+       - Identificar pontos de mudança
+
+    5. Geração de Relatório HTML:
+       - Criar estrutura clara e organizada
+       - Incluir tabelas formatadas com dados traduzidos
+       - Apresentar análises detalhadas por coluna
+       - Destacar descobertas significativas
+       - Incluir seção de correlações e padrões
+       - Fornecer conclusões e recomendações
+
+    6. Salvar relatório usando HTML Analysis Writer Tool
+
+  expected_output: >
+    Relatório HTML em português contendo:
+
+    1. Apresentação dos Dados:
+       - Título e descrição do conjunto de dados
+       - Tabela formatada com nomes de colunas traduzidos e todas as linhas de dados do csv gerado na task anterior
+       - Explicação detalhada do significado de cada coluna
+
+    2. Análise Individual das Colunas:
+       Para cada coluna:
+       - Nome amigável e significado
+       - Análise detalhada dos valores e distribuição
+       - Padrões identificados
+       - Anomalias ou comportamentos notáveis
+       - Tendências observadas
+       - Insights específicos
+
+    3. Análise de Relacionamentos:
+       - Correlações significativas identificadas
+       - Padrões de comportamento conjunto
+       - Influências e dependências entre campos
+
+    4. Descobertas Principais:
+       - Padrões mais relevantes
+       - Anomalias significativas
+       - Tendências importantes
+       - Comportamentos notáveis
+
+    5. Conclusões e Insights:
+       - Resumo das descobertas principais
+       - Interpretação dos padrões encontrados
+       - Implicações das análises realizadas
+       - Recomendações baseadas nos dados
+
+    O relatório deve ser salvo em arquivo HTML e também retornado
+    em formato texto sem formatação markdown, em português.
+
+data_analysis_user:
+  description: >
+    Realizar análise detalhada dos dados da consulta, revelando insights
+    profundos e padrões significativos conforme as seguintes analises a serem feitas:{analises_a_fazer}
+
+    Input:
+    - json com resultados da consulta gerado na primeira task search_database_using_natural_language
+    - Tarefas de análise:{analises_a_fazer}  
+
+    Etapas do Processo:
+    1. Preparação dos Dados:
+       - Interpretar e traduzir nomes das colunas para formato amigável. Esas colunas são chaves do json
+       - Identificar tipo e natureza de cada campo
+       - Verificar qualidade e completude dos dados
+
+    2. Análise de dados conforme as tarefas de análise a serem feitas:{analises_a_fazer}
+
+    3- Criar um relatório de análise em formato markdown, conforme especificado em expected_output
+       
+    
+
+  expected_output: >
+    Relatório formatado como markdown,  em português, contendo:
+
+    1. Apresentação dos Dados:
+       - Título e descrição do conjunto de dados
+       - Tabela formatada com nomes de colunas traduzidos e todas as linhas de dados do json gerado na task anterior
+       - Explicação detalhada do significado de cada coluna
+
+    2. Análise de dados conforme as tarefas de análise a serem feitas:{analises_a_fazer}
+
+    3. Conclusões e Insights:
+       - Resumo das descobertas principais
+       - Interpretação dos padrões encontrados
+       - Implicações das análises realizadas
+       - Recomendações baseadas nos dados
+
+    4.O relatório  retornado em  formatação markdown, em português. Não coloque a marcaçao markdown no início, não é necessária
+
+
+data_analysis_user_save_html:
+  description: >
+    Realizar análise detalhada dos dados da consulta, revelando insights
+    profundos e padrões significativos conforme as seguintes analises a serem feitas:{analises_a_fazer}
+
+    Input:
+    - json com resultados da consulta gerado na primeira task search_database_using_natural_language
+    - Tarefas de análise:{analises_a_fazer}  
+
+    Etapas do Processo:
+    1. Preparação dos Dados:
+       - Interpretar e traduzir nomes das colunas para formato amigável. Esas colunas são chaves do json
+       - Identificar tipo e natureza de cada campo
+       - Verificar qualidade e completude dos dados
+
+    2. Análise de dados conforme as tarefas de análise a serem feitas:{analises_a_fazer}
+       
+    3. Salvar relatório usando a tool HTML Analysis Report Writer Tool
+
+  expected_output: >
+    Relatório HTML em português contendo:
+
+    1. Apresentação dos Dados:
+       - Título e descrição do conjunto de dados
+       - Tabela formatada com nomes de colunas traduzidos e todas as linhas de dados do json gerado na task anterior
+       - Explicação detalhada do significado de cada coluna
+
+    2. Análise de dados conforme as tarefas de análise a serem feitas:{analises_a_fazer}
+
+    3. Conclusões e Insights:
+       - Resumo das descobertas principais
+       - Interpretação dos padrões encontrados
+       - Implicações das análises realizadas
+       - Recomendações baseadas nos dados
+
+    O relatório deve ser salvo em arquivo HTML e também retornado
+    em formato string  html puro, sem formatação markdown, em português.
+
+data_analysis_user_query:
+  description: >
+    Realizar análise detalhada dos dados da consulta, revelando insights
+    profundos e padrões significativos conforme as seguintes analises a serem feitas:{analises_a_fazer}
+
+    Input:
+    - json com resultados da consulta gerado na primeira task search_database_using_sql_query
+    - Tarefas de análise:{analises_a_fazer}  
+
+    Etapas do Processo:
+    1. Preparação dos Dados:
+       - Interpretar e traduzir nomes das colunas para formato amigável. Esas colunas são chaves do json
+       - Identificar tipo e natureza de cada campo
+       - Verificar qualidade e completude dos dados
+
+    2. Análise de dados conforme as tarefas de análise a serem feitas:{analises_a_fazer}
+       
+    3- Criar um relatório de análise em formato markdown, conforme especificado em expected_output
+  expected_output: >
+    Relatório formatado como markdown,  em português, contendo:
+
+    1. Apresentação dos Dados:
+       - Título e descrição do conjunto de dados
+       - Tabela formatada com nomes de colunas traduzidos e todas as linhas de dados do json gerado na task anterior
+       - Explicação detalhada do significado de cada coluna
+
+    2. Análise de dados conforme as tarefas de análise a serem feitas:{analises_a_fazer}
+
+    3. Conclusões e Insights:
+       - Resumo das descobertas principais
+       - Interpretação dos padrões encontrados
+       - Implicações das análises realizadas
+       - Recomendações baseadas nos dados
+
+    4.O relatório  retornado em  formatação markdown, em português. Não coloque a marcaçao markdown no início, não é necessária
+
+
+
+
+
+data_analysis_user_query_save_html:
+  description: >
+    Realizar análise detalhada dos dados da consulta, revelando insights
+    profundos e padrões significativos conforme as seguintes analises a serem feitas:{analises_a_fazer}
+
+    Input:
+    - json com resultados da consulta gerado na primeira task search_database_using_sql_query
+    - Tarefas de análise:{analises_a_fazer}  
+
+    Etapas do Processo:
+    1. Preparação dos Dados:
+       - Interpretar e traduzir nomes das colunas para formato amigável. Esas colunas são chaves do json
+       - Identificar tipo e natureza de cada campo
+       - Verificar qualidade e completude dos dados
+
+    2. Análise de dados conforme as tarefas de análise a serem feitas:{analises_a_fazer}
+       
+    3. Gera relatório HTML em português
+  expected_output: >
+    Relatório HTML em português contendo:
+
+    1. Apresentação dos Dados:
+       - Título e descrição do conjunto de dados
+       - Tabela formatada com nomes de colunas traduzidos e todas as linhas de dados do json gerado na task anterior
+       - Explicação detalhada do significado de cada coluna
+
+    2. Análise de dados conforme as tarefas de análise a serem feitas:{analises_a_fazer}
+
+    3. Conclusões e Insights:
+       - Resumo das descobertas principais
+       - Interpretação dos padrões encontrados
+       - Implicações das análises realizadas
+       - Recomendações baseadas nos dados
+
+    O relatório deve ser  retornado em formato string  html puro, sem formatação markdown, em português.
+
+
+data_analysisant:
+  description: >
+    Analyze data from CSV content to provide insights about the query results.
+
+    Input data:
+    - CSV content from query result: {csv_content}
+    Process steps:
+      1. Read and parse the CSV data
+      2. Format data into HTML, ensuring:
+        - Proper HTML table structure
+        - Basic styling for readability
+        - Document sections with headers
+      3- Find the meaning of the column names
+      4- For each column:
+        -Print the column name meaning
+        -Identify notable patterns or trends in the data in columns, for instance, anormal behaviour, high or low increasing
+      5- Identify associations between data of columns
+      6. Highlight key findings from the data
+      7. Summarize results insights
+
+
+      8 -Generate a well-formatted HTML report containing:
+        - Clear presentation of the data
+        - Analysis of the query results
+        - Key findings visualization
+        - Summary of insights
+      9-Save html report to file using HTML Analysis Writer Tool
+  expected_output: >
+
+    HTML report in portuguese language containing:
+    - Title and description of analyzed data
+    - Well-formatted data presentation
+    - For each column in csv:
+        -Print the column name meaning
+        -Print Identified notable patterns or trends for the data contained in rows of column, for instance, anormal behaviour, high or low increasing
+    - Print Remarkable Identified associations between data in columns, if any
+    - Analysis of key patterns and findings
+    - Summary of insights from the query results in a clear and structured format
+    HTML report saved to file using HTML Analysis Writer Tool 
+    Analysed result data, same as in HTML report, without any markdown formatting. in portuguese language, in text format
+
+verify_production_data:
+  description: >
+    Validar os dados de eficiência das máquinas em produção ativa, identificando
+    possíveis anomalias ou tendências, e gerar um relatório detalhado. Para isso:
+
+    Input data:
+      - Query SQL a ser executada na ferramenta DBQueryTool:
+        
+        SELECT 
+          pp.PRODUCAOCOD,
+          m.MAQCOD,
+          m.MAQNOME,
+          p.DESCPROD,
+          CASE 
+              WHEN TIME_TO_SEC(
+                  TIMEDIFF(
+                      CONCAT(ultimo.DATADEFABRICACAO, " ", ultimo.HORADEFABRICACAO), 
+                      CONCAT(penultimo.DATADEFABRICACAO, " ", penultimo.HORADEFABRICACAO)
+                  )
+              ) = 0 THEN 0 
+              ELSE 
+                  3 / (
+                      TIME_TO_SEC(
+                          TIMEDIFF(
+                              CONCAT(ultimo.DATADEFABRICACAO, " ", ultimo.HORADEFABRICACAO), 
+                              CONCAT(penultimo.DATADEFABRICACAO, " ", penultimo.HORADEFABRICACAO)
+                          )
+                      ) / (molde.CICLO * p.QUANTPSACO / molde.CAVIDADES)
+                  ) * 100 
+          END AS EFICIENCIA
+        FROM PRODUCAOPRODUTO pp
+        JOIN MAQUINAS m ON pp.MAQCOD = m.MAQCOD
+        JOIN PRODUTO p ON pp.CODPROD = p.CODPROD
+        JOIN MOLDE molde ON pp.MOLDECOD = molde.MOLDECOD
+        JOIN (
+            SELECT * FROM (
+                SELECT PRODUCAOCOD, DATADEFABRICACAO, HORADEFABRICACAO 
+                FROM SACO s1 
+                WHERE (
+                    SELECT COUNT(*) 
+                    FROM SACO s2 
+                    WHERE s2.PRODUCAOCOD = s1.PRODUCAOCOD 
+                    AND s2.CODSACO > s1.CODSACO
+                ) = 0
+            ) AS sub_ultimo
+        ) AS ultimo ON ultimo.PRODUCAOCOD = pp.PRODUCAOCOD
+        JOIN (
+            SELECT * FROM (
+                SELECT PRODUCAOCOD, DATADEFABRICACAO, HORADEFABRICACAO 
+                FROM SACO s1 
+                WHERE (
+                    SELECT COUNT(*) 
+                    FROM SACO s2 
+                    WHERE s2.PRODUCAOCOD = s1.PRODUCAOCOD 
+                    AND s2.CODSACO > s1.CODSACO
+                ) = 3
+            ) AS sub_penultimo
+        ) AS penultimo ON penultimo.PRODUCAOCOD = pp.PRODUCAOCOD
+        WHERE pp.PRODUCAOATIVA = 'S'
+        ORDER BY pp.PRODUCAOCOD;
+       
+      -Dados armazenados na memória da task  estao em {memory_system}.
+       Se o valor for "NO_HISTORY", significa que é a primeira execução. 
+       Caso contrário, os dados estarão em formato json, contendo os registros de
+       todos os resultados armazenados da query acima com a seguinte estrutura:  
+        * Um registro raiz que possui uma chave 'task' com valor "verify_production_data"
+        * Uma chave 'timestamp' que armazena data e hora no Brasil (formato yyyy-mm-dd hh:mm:ss)
+        * Uma chave 'results' que contém uma lista de registros de produção, onde cada registro possui:
+          - PRODUCAOCOD: código da produção
+          - MAQCOD: código da máquina
+          - MAQNOME: nome da máquina
+          - DESCPROD: descrição do produto
+          - EFICIENCIA: valor da eficiência    
+        
+        
+    Process steps:
+      1. Use a ferramenta "DBQueryTool" para executar a query SQL fornecida e buscar dados das produções ativas.
+      
+      2. Converta o resultado fornecido pela ferramenta para formato JSON puro, sem formatação markdown.
+      
+      3. Analise o histórico e eficiências:
+         - Verifique se existem dados no memory_system
+         - Se memory_system for "NO_HISTORY" (vazio/primeira execução):
+           * Considere apenas os dados da eficiência atual
+           * Registre que é a primeira execução no relatório
+         - Se memory_system contiver dados:
+           * Extraia os últimos 10 resultados (ou menos, se houver menos) ordenados por timestamp
+           * Para cada máquina:
+             - Compare a eficiência atual com o histórico disponível
+             - Calcule médias e desvios padrão do histórico
+             - Identifique tendências (aumento/redução) nas eficiências
+             - Detecte anomalias (variações além de 2 desvios padrão da média)
+      
+      4. Gere um relatório detalhado em formato HTML utilizando "HTMLAnalysisTool":
+         -Mostre o resultado fornecido pela ferramenta DBQueryTool em uma tabela bem formatada, com cabeçalhos 
+         traduzidos e com fundo cinza claro
+         - Para cada máquina inclua:
+           * Eficiência atual
+           * Se houver histórico:
+             - Média histórica das eficiências
+             - Tendência identificada
+             - Anomalias detectadas
+          * Gráfico de tendências:
+            - Se primeira execução: apenas ponto atual
+            - Se houver histórico: todos os pontos disponíveis (até 10)
+         
+      5. Salve o relatório em arquivo HTML usando "HTML Analysis Writer Tool".
+      
+      6. Retorne o resultado da consulta SQL em formato JSON puro, sem qualquer formatação markdown.
+
+  expected_output: >
+    1. JSON puro, sem qualquer formatação markdown , contendo os resultados da consulta SQL executada na ferramenta DBQueryTool com a seguinte estrutura:
+        
+      * Um registro raiz que possui uma chave 'task' com valor "verify_production_data"
+      * Uma chave 'timestamp' que armazena data e hora no Brasil (formato yyyy-mm-dd hh:mm:ss)
+      * Uma chave 'results' que contém uma lista de registros de produção, onde cada registro possui:
+          - PRODUCAOCOD: código da produção
+          - MAQCOD: código da máquina
+          - MAQNOME: nome da máquina
+          - DESCPROD: descrição do produto
+          - EFICIENCIA: valor da eficiência
+        
+
+
+    2. Relatório salvo em arquivo HTML usando "HTML Analysis Writer Tool".
+
+get_machines_efficiency_data:
+  description: >
+    Use the DBQueryTool to  process the provided query, tha return data of efficiency of machines in a production system.
+    Input data:
+      -Provided query to be processed by DBQueryTool:
+        
+        SELECT 
+          
+          m.MAQNOME,
+          
+          CASE 
+              WHEN TIME_TO_SEC(
+                  TIMEDIFF(
+                      CONCAT(ultimo.DATADEFABRICACAO, " ", ultimo.HORADEFABRICACAO), 
+                      CONCAT(penultimo.DATADEFABRICACAO, " ", penultimo.HORADEFABRICACAO)
+                  )
+              ) = 0 THEN 0 
+              ELSE 
+                  3 / (
+                      TIME_TO_SEC(
+                          TIMEDIFF(
+                              CONCAT(ultimo.DATADEFABRICACAO, " ", ultimo.HORADEFABRICACAO), 
+                              CONCAT(penultimo.DATADEFABRICACAO, " ", penultimo.HORADEFABRICACAO)
+                          )
+                      ) / (molde.CICLO * p.QUANTPSACO / molde.CAVIDADES)
+                  ) * 100 
+          END AS EFICIENCIA
+        FROM PRODUCAOPRODUTO pp
+        JOIN MAQUINAS m ON pp.MAQCOD = m.MAQCOD
+        JOIN PRODUTO p ON pp.CODPROD = p.CODPROD
+        JOIN MOLDE molde ON pp.MOLDECOD = molde.MOLDECOD
+        JOIN (
+            SELECT * FROM (
+                SELECT PRODUCAOCOD, DATADEFABRICACAO, HORADEFABRICACAO 
+                FROM SACO s1 
+                WHERE (
+                    SELECT COUNT(*) 
+                    FROM SACO s2 
+                    WHERE s2.PRODUCAOCOD = s1.PRODUCAOCOD 
+                    AND s2.CODSACO > s1.CODSACO
+                ) = 0
+            ) AS sub_ultimo
+        ) AS ultimo ON ultimo.PRODUCAOCOD = pp.PRODUCAOCOD
+        JOIN (
+            SELECT * FROM (
+                SELECT PRODUCAOCOD, DATADEFABRICACAO, HORADEFABRICACAO 
+                FROM SACO s1 
+                WHERE (
+                    SELECT COUNT(*) 
+                    FROM SACO s2 
+                    WHERE s2.PRODUCAOCOD = s1.PRODUCAOCOD 
+                    AND s2.CODSACO > s1.CODSACO
+                ) = 3
+            ) AS sub_penultimo
+        ) AS penultimo ON penultimo.PRODUCAOCOD = pp.PRODUCAOCOD
+        WHERE pp.PRODUCAOATIVA = 'S'
+        ORDER BY m.MAQNOME;
+
+    Process steps:
+      1. Submit provided query to DBQueryTool
+      2. Format the query results  in Raw json format without any markdown formatting.
+
+  expected_output: >
+    Raw JSON containing query results, without any markdown formatting.
+
+get_machines_efficiency_analysis:
+  description: >
+    Analyze efficiency data and historical patterns of production machines:
+
+    Input:
+    - Get json with query results generated in the first task get_machines_efficiency_data
+    - Make  variable  history_data equals to  {memory_system} and do this:
+      -If history_data contains "NO_HISTORY", it means this is the first execution.
+      -if history_data contains data, it will be a list of JSON objects with structure:
+        * 'task' key with value "verify_production_data"
+        * 'timestamp' key with date/time (yyyy-mm-dd hh:mm:ss)
+        * 'results' key with list of records containing:
+          - MAQNOME: machine name
+          - EFICIENCIA: efficiency value
+
+    Process Steps:
+      1. Data Preparation:
+        - Parse variable history_data content:
+          * If "NO_HISTORY": prepare only current data
+          * If contains data: extract and sort past executions by timestamp
+
+      2. Analyze history and efficiencies:
+         - Check if data exists in history_data
+         - If history_data  contains "NO_HISTORY":
+           * Consider only current efficiency data
+           * Mark as first execution
+         - If history_data contains data:
+           * Get last 10 results from history_data (or fewer if less available)
+           * For each machine calculate:
+             - Mean efficiency
+             - Standard deviation
+             - Trends (increase/decrease)
+             - Anomalies (>2 standard deviations)
+           * Store all calculated values for each machine in a json object
+
+  expected_output: >
+    Output TWO JSON objects in markdown format (between ```json and ```):
+    1. Analysis results JSON with:
+       * is_first_execution: boolean
+       * machine_analysis: array of objects with:
+         - machine_name: string
+         - current_efficiency: number
+         - avg_efficiency: number
+         - std_deviation: number
+         - trend: string
+         - anomaly: boolean
+    2. Current efficiency JSON (exactly as received from first task) with:
+       * task: "verify_production_data"
+       * timestamp: current date/time
+       * results: array of current efficiency records
+
+generate_machines_efficiency_analysis_html_report_saving_to_file:
+  description: >
+    Generate HTML report from efficiency analysis and saves it to file:
+
+    Input:
+    - Analysis_Results JSON data received from previous task
+      Analysis_Results JSON structure: 
+      * is_first_execution: boolean
+      * machine_analysis: array of calculated statistics
+    -Current_Efficiency JSON data received from previous task
+      Current_Efficiency JSON structure: 
+      * task: "verify_production_data"
+      * timestamp: current date/time
+      * results: array of current efficiency records
+    
+    Process Steps:
+      1. Generate raw HTML  report without  markdown, without ```html tags:
+         - Title: Análise de Eficiência de Máquinas em Produção
+         - Subtitle: Eficiência Atual
+         - Show Current_Efficiency JSON data in a well-formatted table, with translated 
+         headers, light gray background and black horizontal and vertical table lines
+         -If is_first_execution is true:
+           * Add text: "Esta é a primeira execução do relatório"
+         -If is_first_execution is false:
+           - Add subtitle: Análise de Eficiência
+           - Create a well formatted table  containing data extracted from Analysis_Results , in the 
+             following columns titles(translate to portuguese):
+             * Machine name
+             * Current efficiency
+             * Efficiency average
+             * Standard deviation
+             * Identified trends
+             * Detected anomalies
+        - IMPORTANT: HTML do be sent to HTML Analysis Writer Tool must be PLAIN  STRING ONLY, NO MARKDOWN:
+          - DO NOT include ```html
+          - DO NOT include ```
+          - DO NOT add any markdown formatting
+          - Example of html generated without markdown:"<html><body>...</body></html>"      
+      2. Save report using HTML Analysis Writer Tool:
+          2. Save report using HTML Analysis Writer Tool:
+          - CRITICAL: Tool ONLY accepts a plain HTML string as parameter
+          - DO NOT wrap HTML in JSON object
+          - DO NOT add metadata or description
+          - DO NOT include any additional structure
+          - WRONG TOOL PARAMETER FORMAT: "content": "description": "html..."
+          - CORRECT TOOL PARAMETER FORMAT: "<html>...</html>"
+          
+  expected_output: >
+    
+    The only Output must be a Markdown formatted JSON (between ```json and ```) :
+      * task: "verify_production_data"
+      * timestamp: current date/time in Brazil format
+      * results: array of current efficiency JSON data
+
+generate_machines_efficiency_analysis_html_report_long:
+  description: >
+    Generate HTML report from efficiency analysis:
+
+    Input:
+    - Analysis_Results JSON data received from previous task
+      Analysis_Results JSON structure: 
+      * is_first_execution: boolean
+      * machine_analysis: array of calculated statistics
+    -Current_Efficiency JSON data received from previous task
+      Current_Efficiency JSON structure: 
+      * task: "verify_production_data"
+      * timestamp: current date/time
+      * results: array of current efficiency records
+    
+    Process Steps:
+      1. Generate raw HTML  report without  markdown, without ```html tags:
+         - Title: Análise de Eficiência de Máquinas em Produção
+         - Subtitle: Eficiência Atual
+         - Show Current_Efficiency JSON data in a well-formatted table, with translated 
+         headers, light gray background and black horizontal and vertical table lines
+         -If is_first_execution is true:
+           * Add text: "Esta é a primeira execução do relatório"
+         -If is_first_execution is false:
+           - Add subtitle: Análise de Eficiência
+           - Create a well formatted table  containing data extracted from Analysis_Results , in the 
+             following columns titles(translate to portuguese):
+             * Machine name
+             * Current efficiency
+             * Efficiency average
+             * Standard deviation
+             * Identified trends
+             * Detected anomalies
+            -In the cells of column Identified Trends,color background light blue if its normal, green if increased and red if decreased
+            -In the cells of column Detect anomalies,color background  red if True 
+        - IMPORTANT: HTML do be sent to HTML Analysis Writer Tool must be PLAIN  STRING ONLY, NO MARKDOWN:
+          - DO NOT include ```html
+          - DO NOT include ```
+          - DO NOT add any markdown formatting
+          - Example of html generated without markdown:"<html><body>...</body></html>"      
+          
+  expected_output: >
+    You must return a raw Json without any markdown, containing 2 tags:
+    "html"- This json tag contains the generated raw HTML  report without  markdown, without ```html tags
+    "json" -This json tag contains a markdown formatted JSON (between ```json and ```) :
+      * task: "verify_production_data"
+      * timestamp: empty key
+      * results: array of current efficiency JSON data
+
+generate_machines_efficiency_analysis_html_report:
+  description: >
+    Generate HTML report from efficiency analysis:
+
+    Input:
+    - Analysis_Results JSON data received from previous task
+      Analysis_Results JSON structure: 
+      * is_first_execution: boolean
+      * machine_analysis: array of calculated statistics
+    -Current_Efficiency JSON data received from previous task
+      Current_Efficiency JSON structure: 
+      * task: "verify_production_data"
+      * timestamp: current date/time
+      * results: array of current efficiency records
+    
+    Process Steps:
+      1. Generate raw HTML  report without  markdown, without ```html tags:
+         - Title: Análise de Eficiência de Máquinas em Produção
+         -If is_first_execution is true:
+           * Add text: "Esta é a primeira execução do relatório"
+         -If is_first_execution is false:
+           - Add subtitle: Análise de Eficiência
+           - Create a well formatted table  containing data extracted from Analysis_Results , in the 
+             following columns titles(translate to portuguese):
+             * Machine name
+             * Current efficiency
+             * Efficiency average
+             * Standard deviation
+             * Identified trends
+             * Detected anomalies
+            -In the cells of column Identified Trends,color background light blue if its normal, green if increased and red if decreased
+            -In the cells of column Detect anomalies,color background  red if True 
+        - IMPORTANT: HTML do be sent to HTML Analysis Writer Tool must be PLAIN  STRING ONLY, NO MARKDOWN:
+          - DO NOT include ```html
+          - DO NOT include ```
+          - DO NOT add any markdown formatting
+          - Example of html generated without markdown:"<html><body>...</body></html>"      
+        2.Generate raw Json  without any  markdown, without ```json  ``` tags containig the following keys:
+          -"html" containg the generated raw HTML report generated in step 1
+          -"json" a markdown formatted JSON (between ```json and ```) with tags specified in the expected output
+        3-IMPORTANT: note that the markdown ```json and ``` is present only in the value of "json" key, not in the raw json containing
+          the keys "html" and "json"
+        4-IMPORTANT: REMOVE MARKINGS ```json and ``` only FROM THE BEGINNING AND END OF EXPECTED_OUTPUT, BUT do not remove markings  ```json and ``` from key "json",  
+  expected_output: >
+    Raw Json without any markdown (IMPORTANT:do not put ```json in the beginnig and do not put ``` in the end), containing 2 keys:
+    "html"- This json key contains the generated raw HTML  report without  markdown, without ```html tags
+    "json" -This json key contains a markdown formatted JSON (between ```json and ```) :
+      * task: "verify_production_data"
+      * timestamp: empty key
+      * results: array of current efficiency JSON data
+
+generate_machines_efficiency_analysis_html_report_modificado_pela _ia_pior:
+  description: >
+    Generate an HTML report based on machine efficiency analysis data:
+
+    Input:
+    - Analysis_Results JSON data received from the previous task
+      Analysis_Results JSON structure:
+      * is_first_execution: boolean, indicates if this is the first execution
+      * machine_analysis: array of calculated statistics, containing:
+        - machine_name (string): Name of the machine
+        - current_efficiency (float): Current efficiency of the machine
+        - efficiency_average (float): Calculated average efficiency
+        - standard_deviation (float): Standard deviation of efficiencies
+        - identified_trends (string): Identified trends ("normal", "increased", "decreased")
+        - detected_anomalies (boolean): Whether anomalies were detected (True/False)
+    - Current_Efficiency JSON data received from the previous task
+      Current_Efficiency JSON structure:
+      * task: "verify_production_data"
+      * timestamp: current date/time
+      * results: array of current efficiency records
+
+    Process Steps:
+      1. Generate raw HTML report without markdown or ```html tags:
+         - Title: Machine Efficiency Analysis Report
+         - If is_first_execution is true:
+           * Add the text: "This is the first execution of the report."
+         - If is_first_execution is false:
+           - Add subtitle: Efficiency Analysis
+           - Create a well-formatted table with the following columns (translated to English):
+             * Machine Name
+             * Current Efficiency
+             * Efficiency Average
+             * Standard Deviation
+             * Identified Trends
+             * Detected Anomalies
+           - Apply conditional styling to table cells:
+             - For "Identified Trends":
+               * Light blue background for "normal"
+               * Green background for "increased"
+               * Red background for "decreased"
+             - For "Detected Anomalies":
+               * Red background for True
+        - IMPORTANT: The HTML must be sent to the HTML Analysis Writer Tool as a plain string only:
+          - DO NOT include ```html
+          - DO NOT include ```
+          - DO NOT add any markdown formatting
+          - Example of HTML: "<html><body>...</body></html>"
+
+      2. Generate raw JSON output without any markdown, without ```json tags:
+         - The JSON must contain the following keys:
+           - "html": Contains the raw HTML report generated in step 1
+           - "json": A markdown-formatted JSON (between ```json and ```) containing:
+             * task: "verify_production_data"
+             * timestamp: the value provided in Current_Efficiency
+             * results: array of current efficiency JSON data
+
+      3. IMPORTANT: Ensure the markdown ```json and ``` appear only in the value of the "json" key. Do NOT include them in the raw JSON containing the "html" and "json" keys.
+
+      4. IMPORTANT: REMOVE ```json and ``` only from the beginning and end of the final output, but keep them intact inside the "json" key value.
+
+  expected_output: >
+    Raw JSON without any markdown (IMPORTANT: do not put ```json at the beginning or ``` at the end), containing 2 keys:
+    "html" - This JSON key contains the raw HTML report generated in step 1.
+    "json" - This JSON key contains a markdown-formatted JSON (between ```json and ```), including:
+      * task: "verify_production_data"
+      * timestamp: the provided timestamp
+      * results: array of current efficiency JSON data
+
+
+
+generate_machines_efficiency_analysis_html_report_init:
+  description: >
+    Generate HTML report from efficiency analysis:
+
+    Input:
+    - Analysis_Results JSON data received from previous task
+      Analysis_Results JSON structure: 
+      * is_first_execution: boolean
+      * machine_analysis: array of calculated statistics
+    -Current_Efficiency JSON data received from previous task
+      Current_Efficiency JSON structure: 
+      * task: "verify_production_data"
+      * timestamp: current date/time
+      * results: array of current efficiency records
+    
+    Process Steps:
+      1. Generate raw HTML  report without  markdown, without ```html tags:
+         - Title: Análise de Eficiência de Máquinas em Produção
+         -If is_first_execution is true:
+           * Add text: "Esta é a primeira execução do relatório"
+         -If is_first_execution is false:
+           - Add subtitle: Análise de Eficiência
+           - Create a well formatted table  containing data extracted from Analysis_Results , in the 
+             following columns titles(translate to portuguese):
+             * Machine name
+             * Current efficiency
+             * Efficiency average
+             * Standard deviation
+             * Identified trends
+             * Detected anomalies
+            -In the cells of column Identified Trends,color background light blue if its normal, green if increased and red if decreased
+            -In the cells of column Detect anomalies,color background  red if True 
+        - IMPORTANT: HTML do be sent to HTML Analysis Writer Tool must be PLAIN  STRING ONLY, NO MARKDOWN:
+          - DO NOT include ```html
+          - DO NOT include ```
+          - DO NOT add any markdown formatting
+          - Example of html generated without markdown:"<html><body>...</body></html>"      
+        2.Generate raw Json  without any  markdown, without ```json  ``` tags containig the following keys:
+          -"html" containg the generated raw HTML report generated in step 1
+          -"json" a markdown formatted JSON (between ```json and ```) with tags specified in the expected output
+        3-IMPORTANT: note that the markdown ```json and ``` is present only in the value of "json" key, not in the raw json containing
+          the keys "html" and "json"
+        4-IMPORTANT: REMOVE MARKINGS ```json and ``` only FROM THE BEGINNING AND END OF EXPECTED_OUTPUT, BUT do not remove markings  ```json and ``` from key "json",  
+  expected_output: >
+    Raw Json without any markdown (IMPORTANT:do not put ```json in the beginnig and do not put ``` in the end), containing 2 keys:
+    "html"- This json key contains the generated raw HTML  report without  markdown, without ```html tags
+    "json" -This json key contains a markdown formatted JSON (between ```json and ```) :
+      * task: "verify_production_data"
+      * timestamp: empty key
+      * results: array of current efficiency JSON data
+
+
+
+
+machines_efficiency_analysis_WORSE:
+  description: >
+    Validate the efficiency data of active production machines, identifying
+    possible anomalies and trends, and generate a detailed report. To do this:
+
+    Input:
+    - Get json with query results generated in the first task get_machines_efficiency_data
+    - Access memory data from variable  history_data which content is this list of json objects: {memory_system}.
+       If history_data contains "NO_HISTORY", it means this is the first execution.
+      -if history_data contains data, it will be a list of JSON objects, where each object is the result 
+       of all stored machine production results generated by the first task, with the following structure:
+        * A root record that has a 'task' key with value "verify_production_data"
+        * A 'timestamp' key that stores date and time in Brazil format (yyyy-mm-dd hh:mm:ss)
+        * A 'results' key containing a list of production records, where each record has:
+          - MAQNOME: machine name
+          - EFICIENCIA: efficiency value
+
+    Process Steps:
+      1. Data Preparation:
+        - Parse history_data content:
+          * If "NO_HISTORY": prepare only current data
+          * If contains data: extract and sort past executions by timestamp
+        - Interpret and translate column names to user-friendly format in portuguese language. These columns are the json keys
+        - Identify type and nature of each field
+        - Verify data quality and completeness
+
+
+      2. Analyze history and efficiencies:
+          - First check history_data content:
+            * If history_data equals "NO_HISTORY" exactly:
+              - Use only current efficiency data for basic analysis
+              - Mark as first execution
+            * If history_data is a list containing JSON objects:
+              - Store last 10 records in history_10_data
+              - For each machine found in history_10_data:
+                > Calculate statistical values:
+                  - Mean efficiency = average of all efficiency values
+                  - Standard deviation = calculate from all efficiency values
+                > Analyze trends by comparing sequential values:
+                  - "CRESCENTE" if values consistently increase
+                  - "DECRESCENTE" if values consistently decrease
+                  - "ESTÁVEL" if no clear pattern
+                > Flag anomalies:
+                  - Compare current efficiency with historical mean
+                  - If current value deviates > 2 standard deviations, mark as anomaly
+
+      3. Generate HTML Report (raw HTML, no markdown, no ```html tags):
+          A. Common Header for All Reports:
+            - Main title: "<h1>Análise de Eficiência de Máquinas em Produção</h1>"
+            - Current data table with:
+              * Translated headers
+              * Light gray background
+              * Black borders
+              * Columns: Nome da Máquina, Eficiência Atual
+
+          B. Content Based on Analysis Type:
+            IF history_data equals "NO_HISTORY":
+              - Add text: "<p>Esta é a primeira execução do relatório</p>"
+            
+            IF history_data contains JSON objects:
+              - Add subtitle: "<h2>Análise de Eficiência</h2>"
+              - Create statistical analysis table with:
+                * Columns:
+                  - Nome da Máquina
+                  - Eficiência Atual
+                  - Média de Eficiência
+                  - Desvio Padrão
+                  - Tendência Identificada
+                  - Anomalias Detectadas
+                * Include ALL machines present in analysis
+      4. Save report using the HTML Analysis Writer Tool:
+         - The tool expects to receive raw HTML content directly as a string, not as markdown
+         - Pass the HTML content directly, not in a dictionary or object
+         - Usage example: HTML Analysis Writer Tool.run(html_content as string)
+         - Do not encapsulate HTML in additional structures like lists or dictionaries
+
+  expected_output: >
+    1. Output a Markdown formatted JSON (enclosed between "```json" and "```")with the following structure (do not include report link in structure):
+      * A root record that has a 'task' key with value "verify_production_data"
+      * A 'timestamp' key that stores date and time in Brazil format (yyyy-mm-dd hh:mm:ss)
+      * A 'results' key containing a list with records received from the first query, where each list element has:
+          - MAQNOME: machine name
+          - EFICIENCIA: efficiency value
+
+machines_efficiency_analysis:
+  description: >
+    Validate the efficiency data of active production machines, identifying
+    possible anomalies and trends, and generate a detailed report. To do this:
+
+    Input:
+    - Get json with query results generated in the first task get_machines_efficiency_data
+    - Access memory data from variable  history_data which content is this list of json objects: {memory_system}.
+       If history_data contains "NO_HISTORY", it means this is the first execution.
+      -if history_data contains data, it will be a list of JSON objects, where each object is the result 
+       of all stored machine production results generated by the first task, with the following structure:
+        * A root record that has a 'task' key with value "verify_production_data"
+        * A 'timestamp' key that stores date and time in Brazil format (yyyy-mm-dd hh:mm:ss)
+        * A 'results' key containing a list of production records, where each record has:
+          - MAQNOME: machine name
+          - EFICIENCIA: efficiency value
+
+    Process Steps:
+      1. Data Preparation:
+        - Parse history_data content:
+          * If "NO_HISTORY": prepare only current data
+          * If contains data: extract and sort past executions by timestamp
+        - Interpret and translate column names to user-friendly format in portuguese language. These columns are the json keys
+        - Identify type and nature of each field
+        - Verify data quality and completeness
+
+      2. Analyze history and efficiencies:
+         - Check if data exists in memory_system
+         - If memory_system is "NO_HISTORY" (empty/first execution):
+           * Consider only current efficiency data
+           * Record that this is the first execution in the report
+         - If memory_system contains data:
+           * history_10_data variable is the last 10 results (or fewer, if less available) ordered by timestamp
+           * For each machine in history_10_data, do the following:
+             - Calculate means and standard deviations of efficiency
+             - Identify trends (increase/decrease) in efficiencies for each macine
+             - Detect anomalies (variations beyond 2 standard deviations from the mean)
+           * Store all calculated values for each machine in a json object
+
+      3. Using the calculated values for each machine stored in json object in step 2, do the followin6:
+         Generate a detailed report in raw HTML(do not put any markdown formatting, do not put "```html" in the beginning), 
+         in portuguese language with this format:
+         -Report title: Análise de Eficiência de Máquinas em Produção
+         -Subtitle: Eficiência Atual
+         -Show the json data that came from the first task in a well-formatted table, with translated 
+         headers, light gray background and black horizontal and vertical table lines
+         - Only and if only history_data variable contains the string "NO_HISTORY":
+           * Write in portuguese: Esta é a primeira execução do relatório
+         - if variable history_data contains data and does not contain the string "NO_HISTORY":
+           - Subtitle: Análise de Eficiência 
+           - Create a well formatted table  containing the values stored in json object in step 2, in the 
+             following columns titles(translate to portuguese):
+             * Machine name
+             * Current efficiency
+             * Efficiency average
+             * Standard deviation
+             * Identified trends
+             * Detected anomalies
+           
+                      
+
+      4. Save report using the HTML Analysis Writer Tool:
+         - The tool expects to receive raw HTML content directly as a string, not as markdown
+         - Pass the HTML content directly, not in a dictionary or object
+         - Usage example: HTML Analysis Writer Tool.run(html_content as string)
+         - Do not encapsulate HTML in additional structures like lists or dictionaries
+
+  expected_output: >
+    1. Output a Markdown formatted JSON (enclosed between "```json" and "```")with the following structure (do not include report link in structure):
+      * A root record that has a 'task' key with value "verify_production_data"
+      * A 'timestamp' key that stores date and time in Brazil format (yyyy-mm-dd hh:mm:ss)
+      * A 'results' key containing a list with records received from the first query, where each list element has:
+          - MAQNOME: machine name
+          - EFICIENCIA: efficiency value
+
+
+machines_efficiency_analysis_portuguese:
+  description: >
+    Validate the efficiency data of active production machines, identifying
+    possible anomalies and trends, and generate a detailed report. To do this:
+
+    Input:
+    - Get json with query results generated in the first task get_machines_efficiency_data
+    - Access memory data from variable  history_data which content is this list of json objects: {memory_system}.
+       If history_data contains "NO_HISTORY", it means this is the
+
+
+
+machines_efficiency_analysis_portuguese:
+  description: >
+    Validar os dados de eficiência das máquinas em produção ativa, identificando
+    possíveis anomalias ou tendências, e gerar um relatório detalhado. Para isso:
+
+    Input:
+    - json com resultados da consulta gerado na primeira task get_machines_efficiency_data
+    - Dados armazenados na memória da task  estao em {memory_system}.
+       Se o valor for "NO_HISTORY", significa que é a primeira execução. 
+       Caso contrário, os dados estarão em formato json, contendo os registros de
+       todos os resultados armazenados de produco de mquinas gerados pela primeira query, com a seguinte estrutura:  
+        * Um registro raiz que possui uma chave 'task' com valor "verify_production_data"
+        * Uma chave 'timestamp' que armazena data e hora no Brasil (formato yyyy-mm-dd hh:mm:ss)
+        * Uma chave 'results' que contém uma lista de registros de produção, onde cada registro possui:
+          - PRODUCAOCOD: código da produção
+          - MAQCOD: código da máquina
+          - MAQNOME: nome da máquina
+          - DESCPROD: descrição do produto
+          - EFICIENCIA: valor da eficiência
+      
+
+    Etapas do Processo:
+      1. Preparação dos Dados:
+        - Interpretar e traduzir nomes das colunas para formato amigável. Essas colunas são chaves do json
+        - Identificar tipo e natureza de cada campo
+        - Verificar qualidade e completude dos dados
+      2. Analise o histórico e eficiências:
+         - Verifique se existem dados no memory_system
+         - Se memory_system for "NO_HISTORY" (vazio/primeira execução):
+           * Considere apenas os dados da eficiência atual
+           * Registre que é a primeira execução no relatório
+         - Se memory_system contiver dados:
+           * Extraia os últimos 10 resultados (ou menos, se houver menos) ordenados por timestamp
+           * Para cada máquina:
+             - Compare a eficiência atual com o histórico disponível
+             - Calcule médias e desvios padrão do histórico
+             - Identifique tendências (aumento/redução) nas eficiências
+             - Detecte anomalias (variações além de 2 desvios padrão da média)
+      
+      3. Gere um relatório detalhado em formato HTML:
+         -Titulo do relatorio: Análise de Eficiência de Máquinas em Produção
+         -Subtitulo: Eficácia Atual
+         -Mostre os dados do json que vieram da primeira task em uma tabela bem formatada, com cabeçalhos 
+         traduzidos, com fundo cinza claro e linhas horizontais e verticais da tabela em preto
+         - Se não houver histórico:
+           * Escreva que é a primeira execução do relatório
+          - Se houver histórico:''
+          - Para cada máquina inclua:
+           * Eficiência atual
+           *Média histórica das eficiências
+           *Tendência identificada
+           *Anomalias detectadas
+           * Gráfico de tendências:
+            - Se primeira execução: apenas ponto atual
+            - Se houver histórico: todos os pontos disponíveis (até 10)
+
+      4. Salvar relatório usando a tool HTML Analysis Writer Tool:
+       - A ferramenta espera receber diretamente o conteúdo HTML como uma string
+       - Passar o conteúdo HTML diretamente, não em um dicionário ou objeto
+       - Exemplo de uso: HTML Analysis Writer Tool.run(html_content como string)
+       - Não encapsular o HTML em estruturas adicionais como listas ou dicionários
+
+  expected_output: >
+    1. JSON puro, sem qualquer formatação markdown , com a seguinte estrutura(nao inclua na estrutura o link para o relatorio):
+      * Um registro raiz que possui uma chave 'task' com valor "verify_production_data"
+      * Uma chave 'timestamp' que armazena data e hora no Brasil (formato yyyy-mm-dd hh:mm:ss)
+      * Uma chave 'results' que contém uma lista com os registros recebidos da primeira query, onde cada elemento da lista possui:
+          - PRODUCAOCOD: código da produção
+          - MAQCOD: código da máquina
+          - MAQNOME: nome da máquina
+          - DESCPROD: descrição do produto
+          - EFICIENCIA: valor da eficiência
+        
+
+
+    2. Relatório salvo em arquivo HTML usando "HTML Analysis Writer Tool".

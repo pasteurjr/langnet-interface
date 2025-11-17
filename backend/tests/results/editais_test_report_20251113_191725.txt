@@ -1,0 +1,69 @@
+
+================================================================================
+RELATÓRIO DE TESTES - SISTEMA DE ANÁLISE DE EDITAIS
+================================================================================
+
+📅 Data: 13/11/2025 19:17:25
+🤖 LLM Provider: DEEPSEEK
+📄 Documentos Testados: 2
+⏱️  Duração Total: 0m 12s
+
+================================================================================
+RESUMO GERAL
+================================================================================
+
+✅ Testes Concluídos: 0 (0.0%)
+❌ Testes Falhados: 2 (100.0%)
+⏱️  Duração Média: 0m 0s
+
+================================================================================
+MÉTRICAS AGREGADAS
+================================================================================
+
+📊 Total de Requisitos Funcionais: 0
+📊 Total de Requisitos Não-Funcionais: 0
+📊 Total de Regras de Negócio: 0
+📊 Total de Entidades Identificadas: 0
+🌐 Total de Queries Web Research: 0
+
+================================================================================
+RESULTADOS POR DOCUMENTO
+================================================================================
+
+
+1. ❌ Análise estratégica de edital passo a passo - eLicitação.pdf
+   Tamanho: 2.0 MB
+   Status: FAILED
+   Duração: 0m 0s
+   ❌ Erro: TypeError: init_full_state() got an unexpected keyword argument 'document_content'
+
+
+2. ❌ Manual de Licitacoes para Micro e Pequenas Empresas.pdf
+   Tamanho: 2.24 MB
+   Status: FAILED
+   Duração: 0m 7s
+   ❌ Erro: TypeError: init_full_state() got an unexpected keyword argument 'document_content'
+
+
+================================================================================
+ANÁLISE DE DESEMPENHO
+================================================================================
+
+Tempo médio por documento: 0m 0s
+Requisitos funcionais por documento: 0.0
+Requisitos não-funcionais por documento: 0.0
+Regras de negócio por documento: 0.0
+Entidades por documento: 0.0
+Queries web research por documento: 0.0
+
+================================================================================
+CONCLUSÃO
+================================================================================
+
+Taxa de Sucesso: 0.0%
+Qualidade: BAIXA ❌
+Performance: EXCELENTE ✅
+
+================================================================================
+FIM DO RELATÓRIO
+================================================================================

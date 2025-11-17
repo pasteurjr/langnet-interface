@@ -84,15 +84,80 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
         </div>
       </div>
 
-      {document.status === DocumentStatus.ANALYZING && document.analysisProgress && (
-        <div className="analysis-progress">
-          <div className="progress-bar">
-            <div 
-              className="progress-fill" 
-              style={{ width: `${document.analysisProgress}%` }}
-            ></div>
+      {document.status === DocumentStatus.ANALYZING && (
+        <div className="analysis-progress" style={{
+          padding: '16px',
+          background: '#f8f9fa',
+          borderRadius: '6px',
+          marginTop: '12px'
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '12px'
+          }}>
+            <div>
+              <div style={{ fontWeight: '600', fontSize: '14px', color: '#333', marginBottom: '4px' }}>
+                🔍 Análise em Andamento
+              </div>
+              <div style={{ fontSize: '13px', color: '#666' }}>
+                {document.enableWebResearch
+                  ? '🌐 Com pesquisa web (6-10 min estimados)'
+                  : '⚡ Análise rápida (3-4 min estimados)'}
+              </div>
+            </div>
+            <div className="spinner" style={{
+              width: '24px',
+              height: '24px',
+              border: '3px solid #e0e0e0',
+              borderTop: '3px solid #2196F3',
+              borderRadius: '50%',
+              animation: 'spin 1s linear infinite'
+            }}></div>
           </div>
-          <span className="progress-text">{document.analysisProgress}%</span>
+
+          {document.analysisProgress !== undefined && (
+            <>
+              <div className="progress-bar" style={{
+                width: '100%',
+                height: '8px',
+                background: '#e0e0e0',
+                borderRadius: '4px',
+                overflow: 'hidden',
+                marginBottom: '8px'
+              }}>
+                <div
+                  className="progress-fill"
+                  style={{
+                    width: `${document.analysisProgress}%`,
+                    height: '100%',
+                    background: 'linear-gradient(90deg, #2196F3, #21CBF3)',
+                    transition: 'width 0.3s ease'
+                  }}
+                ></div>
+              </div>
+              <div style={{ fontSize: '12px', color: '#888', textAlign: 'right' }}>
+                {document.analysisProgress}% concluído
+              </div>
+            </>
+          )}
+
+          <div style={{
+            marginTop: '12px',
+            padding: '10px',
+            background: '#fff',
+            borderRadius: '4px',
+            fontSize: '12px',
+            color: '#666'
+          }}>
+            <div style={{ marginBottom: '6px' }}>
+              📋 Fases: Parsing → Extraction → {document.enableWebResearch && 'Web Research → '}Requirements Generation
+            </div>
+            <div style={{ fontStyle: 'italic', color: '#999' }}>
+              Por favor aguarde... A análise está em processamento.
+            </div>
+          </div>
         </div>
       )}
 
@@ -122,25 +187,35 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
       )}
 
       <div className="document-actions">
-        <button 
-          className="btn-view" 
+        <button
+          className="btn-view"
           onClick={() => onView(document)}
           disabled={document.status === DocumentStatus.ANALYZING}
         >
           👁️ Visualizar
         </button>
-        
+
+        {document.status === DocumentStatus.ANALYZED && document.executionId && (
+          <button
+            className="btn-view-requirements"
+            onClick={() => window.location.href = `/project/${document.projectId}/requirements/${document.executionId}`}
+            title="View generated requirements document"
+          >
+            📄 View Requirements
+          </button>
+        )}
+
         {document.status === DocumentStatus.ANALYZED && (
-          <button 
-            className="btn-reanalyze" 
+          <button
+            className="btn-reanalyze"
             onClick={() => onReanalyze(document.id)}
           >
             🔄 Reanalisar
           </button>
         )}
-        
-        <button 
-          className="btn-delete" 
+
+        <button
+          className="btn-delete"
           onClick={() => onDelete(document.id)}
           disabled={document.status === DocumentStatus.ANALYZING}
         >

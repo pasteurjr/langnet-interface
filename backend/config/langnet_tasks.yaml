@@ -1,0 +1,117 @@
+# LangNet Tasks Configuration
+# Based on CrewAI task definition format
+
+# Document Analysis Tasks
+analyze_document:
+  description: >
+    [2.1.1 - Document Types & 2.1.2 - Document Analysis] Analyze document at '{document_path}' (type: {document_type}).
+    Support: PDFs, DOCs, presentations, spreadsheets, TXT, MD, technical artifacts (diagrams, schemas, API docs, code).
+    Extract: (1) Full text content; (2) Document structure (sections, headings, lists, tables); (3) Entities (actors, systems, processes, rules);
+    (4) Implicit/explicit workflows; (5) Domain-specific terminology; (6) Metadata (author, date, version).
+    Identify relationships and dependencies between components.
+  expected_output: >
+    JSON object: (1) 'content': full text; (2) 'structure': hierarchical structure; (3) 'entities': extracted actors, systems, processes;
+    (4) 'workflows': detected workflows with steps; (5) 'terminology': domain terms with definitions; (6) 'relationships': detected dependencies;
+    (7) 'metadata': file info, stats (word/page count), parsing timestamp.
+
+extract_requirements:
+  description: >
+    [2.1.2 - Requirements Analysis] Analyze document content: {document_content}. Additional instructions: {additional_instructions}.
+    Project context: {project_name}, {project_description}.
+    Extract and categorize: (1) Functional Requirements (FR-XXX): unique IDs, clear descriptions, priority (high/medium/low), affected actors, source section, dependencies;
+    (2) Non-Functional Requirements (NFR-XXX): ID, description, category (performance/security/usability/reliability/scalability/maintainability), measurable metrics, priority, acceptance criteria;
+    (3) Business Rules (BR-XXX): ID, description, condition, action, affected entities, rationale;
+    (4) Actors/Stakeholders: name, role, responsibilities, interaction points;
+    (5) Entities & Relationships: entity name, attributes, relationships (1-1, 1-N, N-N), cardinality, constraints;
+    (6) Workflows: workflow ID, name, trigger, steps, decision points, end states;
+    (7) Domain Glossary: term, definition, context, synonyms, related terms.
+    Detect implicit requirements and dependencies between requirements.
+  expected_output: >
+    JSON object: 'functional_requirements' (array), 'non_functional_requirements' (array), 'business_rules' (array), 'actors' (array),
+    'entities' (array with attributes and relationships), 'workflows' (array with steps and decision points),
+    'glossary' (array of domain terms), 'requirement_dependencies' (graph of dependencies), 'implicit_requirements' (detected implicit needs).
+
+research_additional_info:
+  description: >
+    [2.1.3 - Complementary Verifications] Research complementary info for requirements: {requirements_json}. Additional instructions: {additional_instructions}.
+    Project domain: {project_name}.
+    Perform: (1) Knowledge base queries to enrich domain understanding; (2) Cross-document consistency verification (if multiple docs);
+    (3) Ambiguity detection & resolution (vague terms, conflicting statements); (4) Question generation for clarification of unclear requirements;
+    (5) Impact-based prioritization (critical path, dependencies, business value).
+    Search web for: (a) Industry best practices; (b) Technology standards/frameworks; (c) Security standards (OWASP, GDPR, SOC2, LGPD);
+    (d) Performance benchmarks; (e) API docs for integrations; (f) Accessibility (WCAG, ADA); (g) Compliance requirements for domain.
+    Prioritize authoritative sources (official docs, standards bodies, .gov, .edu, reputable tech sites).
+  expected_output: >
+    JSON object: (1) 'research_findings': array with source_url, title, summary, relevance_to_requirement_id, credibility_score, finding_type;
+    (2) 'consistency_issues': array of cross-document conflicts with affected_requirements, severity, suggested_resolution;
+    (3) 'ambiguities_detected': array with ambiguous_text, location, reason, clarification_question;
+    (4) 'clarification_questions': array of questions for stakeholders with priority, affected_requirements;
+    (5) 'recommended_standards': array of standards with name, url, description, applicability;
+    (6) 'suggested_technologies': array with name, use_case, docs_url, maturity_score;
+    (7) 'compliance_checklist': array of compliance items with regulation, requirement, status;
+    (8) 'missing_requirements': potentially missing requirements discovered; (9) 'prioritization_analysis': impact vs effort matrix.
+
+validate_requirements:
+  description: >
+    [2.1.4 - Completeness Verification] Review requirements: {requirements_json} and research findings: {research_findings_json}.
+    Project: {project_name}.
+    Quality checks: (1) Ambiguous/vague language needing clarification; (2) Conflicts/contradictions between requirements;
+    (3) Missing testability criteria or acceptance conditions; (4) Incomplete actor definitions or workflows;
+    (5) Requirements lacking priority or source traceability.
+    Completeness evaluation: (a) Sufficiency of available information; (b) Identification of critical information gaps;
+    (c) Solicitation of complementary information needed; (d) Verification of essential requirements coverage;
+    (e) Comparative evaluation with completeness standards by application type (web app, API, mobile, etc.).
+    Assign severity (critical/high/medium/low) to each issue. Provide specific recommendations with examples.
+
+    IMPORTANT: Generate the final REQUIREMENTS DOCUMENT in Markdown format using the provided template: {template}
+    Fill in ALL placeholders (enclosed in curly braces) with actual data from the requirements and research findings.
+    Maintain the exact structure and section numbering from the template. Generate mermaid diagrams where indicated.
+    The final document should be complete, professional, and ready for stakeholder review.
+  expected_output: >
+    JSON validation report: (1) 'valid_requirements': approved requirements with quality scores;
+    (2) 'issues_found': array with type, severity, description, affected_requirement_id, recommended_fix, example;
+    (3) 'completeness_score': 0-100 with breakdown by category; (4) 'clarity_score': 0-100;
+    (5) 'consistency_score': 0-100; (6) 'coverage_analysis': requirements coverage by functional area;
+    (7) 'critical_gaps': array of missing critical requirements with justification;
+    (8) 'information_requests': specific questions/information needed to fill gaps;
+    (9) 'completeness_by_type': scores for FR/NFR/BR separately;
+    (10) 'requirements_document_md': full Markdown document following template with all sections populated.
+
+generate_specification:
+  description: >
+    Create comprehensive functional specification document from validated requirements: {validated_requirements}. Structure: (1) Introduction with project overview and scope; (2) Functional Requirements organized by module with IDs (FR-001, FR-002); (3) Non-Functional Requirements with metrics; (4) Data Model with entities and relationships; (5) User Workflows with step-by-step descriptions; (6) Business Rules with conditions/actions; (7) Glossary; (8) Traceability matrix linking requirements to use cases. Use Markdown with mermaid diagrams.
+  expected_output: >
+    Complete Markdown document following IEEE 830 standard structure with: section hierarchy using ## headers, numbered requirements with cross-references, tables for data models, mermaid diagrams for workflows (```mermaid syntax), proper formatting (bold/italic), and full traceability matrix.
+
+# Agent Design Tasks
+suggest_agents:
+  description: >
+    Analyze requirements: {requirements_json} and specification: {specification_data}. Suggest optimal agent architecture defining: (1) Agent roles and responsibilities based on requirement types; (2) Goals for each agent aligned with requirements; (3) Backstories providing context and expertise; (4) Tool assignments (which agents need which tools); (5) Delegation patterns (which agents can delegate to others); (6) Communication flows between agents. Optimize for separation of concerns and minimize overlapping responsibilities.
+  expected_output: >
+    JSON object with 'agents' array containing: agent_id, name, role, goal, backstory, tools (array), verbose (bool), allow_delegation (bool), delegation_targets (array of agent_ids), estimated_complexity (low/medium/high), justification (why this agent is needed).
+
+decompose_tasks:
+  description: >
+    Break down requirements: {requirements_json} into executable tasks for agents: {agents_json}. For each task define: (1) Unique task_id; (2) Clear description with placeholders for inputs; (3) Expected output format (JSON/Markdown/CSV); (4) Assigned agent_id; (5) Required tools; (6) Dependencies on other tasks (task_ids); (7) Async execution flag; (8) Input schema; (9) Output schema. Tasks should be atomic, testable, and properly sequenced.
+  expected_output: >
+    JSON object with: (1) 'tasks' array with task definitions; (2) 'dependencies' object mapping task_id to array of required task_ids; (3) 'execution_order' array suggesting optimal task sequence; (4) 'parallel_groups' array of tasks that can run in parallel; (5) 'estimated_duration' for each task.
+
+# Workflow Design Tasks
+design_petri_net:
+  description: >
+    Design Petri Net workflow from tasks: {tasks_json}, dependencies: {dependencies}, and agents: {agents_json}. Define: (1) Places (workflow states) with initial token distribution; (2) Transitions (task executions) with guard conditions; (3) Arcs connecting places to transitions with weights; (4) Agent assignments to places; (5) Input/output data flow; (6) Error handling paths; (7) Synchronization points for parallel tasks. Ensure workflow is sound (no deadlocks, livelocks).
+  expected_output: >
+    JSON Petri Net model with: 'places' array (id, name, tokens, agent_id, input_data, output_data, logic), 'transitions' array (id, name, guard), 'arcs' array (source, target, weight), 'agents' array (id, name, coordinates), workflow_properties (is_sound, has_deadlocks, estimated_cycles).
+
+# Code Generation Tasks
+generate_yaml_files:
+  description: >
+    Generate YAML configuration files from agents: {agents_json} and tasks: {tasks_json}. Create: (1) agents.yaml with each agent's role, goal, backstory, verbose, allow_delegation following CrewAI format; (2) tasks.yaml with each task's description (with placeholders), expected_output, and any task-specific config. Follow YAML best practices: proper indentation (2 spaces), use '>' for multi-line strings, include comments for clarity.
+  expected_output: >
+    JSON object with: (1) 'agents_yaml': complete agents.yaml content as string; (2) 'tasks_yaml': complete tasks.yaml content as string; (3) 'validation_status': whether YAML is valid; (4) 'warnings': array of potential issues or improvements.
+
+generate_python_code:
+  description: >
+    Generate production-ready Python code implementing multi-agent system using framework: {framework_choice}. Include: (1) Imports and dependencies; (2) Agent initialization from YAML; (3) Tool creation and registration; (4) Task definitions with input/output functions; (5) Task Registry; (6) Workflow executor; (7) Main orchestration logic; (8) Error handling and logging; (9) Type hints and docstrings; (10) Entry point with CLI. Follow PEP 8, include comments, make code modular and testable.
+  expected_output: >
+    JSON object with: (1) 'main_file': complete Python code as string; (2) 'additional_files': dict of filename to content for supporting files (utils, config, etc); (3) 'requirements_txt': Python dependencies; (4) 'readme_md': usage documentation; (5) 'test_file': basic test suite.

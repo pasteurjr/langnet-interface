@@ -1,0 +1,78 @@
+search_database_using_natural_language:
+  description: >
+    Use the NaturalLanguageQueryTool to process the provided question: {question}.
+    Input data format:
+      - question: Natural language query to be processed
+    Process steps:
+      1. Submit {question} to NaturalLanguageQueryTool
+      2. Format the question results  in json format.Put all query results in json key named query_results. At the end of Json, create a json key named query_used containing the sql query used to get the result
+      3- Save json results in a file using tool json writer tool
+  expected_output: >
+    Raw JSON containing query results and query used, without any markdown formatting.
+    A file saved using json writer tool
+
+csv_generation:
+  description: >
+    Convert {natural_language_json_result} to CSV following RFC-4180 specification.
+    Input data format:
+      - query results:key  {natural_language_json_result}
+      
+    Process steps:
+      1- Convert {natural_language_json_result} to csv format
+      2- Save csv format to file using csv file writer tool
+  expected_output: >
+    Raw csv generated content without any markdown formatting
+    A file saved using csv file writer tool
+
+report_generation:
+  description: >
+    Format data from  csv content in {csv_content} in markdown md format and html format.
+    Input data format:
+      - csv_data: {csv_content}
+      
+    Process steps:
+      1. Read and parse the CSV data
+      2. Format data into markdown, focusing on:
+        - Clear table headers
+        - Properly aligned columns
+        - Data overview section
+        - Summary section
+      3. Format same data into HTML, ensuring:
+        - Proper HTML table structure
+        - Basic styling for readability
+        - Document sections with headers
+      4. Save markdown report using MD Writer Tool
+      5. Save HTML report using HTML Writer Tool
+
+      IMPORTANT: Generate content as plain text strings without metadata or additional formatting.
+
+  expected_output: >
+    Raw md generated content without any markdown formatting
+    Raw html generated content without any markdown formatting
+    Raw csv data read from csv content without any markdown formatting
+    Markdown report saved to file using MD Writer Tool
+    HTML report saved to file using HTML Writer Tool
+    Both reports should display data in a clear, tabular format
+
+data_analysis:
+  description: >
+    Analyze {report_data} following statistical methodology.
+    Input data format:
+      - report_data: {report_data}
+      - report_metadata: {report_metadata}
+      - analysis_requirements: {analysis_requirements}
+    Process steps:
+      1. Calculate quality metrics for {report_data}
+      2. Generate statistics with {confidence_level}
+      3. Identify patterns using {statistical_tests}
+      4. Detect anomalies with {threshold}
+      5. Quantify impact of {findings}
+      6. Calculate ROI for {recommendations}
+  expected_output: >
+    Analysis report containing:
+      - quality_metrics: {quality_metrics}
+      - statistical_summary: {statistical_summary}
+      - findings: {findings}
+      - recommendations: {recommendations}
+      - methodology: {methodology}
+    All findings include {confidence_levels}.

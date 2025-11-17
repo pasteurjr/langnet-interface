@@ -4,10 +4,15 @@ import { Document, DocumentStatus } from '../types';
 import DocumentCard from '../components/documents/DocumentCard';
 import DocumentUploadModal from '../components/documents/DocumentUploadModal';
 import DocumentViewModal from '../components/documents/DocumentViewModal';
+import * as documentService from '../services/documentService';
+import langnetService from '../services/langnetService';
+import { useNavigation } from '../contexts/NavigationContext';
+import { toast } from 'react-toastify';
 import './DocumentsPage.css';
 
 const DocumentsPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
+  const { projectContext } = useNavigation();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isViewModalOpen, setIsViewModalOpen] = useState(false);
@@ -16,253 +21,201 @@ const DocumentsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<DocumentStatus | 'all'>('all');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [analysisInstructions, setAnalysisInstructions] = useState('');
+  const [enableWebResearch, setEnableWebResearch] = useState(true);
 
   useEffect(() => {
-    // Simular carregamento de documentos
-    loadMockDocuments();
+    loadDocuments();
   }, [projectId]);
 
-  const loadMockDocuments = () => {
-    const mockDocuments: Document[] = [
-      {
-        id: 'doc_1',
-        projectId: projectId || 'default',
-        name: 'requirements.pdf',
-        originalName: 'Requisitos do Sistema - v2.1.pdf',
-        size: 2048576, // 2MB
-        type: 'application/pdf',
-        uploadedAt: '2025-05-20T10:00:00Z',
-        status: DocumentStatus.ANALYZED,
-        extractedEntities: [
-          {
-            name: 'Sistema de Gestão',
-            type: 'system',
-            description: 'Sistema principal para gerenciamento de recursos',
-            confidence: 0.95
-          },
-          {
-            name: 'Usuário Administrador',
-            type: 'actor',
-            description: 'Responsável pela configuração do sistema',
-            confidence: 0.90
-          }
-        ],
-        requirements: [
-          {
-            id: 'req_1',
-            type: 'functional',
-            title: 'Autenticação de Usuários',
-            description: 'O sistema deve permitir login seguro com validação de credenciais',
-            priority: 'high',
-            source: 'requirements.pdf'
-          },
-          {
-            id: 'req_2',
-            type: 'non_functional',
-            title: 'Performance do Sistema',
-            description: 'Tempo de resposta deve ser inferior a 2 segundos',
-            priority: 'medium',
-            source: 'requirements.pdf'
-          }
-        ],
-        analysisIssues: [
-          {
-            type: 'warning',
-            title: 'Requisito Ambíguo',
-            description: 'O requisito de segurança precisa ser mais específico',
-            documentName: 'requirements.pdf',
-            location: 'Seção 3.2'
-          }
-        ],
-        analysisInstructions: 'Focar em requisitos de segurança e performance',
-        analysisResults: {
-          summary: 'Documento contém especificações técnicas abrangentes com foco em funcionalidades de autenticação e gestão de usuários.',
-          keyFindings: [
-            'Sistema requer autenticação multi-fator',
-            'Necessidade de integração com Active Directory',
-            'Requisitos de auditoria bem definidos'
-          ],
-          recommendedActions: [
-            'Detalhar requisitos de segurança',
-            'Especificar critérios de performance',
-            'Adicionar casos de uso para recovery'
-          ]
-        }
-      },
-      {
-        id: 'doc_2',
-        projectId: projectId || 'default',
-        name: 'business_rules.docx',
-        originalName: 'Regras de Negócio - Versão Final.docx',
-        size: 1536000, // 1.5MB
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        uploadedAt: '2025-05-20T11:30:00Z',
-        status: DocumentStatus.ANALYZING,
-        analysisProgress: 67,
+  const loadDocuments = async () => {
+    if (!projectId) return;
+
+    try {
+      setIsLoading(true);
+      setError(null);
+      const docs = await documentService.listDocuments(parseInt(projectId));
+
+      // Transform backend response to frontend format
+      const transformedDocs: Document[] = docs.map((doc: any) => ({
+        id: doc.id.toString(),
+        projectId: doc.project_id.toString(),
+        name: doc.name,
+        originalName: doc.name,
+        size: 0, // Backend doesn't return size
+        type: doc.type,
+        uploadedAt: doc.created_at,
+        status: mapBackendStatus(doc.status),
         extractedEntities: [],
         requirements: [],
         analysisIssues: [],
-        analysisInstructions: 'Identificar regras de negócio e processos críticos'
-      },
-      {
-        id: 'doc_3',
-        projectId: projectId || 'default',
-        name: 'user_stories.md',
-        originalName: 'User Stories - Sprint Planning.md',
-        size: 512000, // 500KB
-        type: 'text/markdown',
-        uploadedAt: '2025-05-20T14:15:00Z',
-        status: DocumentStatus.ANALYZED,
-        extractedEntities: [
-          {
-            name: 'Cliente',
-            type: 'actor',
-            description: 'Usuário final do sistema',
-            confidence: 0.88
-          },
-          {
-            name: 'Processo de Compra',
-            type: 'process',
-            description: 'Fluxo de aquisição de produtos',
-            confidence: 0.92
-          }
-        ],
-        requirements: [
-          {
-            id: 'req_3',
-            type: 'functional',
-            title: 'Carrinho de Compras',
-            description: 'Usuário deve poder adicionar produtos ao carrinho',
-            priority: 'high',
-            source: 'user_stories.md'
-          }
-        ],
-        analysisIssues: [],
-        analysisResults: {
-          summary: 'Documentação de user stories bem estruturada com cenários de uso detalhados.',
-          keyFindings: [
-            'Cobertura completa do fluxo de e-commerce',
-            'Definição clara de personas',
-            'Critérios de aceitação bem definidos'
-          ],
-          recommendedActions: [
-            'Considerar casos de erro',
-            'Adicionar cenários de edge cases'
-          ]
-        }
-      }
-    ];
-    setDocuments(mockDocuments);
+        analysisResults: doc.analysis_result ? parseAnalysisResult(doc.analysis_result) : undefined
+      }));
+
+      setDocuments(transformedDocs);
+    } catch (err) {
+      console.error('Failed to load documents:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load documents');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleUpload = async (files: FileList, instructions?: string) => {
-    setIsUploading(true);
-    
-    // Simular upload e análise
-    const newDocuments: Document[] = [];
-    
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const newDoc: Document = {
-        id: `doc_${Date.now()}_${i}`,
-        projectId: projectId || 'default',
-        name: file.name.toLowerCase().replace(/\s+/g, '_'),
-        originalName: file.name,
-        size: file.size,
-        type: file.type,
-        uploadedAt: new Date().toISOString(),
-        status: DocumentStatus.UPLOADED,
-        extractedEntities: [],
-        requirements: [],
-        analysisIssues: [],
-        analysisInstructions: instructions
-      };
-      
-      newDocuments.push(newDoc);
+  const mapBackendStatus = (status: string): DocumentStatus => {
+    switch (status) {
+      case 'uploaded': return DocumentStatus.UPLOADED;
+      case 'analyzing': return DocumentStatus.ANALYZING;
+      case 'analyzed': return DocumentStatus.ANALYZED;
+      case 'error': return DocumentStatus.ERROR;
+      default: return DocumentStatus.UPLOADED;
+    }
+  };
+
+  const parseAnalysisResult = (analysisResultStr: string): any => {
+    try {
+      return typeof analysisResultStr === 'string' ? JSON.parse(analysisResultStr) : analysisResultStr;
+    } catch {
+      return null;
+    }
+  };
+
+  const handleUpload = async (files: FileList) => {
+    if (!projectId) {
+      toast.error('Projeto não identificado');
+      return;
     }
 
-    // Adicionar documentos à lista
-    setDocuments(prev => [...prev, ...newDocuments]);
-    setIsUploading(false);
-    setIsUploadModalOpen(false);
+    // Check if user is authenticated
+    const token = localStorage.getItem('accessToken');
+    if (!token) {
+      toast.error('Você precisa fazer login para fazer upload de documentos');
+      setError('Não autenticado. Por favor, faça login primeiro.');
+      return;
+    }
 
-    // Simular início da análise após um delay
-    setTimeout(() => {
-      startAnalysis(newDocuments.map(doc => doc.id));
-    }, 1000);
+    console.log('📤 Starting upload...', {
+      projectId,
+      filesCount: files.length,
+      instructions: analysisInstructions,
+      webResearch: enableWebResearch,
+      hasToken: !!token
+    });
+
+    setIsUploading(true);
+    setError(null);
+
+    try {
+      console.log('📁 Uploading files to backend...');
+      const uploadPromises = Array.from(files).map(file =>
+        documentService.uploadDocument(file, projectId)
+      );
+
+      const uploadedDocs = await Promise.all(uploadPromises);
+      console.log('✅ Files uploaded successfully:', uploadedDocs);
+
+      // Transform and add to documents list
+      const transformedDocs: Document[] = uploadedDocs.map((doc: any) => ({
+        id: doc.id.toString(),
+        projectId: doc.project_id.toString(),
+        name: doc.name,
+        originalName: doc.name,
+        size: 0,
+        type: doc.type,
+        uploadedAt: doc.created_at,
+        status: mapBackendStatus(doc.status),
+        extractedEntities: [],
+        requirements: [],
+        analysisIssues: [],
+        analysisInstructions: analysisInstructions,
+        enableWebResearch: enableWebResearch
+      }));
+
+      setDocuments(prev => [...transformedDocs, ...prev]);
+      setIsUploadModalOpen(false);
+      toast.success(`${transformedDocs.length} arquivo(s) carregado(s) com sucesso`);
+
+      console.log('🔍 Starting analysis...');
+      // Automatically start analysis
+      const documentIds = transformedDocs.map(doc => doc.id);
+      startAnalysis(documentIds);
+    } catch (err) {
+      console.error('❌ Failed to upload documents:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to upload documents';
+      setError(errorMessage);
+      toast.error(`Erro no upload: ${errorMessage}`);
+    } finally {
+      setIsUploading(false);
+    }
   };
 
-  const startAnalysis = (documentIds: string[]) => {
+  const startAnalysis = async (documentIds: string[]) => {
     setIsAnalyzing(true);
 
-    documentIds.forEach((docId, index) => {
-      // Atualizar status para "analisando"
-      setTimeout(() => {
-        setDocuments(prev => prev.map(doc => 
-          doc.id === docId 
+    for (const docId of documentIds) {
+      try {
+        // Update status to analyzing
+        setDocuments(prev => prev.map(doc =>
+          doc.id === docId
             ? { ...doc, status: DocumentStatus.ANALYZING, analysisProgress: 0 }
             : doc
         ));
 
-        // Simular progresso da análise
-        let progress = 0;
-        const progressInterval = setInterval(() => {
-          progress += Math.random() * 20;
-          if (progress >= 100) {
-            clearInterval(progressInterval);
-            // Finalizar análise
-            completeAnalysis(docId);
-          } else {
-            setDocuments(prev => prev.map(doc => 
-              doc.id === docId 
-                ? { ...doc, analysisProgress: Math.round(progress) }
-                : doc
-            ));
-          }
-        }, 500);
-      }, index * 2000);
-    });
-  };
+        // Get document to extract instructions and web research setting
+        const doc = documents.find(d => d.id === docId);
+        const instructions = doc?.analysisInstructions || "";
+        const enableWebResearch = doc?.enableWebResearch ?? true;
 
-  const completeAnalysis = (documentId: string) => {
-    // Simular resultado da análise
-    const mockAnalysisResult = {
-      extractedEntities: [
-        {
-          name: 'Sistema Novo',
-          type: 'system' as const,
-          description: 'Sistema identificado na análise',
-          confidence: 0.85
-        }
-      ],
-      requirements: [
-        {
-          id: `req_${Date.now()}`,
-          type: 'functional' as const,
-          title: 'Nova Funcionalidade',
-          description: 'Funcionalidade identificada na análise',
-          priority: 'medium' as const,
-          source: 'documento_analisado'
-        }
-      ],
-      analysisIssues: [],
-      analysisResults: {
-        summary: 'Análise concluída com sucesso. Documento processado e informações extraídas.',
-        keyFindings: ['Requisitos bem definidos', 'Estrutura clara'],
-        recommendedActions: ['Validar com stakeholders']
+        // Call LangNet analysis API (full pipeline with optional web research)
+        if (!projectId) return;
+
+        const executionId = await langnetService.analyzeDocumentWithLangNet(
+          parseInt(projectId),
+          parseInt(docId),
+          instructions,
+          enableWebResearch
+        );
+
+        // Poll execution status
+        const result = await langnetService.pollExecutionStatus(executionId);
+
+        // Fetch updated requirements
+        const requirements = await documentService.getDocumentRequirements(parseInt(docId));
+
+        // Update document with analysis results and execution_id
+        setDocuments(prev => prev.map(doc =>
+          doc.id === docId
+            ? {
+                ...doc,
+                status: DocumentStatus.ANALYZED,
+                analysisProgress: 100,
+                executionId: executionId, // Store execution ID for viewing requirements document
+                analysisResults: {
+                  summary: `Análise LangNet concluída com ${result.tasks_completed || 0} tarefas executadas`,
+                  keyFindings: ['Documento de requisitos gerado', 'Pesquisa web realizada', 'Requisitos validados'],
+                  recommendedActions: ['Ver Documento de Requisitos', 'Refinar com agente', 'Prosseguir para especificação']
+                },
+                requirements: requirements.map((req: any) => ({
+                  id: req.id.toString(),
+                  type: req.type,
+                  title: req.requirement_id,
+                  description: req.description,
+                  priority: req.priority,
+                  source: doc.name
+                }))
+              }
+            : doc
+        ));
+      } catch (err) {
+        console.error(`Failed to analyze document ${docId}:`, err);
+        setDocuments(prev => prev.map(doc =>
+          doc.id === docId
+            ? { ...doc, status: DocumentStatus.ERROR }
+            : doc
+        ));
       }
-    };
-
-    setDocuments(prev => prev.map(doc => 
-      doc.id === documentId 
-        ? { 
-            ...doc, 
-            status: DocumentStatus.ANALYZED,
-            analysisProgress: 100,
-            ...mockAnalysisResult
-          }
-        : doc
-    ));
+    }
 
     setIsAnalyzing(false);
   };
@@ -272,16 +225,26 @@ const DocumentsPage: React.FC = () => {
     setIsViewModalOpen(true);
   };
 
-  const handleDelete = (documentId: string) => {
-    if (window.confirm('Tem certeza que deseja excluir este documento?')) {
+  const handleDelete = async (documentId: string) => {
+    if (!window.confirm('Tem certeza que deseja excluir este documento?')) {
+      return;
+    }
+
+    try {
+      await documentService.deleteDocument(parseInt(documentId));
       setDocuments(prev => prev.filter(doc => doc.id !== documentId));
+    } catch (err) {
+      console.error('Failed to delete document:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete document');
     }
   };
 
-  const handleReanalyze = (documentId: string) => {
-    if (window.confirm('Deseja reanalisar este documento?')) {
-      startAnalysis([documentId]);
+  const handleReanalyze = async (documentId: string) => {
+    if (!window.confirm('Deseja reanalisar este documento?')) {
+      return;
     }
+
+    await startAnalysis([documentId]);
   };
 
   const handleExport = (doc: Document, format: 'json' | 'csv' | 'pdf') => {
@@ -318,10 +281,10 @@ const DocumentsPage: React.FC = () => {
     <div className="documents-page">
       <div className="page-header">
         <div className="header-content">
-          <h1>📄 Documentação</h1>
+          <h1>📄 Documentação {projectContext.isInProject && `- ${projectContext.projectName}`}</h1>
           <p>Gerencie e analise documentos do projeto</p>
         </div>
-        <button 
+        <button
           className="btn-upload-primary"
           onClick={() => setIsUploadModalOpen(true)}
         >
@@ -329,7 +292,138 @@ const DocumentsPage: React.FC = () => {
         </button>
       </div>
 
+      {/* Analysis Configuration Section */}
+      <div className="analysis-config-section" style={{
+        background: '#f8f9fa',
+        padding: '20px',
+        borderRadius: '8px',
+        marginBottom: '24px',
+        border: '1px solid #dee2e6'
+      }}>
+        <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '16px', fontWeight: '600' }}>
+          ⚙️ Configuração da Análise
+        </h3>
+
+        <div className="instructions-section" style={{ marginBottom: '16px' }}>
+          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
+            Instruções Adicionais para Análise
+          </label>
+          <textarea
+            className="instructions-textarea"
+            placeholder="Adicione instruções específicas para orientar a análise dos documentos. Por exemplo: 'Focar em requisitos de segurança', 'Identificar integrações com sistemas externos', etc."
+            value={analysisInstructions}
+            onChange={(e) => setAnalysisInstructions(e.target.value)}
+            rows={3}
+            style={{
+              width: '100%',
+              padding: '10px',
+              fontSize: '14px',
+              border: '1px solid #ced4da',
+              borderRadius: '4px',
+              fontFamily: 'inherit',
+              resize: 'vertical'
+            }}
+          />
+        </div>
+
+        <div className="web-research-option" style={{
+          padding: '14px',
+          background: enableWebResearch ? '#e8f5e9' : '#fff',
+          border: `2px solid ${enableWebResearch ? '#4caf50' : '#ddd'}`,
+          borderRadius: '6px',
+          transition: 'all 0.3s'
+        }}>
+          <label style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            cursor: 'pointer',
+            fontSize: '14px'
+          }}>
+            <input
+              type="checkbox"
+              checked={enableWebResearch}
+              onChange={(e) => setEnableWebResearch(e.target.checked)}
+              style={{
+                marginRight: '12px',
+                marginTop: '2px',
+                width: '18px',
+                height: '18px',
+                cursor: 'pointer',
+                flexShrink: 0
+              }}
+            />
+            <div>
+              <span style={{ fontWeight: '600', fontSize: '14px' }}>
+                🌐 Habilitar Pesquisa Web (Web Research)
+              </span>
+              <p style={{
+                marginTop: '6px',
+                marginBottom: 0,
+                fontSize: '13px',
+                color: '#666',
+                lineHeight: '1.5'
+              }}>
+                {enableWebResearch ? (
+                  <>
+                    ✅ <strong>Análise Completa:</strong> Busca best practices, padrões da indústria (OWASP, LGPD),
+                    tecnologias recomendadas e compliance. <em>Tempo estimado: 6-10 min</em>
+                  </>
+                ) : (
+                  <>
+                    ⚡ <strong>Análise Rápida:</strong> Apenas extração de requisitos dos documentos enviados.
+                    <em>Tempo estimado: 3-4 min</em>
+                  </>
+                )}
+              </p>
+            </div>
+          </label>
+        </div>
+
+        <div className="instructions-help" style={{
+          marginTop: '12px',
+          padding: '12px',
+          background: '#fff',
+          borderRadius: '4px',
+          fontSize: '13px',
+          color: '#666'
+        }}>
+          <p style={{ margin: '0 0 8px 0', fontWeight: '500', color: '#333' }}>💡 Dicas para melhores resultados:</p>
+          <ul style={{ margin: 0, paddingLeft: '20px', lineHeight: '1.6' }}>
+            <li>Mencione o domínio da aplicação (ex: e-commerce, saúde, financeiro)</li>
+            <li>Especifique aspectos importantes (performance, segurança, usabilidade)</li>
+            <li>Indique se há padrões ou frameworks específicos a seguir</li>
+            <li>Destaque integrações ou sistemas legados existentes</li>
+          </ul>
+        </div>
+      </div>
+
       <div className="page-content">
+        {error && (
+          <div className="error-message" style={{
+            padding: '12px',
+            marginBottom: '16px',
+            background: '#fee',
+            border: '1px solid #fcc',
+            borderRadius: '4px',
+            color: '#c33'
+          }}>
+            {error}
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="loading-state" style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            minHeight: '400px',
+            fontSize: '18px',
+            color: '#666'
+          }}>
+            <span className="spinner"></span> Carregando documentos...
+          </div>
+        ) : (
+          <>
         <div className="filters-section">
           <div className="search-container">
             <input
@@ -415,6 +509,8 @@ const DocumentsPage: React.FC = () => {
               Análise em andamento...
             </div>
           </div>
+        )}
+          </>
         )}
       </div>
 

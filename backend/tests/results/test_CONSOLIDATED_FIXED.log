@@ -1,0 +1,2 @@
+/home/pasteurjr/miniconda3/lib/python3.13/site-packages/pydantic/fields.py:1026: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'required'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.10/migration/
+  warn(

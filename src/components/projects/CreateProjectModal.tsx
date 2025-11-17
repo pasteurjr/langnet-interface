@@ -1,15 +1,21 @@
-// src/components/projects/CreateProjectModal.tsx (VERSÃO EM PORTUGUÊS)
-import React, { useState } from 'react';
+// src/components/projects/CreateProjectModal.tsx (VERSÃO EM PORTUGUÊS + API Integration)
+import React, { useState, useEffect } from 'react';
 import { useNavigation } from '../../contexts/NavigationContext';
+import { toast } from 'react-toastify';
+import { createProject, updateProject } from '../../services/projectService';
+import { getCurrentUser } from '../../services/authService';
 import './CreateProjectModal.css';
 
 interface CreateProjectModalProps {
   isOpen: boolean;
   onClose: () => void;
   onCreateProject: (projectData: ProjectFormData) => void;
+  editMode?: boolean;
+  initialData?: ProjectFormData;
 }
 
 export interface ProjectFormData {
+  id?: string;
   name: string;
   description: string;
   domain: string;
@@ -18,26 +24,41 @@ export interface ProjectFormData {
   defaultLLM: string;
   framework: string;
   memorySystem: string;
+  status?: string;
 }
 
-const CreateProjectModal: React.FC<CreateProjectModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  onCreateProject 
+const defaultFormData: ProjectFormData = {
+  name: '',
+  description: '',
+  domain: '',
+  startFrom: 'blank',
+  defaultLLM: 'OpenAI GPT-4',
+  framework: 'CrewAI',
+  memorySystem: 'LangChain'
+};
+
+const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
+  isOpen,
+  onClose,
+  onCreateProject,
+  editMode = false,
+  initialData
 }) => {
   const { enterProjectContext } = useNavigation();
-  
-  const [formData, setFormData] = useState<ProjectFormData>({
-    name: '',
-    description: '',
-    domain: '',
-    startFrom: 'blank',
-    defaultLLM: 'OpenAI GPT-4',
-    framework: 'CrewAI',
-    memorySystem: 'LangChain'
-  });
+
+  const [formData, setFormData] = useState<ProjectFormData>(defaultFormData);
+
+  // Update form when initialData changes
+  useEffect(() => {
+    if (editMode && initialData) {
+      setFormData(initialData);
+    } else {
+      setFormData(defaultFormData);
+    }
+  }, [editMode, initialData, isOpen]);
 
   const [showTemplateSelect, setShowTemplateSelect] = useState(false);
+  const [loading, setLoading] = useState(false);
 
   // Dados de exemplo para os selects
   const domains = ['Atendimento', 'Jurídico', 'Educação', 'Saúde', 'Finanças', 'Outro'];
@@ -57,36 +78,79 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     setShowTemplateSelect(value === 'template');
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // 1. Gerar ID único para o projeto
-    const projectId = `proj_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // 2. Criar o projeto (lógica original) - incluindo o ID gerado
-    const projectWithId = {
-      ...formData,
-      id: projectId
-    };
-    onCreateProject(projectWithId);
-    
-    // 3. Entrar no contexto do projeto e mudar a sidebar (SEM navegar ainda)
-    enterProjectContext(projectId, formData.name);
-    
-    // 4. Fechar o modal
-    onClose();
-    
-    // 5. Limpar formulário para próxima vez
-    setFormData({
-      name: '',
-      description: '',
-      domain: '',
-      startFrom: 'blank',
-      defaultLLM: 'OpenAI GPT-4',
-      framework: 'CrewAI',
-      memorySystem: 'LangChain'
-    });
-    setShowTemplateSelect(false);
+
+    const currentUser = await getCurrentUser();
+    if (!currentUser) {
+      toast.error('Usuário não autenticado');
+      return;
+    }
+
+    if (!formData.name || !formData.domain) {
+      toast.error('Nome e domínio são obrigatórios');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      if (editMode && formData.id) {
+        // Update existing project
+        const updateData = {
+          name: formData.name,
+          description: formData.description || null,
+          domain: formData.domain || null,
+          framework: formData.framework.toLowerCase().replace(' ', '') as any,
+          default_llm: formData.defaultLLM || null,
+          memory_system: formData.memorySystem || null,
+          start_from: formData.startFrom,
+          template: formData.template || null,
+          status: formData.status || 'draft'
+        };
+
+        await updateProject(formData.id, updateData);
+        toast.success('Projeto atualizado com sucesso!');
+
+        // Call parent callback
+        onCreateProject({ ...formData });
+      } else {
+        // Create new project
+        const apiData = {
+          user_id: currentUser.id,
+          name: formData.name,
+          description: formData.description || null,
+          domain: formData.domain || null,
+          framework: formData.framework.toLowerCase().replace(' ', '') as any,
+          default_llm: formData.defaultLLM || null,
+          memory_system: formData.memorySystem || null,
+          start_from: formData.startFrom,
+          template: formData.template || null,
+          status: 'draft'
+        };
+
+        const createdProject = await createProject(apiData);
+        toast.success('Projeto criado com sucesso!');
+
+        // Call parent callback
+        onCreateProject({ ...formData, id: createdProject.id });
+
+        // Enter project context
+        enterProjectContext(createdProject.id, createdProject.name);
+      }
+
+      // Close modal
+      onClose();
+
+      // Reset form
+      setFormData(defaultFormData);
+      setShowTemplateSelect(false);
+    } catch (error: any) {
+      console.error('Error saving project:', error);
+      toast.error(error.response?.data?.detail || `Erro ao ${editMode ? 'atualizar' : 'criar'} projeto`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -95,16 +159,13 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
     <div className="modal-overlay">
       <div className="create-project-modal">
         <div className="modal-header">
-          <h2>CRIAR NOVO PROJETO</h2>
-          <div className="modal-actions">
-            <button className="close-button" onClick={onClose}>×</button>
-            <button className="cancel-button" onClick={onClose}>Cancelar</button>
-          </div>
+          <h2>{editMode ? 'Editar Projeto' : 'Criar Novo Projeto'}</h2>
+          <button className="close-button" onClick={onClose} title="Fechar">×</button>
         </div>
         
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label htmlFor="name">NOME DO PROJETO:</label>
+            <label htmlFor="name">Nome do Projeto:</label>
             <input
               type="text"
               id="name"
@@ -115,21 +176,9 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
               required
             />
           </div>
-          
+
           <div className="form-group">
-            <label htmlFor="description">DESCRIÇÃO:</label>
-            <textarea
-              id="description"
-              name="description"
-              value={formData.description}
-              onChange={handleInputChange}
-              placeholder="Descreva brevemente o objetivo do projeto"
-              rows={3}
-            />
-          </div>
-          
-          <div className="form-group">
-            <label htmlFor="domain">DOMÍNIO:</label>
+            <label htmlFor="domain">Domínio:</label>
             <select
               id="domain"
               name="domain"
@@ -143,9 +192,21 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
               ))}
             </select>
           </div>
-          
-          <div className="form-group start-from-group">
-            <label>INICIAR A PARTIR DE:</label>
+
+          <div className="form-group full-width">
+            <label htmlFor="description">Descrição:</label>
+            <textarea
+              id="description"
+              name="description"
+              value={formData.description}
+              onChange={handleInputChange}
+              placeholder="Descreva brevemente o objetivo do projeto"
+              rows={2}
+            />
+          </div>
+
+          <div className="form-group full-width start-from-group">
+            <label>Iniciar a partir de:</label>
             <div className="radio-options">
               <div className="radio-option">
                 <input
@@ -188,7 +249,7 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
           </div>
           
           <div className="advanced-options">
-            <h3>OPÇÕES AVANÇADAS:</h3>
+            <h3>Opções Avançadas:</h3>
             <div className="advanced-options-content">
               <div className="advanced-option">
                 <label htmlFor="defaultLLM">LLM Padrão:</label>
@@ -235,8 +296,12 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
           </div>
           
           <div className="form-actions">
-            <button type="button" className="back-button" onClick={onClose}>VOLTAR</button>
-            <button type="submit" className="create-button">CRIAR ▶</button>
+            <button type="button" className="cancel-button-action" onClick={onClose} disabled={loading}>
+              Cancelar
+            </button>
+            <button type="submit" className="submit-button" disabled={loading}>
+              {loading ? (editMode ? 'Salvando...' : 'Criando...') : (editMode ? 'Salvar Alterações' : 'Criar Projeto')}
+            </button>
           </div>
         </form>
       </div>
