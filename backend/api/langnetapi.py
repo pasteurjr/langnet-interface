@@ -159,10 +159,7 @@ async def execute_full_pipeline_endpoint(
 
 
 @router.get("/execution/{execution_id}/status", response_model=ExecutionStatusResponse)
-async def get_execution_status(
-    execution_id: str,
-    current_user: dict = Depends(get_current_user)
-):
+async def get_execution_status(execution_id: str):
     """
     Get execution status and progress
 
@@ -172,7 +169,7 @@ async def get_execution_status(
         raise HTTPException(status_code=404, detail="Execution not found")
 
     execution = EXECUTIONS[execution_id]
-    state = execution.get("state", {})
+    state = execution.get("state") or {}
 
     return ExecutionStatusResponse(
         execution_id=execution_id,
