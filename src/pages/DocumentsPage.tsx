@@ -33,6 +33,17 @@ const DocumentsPage: React.FC = () => {
   const loadDocuments = async () => {
     if (!projectId) return;
 
+    // Validate UUID format first
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(projectId)) {
+      setError(`❌ ID de projeto inválido: ${projectId}\n\n` +
+               `O ID do projeto deve ser um UUID válido.\n` +
+               `Verifique a URL: /project/{uuid-válido}/documents\n\n` +
+               `Exemplo: /project/a62c0d72-89f3-4cca-9da2-5a88867cd32e/documents`);
+      setIsLoading(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
       setError(null);
@@ -87,6 +98,14 @@ const DocumentsPage: React.FC = () => {
       return;
     }
 
+    // Validate project ID format (UUID)
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (!uuidRegex.test(projectId)) {
+      toast.error(`ID de projeto inválido: ${projectId}. Verifique a URL.`);
+      setError(`ID de projeto inválido. URL esperada: /project/{project-id}/documents`);
+      return;
+    }
+
     // Check if user is authenticated
     const token = localStorage.getItem('accessToken');
     if (!token) {
@@ -119,11 +138,11 @@ const DocumentsPage: React.FC = () => {
       const transformedDocs: Document[] = uploadedDocs.map((doc: any) => ({
         id: doc.id.toString(),
         projectId: doc.project_id.toString(),
-        name: doc.name,
-        originalName: doc.name,
-        size: 0,
-        type: doc.type,
-        uploadedAt: doc.created_at,
+        name: doc.original_filename || doc.name,
+        originalName: doc.original_filename || doc.name,
+        size: doc.file_size || 0,
+        type: doc.type || doc.file_type || 'unknown',
+        uploadedAt: doc.uploaded_at || new Date().toISOString(),
         status: mapBackendStatus(doc.status),
         extractedEntities: [],
         requirements: [],

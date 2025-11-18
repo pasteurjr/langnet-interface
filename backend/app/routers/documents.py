@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from typing import List, Optional
 import os
 import shutil
+import uuid
 from pathlib import Path
 from datetime import datetime
 from app.database import get_db_connection
@@ -54,6 +55,19 @@ async def upload_document(
             detail=f"File too large. Max size: {settings.max_file_size_mb}MB"
         )
 
+    # Validate that project exists
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM projects WHERE id = %s", (project_id,))
+        project = cursor.fetchone()
+        cursor.close()
+
+        if not project:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Project not found: {project_id}"
+            )
+
     # Create upload directory if it doesn't exist
     upload_dir = Path(settings.upload_dir)
     upload_dir.mkdir(exist_ok=True)
@@ -81,13 +95,17 @@ async def upload_document(
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
+            # Generate UUID explicitly (don't rely on MySQL DEFAULT uuid())
+            document_id = str(uuid.uuid4())
+
             cursor.execute("""
                 INSERT INTO documents (
-                    project_id, user_id, filename, original_filename,
+                    id, project_id, user_id, filename, original_filename,
                     file_type, file_size, file_path, storage_type,
                     metadata, status
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
+                document_id,
                 project_id,
                 current_user["id"],
                 safe_filename,
@@ -100,7 +118,6 @@ async def upload_document(
                 "uploaded"
             ))
 
-            document_id = cursor.lastrowid
             conn.commit()
 
             # Fetch created document

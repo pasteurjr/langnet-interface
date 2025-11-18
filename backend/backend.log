@@ -1,0 +1,44 @@
+INFO:     Will watch for changes in these directories: ['/home/pasteurjr/progreact/langnet-interface/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [2043083] using WatchFiles
+/home/pasteurjr/miniconda3/lib/python3.13/site-packages/pydantic/fields.py:1026: PydanticDeprecatedSince20: Using extra keyword arguments on `Field` is deprecated and will be removed. Use `json_schema_extra` instead. (Extra keys: 'required'). Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.10/migration/
+  warn(
+/home/pasteurjr/progreact/langnet-interface/backend/app/main.py:47: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("startup")
+/home/pasteurjr/miniconda3/lib/python3.13/site-packages/fastapi/applications.py:4495: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  return self.router.on_event(event_type)
+/home/pasteurjr/progreact/langnet-interface/backend/app/main.py:66: DeprecationWarning: 
+        on_event is deprecated, use lifespan event handlers instead.
+
+        Read more about it in the
+        [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
+        
+  @app.on_event("shutdown")
+INFO:     Started server process [2043101]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+✅ Database pool initialized: langnet@camerascasas.no-ip.info:3308
+============================================================
+🚀 Starting LangNet API v1.0.0
+============================================================
+✅ Database connection successful!
+   MySQL Version: 10.11.15-MariaDB-ubu2204
+   Database: langnet
+✅ Database connection successful
+============================================================
+📡 API running on http://0.0.0.0:8000
+📖 Docs available at http://0.0.0.0:8000/docs
+============================================================
+INFO:     127.0.0.1:55030 - "POST /documents/upload HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:55040 - "POST /documents/upload HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:42756 - "POST /documents/upload HTTP/1.1" 401 Unauthorized
