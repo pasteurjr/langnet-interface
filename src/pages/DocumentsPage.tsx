@@ -7,6 +7,8 @@ import DocumentViewModal from '../components/documents/DocumentViewModal';
 import ChatInterface, { ChatMessage } from '../components/documents/ChatInterface';
 import * as documentService from '../services/documentService';
 import langnetService from '../services/langnetService';
+import * as chatService from '../services/chatService';
+import * as analysisService from '../services/documentAnalysisService';
 import { useNavigation } from '../contexts/NavigationContext';
 import { toast } from 'react-toastify';
 import './DocumentsPage.css';
@@ -32,34 +34,38 @@ const DocumentsPage: React.FC = () => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatProcessing, setIsChatProcessing] = useState(false);
   const [currentExecutionId, setCurrentExecutionId] = useState<string | undefined>(undefined);
+  const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
   const [websocket, setWebsocket] = useState<WebSocket | null>(null);
-
-  // TESTE: Adicionar mensagens de exemplo ao carregar (remover depois)
-  useEffect(() => {
-    if (chatMessages.length === 0) {
-      const demoMessages: ChatMessage[] = [
-        {
-          id: '1',
-          sender: 'system',
-          text: '🎉 Bem-vindo à nova interface de chat para análise de requisitos!',
-          timestamp: new Date(Date.now() - 60000),
-          type: 'status'
-        },
-        {
-          id: '2',
-          sender: 'agent',
-          text: '👋 Olá! Faça upload de documentos na sidebar e clique em "Iniciar Análise" para começar.',
-          timestamp: new Date(Date.now() - 50000),
-        }
-      ];
-      // Descomentar a linha abaixo para ver mensagens de demo:
-      // setChatMessages(demoMessages);
-    }
-  }, [chatMessages.length]);
 
   useEffect(() => {
     loadDocuments();
   }, [projectId]);
+
+  // Converte mensagens do backend para formato do frontend
+  const convertBackendMessage = (msg: chatService.ChatMessage): ChatMessage => {
+    return {
+      id: msg.id,
+      sender: msg.sender_type === 'assistant' ? 'agent' : msg.sender_type,
+      text: msg.message_text,
+      timestamp: new Date(msg.timestamp),
+      type: msg.message_type === 'chat' ? undefined : msg.message_type as any,
+      data: msg.metadata
+    };
+  };
+
+  // Carrega histórico de chat quando houver sessionId
+  const loadChatHistory = async (sessionId: string) => {
+    try {
+      console.log('🔄 Carregando histórico da sessão:', sessionId);
+      const response = await chatService.loadChatMessages(sessionId);
+      console.log('📨 Resposta do backend:', response);
+      const converted = response.messages.map(convertBackendMessage);
+      console.log('✅ Mensagens convertidas:', converted);
+      setChatMessages(converted);
+    } catch (err) {
+      console.error('❌ Failed to load chat history:', err);
+    }
+  };
 
   const loadDocuments = async () => {
     if (!projectId) return;
@@ -264,232 +270,106 @@ const DocumentsPage: React.FC = () => {
     setIsAnalyzing(true);
     setIsChatProcessing(true);
 
-    // Add user message with instructions
-    addChatMessage(
-      'user',
-      analysisInstructions || 'Analisar documentos e extrair requisitos',
-      'status'
-    );
-
-    addChatMessage(
-      'system',
-      `🚀 Iniciando análise de ${documents.length} documento(s)...${enableWebResearch ? ' (com pesquisa web)' : ''}`
-    );
-
     try {
       if (!projectId) return;
 
       // Get all uploaded document IDs
-      const documentIds = documents
-        .filter(doc => doc.status === DocumentStatus.UPLOADED)
-        .map(doc => parseInt(doc.id));
+      const documentIds = documents.map(doc => doc.id);
 
       if (documentIds.length === 0) {
-        addChatMessage('system', '⚠️ Nenhum documento pendente de análise');
+        toast.warning('Nenhum documento para análise');
         setIsAnalyzing(false);
         setIsChatProcessing(false);
         return;
       }
 
-      // Start analysis
-      addChatMessage('agent', '🔍 Processando documentos e extraindo conteúdo...', 'progress');
+      // Start batch analysis using new API
+      const response = await analysisService.analyzeDocumentsBatch({
+        document_ids: documentIds,
+        project_id: projectId,
+        instructions: analysisInstructions,
+        use_web_research: enableWebResearch
+      });
 
-      const executionId = await langnetService.analyzeDocumentsWithLangNet(
-        parseInt(projectId),
-        documentIds,
-        analysisInstructions,
-        enableWebResearch
-      );
+      // Set session and execution IDs
+      setCurrentSessionId(response.session_id);
+      setCurrentExecutionId(response.execution_id);
 
-      setCurrentExecutionId(executionId);
+      console.log('📊 Sessão criada:', response.session_id);
+      console.log('🔍 Execution ID:', response.execution_id);
+
+      // Load chat history from database
+      await loadChatHistory(response.session_id);
+      console.log('💬 Mensagens carregadas:', chatMessages.length);
 
       // Connect WebSocket for real-time updates
-      connectWebSocket(executionId);
-
-      addChatMessage('agent', `📊 Análise iniciada. ID de execução: ${executionId}`, 'status');
-
-      // Poll execution status
-      const result = await langnetService.pollExecutionStatus(executionId);
-
-      // Fetch updated documents and requirements
-      await loadDocuments();
-
-      addChatMessage(
-        'agent',
-        `✅ Análise concluída! ${result.tasks_completed || 0} tarefas executadas com sucesso.`,
-        'result'
+      const ws = analysisService.connectToExecutionWebSocket(
+        response.execution_id,
+        (data) => {
+          // Handle WebSocket messages
+          if (data.type === 'document_generated') {
+            // Add document message to chat
+            addChatMessage(
+              'agent',
+              data.content || 'Documento de requisitos gerado',
+              'document',
+              { projectId, executionId: response.execution_id, filename: data.filename }
+            );
+          } else if (data.type === 'progress') {
+            addChatMessage('agent', data.message, 'progress');
+          } else if (data.type === 'status') {
+            addChatMessage('agent', data.message, 'status');
+          } else if (data.type === 'error') {
+            addChatMessage('system', `❌ ${data.message}`, 'status');
+          }
+        },
+        (error) => {
+          console.error('WebSocket error:', error);
+        },
+        () => {
+          console.log('WebSocket closed');
+          setIsChatProcessing(false);
+        }
       );
 
-      // Show generated requirements document
-      addChatMessage(
-        'agent',
-        `# Documento de Requisitos Gerado\n\n## Resumo da Análise\n\nA análise foi concluída com sucesso para ${documents.length} documento(s).\n\n### Requisitos Extraídos\n- Requisitos Funcionais: Identificados\n- Requisitos Não Funcionais: Identificados\n- Regras de Negócio: Documentadas\n\n### Próximos Passos\n1. Revisar os requisitos extraídos\n2. Refinar através desta interface de chat\n3. Exportar para especificação formal`,
-        'document',
-        { projectId, executionId }
-      );
+      setWebsocket(ws);
 
-      toast.success('Análise concluída com sucesso!');
+      toast.success('Análise iniciada com sucesso!');
     } catch (err) {
       console.error('Failed to analyze documents:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to analyze documents';
-      addChatMessage('system', `❌ Erro na análise: ${errorMessage}`, 'status');
       toast.error(`Erro na análise: ${errorMessage}`);
+      addChatMessage('system', `❌ Erro: ${errorMessage}`, 'status');
     } finally {
       setIsAnalyzing(false);
-      setIsChatProcessing(false);
     }
-  };
-
-  // TESTE: Simular análise completa com mensagens fake
-  const testSimulateAnalysis = () => {
-    setChatMessages([]);
-    setIsChatProcessing(true);
-
-    // Mensagem do usuário
-    addChatMessage('user', analysisInstructions || 'Analisar documentos e extrair requisitos');
-
-    // Mensagens de progresso simuladas
-    setTimeout(() => {
-      addChatMessage('system', '🚀 Iniciando análise de 3 documento(s)... (com pesquisa web)');
-    }, 500);
-
-    setTimeout(() => {
-      addChatMessage('system', '🔌 Conectado ao sistema de análise em tempo real');
-    }, 1000);
-
-    setTimeout(() => {
-      addChatMessage('agent', '🔍 Processando documentos e extraindo conteúdo...', 'progress');
-    }, 1500);
-
-    setTimeout(() => {
-      addChatMessage('agent', '📊 Análise iniciada. ID de execução: exec-test-12345', 'status');
-    }, 2000);
-
-    setTimeout(() => {
-      addChatMessage('system', '📄 Documento 1/3: Extraindo texto do PDF... (1.2 MB)', 'progress');
-    }, 3000);
-
-    setTimeout(() => {
-      addChatMessage('system', '📄 Documento 2/3: Processando chunks... (47 chunks)', 'progress');
-    }, 4500);
-
-    setTimeout(() => {
-      addChatMessage('agent', '🌐 Iniciando pesquisa web por best practices...', 'progress');
-    }, 6000);
-
-    setTimeout(() => {
-      addChatMessage('agent', '✅ Tarefa completada: Web Research finalizada', 'status');
-    }, 8000);
-
-    setTimeout(() => {
-      addChatMessage('agent', '✅ Análise concluída! 12 tarefas executadas com sucesso.', 'result');
-    }, 9000);
-
-    setTimeout(() => {
-      const requirementsDoc = `# Documento de Requisitos - Sistema de E-commerce
-
-## 📋 Resumo Executivo
-
-Análise concluída com sucesso para 3 documento(s). Sistema identificado como plataforma de e-commerce com requisitos de alta disponibilidade e conformidade com LGPD.
-
-## ✅ Requisitos Funcionais
-
-### RF001 - Autenticação de Usuários
-**Prioridade**: Alta
-- Login via email/senha
-- OAuth2 com Google e Facebook
-- Autenticação de dois fatores (2FA)
-- Recuperação de senha via email
-
-### RF002 - Catálogo de Produtos
-**Prioridade**: Alta
-- Listagem com filtros e ordenação
-- Busca textual com autocomplete
-- Visualização detalhada com zoom de imagens
-- Variações de produto (cor, tamanho)
-
-### RF003 - Carrinho de Compras
-**Prioridade**: Alta
-- Adicionar/remover produtos
-- Atualizar quantidades
-- Persistência entre sessões
-- Cálculo de frete em tempo real
-
-## 🔒 Requisitos Não Funcionais
-
-### RNF001 - Performance
-- Tempo de resposta < 2s para 95% das requisições
-- Suporte a 10.000 usuários simultâneos
-- Cache de produtos com Redis
-
-### RNF002 - Segurança
-- Conformidade com OWASP Top 10
-- Criptografia TLS 1.3
-- Proteção contra SQL Injection e XSS
-- Tokenização de dados de pagamento (PCI-DSS)
-
-### RNF003 - Disponibilidade
-- SLA de 99.9% uptime
-- Backup diário automatizado
-- Disaster recovery < 4 horas
-
-## 🌐 Integrações Identificadas
-
-1. **Gateway de Pagamento**: Stripe, PayPal
-2. **Serviço de Frete**: Correios API, Melhor Envio
-3. **Email Marketing**: SendGrid
-4. **Analytics**: Google Analytics 4
-
-## 📊 Regras de Negócio
-
-- **BR001**: Desconto máximo de 70% por produto
-- **BR002**: Frete grátis acima de R$ 150
-- **BR003**: Cancelamento permitido até 24h após compra
-- **BR004**: Estoque mínimo de 5 unidades para disponibilizar produto
-
-## 🎯 Próximos Passos
-
-1. ✅ Revisar requisitos extraídos
-2. 🔄 Refinar através da interface de chat
-3. 📝 Exportar para especificação formal
-4. 🏗️ Iniciar design de arquitetura`;
-
-      addChatMessage('agent', requirementsDoc, 'document', {
-        projectId,
-        executionId: 'exec-test-12345'
-      });
-      setIsChatProcessing(false);
-    }, 10000);
   };
 
   // Handle chat messages for conversational refinement
   const handleSendChatMessage = async (message: string) => {
-    if (!currentExecutionId || !projectId) {
+    if (!currentSessionId) {
       toast.error('Inicie uma análise primeiro');
       return;
     }
 
-    // Add user message
-    addChatMessage('user', message);
     setIsChatProcessing(true);
 
     try {
       // Send refinement request to backend
-      addChatMessage('agent', '🤔 Processando seu pedido de refinamento...', 'progress');
+      const response = await chatService.refineRequirements(currentSessionId, {
+        message: message
+      });
 
-      // Here you would call a backend endpoint to refine the requirements
-      // For now, simulating a response
-      setTimeout(() => {
-        addChatMessage(
-          'agent',
-          `Entendi seu pedido: "${message}"\n\nVou ajustar os requisitos de acordo. Por favor, aguarde...`,
-          'status'
-        );
-        setIsChatProcessing(false);
-      }, 1500);
+      // Add user and agent messages from response
+      await loadChatHistory(currentSessionId);
+
+      toast.success('Pedido de refinamento enviado!');
     } catch (err) {
       console.error('Failed to process chat message:', err);
-      addChatMessage('system', '❌ Erro ao processar mensagem');
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao processar mensagem';
+      toast.error(errorMessage);
+      addChatMessage('system', `❌ ${errorMessage}`, 'status');
+    } finally {
       setIsChatProcessing(false);
     }
   };
@@ -639,28 +519,6 @@ Análise concluída com sucesso para 3 documento(s). Sistema identificado como p
                 disabled={isAnalyzing || documents.filter(d => d.status === DocumentStatus.UPLOADED).length === 0}
               >
                 {isAnalyzing ? '⏳ Analisando...' : '🚀 Iniciar Análise'}
-              </button>
-
-              {/* BOTÃO DE TESTE - REMOVER EM PRODUÇÃO */}
-              <button
-                className="btn-test-simulation"
-                onClick={testSimulateAnalysis}
-                disabled={isChatProcessing}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  marginTop: '8px',
-                  background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-                  color: 'white',
-                  border: '2px dashed rgba(255,255,255,0.5)',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  opacity: isChatProcessing ? 0.5 : 1
-                }}
-              >
-                🧪 TESTE: Simular Análise Completa (10s)
               </button>
             </div>
           </div>

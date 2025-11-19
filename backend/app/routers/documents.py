@@ -4,12 +4,13 @@ Handles document upload, analysis, and requirements extraction
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from typing import List, Optional
+from pydantic import BaseModel
 import os
 import shutil
 import uuid
 from pathlib import Path
 from datetime import datetime
-from app.database import get_db_connection
+from app.database import get_db_connection, save_chat_message
 from app.dependencies import get_current_user
 from app.parsers import DocumentParser
 from app.llm import get_llm_client
@@ -587,3 +588,127 @@ async def delete_document(
         cursor.close()
 
     return {"message": "Document deleted successfully"}
+
+
+class AnalyzeDocumentsRequest(BaseModel):
+    document_ids: List[str]
+    project_id: str
+    instructions: Optional[str] = None
+    use_web_research: bool = False
+
+
+@router.post("/analyze-batch")
+async def analyze_documents_batch(
+    request: AnalyzeDocumentsRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Analyze multiple documents at once and generate comprehensive requirements document
+    This endpoint creates a chat session and uses WebSocket for real-time updates
+
+    Args:
+        request: Batch analysis request with document IDs, instructions, and options
+        current_user: Authenticated user
+
+    Returns:
+        Execution session ID and initial status
+    """
+    # Create execution session
+    session_id = str(uuid.uuid4())
+    execution_id = str(uuid.uuid4())
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Verify project exists
+        cursor.execute("SELECT id FROM projects WHERE id = %s", (request.project_id,))
+        if not cursor.fetchone():
+            cursor.close()
+            raise HTTPException(status_code=404, detail=f"Project not found: {request.project_id}")
+
+        # Verify all documents exist and belong to this project
+        cursor.execute("""
+            SELECT id, filename, file_path
+            FROM documents
+            WHERE id IN (%s) AND project_id = %s
+        """ % (','.join(['%s'] * len(request.document_ids)), '%s'),
+        tuple(request.document_ids) + (request.project_id,))
+
+        documents = cursor.fetchall()
+
+        if len(documents) != len(request.document_ids):
+            cursor.close()
+            raise HTTPException(
+                status_code=404,
+                detail=f"Some documents not found or don't belong to project {request.project_id}"
+            )
+
+        # Create execution session
+        cursor.execute("""
+            INSERT INTO execution_sessions (
+                id, project_id, user_id, session_name,
+                status, execution_metadata
+            ) VALUES (%s, %s, %s, %s, %s, %s)
+        """, (
+            session_id,
+            request.project_id,
+            current_user["id"],
+            f'Document Analysis - {len(documents)} files',
+            'running',
+            str({
+                'execution_id': execution_id,
+                'document_count': len(documents),
+                'use_web_research': request.use_web_research,
+                'instructions': request.instructions,
+                'type': 'document_analysis'
+            })
+        ))
+        conn.commit()
+
+        # Save initial chat messages (without task_execution_id since it doesn't exist in task_executions)
+        save_chat_message(
+            session_id=session_id,
+            sender_type='system',
+            message_text=f'🚀 Iniciando análise de {len(documents)} documento(s)...',
+            message_type='status',
+            task_execution_id=None,
+            metadata={
+                'project_id': request.project_id,
+                'document_count': len(documents),
+                'execution_id': execution_id
+            }
+        )
+
+        if request.instructions:
+            save_chat_message(
+                session_id=session_id,
+                sender_type='user',
+                message_text=request.instructions,
+                message_type='chat',
+                task_execution_id=None,
+                sender_name='Você',
+                metadata={'type': 'initial_instructions', 'execution_id': execution_id}
+            )
+
+        save_chat_message(
+            session_id=session_id,
+            sender_type='agent',
+            message_text=f'📚 Processando documentos: {", ".join([d[1] for d in documents])}',
+            message_type='progress',
+            task_execution_id=None,
+            sender_name='Agente Analista',
+            metadata={'documents': [d[1] for d in documents], 'execution_id': execution_id}
+        )
+
+        cursor.close()
+
+    # TODO: Aqui será integrado com LangNet para análise real
+    # Por enquanto, retornamos a sessão criada
+
+    return {
+        "session_id": session_id,
+        "execution_id": execution_id,
+        "status": "running",
+        "message": "Analysis started. Connect to WebSocket for real-time updates.",
+        "websocket_url": f"/ws/execution/{execution_id}"
+    }

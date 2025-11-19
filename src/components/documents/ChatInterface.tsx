@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import DocumentActionsCard from './DocumentActionsCard';
+import MarkdownEditorModal from './MarkdownEditorModal';
+import MarkdownViewerModal from './MarkdownViewerModal';
+import { exportMarkdownToPDF } from '../../services/pdfExportService';
 import './ChatInterface.css';
 
 export interface ChatMessage {
@@ -25,6 +29,10 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
   executionId
 }) => {
   const [inputValue, setInputValue] = useState('');
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [editingContent, setEditingContent] = useState('');
+  const [currentDocument, setCurrentDocument] = useState<ChatMessage | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll to bottom when new messages arrive
@@ -47,6 +55,33 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     });
   };
 
+  const handleEdit = (message: ChatMessage) => {
+    setCurrentDocument(message);
+    setEditingContent(message.text);
+    setIsEditorOpen(true);
+  };
+
+  const handleView = (message: ChatMessage) => {
+    setCurrentDocument(message);
+    setIsViewerOpen(true);
+  };
+
+  const handleExportPDF = async (message: ChatMessage) => {
+    try {
+      const filename = message.data?.filename?.replace('.md', '.pdf') || 'requisitos.pdf';
+      await exportMarkdownToPDF(message.text, filename);
+    } catch (error) {
+      console.error('Erro ao exportar PDF:', error);
+      alert('Falha ao exportar documento para PDF. Tente novamente.');
+    }
+  };
+
+  const handleSaveEdit = (newContent: string) => {
+    // Atualizar o conteúdo da mensagem
+    // Isso será conectado ao backend posteriormente
+    console.log('Salvando conteúdo editado:', newContent);
+  };
+
   const renderMessage = (message: ChatMessage) => {
     const isUser = message.sender === 'user';
     const isSystem = message.sender === 'system';
@@ -64,28 +99,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         </div>
         <div className="message-content">
           {message.type === 'document' ? (
-            <div className="document-preview">
-              <div className="document-header">
-                <span className="document-icon">📋</span>
-                <h4>Documento de Requisitos Gerado</h4>
-              </div>
-              <div className="document-body">
-                <ReactMarkdown>{message.text}</ReactMarkdown>
-              </div>
-              {executionId && (
-                <div className="document-actions">
-                  <button
-                    className="btn-view-full"
-                    onClick={() => window.open(`/project/${message.data?.projectId}/requirements/${executionId}`, '_blank')}
-                  >
-                    📄 Ver Documento Completo
-                  </button>
-                  <button className="btn-refine">
-                    💬 Refinar Requisitos
-                  </button>
-                </div>
-              )}
-            </div>
+            <DocumentActionsCard
+              filename={message.data?.filename || 'requisitos.md'}
+              content={message.text}
+              executionId={executionId}
+              projectId={message.data?.projectId}
+              onEdit={() => handleEdit(message)}
+              onView={() => handleView(message)}
+              onExportPDF={() => handleExportPDF(message)}
+            />
           ) : (
             <ReactMarkdown>{message.text}</ReactMarkdown>
           )}
@@ -155,6 +177,23 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           {isProcessing ? '⏳' : '📤'} Enviar
         </button>
       </form>
+
+      {/* Modais */}
+      <MarkdownEditorModal
+        isOpen={isEditorOpen}
+        content={editingContent}
+        filename={currentDocument?.data?.filename || 'requisitos.md'}
+        onSave={handleSaveEdit}
+        onClose={() => setIsEditorOpen(false)}
+      />
+
+      <MarkdownViewerModal
+        isOpen={isViewerOpen}
+        content={currentDocument?.text || ''}
+        filename={currentDocument?.data?.filename || 'requisitos.md'}
+        onClose={() => setIsViewerOpen(false)}
+        onDownload={currentDocument ? () => handleExportPDF(currentDocument) : undefined}
+      />
     </div>
   );
 };

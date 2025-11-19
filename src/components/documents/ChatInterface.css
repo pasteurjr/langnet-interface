@@ -69,8 +69,23 @@
 }
 
 .chat-message {
-  margin-bottom: 20px;
+  margin-bottom: 8px;
   animation: fadeIn 0.3s ease-in;
+  display: flex;
+  flex-direction: column;
+}
+
+/* WhatsApp-style alignment */
+.user-message {
+  align-items: flex-end;
+}
+
+.agent-message {
+  align-items: flex-start;
+}
+
+.system-message {
+  align-items: center;
 }
 
 @keyframes fadeIn {
@@ -86,51 +101,62 @@
 
 .message-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
-  font-size: 13px;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.user-message .message-header {
+  flex-direction: row-reverse;
 }
 
 .message-sender {
-  font-weight: 600;
+  font-weight: 500;
   color: #666;
+  font-size: 11px;
 }
 
 .message-timestamp {
   color: #999;
-  font-size: 12px;
+  font-size: 10px;
 }
 
 .message-content {
-  padding: 14px 18px;
-  border-radius: 12px;
-  line-height: 1.6;
+  padding: 8px 12px;
+  border-radius: 8px;
+  line-height: 1.5;
   font-size: 14px;
+  max-width: 75%;
+  word-wrap: break-word;
+  position: relative;
 }
 
+/* WhatsApp-style: User messages à direita, verde */
 .user-message .message-content {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  margin-left: 60px;
-  border-bottom-right-radius: 4px;
+  background: #DCF8C6;
+  color: #000;
+  border-bottom-right-radius: 2px;
+  box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
 }
 
+/* WhatsApp-style: Agent messages à esquerda, branco */
 .agent-message .message-content {
-  background: white;
-  color: #333;
-  border: 1px solid #e0e0e0;
-  margin-right: 60px;
-  border-bottom-left-radius: 4px;
+  background: #FFFFFF;
+  color: #000;
+  border-bottom-left-radius: 2px;
+  box-shadow: 0 1px 0.5px rgba(0,0,0,0.13);
 }
 
+/* System messages centralizadas, amarelo claro */
 .system-message .message-content {
-  background: #fff3cd;
+  background: #FFF4CE;
   color: #856404;
-  border: 1px solid #ffeaa7;
   text-align: center;
-  font-size: 13px;
+  font-size: 12px;
   font-style: italic;
+  max-width: 85%;
+  border-radius: 8px;
 }
 
 .typing-indicator {

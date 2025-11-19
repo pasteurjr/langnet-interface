@@ -27,15 +27,15 @@ app.add_middleware(
     expose_headers=["*"],  # Expose all headers in responses
 )
 
-# Include routers
-app.include_router(auth_router)
-app.include_router(users_router)
-app.include_router(projects_router)
-app.include_router(agents_router)
-app.include_router(tasks_router)
-app.include_router(documents_router)
-app.include_router(chat_router)  # Chat with agents (memory-enabled)
-app.include_router(langnet_router)  # LangNet multi-agent system
+# Include routers with /api prefix
+app.include_router(auth_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
+app.include_router(projects_router, prefix="/api")
+app.include_router(agents_router, prefix="/api")
+app.include_router(tasks_router, prefix="/api")
+app.include_router(documents_router, prefix="/api")
+app.include_router(chat_router, prefix="/api")  # Chat with agents (memory-enabled)
+app.include_router(langnet_router, prefix="/api")  # LangNet multi-agent system
 
 
 # WebSocket endpoint for real-time execution streaming

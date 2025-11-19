@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import api from './api';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
 const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
 
 /**
