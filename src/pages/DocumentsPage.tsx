@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Document, DocumentStatus } from '../types';
 import DocumentCard from '../components/documents/DocumentCard';
 import DocumentUploadModal from '../components/documents/DocumentUploadModal';
 import DocumentViewModal from '../components/documents/DocumentViewModal';
+import ChatInterface, { ChatMessage } from '../components/documents/ChatInterface';
 import * as documentService from '../services/documentService';
 import langnetService from '../services/langnetService';
 import { useNavigation } from '../contexts/NavigationContext';
@@ -25,6 +26,36 @@ const DocumentsPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [analysisInstructions, setAnalysisInstructions] = useState('');
   const [enableWebResearch, setEnableWebResearch] = useState(true);
+  const [isChatModalOpen, setIsChatModalOpen] = useState(false);
+
+  // Chat states
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+  const [isChatProcessing, setIsChatProcessing] = useState(false);
+  const [currentExecutionId, setCurrentExecutionId] = useState<string | undefined>(undefined);
+  const [websocket, setWebsocket] = useState<WebSocket | null>(null);
+
+  // TESTE: Adicionar mensagens de exemplo ao carregar (remover depois)
+  useEffect(() => {
+    if (chatMessages.length === 0) {
+      const demoMessages: ChatMessage[] = [
+        {
+          id: '1',
+          sender: 'system',
+          text: '🎉 Bem-vindo à nova interface de chat para análise de requisitos!',
+          timestamp: new Date(Date.now() - 60000),
+          type: 'status'
+        },
+        {
+          id: '2',
+          sender: 'agent',
+          text: '👋 Olá! Faça upload de documentos na sidebar e clique em "Iniciar Análise" para começar.',
+          timestamp: new Date(Date.now() - 50000),
+        }
+      ];
+      // Descomentar a linha abaixo para ver mensagens de demo:
+      // setChatMessages(demoMessages);
+    }
+  }, [chatMessages.length]);
 
   useEffect(() => {
     loadDocuments();
@@ -153,12 +184,7 @@ const DocumentsPage: React.FC = () => {
 
       setDocuments(prev => [...transformedDocs, ...prev]);
       setIsUploadModalOpen(false);
-      toast.success(`${transformedDocs.length} arquivo(s) carregado(s) com sucesso`);
-
-      console.log('🔍 Starting analysis...');
-      // Automatically start analysis
-      const documentIds = transformedDocs.map(doc => doc.id);
-      startAnalysis(documentIds);
+      toast.success(`${transformedDocs.length} arquivo(s) carregado(s) com sucesso. Use o botão "Extrair Requisitos" para iniciar a análise.`);
     } catch (err) {
       console.error('❌ Failed to upload documents:', err);
       const errorMessage = err instanceof Error ? err.message : 'Failed to upload documents';
@@ -169,75 +195,313 @@ const DocumentsPage: React.FC = () => {
     }
   };
 
-  const startAnalysis = async (documentIds: string[]) => {
-    setIsAnalyzing(true);
-
-    for (const docId of documentIds) {
-      try {
-        // Update status to analyzing
-        setDocuments(prev => prev.map(doc =>
-          doc.id === docId
-            ? { ...doc, status: DocumentStatus.ANALYZING, analysisProgress: 0 }
-            : doc
-        ));
-
-        // Get document to extract instructions and web research setting
-        const doc = documents.find(d => d.id === docId);
-        const instructions = doc?.analysisInstructions || "";
-        const enableWebResearch = doc?.enableWebResearch ?? true;
-
-        // Call LangNet analysis API (full pipeline with optional web research)
-        if (!projectId) return;
-
-        const executionId = await langnetService.analyzeDocumentWithLangNet(
-          parseInt(projectId),
-          parseInt(docId),
-          instructions,
-          enableWebResearch
-        );
-
-        // Poll execution status
-        const result = await langnetService.pollExecutionStatus(executionId);
-
-        // Fetch updated requirements
-        const requirements = await documentService.getDocumentRequirements(parseInt(docId));
-
-        // Update document with analysis results and execution_id
-        setDocuments(prev => prev.map(doc =>
-          doc.id === docId
-            ? {
-                ...doc,
-                status: DocumentStatus.ANALYZED,
-                analysisProgress: 100,
-                executionId: executionId, // Store execution ID for viewing requirements document
-                analysisResults: {
-                  summary: `Análise LangNet concluída com ${result.tasks_completed || 0} tarefas executadas`,
-                  keyFindings: ['Documento de requisitos gerado', 'Pesquisa web realizada', 'Requisitos validados'],
-                  recommendedActions: ['Ver Documento de Requisitos', 'Refinar com agente', 'Prosseguir para especificação']
-                },
-                requirements: requirements.map((req: any) => ({
-                  id: req.id.toString(),
-                  type: req.type,
-                  title: req.requirement_id,
-                  description: req.description,
-                  priority: req.priority,
-                  source: doc.name
-                }))
-              }
-            : doc
-        ));
-      } catch (err) {
-        console.error(`Failed to analyze document ${docId}:`, err);
-        setDocuments(prev => prev.map(doc =>
-          doc.id === docId
-            ? { ...doc, status: DocumentStatus.ERROR }
-            : doc
-        ));
-      }
+  // WebSocket connection for real-time updates
+  const connectWebSocket = useCallback((executionId: string) => {
+    // Close existing connection
+    if (websocket) {
+      websocket.close();
     }
 
-    setIsAnalyzing(false);
+    const ws = new WebSocket(`ws://localhost:8000/ws/langnet/${executionId}`);
+
+    ws.onopen = () => {
+      console.log('WebSocket connected for execution:', executionId);
+      addChatMessage('system', '🔌 Conectado ao sistema de análise em tempo real');
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      console.log('WebSocket message:', data);
+
+      if (data.type === 'progress') {
+        addChatMessage('system', data.message, 'progress', data);
+      } else if (data.type === 'task_complete') {
+        addChatMessage('agent', `✅ ${data.message}`, 'status', data);
+      } else if (data.type === 'document_generated') {
+        addChatMessage('agent', data.document, 'document', data);
+      } else if (data.type === 'error') {
+        addChatMessage('system', `❌ Erro: ${data.message}`, 'status', data);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      addChatMessage('system', '❌ Erro na conexão em tempo real');
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket closed');
+      addChatMessage('system', '🔌 Conexão encerrada');
+    };
+
+    setWebsocket(ws);
+  }, [websocket]);
+
+  // Add message to chat
+  const addChatMessage = (
+    sender: 'user' | 'agent' | 'system',
+    text: string,
+    type?: 'status' | 'progress' | 'result' | 'document',
+    data?: any
+  ) => {
+    const message: ChatMessage = {
+      id: Date.now().toString() + Math.random(),
+      sender,
+      text,
+      timestamp: new Date(),
+      type,
+      data
+    };
+    setChatMessages(prev => [...prev, message]);
   };
+
+  const startAnalysis = async () => {
+    if (documents.length === 0) {
+      toast.error('Faça upload de documentos primeiro');
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setIsChatProcessing(true);
+
+    // Add user message with instructions
+    addChatMessage(
+      'user',
+      analysisInstructions || 'Analisar documentos e extrair requisitos',
+      'status'
+    );
+
+    addChatMessage(
+      'system',
+      `🚀 Iniciando análise de ${documents.length} documento(s)...${enableWebResearch ? ' (com pesquisa web)' : ''}`
+    );
+
+    try {
+      if (!projectId) return;
+
+      // Get all uploaded document IDs
+      const documentIds = documents
+        .filter(doc => doc.status === DocumentStatus.UPLOADED)
+        .map(doc => parseInt(doc.id));
+
+      if (documentIds.length === 0) {
+        addChatMessage('system', '⚠️ Nenhum documento pendente de análise');
+        setIsAnalyzing(false);
+        setIsChatProcessing(false);
+        return;
+      }
+
+      // Start analysis
+      addChatMessage('agent', '🔍 Processando documentos e extraindo conteúdo...', 'progress');
+
+      const executionId = await langnetService.analyzeDocumentsWithLangNet(
+        parseInt(projectId),
+        documentIds,
+        analysisInstructions,
+        enableWebResearch
+      );
+
+      setCurrentExecutionId(executionId);
+
+      // Connect WebSocket for real-time updates
+      connectWebSocket(executionId);
+
+      addChatMessage('agent', `📊 Análise iniciada. ID de execução: ${executionId}`, 'status');
+
+      // Poll execution status
+      const result = await langnetService.pollExecutionStatus(executionId);
+
+      // Fetch updated documents and requirements
+      await loadDocuments();
+
+      addChatMessage(
+        'agent',
+        `✅ Análise concluída! ${result.tasks_completed || 0} tarefas executadas com sucesso.`,
+        'result'
+      );
+
+      // Show generated requirements document
+      addChatMessage(
+        'agent',
+        `# Documento de Requisitos Gerado\n\n## Resumo da Análise\n\nA análise foi concluída com sucesso para ${documents.length} documento(s).\n\n### Requisitos Extraídos\n- Requisitos Funcionais: Identificados\n- Requisitos Não Funcionais: Identificados\n- Regras de Negócio: Documentadas\n\n### Próximos Passos\n1. Revisar os requisitos extraídos\n2. Refinar através desta interface de chat\n3. Exportar para especificação formal`,
+        'document',
+        { projectId, executionId }
+      );
+
+      toast.success('Análise concluída com sucesso!');
+    } catch (err) {
+      console.error('Failed to analyze documents:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Failed to analyze documents';
+      addChatMessage('system', `❌ Erro na análise: ${errorMessage}`, 'status');
+      toast.error(`Erro na análise: ${errorMessage}`);
+    } finally {
+      setIsAnalyzing(false);
+      setIsChatProcessing(false);
+    }
+  };
+
+  // TESTE: Simular análise completa com mensagens fake
+  const testSimulateAnalysis = () => {
+    setChatMessages([]);
+    setIsChatProcessing(true);
+
+    // Mensagem do usuário
+    addChatMessage('user', analysisInstructions || 'Analisar documentos e extrair requisitos');
+
+    // Mensagens de progresso simuladas
+    setTimeout(() => {
+      addChatMessage('system', '🚀 Iniciando análise de 3 documento(s)... (com pesquisa web)');
+    }, 500);
+
+    setTimeout(() => {
+      addChatMessage('system', '🔌 Conectado ao sistema de análise em tempo real');
+    }, 1000);
+
+    setTimeout(() => {
+      addChatMessage('agent', '🔍 Processando documentos e extraindo conteúdo...', 'progress');
+    }, 1500);
+
+    setTimeout(() => {
+      addChatMessage('agent', '📊 Análise iniciada. ID de execução: exec-test-12345', 'status');
+    }, 2000);
+
+    setTimeout(() => {
+      addChatMessage('system', '📄 Documento 1/3: Extraindo texto do PDF... (1.2 MB)', 'progress');
+    }, 3000);
+
+    setTimeout(() => {
+      addChatMessage('system', '📄 Documento 2/3: Processando chunks... (47 chunks)', 'progress');
+    }, 4500);
+
+    setTimeout(() => {
+      addChatMessage('agent', '🌐 Iniciando pesquisa web por best practices...', 'progress');
+    }, 6000);
+
+    setTimeout(() => {
+      addChatMessage('agent', '✅ Tarefa completada: Web Research finalizada', 'status');
+    }, 8000);
+
+    setTimeout(() => {
+      addChatMessage('agent', '✅ Análise concluída! 12 tarefas executadas com sucesso.', 'result');
+    }, 9000);
+
+    setTimeout(() => {
+      const requirementsDoc = `# Documento de Requisitos - Sistema de E-commerce
+
+## 📋 Resumo Executivo
+
+Análise concluída com sucesso para 3 documento(s). Sistema identificado como plataforma de e-commerce com requisitos de alta disponibilidade e conformidade com LGPD.
+
+## ✅ Requisitos Funcionais
+
+### RF001 - Autenticação de Usuários
+**Prioridade**: Alta
+- Login via email/senha
+- OAuth2 com Google e Facebook
+- Autenticação de dois fatores (2FA)
+- Recuperação de senha via email
+
+### RF002 - Catálogo de Produtos
+**Prioridade**: Alta
+- Listagem com filtros e ordenação
+- Busca textual com autocomplete
+- Visualização detalhada com zoom de imagens
+- Variações de produto (cor, tamanho)
+
+### RF003 - Carrinho de Compras
+**Prioridade**: Alta
+- Adicionar/remover produtos
+- Atualizar quantidades
+- Persistência entre sessões
+- Cálculo de frete em tempo real
+
+## 🔒 Requisitos Não Funcionais
+
+### RNF001 - Performance
+- Tempo de resposta < 2s para 95% das requisições
+- Suporte a 10.000 usuários simultâneos
+- Cache de produtos com Redis
+
+### RNF002 - Segurança
+- Conformidade com OWASP Top 10
+- Criptografia TLS 1.3
+- Proteção contra SQL Injection e XSS
+- Tokenização de dados de pagamento (PCI-DSS)
+
+### RNF003 - Disponibilidade
+- SLA de 99.9% uptime
+- Backup diário automatizado
+- Disaster recovery < 4 horas
+
+## 🌐 Integrações Identificadas
+
+1. **Gateway de Pagamento**: Stripe, PayPal
+2. **Serviço de Frete**: Correios API, Melhor Envio
+3. **Email Marketing**: SendGrid
+4. **Analytics**: Google Analytics 4
+
+## 📊 Regras de Negócio
+
+- **BR001**: Desconto máximo de 70% por produto
+- **BR002**: Frete grátis acima de R$ 150
+- **BR003**: Cancelamento permitido até 24h após compra
+- **BR004**: Estoque mínimo de 5 unidades para disponibilizar produto
+
+## 🎯 Próximos Passos
+
+1. ✅ Revisar requisitos extraídos
+2. 🔄 Refinar através da interface de chat
+3. 📝 Exportar para especificação formal
+4. 🏗️ Iniciar design de arquitetura`;
+
+      addChatMessage('agent', requirementsDoc, 'document', {
+        projectId,
+        executionId: 'exec-test-12345'
+      });
+      setIsChatProcessing(false);
+    }, 10000);
+  };
+
+  // Handle chat messages for conversational refinement
+  const handleSendChatMessage = async (message: string) => {
+    if (!currentExecutionId || !projectId) {
+      toast.error('Inicie uma análise primeiro');
+      return;
+    }
+
+    // Add user message
+    addChatMessage('user', message);
+    setIsChatProcessing(true);
+
+    try {
+      // Send refinement request to backend
+      addChatMessage('agent', '🤔 Processando seu pedido de refinamento...', 'progress');
+
+      // Here you would call a backend endpoint to refine the requirements
+      // For now, simulating a response
+      setTimeout(() => {
+        addChatMessage(
+          'agent',
+          `Entendi seu pedido: "${message}"\n\nVou ajustar os requisitos de acordo. Por favor, aguarde...`,
+          'status'
+        );
+        setIsChatProcessing(false);
+      }, 1500);
+    } catch (err) {
+      console.error('Failed to process chat message:', err);
+      addChatMessage('system', '❌ Erro ao processar mensagem');
+      setIsChatProcessing(false);
+    }
+  };
+
+  // Cleanup WebSocket on unmount
+  useEffect(() => {
+    return () => {
+      if (websocket) {
+        websocket.close();
+      }
+    };
+  }, [websocket]);
 
   const handleView = (document: Document) => {
     setSelectedDocument(document);
@@ -250,21 +514,17 @@ const DocumentsPage: React.FC = () => {
     }
 
     try {
-      await documentService.deleteDocument(parseInt(documentId));
+      await documentService.deleteDocument(documentId);
       setDocuments(prev => prev.filter(doc => doc.id !== documentId));
+      toast.success('Documento excluído com sucesso');
     } catch (err) {
       console.error('Failed to delete document:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete document');
+      const errorMsg = err instanceof Error ? err.message : 'Failed to delete document';
+      setError(errorMsg);
+      toast.error(`Erro ao excluir: ${errorMsg}`);
     }
   };
 
-  const handleReanalyze = async (documentId: string) => {
-    if (!window.confirm('Deseja reanalisar este documento?')) {
-      return;
-    }
-
-    await startAnalysis([documentId]);
-  };
 
   const handleExport = (doc: Document, format: 'json' | 'csv' | 'pdf') => {
     // Simular exportação
@@ -297,242 +557,127 @@ const DocumentsPage: React.FC = () => {
   };
 
   return (
-    <div className="documents-page">
+    <div className="documents-page-chat">
       <div className="page-header">
         <div className="header-content">
-          <h1>📄 Documentação {projectContext.isInProject && `- ${projectContext.projectName}`}</h1>
-          <p>Gerencie e analise documentos do projeto</p>
+          <h1>📄 Análise de Requisitos {projectContext.isInProject && `- ${projectContext.projectName}`}</h1>
+          <p>Upload de documentos e extração inteligente de requisitos</p>
         </div>
-        <button
-          className="btn-upload-primary"
-          onClick={() => setIsUploadModalOpen(true)}
-        >
-          📤 Upload de Documentos
-        </button>
       </div>
 
-      {/* Analysis Configuration Section */}
-      <div className="analysis-config-section" style={{
-        background: '#f8f9fa',
-        padding: '20px',
-        borderRadius: '8px',
-        marginBottom: '24px',
-        border: '1px solid #dee2e6'
-      }}>
-        <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '16px', fontWeight: '600' }}>
-          ⚙️ Configuração da Análise
-        </h3>
+      {error && (
+        <div className="error-banner">{error}</div>
+      )}
 
-        <div className="instructions-section" style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: '500' }}>
-            Instruções Adicionais para Análise
-          </label>
-          <textarea
-            className="instructions-textarea"
-            placeholder="Adicione instruções específicas para orientar a análise dos documentos. Por exemplo: 'Focar em requisitos de segurança', 'Identificar integrações com sistemas externos', etc."
-            value={analysisInstructions}
-            onChange={(e) => setAnalysisInstructions(e.target.value)}
-            rows={3}
-            style={{
-              width: '100%',
-              padding: '10px',
-              fontSize: '14px',
-              border: '1px solid #ced4da',
-              borderRadius: '4px',
-              fontFamily: 'inherit',
-              resize: 'vertical'
-            }}
-          />
+      {isLoading ? (
+        <div className="loading-container">
+          <span className="spinner"></span> Carregando documentos...
         </div>
-
-        <div className="web-research-option" style={{
-          padding: '14px',
-          background: enableWebResearch ? '#e8f5e9' : '#fff',
-          border: `2px solid ${enableWebResearch ? '#4caf50' : '#ddd'}`,
-          borderRadius: '6px',
-          transition: 'all 0.3s'
-        }}>
-          <label style={{
-            display: 'flex',
-            alignItems: 'flex-start',
-            cursor: 'pointer',
-            fontSize: '14px'
-          }}>
-            <input
-              type="checkbox"
-              checked={enableWebResearch}
-              onChange={(e) => setEnableWebResearch(e.target.checked)}
-              style={{
-                marginRight: '12px',
-                marginTop: '2px',
-                width: '18px',
-                height: '18px',
-                cursor: 'pointer',
-                flexShrink: 0
-              }}
-            />
-            <div>
-              <span style={{ fontWeight: '600', fontSize: '14px' }}>
-                🌐 Habilitar Pesquisa Web (Web Research)
-              </span>
-              <p style={{
-                marginTop: '6px',
-                marginBottom: 0,
-                fontSize: '13px',
-                color: '#666',
-                lineHeight: '1.5'
-              }}>
-                {enableWebResearch ? (
-                  <>
-                    ✅ <strong>Análise Completa:</strong> Busca best practices, padrões da indústria (OWASP, LGPD),
-                    tecnologias recomendadas e compliance. <em>Tempo estimado: 6-10 min</em>
-                  </>
-                ) : (
-                  <>
-                    ⚡ <strong>Análise Rápida:</strong> Apenas extração de requisitos dos documentos enviados.
-                    <em>Tempo estimado: 3-4 min</em>
-                  </>
-                )}
-              </p>
+      ) : (
+        <div className="documents-chat-container">
+          {/* LEFT SIDEBAR: Documents List + Configuration */}
+          <div className="documents-sidebar">
+            <div className="sidebar-header">
+              <h3>📁 Documentos ({documents.length})</h3>
+              <button className="btn-upload-compact" onClick={() => setIsUploadModalOpen(true)}>
+                + Upload
+              </button>
             </div>
-          </label>
-        </div>
 
-        <div className="instructions-help" style={{
-          marginTop: '12px',
-          padding: '12px',
-          background: '#fff',
-          borderRadius: '4px',
-          fontSize: '13px',
-          color: '#666'
-        }}>
-          <p style={{ margin: '0 0 8px 0', fontWeight: '500', color: '#333' }}>💡 Dicas para melhores resultados:</p>
-          <ul style={{ margin: 0, paddingLeft: '20px', lineHeight: '1.6' }}>
-            <li>Mencione o domínio da aplicação (ex: e-commerce, saúde, financeiro)</li>
-            <li>Especifique aspectos importantes (performance, segurança, usabilidade)</li>
-            <li>Indique se há padrões ou frameworks específicos a seguir</li>
-            <li>Destaque integrações ou sistemas legados existentes</li>
-          </ul>
-        </div>
-      </div>
-
-      <div className="page-content">
-        {error && (
-          <div className="error-message" style={{
-            padding: '12px',
-            marginBottom: '16px',
-            background: '#fee',
-            border: '1px solid #fcc',
-            borderRadius: '4px',
-            color: '#c33'
-          }}>
-            {error}
-          </div>
-        )}
-
-        {isLoading ? (
-          <div className="loading-state" style={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            minHeight: '400px',
-            fontSize: '18px',
-            color: '#666'
-          }}>
-            <span className="spinner"></span> Carregando documentos...
-          </div>
-        ) : (
-          <>
-        <div className="filters-section">
-          <div className="search-container">
-            <input
-              type="text"
-              placeholder="Buscar documentos..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="search-input"
-            />
-          </div>
-
-          <div className="status-filters">
-            <button
-              className={`status-filter ${statusFilter === 'all' ? 'active' : ''}`}
-              onClick={() => setStatusFilter('all')}
-            >
-              Todos ({documents.length})
-            </button>
-            <button
-              className={`status-filter ${statusFilter === DocumentStatus.UPLOADED ? 'active' : ''}`}
-              onClick={() => setStatusFilter(DocumentStatus.UPLOADED)}
-            >
-              Carregados ({getStatusCount(DocumentStatus.UPLOADED)})
-            </button>
-            <button
-              className={`status-filter ${statusFilter === DocumentStatus.ANALYZING ? 'active' : ''}`}
-              onClick={() => setStatusFilter(DocumentStatus.ANALYZING)}
-            >
-              Analisando ({getStatusCount(DocumentStatus.ANALYZING)})
-            </button>
-            <button
-              className={`status-filter ${statusFilter === DocumentStatus.ANALYZED ? 'active' : ''}`}
-              onClick={() => setStatusFilter(DocumentStatus.ANALYZED)}
-            >
-              Analisados ({getStatusCount(DocumentStatus.ANALYZED)})
-            </button>
-            <button
-              className={`status-filter ${statusFilter === DocumentStatus.ERROR ? 'active' : ''}`}
-              onClick={() => setStatusFilter(DocumentStatus.ERROR)}
-            >
-              Erros ({getStatusCount(DocumentStatus.ERROR)})
-            </button>
-          </div>
-        </div>
-
-        <div className="documents-list">
-          {filteredDocuments.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-icon">📄</div>
-              <h3>Nenhum documento encontrado</h3>
-              <p>
-                {documents.length === 0 
-                  ? 'Faça upload de documentos para começar a análise'
-                  : 'Tente ajustar os filtros de busca'
-                }
-              </p>
-              {documents.length === 0 && (
-                <button 
-                  className="btn-upload-empty"
-                  onClick={() => setIsUploadModalOpen(true)}
-                >
-                  📤 Fazer Upload
-                </button>
+            {/* Compact Documents List */}
+            <div className="documents-compact-list">
+              {documents.length === 0 ? (
+                <div className="empty-sidebar">
+                  <p>Nenhum documento</p>
+                  <button onClick={() => setIsUploadModalOpen(true)}>
+                    📤 Fazer Upload
+                  </button>
+                </div>
+              ) : (
+                documents.map(doc => (
+                  <div key={doc.id} className={`document-item ${doc.status}`}>
+                    <div className="doc-icon">📄</div>
+                    <div className="doc-info">
+                      <div className="doc-name" title={doc.name}>{doc.name}</div>
+                      <div className="doc-status">
+                        {doc.status === DocumentStatus.UPLOADED && '⏸️ Pendente'}
+                        {doc.status === DocumentStatus.ANALYZING && '🔄 Analisando'}
+                        {doc.status === DocumentStatus.ANALYZED && '✅ Analisado'}
+                        {doc.status === DocumentStatus.ERROR && '❌ Erro'}
+                      </div>
+                    </div>
+                    <button className="btn-delete-small" onClick={() => handleDelete(doc.id)}>×</button>
+                  </div>
+                ))
               )}
             </div>
-          ) : (
-            filteredDocuments.map((document) => (
-              <DocumentCard
-                key={document.id}
-                document={document}
-                onView={handleView}
-                onDelete={handleDelete}
-                onReanalyze={handleReanalyze}
-              />
-            ))
-          )}
-        </div>
 
-        {isAnalyzing && (
-          <div className="analysis-status">
-            <div className="analysis-notification">
-              <span className="spinner"></span>
-              Análise em andamento...
+            {/* Analysis Configuration */}
+            <div className="analysis-config">
+              <h4>⚙️ Configuração</h4>
+
+              <label>Instruções para Análise</label>
+              <textarea
+                value={analysisInstructions}
+                onChange={(e) => setAnalysisInstructions(e.target.value)}
+                placeholder="Ex: Focar em requisitos de segurança..."
+                rows={3}
+              />
+
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={enableWebResearch}
+                  onChange={(e) => setEnableWebResearch(e.target.checked)}
+                />
+                <span>🌐 Pesquisa Web {enableWebResearch && '(6-10 min)'}</span>
+              </label>
+
+              <button
+                className="btn-start-analysis"
+                onClick={startAnalysis}
+                disabled={isAnalyzing || documents.filter(d => d.status === DocumentStatus.UPLOADED).length === 0}
+              >
+                {isAnalyzing ? '⏳ Analisando...' : '🚀 Iniciar Análise'}
+              </button>
+
+              {/* BOTÃO DE TESTE - REMOVER EM PRODUÇÃO */}
+              <button
+                className="btn-test-simulation"
+                onClick={testSimulateAnalysis}
+                disabled={isChatProcessing}
+                style={{
+                  width: '100%',
+                  padding: '10px',
+                  marginTop: '8px',
+                  background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                  color: 'white',
+                  border: '2px dashed rgba(255,255,255,0.5)',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  opacity: isChatProcessing ? 0.5 : 1
+                }}
+              >
+                🧪 TESTE: Simular Análise Completa (10s)
+              </button>
             </div>
           </div>
-        )}
-          </>
-        )}
-      </div>
 
+          {/* RIGHT AREA: Chat Interface */}
+          <div className="chat-area">
+            <ChatInterface
+              messages={chatMessages}
+              onSendMessage={handleSendChatMessage}
+              isProcessing={isChatProcessing}
+              executionId={currentExecutionId}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Modals */}
       <DocumentUploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}

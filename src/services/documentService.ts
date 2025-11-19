@@ -224,7 +224,7 @@ export const updateDocument = async (
 /**
  * Delete document
  */
-export const deleteDocument = async (documentId: number): Promise<void> => {
+export const deleteDocument = async (documentId: string): Promise<void> => {
   const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
     method: 'DELETE',
     headers: {

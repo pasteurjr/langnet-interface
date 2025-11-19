@@ -7,13 +7,17 @@ interface DocumentCardProps {
   onView: (document: Document) => void;
   onDelete: (documentId: string) => void;
   onReanalyze: (documentId: string) => void;
+  onExtractRequirements?: (documentId: string) => void;
+  onChatWithAgent?: (documentId: string) => void;
 }
 
 const DocumentCard: React.FC<DocumentCardProps> = ({
   document,
   onView,
   onDelete,
-  onReanalyze
+  onReanalyze,
+  onExtractRequirements,
+  onChatWithAgent
 }) => {
   const getStatusIcon = (status: DocumentStatus) => {
     switch (status) {
@@ -195,13 +199,53 @@ const DocumentCard: React.FC<DocumentCardProps> = ({
           👁️ Visualizar
         </button>
 
+        {(document.status === DocumentStatus.UPLOADED || document.status === DocumentStatus.ERROR) && onExtractRequirements && (
+          <button
+            className="btn-extract-requirements"
+            onClick={() => onExtractRequirements(document.id)}
+            style={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              fontWeight: '600',
+              padding: '10px 18px',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              transition: 'all 0.2s'
+            }}
+          >
+            🔍 Extrair Requisitos
+          </button>
+        )}
+
         {document.status === DocumentStatus.ANALYZED && document.executionId && (
           <button
             className="btn-view-requirements"
             onClick={() => window.location.href = `/project/${document.projectId}/requirements/${document.executionId}`}
             title="View generated requirements document"
           >
-            📄 View Requirements
+            📄 Ver Requisitos
+          </button>
+        )}
+
+        {document.status === DocumentStatus.ANALYZED && onChatWithAgent && (
+          <button
+            className="btn-chat-agent"
+            onClick={() => onChatWithAgent(document.id)}
+            style={{
+              background: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)',
+              color: 'white',
+              fontWeight: '600',
+              padding: '10px 18px',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              transition: 'all 0.2s'
+            }}
+          >
+            💬 Refinar com Agente
           </button>
         )}
 

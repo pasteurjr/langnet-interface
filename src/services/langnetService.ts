@@ -348,7 +348,7 @@ export default {
   listAgents,
   connectToExecutionWebSocket,
 
-  // Document Analysis with LangNet
+  // Document Analysis with LangNet (single document)
   analyzeDocumentWithLangNet: async (
     projectId: number,
     documentId: number,
@@ -358,6 +358,22 @@ export default {
     const response = await api.post('/api/langnet/analyze-document', {
       project_id: projectId.toString(),
       document_id: documentId.toString(),
+      additional_instructions: additionalInstructions,
+      enable_web_research: enableWebResearch
+    });
+    return response.data.execution_id;
+  },
+
+  // Document Analysis with LangNet (multiple documents)
+  analyzeDocumentsWithLangNet: async (
+    projectId: number,
+    documentIds: number[],
+    additionalInstructions: string,
+    enableWebResearch: boolean = true
+  ): Promise<string> => {
+    const response = await api.post('/api/langnet/analyze-documents', {
+      project_id: projectId.toString(),
+      document_ids: documentIds.map(id => id.toString()),
       additional_instructions: additionalInstructions,
       enable_web_research: enableWebResearch
     });

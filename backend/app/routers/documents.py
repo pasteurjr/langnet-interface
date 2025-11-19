@@ -549,7 +549,7 @@ async def update_document(
 
 @router.delete("/{document_id}")
 async def delete_document(
-    document_id: int,
+    document_id: str,
     current_user: dict = Depends(get_current_user)
 ):
     """
