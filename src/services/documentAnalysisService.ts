@@ -48,7 +48,10 @@ export const connectToExecutionWebSocket = (
   onClose?: (event: CloseEvent) => void
 ): WebSocket => {
   const WS_BASE = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
-  const ws = new WebSocket(`${WS_BASE}/ws/execution/${executionId}`);
+  const token = localStorage.getItem('accessToken');
+
+  // Use correct WebSocket endpoint with authentication token
+  const ws = new WebSocket(`${WS_BASE}/ws/langnet/${executionId}?token=${token}`);
 
   ws.onmessage = (event) => {
     try {

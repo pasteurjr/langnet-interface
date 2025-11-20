@@ -1,7 +1,7 @@
 """
 LangNet FastAPI Application
 """
-from fastapi import FastAPI, WebSocket
+from fastapi import FastAPI, WebSocket, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import test_connection
@@ -9,6 +9,7 @@ from app.routers import auth_router, users_router, projects_router, agents_route
 from app.routers.chat import router as chat_router
 from api.langnetapi import router as langnet_router
 from api.langnetwebsocket import websocket_endpoint
+from app.utils import decode_access_token
 
 # Create FastAPI app
 app = FastAPI(
@@ -40,8 +41,29 @@ app.include_router(langnet_router, prefix="/api")  # LangNet multi-agent system
 
 # WebSocket endpoint for real-time execution streaming
 @app.websocket("/ws/langnet/{execution_id}")
-async def langnet_websocket(websocket: WebSocket, execution_id: str):
-    """WebSocket for streaming LangNet execution progress"""
+async def langnet_websocket(
+    websocket: WebSocket,
+    execution_id: str,
+    token: str = Query(...)
+):
+    """
+    WebSocket for streaming LangNet execution progress
+
+    Requires authentication via token query parameter.
+    Example: ws://localhost:8000/ws/langnet/{execution_id}?token=xxx
+    """
+    # Validate token before accepting WebSocket connection
+    try:
+        payload = decode_access_token(token)
+        if not payload or not payload.get("user_id"):
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired token")
+            return
+    except Exception as e:
+        print(f"❌ WebSocket auth error: {e}")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication failed")
+        return
+
+    # Token is valid, proceed with WebSocket connection
     await websocket_endpoint(websocket, execution_id)
 
 

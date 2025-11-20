@@ -1,1 +1,19 @@
 node_modules
+
+# Environment files with secrets
+.env
+backend/.env
+*.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Uploads and temporary files
+backend/uploads/
+instancias/
+
+# IDE
+.vscode/
+.idea/

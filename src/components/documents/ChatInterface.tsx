@@ -4,6 +4,7 @@ import DocumentActionsCard from './DocumentActionsCard';
 import MarkdownEditorModal from './MarkdownEditorModal';
 import MarkdownViewerModal from './MarkdownViewerModal';
 import { exportMarkdownToPDF } from '../../services/pdfExportService';
+import { updateRequirementsDocument } from '../../services/requirementsService';
 import './ChatInterface.css';
 
 export interface ChatMessage {
@@ -20,13 +21,15 @@ interface ChatInterfaceProps {
   onSendMessage: (message: string) => void;
   isProcessing?: boolean;
   executionId?: string;
+  sessionId?: string;
 }
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({
   messages,
   onSendMessage,
   isProcessing = false,
-  executionId
+  executionId,
+  sessionId
 }) => {
   const [inputValue, setInputValue] = useState('');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -76,10 +79,26 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     }
   };
 
-  const handleSaveEdit = (newContent: string) => {
-    // Atualizar o conteúdo da mensagem
-    // Isso será conectado ao backend posteriormente
-    console.log('Salvando conteúdo editado:', newContent);
+  const handleSaveEdit = async (newContent: string) => {
+    if (!sessionId) {
+      alert('Erro: Session ID não disponível');
+      return;
+    }
+
+    try {
+      await updateRequirementsDocument(sessionId, newContent);
+
+      // Update local message
+      setEditingContent(newContent);
+      if (currentDocument) {
+        currentDocument.text = newContent;
+      }
+
+      alert('✅ Documento salvo com sucesso!');
+    } catch (error) {
+      console.error('Erro ao salvar documento:', error);
+      alert('❌ Erro ao salvar documento. Tente novamente.');
+    }
   };
 
   const renderMessage = (message: ChatMessage) => {

@@ -2,7 +2,7 @@
 Documents Router
 Handles document upload, analysis, and requirements extraction
 """
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from typing import List, Optional
 from pydantic import BaseModel
 import os
@@ -10,13 +10,149 @@ import shutil
 import uuid
 from pathlib import Path
 from datetime import datetime
+import asyncio
 from app.database import get_db_connection, save_chat_message
 from app.dependencies import get_current_user
 from app.parsers import DocumentParser
 from app.llm import get_llm_client
 from app.config import settings
+from agents.langnetagents import execute_document_analysis_workflow
+from api.langnetwebsocket import manager
+from api.langnetapi import EXECUTIONS
 
 router = APIRouter(prefix="/documents", tags=["documents"])
+
+
+async def execute_analysis_in_background(
+    session_id: str,
+    execution_id: str,
+    project_id: str,
+    documents: list,
+    instructions: str,
+    use_web_research: bool
+):
+    """
+    Execute LangNet analysis in background and save results
+    """
+    try:
+        # Register execution in EXECUTIONS dict for WebSocket tracking
+        EXECUTIONS[execution_id] = {
+            "status": "running",
+            "started_at": datetime.now().isoformat(),
+            "completed_at": None,
+            "state": {
+                "current_task": "document_analysis",
+                "progress_percentage": 0,
+                "completed_tasks": 0,
+                "total_tasks": 4,
+                "execution_log": []
+            }
+        }
+
+        # Send progress updates via WebSocket
+        await manager.send_message(
+            execution_id,
+            {"type": "task_started", "task": "document_analysis", "message": "Iniciando análise com IA..."}
+        )
+
+        # For now, we'll process the first document
+        # TODO: Support multiple documents analysis
+        doc_id, doc_filename, doc_path = documents[0]
+
+        # Execute LangNet workflow in thread pool (don't block async event loop)
+        # This allows the workflow to run for 2-5 minutes without blocking
+        result_state = await asyncio.to_thread(
+            execute_document_analysis_workflow,
+            project_id=project_id,
+            document_id=doc_id,
+            document_path=doc_path,
+            additional_instructions=instructions,
+            enable_web_research=use_web_research
+            # use_deepseek defaults to False = uses GPT-4o-mini (OpenAI)
+        )
+
+        # Extract requirements document
+        requirements_doc = result_state.get('requirements_document_md', '')
+
+        # Save to database
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE execution_sessions
+                SET requirements_document = %s, status = 'completed', finished_at = NOW()
+                WHERE id = %s
+            """, (requirements_doc, session_id))
+            conn.commit()
+            cursor.close()
+
+        # Send completion message
+        save_chat_message(
+            session_id=session_id,
+            sender_type='agent',
+            message_text='✅ Análise concluída! Documento de requisitos gerado.',
+            message_type='result',
+            task_execution_id=None,
+            sender_name='Agente Analista',
+            metadata={'execution_id': execution_id, 'has_document': True}
+        )
+
+        # Send document as separate message
+        save_chat_message(
+            session_id=session_id,
+            sender_type='agent',
+            message_text=requirements_doc,
+            message_type='document',
+            task_execution_id=None,
+            sender_name='Agente Analista',
+            metadata={'execution_id': execution_id, 'document_type': 'requirements'}
+        )
+
+        # Update EXECUTIONS status to completed
+        EXECUTIONS[execution_id]["status"] = "completed"
+        EXECUTIONS[execution_id]["completed_at"] = datetime.now().isoformat()
+        EXECUTIONS[execution_id]["state"] = result_state
+
+        await manager.send_message(
+            execution_id,
+            {"type": "execution_completed", "message": "Análise concluída!", "session_id": session_id}
+        )
+
+    except Exception as e:
+        print(f"❌ Error in background analysis: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # Update EXECUTIONS status to failed
+        if execution_id in EXECUTIONS:
+            EXECUTIONS[execution_id]["status"] = "failed"
+            EXECUTIONS[execution_id]["error"] = str(e)
+            EXECUTIONS[execution_id]["completed_at"] = datetime.now().isoformat()
+
+        # Update status to failed
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                UPDATE execution_sessions
+                SET status = 'failed', finished_at = NOW()
+                WHERE id = %s
+            """, (session_id,))
+            conn.commit()
+            cursor.close()
+
+        # Send error message
+        save_chat_message(
+            session_id=session_id,
+            sender_type='system',
+            message_text=f'❌ Erro na análise: {str(e)}',
+            message_type='error',
+            task_execution_id=None,
+            metadata={'execution_id': execution_id, 'error': str(e)}
+        )
+
+        await manager.send_message(
+            execution_id,
+            {"type": "execution_failed", "error": str(e)}
+        )
 
 
 @router.post("/upload")
@@ -702,13 +838,123 @@ async def analyze_documents_batch(
 
         cursor.close()
 
-    # TODO: Aqui será integrado com LangNet para análise real
-    # Por enquanto, retornamos a sessão criada
+    # Start LangNet analysis in background
+    asyncio.create_task(execute_analysis_in_background(
+        session_id=session_id,
+        execution_id=execution_id,
+        project_id=request.project_id,
+        documents=documents,
+        instructions=request.instructions or '',
+        use_web_research=request.use_web_research
+    ))
 
     return {
         "session_id": session_id,
         "execution_id": execution_id,
         "status": "running",
         "message": "Analysis started. Connect to WebSocket for real-time updates.",
-        "websocket_url": f"/ws/execution/{execution_id}"
+        "websocket_url": f"/ws/langnet/{execution_id}"
+    }
+
+# ============================================================================
+# REQUIREMENTS DOCUMENT ENDPOINTS
+# ============================================================================
+
+class UpdateRequirementsRequest(BaseModel):
+    """Request model for updating requirements document"""
+    content: str
+
+
+@router.get("/sessions/{session_id}/requirements")
+async def get_requirements_document(
+    session_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Get requirements document for a session
+
+    Args:
+        session_id: Execution session ID
+        current_user: Authenticated user
+
+    Returns:
+        Requirements document in markdown format
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT requirements_document, status, session_name
+            FROM execution_sessions
+            WHERE id = %s
+        """, (session_id,))
+
+        session = cursor.fetchone()
+        cursor.close()
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        if not session['requirements_document']:
+            raise HTTPException(
+                status_code=404,
+                detail="Requirements document not yet generated. Analysis may still be running."
+            )
+
+        return {
+            "session_id": session_id,
+            "session_name": session['session_name'],
+            "status": session['status'],
+            "content": session['requirements_document']
+        }
+
+
+@router.put("/sessions/{session_id}/requirements")
+async def update_requirements_document(
+    session_id: str,
+    request: UpdateRequirementsRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Update requirements document (user edits)
+
+    Args:
+        session_id: Execution session ID
+        request: Updated document content
+        current_user: Authenticated user
+
+    Returns:
+        Success message
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+
+        # Verify session exists
+        cursor.execute("SELECT id FROM execution_sessions WHERE id = %s", (session_id,))
+        if not cursor.fetchone():
+            cursor.close()
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # Update document
+        cursor.execute("""
+            UPDATE execution_sessions
+            SET requirements_document = %s
+            WHERE id = %s
+        """, (request.content, session_id))
+        conn.commit()
+        cursor.close()
+
+        # Save edit notification in chat
+        save_chat_message(
+            session_id=session_id,
+            sender_type='user',
+            message_text='📝 Documento de requisitos editado manualmente',
+            message_type='info',
+            task_execution_id=None,
+            sender_name='Você',
+            metadata={'action': 'document_edited'}
+        )
+
+    return {
+        "success": True,
+        "message": "Requirements document updated successfully"
     }
