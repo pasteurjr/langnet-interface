@@ -61,7 +61,7 @@ const DocumentsPage: React.FC = () => {
     const intervalId = setInterval(() => {
       console.log('🔄 Reloading chat history...');
       loadChatHistory(currentSessionId);
-    }, 3000); // Reload every 3 seconds
+    }, 10000); // Reload every 10 seconds (reduced from 3s to avoid log spam)
 
     return () => clearInterval(intervalId);
   }, [isChatProcessing, currentSessionId]);

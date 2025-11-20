@@ -72,7 +72,7 @@ async def list_messages(
             include_deleted=include_deleted,
             message_type=message_type
         )
-        print(f"📨 Found {len(messages)} messages for session {session_id}")
+        # print(f"📨 Found {len(messages)} messages for session {session_id}")  # COMMENTED TO REDUCE LOG SPAM
         has_more = len(messages) > page_size
         if has_more:
             messages = messages[:-1]
@@ -82,7 +82,7 @@ async def list_messages(
         message_responses = []
         for msg in messages:
             try:
-                print(f"🔄 Converting message {msg.get('id')}: sender_type={msg.get('sender_type')}, message_type={msg.get('message_type')}")
+                # print(f"🔄 Converting message {msg.get('id')}: sender_type={msg.get('sender_type')}, message_type={msg.get('message_type')}")  # COMMENTED TO REDUCE LOG SPAM
                 message_responses.append(ChatMessageResponse(**msg))
             except Exception as conv_error:
                 print(f"❌ Error converting message {msg.get('id')}: {conv_error}")
