@@ -5,6 +5,8 @@ import DocumentCard from '../components/documents/DocumentCard';
 import DocumentUploadModal from '../components/documents/DocumentUploadModal';
 import DocumentViewModal from '../components/documents/DocumentViewModal';
 import ChatInterface, { ChatMessage } from '../components/documents/ChatInterface';
+import ProgressBar from '../components/documents/ProgressBar';
+import DocumentActionsCard from '../components/documents/DocumentActionsCard';
 import * as documentService from '../services/documentService';
 import langnetService from '../services/langnetService';
 import * as chatService from '../services/chatService';
@@ -37,9 +39,32 @@ const DocumentsPage: React.FC = () => {
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
   const [websocket, setWebsocket] = useState<WebSocket | null>(null);
 
+  // Progress states (separate from chat)
+  const [progressPercentage, setProgressPercentage] = useState(0);
+  const [currentTask, setCurrentTask] = useState<string>('');
+  const [currentPhase, setCurrentPhase] = useState<string>('');
+  const [completedTasks, setCompletedTasks] = useState(0);
+  const [totalTasks, setTotalTasks] = useState(0);
+
+  // Document states
+  const [generatedDocument, setGeneratedDocument] = useState<string>('');
+  const [documentFilename, setDocumentFilename] = useState<string>('requisitos.md');
+
   useEffect(() => {
     loadDocuments();
   }, [projectId]);
+
+  // Reload chat history periodically while processing
+  useEffect(() => {
+    if (!isChatProcessing || !currentSessionId) return;
+
+    const intervalId = setInterval(() => {
+      console.log('🔄 Reloading chat history...');
+      loadChatHistory(currentSessionId);
+    }, 3000); // Reload every 3 seconds
+
+    return () => clearInterval(intervalId);
+  }, [isChatProcessing, currentSessionId]);
 
   // Converte mensagens do backend para formato do frontend
   const convertBackendMessage = (msg: chatService.ChatMessage): ChatMessage => {
@@ -64,6 +89,23 @@ const DocumentsPage: React.FC = () => {
       setChatMessages(converted);
     } catch (err) {
       console.error('❌ Failed to load chat history:', err);
+    }
+  };
+
+  // Carrega documento de requisitos gerado
+  const loadGeneratedDocument = async (sessionId: string) => {
+    try {
+      console.log('📄 Carregando documento gerado para sessão:', sessionId);
+      const requirementsService = await import('../services/requirementsService');
+      const doc = await requirementsService.getRequirementsDocument(sessionId);
+
+      if (doc && doc.content) {
+        console.log('✅ Documento carregado:', doc.content.substring(0, 100) + '...');
+        setGeneratedDocument(doc.content);
+        setDocumentFilename(doc.filename || 'requisitos.md');
+      }
+    } catch (err) {
+      console.error('❌ Failed to load generated document:', err);
     }
   };
 
@@ -306,25 +348,42 @@ const DocumentsPage: React.FC = () => {
       const ws = analysisService.connectToExecutionWebSocket(
         response.execution_id,
         (data) => {
-          // Handle WebSocket messages
-          if (data.type === 'document_generated') {
-            // Add document message to chat
-            addChatMessage(
-              'agent',
-              data.content || 'Documento de requisitos gerado',
-              'document',
-              { projectId, executionId: response.execution_id, filename: data.filename }
-            );
+          console.log('📨 WebSocket message received:', data.type);
+
+          // Handle WebSocket messages - UPDATE PROGRESS ONLY, NO CHAT MESSAGES
+          if (data.type === 'task_started') {
+            setCurrentTask(data.task || 'Iniciando tarefa...');
+            setCurrentPhase(data.phase || '');
+          } else if (data.type === 'task_completed') {
+            setCompletedTasks(prev => prev + 1);
           } else if (data.type === 'progress') {
-            addChatMessage('agent', data.message, 'progress');
-          } else if (data.type === 'status') {
-            addChatMessage('agent', data.message, 'status');
-          } else if (data.type === 'error') {
-            addChatMessage('system', `❌ ${data.message}`, 'status');
+            setProgressPercentage(data.percentage || 0);
+            if (data.current_task) setCurrentTask(data.current_task);
+            if (data.current_phase) setCurrentPhase(data.current_phase);
+            if (data.completed_tasks !== undefined) setCompletedTasks(data.completed_tasks);
+            if (data.total_tasks !== undefined) setTotalTasks(data.total_tasks);
+          } else if (data.type === 'execution_completed') {
+            console.log('✅ Execution completed, loading final document...');
+            setProgressPercentage(100);
+            setCurrentTask('Análise concluída!');
+
+            // Load final chat history and document from database
+            loadChatHistory(response.session_id);
+            loadGeneratedDocument(response.session_id);
+
+            setIsChatProcessing(false);
+            // Close WebSocket
+            if (ws) ws.close();
+          } else if (data.type === 'execution_failed') {
+            setCurrentTask(`❌ Erro: ${data.error || 'Erro desconhecido'}`);
+            setIsChatProcessing(false);
+            // Close WebSocket
+            if (ws) ws.close();
           }
         },
         (error) => {
           console.error('WebSocket error:', error);
+          setIsChatProcessing(false);
         },
         () => {
           console.log('WebSocket closed');
@@ -523,14 +582,56 @@ const DocumentsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* RIGHT AREA: Chat Interface */}
+          {/* MIDDLE AREA: Chat Interface with Progress Bar */}
           <div className="chat-area">
+            {/* Progress Bar - OUTSIDE chat window */}
+            {isChatProcessing && (
+              <ProgressBar
+                percentage={progressPercentage}
+                currentTask={currentTask}
+                currentPhase={currentPhase}
+                completedTasks={completedTasks}
+                totalTasks={totalTasks}
+              />
+            )}
+
             <ChatInterface
               messages={chatMessages}
               onSendMessage={handleSendChatMessage}
               isProcessing={isChatProcessing}
               executionId={currentExecutionId}
+              sessionId={currentSessionId}
             />
+          </div>
+
+          {/* RIGHT PANEL: Document Actions */}
+          <div className="actions-panel">
+            {generatedDocument ? (
+              <DocumentActionsCard
+                filename={documentFilename}
+                content={generatedDocument}
+                executionId={currentExecutionId}
+                projectId={projectId}
+                onEdit={() => {
+                  // TODO: Open editor modal
+                  console.log('Edit document');
+                }}
+                onView={() => {
+                  // TODO: Open viewer modal
+                  console.log('View document');
+                }}
+                onExportPDF={async () => {
+                  const { exportMarkdownToPDF } = await import('../services/pdfExportService');
+                  await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
+                }}
+              />
+            ) : (
+              <div className="no-document-placeholder">
+                <div className="placeholder-icon">📄</div>
+                <h3>Documento não gerado</h3>
+                <p>Faça upload de documentos e inicie a análise para gerar o documento de requisitos.</p>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -15,6 +15,7 @@ export interface RequirementsDocument {
   session_name: string;
   status: string;
   content: string;
+  filename?: string;
 }
 
 /**
@@ -25,7 +26,15 @@ export const getRequirementsDocument = async (sessionId: string): Promise<Requir
     `${API_BASE}/documents/sessions/${sessionId}/requirements`,
     { headers: getAuthHeaders() }
   );
-  return response.data;
+
+  // Add filename based on session name
+  const doc = response.data;
+  if (!doc.filename) {
+    const sessionName = doc.session_name || 'requisitos';
+    doc.filename = `${sessionName.replace(/\s+/g, '_')}.md`;
+  }
+
+  return doc;
 };
 
 /**
