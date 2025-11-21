@@ -639,22 +639,51 @@ def research_additional_info_output_func(state: LangNetFullState, result: Any) -
 
 def validate_requirements_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
     """Update state with validate_requirements results and extract requirements document"""
+    print(f"\n{'='*80}")
+    print(f"[DEBUG] validate_requirements_output_func - Processing result")
+    print(f"[DEBUG] Result type: {type(result)}")
+    print(f"[DEBUG] Result dir: {dir(result)}")
+
     if isinstance(result, dict):
         output_json = result.get("raw_output", json.dumps(result))
     else:
         output_json = str(result)
 
+    print(f"[DEBUG] output_json length: {len(output_json)}")
+    print(f"[DEBUG] output_json preview: {output_json[:500]}")
+
     try:
         parsed = json.loads(output_json)
-    except json.JSONDecodeError:
+        print(f"[DEBUG] JSON parsing SUCCESS")
+        print(f"[DEBUG] Parsed keys: {list(parsed.keys()) if isinstance(parsed, dict) else 'NOT A DICT'}")
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] JSON parsing FAILED: {e}")
         parsed = {}
 
     # Extract the requirements document MD from the validation output
     requirements_doc_md = parsed.get("requirements_document_md", "")
+    print(f"[DEBUG] requirements_doc_md from parsed: length={len(requirements_doc_md)}")
 
     # If not in JSON, try to extract from raw output (agent might return MD directly)
     if not requirements_doc_md and isinstance(result, dict):
         requirements_doc_md = result.get("requirements_document_md", "")
+        print(f"[DEBUG] requirements_doc_md from result dict: length={len(requirements_doc_md)}")
+
+    # FALLBACK: If still empty, try to extract from result attributes
+    if not requirements_doc_md:
+        if hasattr(result, 'raw'):
+            requirements_doc_md = str(result.raw)
+            print(f"[DEBUG] requirements_doc_md from result.raw: length={len(requirements_doc_md)}")
+        elif hasattr(result, 'raw_output'):
+            requirements_doc_md = str(result.raw_output)
+            print(f"[DEBUG] requirements_doc_md from result.raw_output: length={len(requirements_doc_md)}")
+
+    print(f"[DEBUG] FINAL requirements_doc_md length: {len(requirements_doc_md)}")
+    if requirements_doc_md:
+        print(f"[DEBUG] FINAL requirements_doc_md preview:\n{requirements_doc_md[:300]}")
+    else:
+        print(f"[DEBUG] ⚠️  WARNING: requirements_document_md is EMPTY!")
+    print(f"{'='*80}\n")
 
     updated_state = {
         **state,

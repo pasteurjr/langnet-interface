@@ -72,7 +72,17 @@ async def execute_analysis_in_background(
         )
 
         # Extract requirements document
+        print(f"\n{'='*80}")
+        print(f"[DEBUG] documents.py - Extracting requirements_document_md from result_state")
+        print(f"[DEBUG] result_state keys: {list(result_state.keys())}")
         requirements_doc = result_state.get('requirements_document_md', '')
+        print(f"[DEBUG] requirements_doc length: {len(requirements_doc)}")
+        if requirements_doc:
+            print(f"[DEBUG] requirements_doc preview:\n{requirements_doc[:300]}")
+        else:
+            print(f"[DEBUG] ⚠️  WARNING: requirements_document_md is EMPTY in result_state!")
+            print(f"[DEBUG] Available state keys: {list(result_state.keys())}")
+        print(f"{'='*80}\n")
 
         # Save to database
         with get_db_connection() as conn:
