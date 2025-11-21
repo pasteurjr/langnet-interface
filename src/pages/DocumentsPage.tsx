@@ -66,6 +66,23 @@ const DocumentsPage: React.FC = () => {
     return () => clearInterval(intervalId);
   }, [isChatProcessing, currentSessionId]);
 
+  // POLLING DE FALLBACK: Tentar carregar documento periodicamente durante processamento
+  useEffect(() => {
+    if (!isChatProcessing || !currentSessionId) return;
+
+    console.log('🔄 Polling de documento iniciado para sessão:', currentSessionId);
+
+    const intervalId = setInterval(() => {
+      console.log('🔄 Polling: Tentando carregar documento gerado...');
+      loadGeneratedDocument(currentSessionId);
+    }, 10000); // Tentar a cada 10 segundos
+
+    return () => {
+      console.log('🛑 Polling de documento encerrado');
+      clearInterval(intervalId);
+    };
+  }, [isChatProcessing, currentSessionId]);
+
   // Converte mensagens do backend para formato do frontend
   const convertBackendMessage = (msg: chatService.ChatMessage): ChatMessage => {
     return {
@@ -95,17 +112,41 @@ const DocumentsPage: React.FC = () => {
   // Carrega documento de requisitos gerado
   const loadGeneratedDocument = async (sessionId: string) => {
     try {
-      console.log('📄 Carregando documento gerado para sessão:', sessionId);
+      console.log('📄 loadGeneratedDocument: Iniciando para session', sessionId);
       const requirementsService = await import('../services/requirementsService');
       const doc = await requirementsService.getRequirementsDocument(sessionId);
 
-      if (doc && doc.content) {
-        console.log('✅ Documento carregado:', doc.content.substring(0, 100) + '...');
+      console.log('📄 loadGeneratedDocument: Resposta recebida', {
+        hasDoc: !!doc,
+        hasContent: !!doc?.content,
+        contentLength: doc?.content?.length || 0,
+        filename: doc?.filename,
+        status: doc?.status
+      });
+
+      if (doc && doc.content && doc.content.trim()) {
+        console.log('✅ loadGeneratedDocument: Documento carregado com sucesso!', {
+          length: doc.content.length,
+          preview: doc.content.substring(0, 100) + '...'
+        });
         setGeneratedDocument(doc.content);
         setDocumentFilename(doc.filename || 'requisitos.md');
+      } else {
+        console.warn('⚠️ loadGeneratedDocument: Documento vazio ou não encontrado', {
+          hasDoc: !!doc,
+          hasContent: !!doc?.content,
+          isEmpty: doc?.content?.trim() === ''
+        });
       }
     } catch (err) {
-      console.error('❌ Failed to load generated document:', err);
+      console.error('❌ loadGeneratedDocument: Erro ao carregar:', err);
+      if (err instanceof Error) {
+        console.error('   Detalhes:', {
+          message: err.message,
+          name: err.name,
+          stack: err.stack?.split('\n').slice(0, 3)
+        });
+      }
     }
   };
 
@@ -366,12 +407,29 @@ const DocumentsPage: React.FC = () => {
             console.log('✅ Execution completed, loading final document...');
             setProgressPercentage(100);
             setCurrentTask('Análise concluída!');
+            setIsChatProcessing(false);
+
+            const sessionId = response.session_id;
 
             // Load final chat history and document from database
-            loadChatHistory(response.session_id);
-            loadGeneratedDocument(response.session_id);
+            loadChatHistory(sessionId);
 
-            setIsChatProcessing(false);
+            // GARANTIA MULTI-CAMADA: Tentar carregar documento múltiplas vezes
+            console.log('🔄 Tentativa #1: Carregando documento imediatamente...');
+            loadGeneratedDocument(sessionId);
+
+            // Retry após 2 segundos (fallback se primeira tentativa falhar)
+            setTimeout(() => {
+              console.log('🔄 Tentativa #2: Retry após 2s...');
+              loadGeneratedDocument(sessionId);
+            }, 2000);
+
+            // Retry final após 5 segundos
+            setTimeout(() => {
+              console.log('🔄 Tentativa #3: Retry final após 5s...');
+              loadGeneratedDocument(sessionId);
+            }, 5000);
+
             // Close WebSocket
             if (ws) ws.close();
           } else if (data.type === 'execution_failed') {

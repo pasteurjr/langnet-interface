@@ -22,19 +22,54 @@ export interface RequirementsDocument {
  * Get requirements document for a session
  */
 export const getRequirementsDocument = async (sessionId: string): Promise<RequirementsDocument> => {
-  const response = await axios.get<RequirementsDocument>(
-    `${API_BASE}/documents/sessions/${sessionId}/requirements`,
-    { headers: getAuthHeaders() }
-  );
+  const url = `${API_BASE}/documents/sessions/${sessionId}/requirements`;
+  console.log('🌐 API: GET', url);
 
-  // Add filename based on session name
-  const doc = response.data;
-  if (!doc.filename) {
-    const sessionName = doc.session_name || 'requisitos';
-    doc.filename = `${sessionName.replace(/\s+/g, '_')}.md`;
+  try {
+    const response = await axios.get<RequirementsDocument>(
+      url,
+      { headers: getAuthHeaders() }
+    );
+
+    console.log('🌐 API: Resposta recebida', {
+      status: response.status,
+      statusText: response.statusText,
+      hasData: !!response.data,
+      dataKeys: response.data ? Object.keys(response.data) : []
+    });
+
+    // Add filename based on session name
+    const doc = response.data;
+
+    console.log('🌐 API: Dados do documento', {
+      session_id: doc.session_id,
+      session_name: doc.session_name,
+      status: doc.status,
+      hasContent: !!doc.content,
+      contentLength: doc.content?.length || 0,
+      filename: doc.filename
+    });
+
+    if (!doc.filename) {
+      const sessionName = doc.session_name || 'requisitos';
+      doc.filename = `${sessionName.replace(/\s+/g, '_')}.md`;
+      console.log('🌐 API: Filename gerado:', doc.filename);
+    }
+
+    return doc;
+  } catch (error) {
+    console.error('🌐 API: Erro na requisição', {
+      url,
+      error: error instanceof Error ? error.message : String(error),
+      isAxiosError: axios.isAxiosError(error),
+      response: axios.isAxiosError(error) ? {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data
+      } : undefined
+    });
+    throw error;
   }
-
-  return doc;
 };
 
 /**
