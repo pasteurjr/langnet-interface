@@ -642,7 +642,6 @@ def validate_requirements_output_func(state: LangNetFullState, result: Any) -> L
     print(f"\n{'='*80}")
     print(f"[DEBUG] validate_requirements_output_func - Processing result")
     print(f"[DEBUG] Result type: {type(result)}")
-    print(f"[DEBUG] Result dir: {dir(result)}")
 
     if isinstance(result, dict):
         output_json = result.get("raw_output", json.dumps(result))
@@ -661,22 +660,51 @@ def validate_requirements_output_func(state: LangNetFullState, result: Any) -> L
         parsed = {}
 
     # Extract the requirements document MD from the validation output
-    requirements_doc_md = parsed.get("requirements_document_md", "")
-    print(f"[DEBUG] requirements_doc_md from parsed: length={len(requirements_doc_md)}")
+    requirements_doc_md = ""
+
+    # CRUCIAL FIX: CrewAI wraps the response in "team_result" with markdown code blocks
+    if isinstance(parsed, dict) and "team_result" in parsed:
+        print(f"[DEBUG] Found 'team_result' key, extracting nested JSON...")
+        team_result_str = parsed["team_result"]
+
+        # Remove markdown code blocks (```json and ```)
+        if isinstance(team_result_str, str):
+            # Remove ```json at start and ``` at end
+            team_result_str = team_result_str.strip()
+            if team_result_str.startswith("```json"):
+                team_result_str = team_result_str[7:]  # Remove ```json
+            elif team_result_str.startswith("```"):
+                team_result_str = team_result_str[3:]  # Remove ```
+            if team_result_str.endswith("```"):
+                team_result_str = team_result_str[:-3]  # Remove trailing ```
+            team_result_str = team_result_str.strip()
+
+            print(f"[DEBUG] After removing markdown, length: {len(team_result_str)}")
+
+            # Parse the NESTED JSON
+            try:
+                nested_parsed = json.loads(team_result_str)
+                print(f"[DEBUG] Nested JSON parsing SUCCESS")
+                print(f"[DEBUG] Nested keys: {list(nested_parsed.keys()) if isinstance(nested_parsed, dict) else 'NOT A DICT'}")
+
+                # NOW extract requirements_document_md from the nested JSON
+                requirements_doc_md = nested_parsed.get("requirements_document_md", "")
+                print(f"[DEBUG] requirements_doc_md from NESTED JSON: length={len(requirements_doc_md)}")
+
+                # Update parsed to use the nested data
+                parsed = nested_parsed
+            except json.JSONDecodeError as e2:
+                print(f"[DEBUG] Nested JSON parsing FAILED: {e2}")
+
+    # Fallback: try direct extraction
+    if not requirements_doc_md:
+        requirements_doc_md = parsed.get("requirements_document_md", "")
+        print(f"[DEBUG] requirements_doc_md from parsed (direct): length={len(requirements_doc_md)}")
 
     # If not in JSON, try to extract from raw output (agent might return MD directly)
     if not requirements_doc_md and isinstance(result, dict):
         requirements_doc_md = result.get("requirements_document_md", "")
         print(f"[DEBUG] requirements_doc_md from result dict: length={len(requirements_doc_md)}")
-
-    # FALLBACK: If still empty, try to extract from result attributes
-    if not requirements_doc_md:
-        if hasattr(result, 'raw'):
-            requirements_doc_md = str(result.raw)
-            print(f"[DEBUG] requirements_doc_md from result.raw: length={len(requirements_doc_md)}")
-        elif hasattr(result, 'raw_output'):
-            requirements_doc_md = str(result.raw_output)
-            print(f"[DEBUG] requirements_doc_md from result.raw_output: length={len(requirements_doc_md)}")
 
     print(f"[DEBUG] FINAL requirements_doc_md length: {len(requirements_doc_md)}")
     if requirements_doc_md:
