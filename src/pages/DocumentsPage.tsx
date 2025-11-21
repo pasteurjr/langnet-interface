@@ -74,11 +74,23 @@ const DocumentsPage: React.FC = () => {
 
   // POLLING DE FALLBACK: Tentar carregar documento periodicamente durante processamento
   useEffect(() => {
-    if (!isChatProcessing || !currentSessionId) return;
+    // NÃO fazer polling se já tem documento carregado
+    if (!isChatProcessing || !currentSessionId || generatedDocument.trim()) {
+      if (generatedDocument.trim()) {
+        console.log('✅ Polling NÃO iniciado: Documento já carregado');
+      }
+      return;
+    }
 
     console.log('🔄 Polling de documento iniciado para sessão:', currentSessionId);
 
     const intervalId = setInterval(() => {
+      // Verificar novamente se já tem documento antes de cada tentativa
+      if (generatedDocument.trim()) {
+        console.log('✅ Polling: Documento já carregado, parando...');
+        setIsChatProcessing(false);
+        return;
+      }
       console.log('🔄 Polling: Tentando carregar documento gerado...');
       loadGeneratedDocument(currentSessionId);
     }, 10000); // Tentar a cada 10 segundos
@@ -87,7 +99,7 @@ const DocumentsPage: React.FC = () => {
       console.log('🛑 Polling de documento encerrado');
       clearInterval(intervalId);
     };
-  }, [isChatProcessing, currentSessionId]);
+  }, [isChatProcessing, currentSessionId, generatedDocument]);
 
   // Converte mensagens do backend para formato do frontend
   const convertBackendMessage = (msg: chatService.ChatMessage): ChatMessage => {
