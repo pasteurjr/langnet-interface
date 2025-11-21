@@ -7,6 +7,8 @@ import DocumentViewModal from '../components/documents/DocumentViewModal';
 import ChatInterface, { ChatMessage } from '../components/documents/ChatInterface';
 import ProgressBar from '../components/documents/ProgressBar';
 import DocumentActionsCard from '../components/documents/DocumentActionsCard';
+import MarkdownEditorModal from '../components/documents/MarkdownEditorModal';
+import MarkdownViewerModal from '../components/documents/MarkdownViewerModal';
 import * as documentService from '../services/documentService';
 import langnetService from '../services/langnetService';
 import * as chatService from '../services/chatService';
@@ -49,6 +51,10 @@ const DocumentsPage: React.FC = () => {
   // Document states
   const [generatedDocument, setGeneratedDocument] = useState<string>('');
   const [documentFilename, setDocumentFilename] = useState<string>('requisitos.md');
+
+  // Modal states
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isViewerOpen, setIsViewerOpen] = useState(false);
 
   useEffect(() => {
     loadDocuments();
@@ -147,6 +153,34 @@ const DocumentsPage: React.FC = () => {
           stack: err.stack?.split('\n').slice(0, 3)
         });
       }
+    }
+  };
+
+  // Handler para salvar edições do documento
+  const handleSaveEdit = async (newContent: string) => {
+    if (!currentSessionId) {
+      console.error('❌ handleSaveEdit: Nenhuma sessão ativa');
+      alert('❌ Erro: Nenhuma sessão ativa');
+      return;
+    }
+
+    try {
+      console.log('💾 handleSaveEdit: Salvando documento editado...', {
+        sessionId: currentSessionId,
+        contentLength: newContent.length
+      });
+
+      const requirementsService = await import('../services/requirementsService');
+      await requirementsService.updateRequirementsDocument(currentSessionId, newContent);
+
+      // Atualiza o estado local
+      setGeneratedDocument(newContent);
+
+      console.log('✅ handleSaveEdit: Documento salvo com sucesso!');
+      alert('✅ Documento salvo com sucesso!');
+    } catch (error) {
+      console.error('❌ handleSaveEdit: Erro ao salvar documento:', error);
+      alert('❌ Erro ao salvar documento. Veja o console para detalhes.');
     }
   };
 
@@ -671,12 +705,12 @@ const DocumentsPage: React.FC = () => {
                 executionId={currentExecutionId}
                 projectId={projectId}
                 onEdit={() => {
-                  // TODO: Open editor modal
-                  console.log('Edit document');
+                  console.log('📝 Abrindo editor de documento...');
+                  setIsEditorOpen(true);
                 }}
                 onView={() => {
-                  // TODO: Open viewer modal
-                  console.log('View document');
+                  console.log('👁️ Abrindo visualizador de documento...');
+                  setIsViewerOpen(true);
                 }}
                 onExportPDF={async () => {
                   const { exportMarkdownToPDF } = await import('../services/pdfExportService');
@@ -707,6 +741,27 @@ const DocumentsPage: React.FC = () => {
         document={selectedDocument}
         onClose={() => setIsViewModalOpen(false)}
         onExport={handleExport}
+      />
+
+      {/* Editor de Documento Gerado */}
+      <MarkdownEditorModal
+        isOpen={isEditorOpen}
+        content={generatedDocument}
+        filename={documentFilename}
+        onSave={handleSaveEdit}
+        onClose={() => setIsEditorOpen(false)}
+      />
+
+      {/* Visualizador de Documento Gerado */}
+      <MarkdownViewerModal
+        isOpen={isViewerOpen}
+        content={generatedDocument}
+        filename={documentFilename}
+        onClose={() => setIsViewerOpen(false)}
+        onDownload={async () => {
+          const { exportMarkdownToPDF } = await import('../services/pdfExportService');
+          await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
+        }}
       />
     </div>
   );
