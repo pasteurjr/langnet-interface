@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import './MarkdownEditorModal.css';
 
 interface MarkdownViewerModalProps {
@@ -50,7 +51,7 @@ const MarkdownViewerModal: React.FC<MarkdownViewerModalProps> = ({
 
         <div className="modal-body">
           <div className="viewer-content">
-            <ReactMarkdown>{content}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
         </div>
 
