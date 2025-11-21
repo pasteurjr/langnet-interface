@@ -111,6 +111,9 @@
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
   max-height: 60vh;
   overflow-y: auto;
+  overflow-x: auto; /* Permitir scroll horizontal para tabelas largas */
+  word-wrap: break-word;
+  overflow-wrap: break-word;
 }
 
 .viewer-content h1 {
@@ -189,6 +192,9 @@
   width: 100%;
   border-collapse: collapse;
   margin: 16px 0;
+  display: block;
+  overflow-x: auto;
+  white-space: nowrap;
 }
 
 .viewer-content th,
@@ -196,6 +202,10 @@
   border: 1px solid #ddd;
   padding: 10px 12px;
   text-align: left;
+  white-space: normal; /* Permitir quebra de linha dentro das células */
+  word-wrap: break-word;
+  max-width: 300px; /* Limitar largura máxima das células */
+  min-width: 100px; /* Largura mínima para evitar células muito estreitas */
 }
 
 .viewer-content th {
