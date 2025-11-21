@@ -137,6 +137,10 @@ const DocumentsPage: React.FC = () => {
         });
         setGeneratedDocument(doc.content);
         setDocumentFilename(doc.filename || 'requisitos.md');
+
+        // SUCESSO: Desligar polling agora que documento foi carregado
+        console.log('✅ Documento carregado - desligando polling');
+        setIsChatProcessing(false);
       } else {
         console.warn('⚠️ loadGeneratedDocument: Documento vazio ou não encontrado', {
           hasDoc: !!doc,
@@ -441,7 +445,7 @@ const DocumentsPage: React.FC = () => {
             console.log('✅ Execution completed, loading final document...');
             setProgressPercentage(100);
             setCurrentTask('Análise concluída!');
-            setIsChatProcessing(false);
+            // NÃO DESLIGAR isChatProcessing AQUI - deixar polling continuar até documento carregar
 
             const sessionId = response.session_id;
 
@@ -463,6 +467,12 @@ const DocumentsPage: React.FC = () => {
               console.log('🔄 Tentativa #3: Retry final após 5s...');
               loadGeneratedDocument(sessionId);
             }, 5000);
+
+            // Timeout de segurança: Desligar polling após 30s se documento não carregar
+            setTimeout(() => {
+              console.log('⏱️  Timeout: Desligando polling após 30s');
+              setIsChatProcessing(false);
+            }, 30000);
 
             // Close WebSocket
             if (ws) ws.close();

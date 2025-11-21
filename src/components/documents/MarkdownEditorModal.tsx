@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import './MarkdownEditorModal.css';
 
@@ -18,6 +18,15 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
   onClose
 }) => {
   const [editedContent, setEditedContent] = useState(content);
+
+  // Sincronizar estado interno quando prop 'content' ou 'isOpen' mudar
+  useEffect(() => {
+    console.log('📝 MarkdownEditorModal: Sincronizando conteúdo', {
+      contentLength: content.length,
+      isOpen
+    });
+    setEditedContent(content);
+  }, [content, isOpen]);
 
   if (!isOpen) return null;
 

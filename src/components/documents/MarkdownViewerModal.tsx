@@ -19,6 +19,12 @@ const MarkdownViewerModal: React.FC<MarkdownViewerModalProps> = ({
 }) => {
   if (!isOpen) return null;
 
+  console.log('👁️ MarkdownViewerModal: Renderizando com conteúdo', {
+    contentLength: content.length,
+    filename,
+    isOpen
+  });
+
   const handleDownloadMarkdown = () => {
     const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);

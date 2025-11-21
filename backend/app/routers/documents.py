@@ -85,6 +85,11 @@ async def execute_analysis_in_background(
         print(f"{'='*80}\n")
 
         # Save to database
+        print(f"\n{'='*80}")
+        print(f"[DEBUG] SALVANDO NO BANCO - session_id: {session_id}")
+        print(f"[DEBUG] requirements_doc length: {len(requirements_doc)}")
+        print(f"{'='*80}\n")
+
         with get_db_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -92,7 +97,29 @@ async def execute_analysis_in_background(
                 SET requirements_document = %s, status = 'completed', finished_at = NOW()
                 WHERE id = %s
             """, (requirements_doc, session_id))
+            affected_rows = cursor.rowcount
             conn.commit()
+
+            print(f"\n{'='*80}")
+            print(f"[DEBUG] SAVE COMPLETO - affected_rows: {affected_rows}")
+            print(f"{'='*80}\n")
+
+            # Verificar se realmente salvou
+            cursor.execute("""
+                SELECT LENGTH(requirements_document) as doc_length
+                FROM execution_sessions
+                WHERE id = %s
+            """, (session_id,))
+            result = cursor.fetchone()
+            doc_length_db = result[0] if result else 0
+
+            print(f"\n{'='*80}")
+            print(f"[DEBUG] VERIFICAÇÃO PÓS-SAVE:")
+            print(f"[DEBUG] Tamanho no banco: {doc_length_db} bytes")
+            print(f"[DEBUG] Tamanho enviado: {len(requirements_doc)} bytes")
+            print(f"[DEBUG] Match: {doc_length_db == len(requirements_doc)}")
+            print(f"{'='*80}\n")
+
             cursor.close()
 
         # Send completion message
