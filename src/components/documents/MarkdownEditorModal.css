@@ -104,7 +104,7 @@
 }
 
 /* Markdown Viewer Styles */
-.viewer-content {
+.markdown-viewer-content {
   background: white;
   padding: 32px;
   border-radius: 8px;
@@ -115,7 +115,7 @@
   box-sizing: border-box;
 }
 
-.viewer-content h1 {
+.markdown-viewer-content h1 {
   font-size: 28px;
   color: #2c3e50;
   border-bottom: 3px solid #667eea;
@@ -124,38 +124,38 @@
   margin-bottom: 20px;
 }
 
-.viewer-content h2 {
+.markdown-viewer-content h2 {
   font-size: 22px;
   color: #34495e;
   margin-top: 32px;
   margin-bottom: 16px;
 }
 
-.viewer-content h3 {
+.markdown-viewer-content h3 {
   font-size: 18px;
   color: #555;
   margin-top: 24px;
   margin-bottom: 12px;
 }
 
-.viewer-content p {
+.markdown-viewer-content p {
   line-height: 1.8;
   color: #444;
   margin-bottom: 16px;
 }
 
-.viewer-content ul,
-.viewer-content ol {
+.markdown-viewer-content ul,
+.markdown-viewer-content ol {
   margin: 16px 0;
   padding-left: 32px;
 }
 
-.viewer-content li {
+.markdown-viewer-content li {
   margin: 8px 0;
   line-height: 1.6;
 }
 
-.viewer-content code {
+.markdown-viewer-content code {
   background: #f0f0f0;
   padding: 2px 6px;
   border-radius: 4px;
@@ -164,7 +164,7 @@
   color: #e83e8c;
 }
 
-.viewer-content pre {
+.markdown-viewer-content pre {
   background: #2d2d2d;
   color: #f8f8f2;
   padding: 16px;
@@ -173,13 +173,13 @@
   margin: 16px 0;
 }
 
-.viewer-content pre code {
+.markdown-viewer-content pre code {
   background: transparent;
   color: inherit;
   padding: 0;
 }
 
-.viewer-content blockquote {
+.markdown-viewer-content blockquote {
   border-left: 4px solid #667eea;
   padding-left: 16px;
   margin: 16px 0;
@@ -187,15 +187,15 @@
   font-style: italic;
 }
 
-.viewer-content table {
+.markdown-viewer-content table {
   width: 100%;
   border-collapse: collapse;
   margin: 16px 0;
   overflow-x: auto;
 }
 
-.viewer-content th,
-.viewer-content td {
+.markdown-viewer-content th,
+.markdown-viewer-content td {
   border: 1px solid #ddd;
   padding: 10px 12px;
   text-align: left;
@@ -205,13 +205,13 @@
   min-width: 100px; /* Largura mínima para evitar células muito estreitas */
 }
 
-.viewer-content th {
+.markdown-viewer-content th {
   background: #667eea;
   color: white;
   font-weight: 600;
 }
 
-.viewer-content tr:nth-child(even) {
+.markdown-viewer-content tr:nth-child(even) {
   background: #f8f9fa;
 }
 
@@ -301,7 +301,7 @@
     width: 100%;
   }
 
-  .viewer-content {
+  .markdown-viewer-content {
     padding: 20px;
   }
 }

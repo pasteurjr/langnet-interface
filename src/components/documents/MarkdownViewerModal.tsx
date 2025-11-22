@@ -50,7 +50,7 @@ const MarkdownViewerModal: React.FC<MarkdownViewerModalProps> = ({
         </div>
 
         <div className="modal-body">
-          <div className="viewer-content">
+          <div className="markdown-viewer-content">
             <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
           </div>
         </div>
