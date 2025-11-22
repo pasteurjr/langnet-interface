@@ -4,78 +4,430 @@
 # Document Analysis Tasks
 analyze_document:
   description: >
-    [2.1.1 - Document Types & 2.1.2 - Document Analysis] Analyze document at '{document_path}' (type: {document_type}).
-    Support: PDFs, DOCs, presentations, spreadsheets, TXT, MD, technical artifacts (diagrams, schemas, API docs, code).
-    Extract: (1) Full text content; (2) Document structure (sections, headings, lists, tables); (3) Entities (actors, systems, processes, rules);
-    (4) Implicit/explicit workflows; (5) Domain-specific terminology; (6) Metadata (author, date, version).
-    Identify relationships and dependencies between components.
+    [Document Content Extraction] You will receive one or more documents to analyze.
+    Document information: {document_path} (type: {document_type}).
+
+    CRITICAL INSTRUCTION: Use the document_reader tool to extract the COMPLETE TEXT from the document(s).
+    DO NOT skip this step. The entire analysis depends on having the full document content.
+
+    STEP 1 - EXTRACT FULL CONTENT:
+    - Use document_reader tool with the provided document_path and document_type
+    - Extract ALL text content - do not skip any sections
+    - If extraction fails or returns empty/minimal content, RETURN AN ERROR immediately
+    - Verify you extracted at least 100 words (for real documents)
+
+    STEP 2 - ANALYZE STRUCTURE:
+    From the ACTUAL EXTRACTED TEXT, identify and extract:
+    (1) Document structure: Sections, headings, subheadings, hierarchical organization
+    (2) Entities mentioned: Actors, systems, processes, business concepts, data objects
+    (3) Workflows described: Step-by-step processes, procedures, sequences
+    (4) Domain terminology: Technical terms, jargon, acronyms, specialized vocabulary
+    (5) Relationships: How entities connect, dependencies mentioned
+    (6) Metadata: Author, date, version if present in the document
+
+    STEP 3 - VALIDATE EXTRACTION:
+    - Count words extracted (must be > 100 for real documents)
+    - Report extraction status: success or failed
+    - Log any issues encountered
+
+    IMPORTANT:
+    - DO NOT invent or hallucinate content
+    - EXTRACT verbatim text from the document
+    - PRESERVE original wording and structure
+    - If multiple documents, process ALL of them
   expected_output: >
-    JSON object: (1) 'content': full text; (2) 'structure': hierarchical structure; (3) 'entities': extracted actors, systems, processes;
-    (4) 'workflows': detected workflows with steps; (5) 'terminology': domain terms with definitions; (6) 'relationships': detected dependencies;
-    (7) 'metadata': file info, stats (word/page count), parsing timestamp.
+    JSON object with:
+    (1) 'content': Complete extracted text from ALL documents (verbatim)
+    (2) 'structure': Hierarchical structure (sections, headings) as found in documents
+    (3) 'entities': List of actors/systems/processes/concepts mentioned in the text
+    (4) 'workflows': Process flows/procedures described in the documents
+    (5) 'terminology': Domain-specific terms found in the text with context
+    (6) 'relationships': Dependencies/connections mentioned in documents
+    (7) 'metadata': Document info, word count (MUST be > 100), extraction timestamp
+    (8) 'extraction_status': "success" or "failed" with error details
 
 extract_requirements:
   description: >
-    [2.1.2 - Requirements Analysis] Analyze document content: {document_content}. Additional instructions: {additional_instructions}.
-    Project context: {project_name}, {project_description}.
-    Extract and categorize: (1) Functional Requirements (FR-XXX): unique IDs, clear descriptions, priority (high/medium/low), affected actors, source section, dependencies;
-    (2) Non-Functional Requirements (NFR-XXX): ID, description, category (performance/security/usability/reliability/scalability/maintainability), measurable metrics, priority, acceptance criteria;
-    (3) Business Rules (BR-XXX): ID, description, condition, action, affected entities, rationale;
-    (4) Actors/Stakeholders: name, role, responsibilities, interaction points;
-    (5) Entities & Relationships: entity name, attributes, relationships (1-1, 1-N, N-N), cardinality, constraints;
-    (6) Workflows: workflow ID, name, trigger, steps, decision points, end states;
-    (7) Domain Glossary: term, definition, context, synonyms, related terms.
-    Detect implicit requirements and dependencies between requirements.
+    [Requirements Extraction from Document Content] Extract system requirements from analyzed documents.
+
+    YOU WILL RECEIVE:
+    - document_content: {document_content} (FULL TEXT from documents - may be multiple documents concatenated)
+    - Additional context: {additional_instructions}
+    - Project: {project_name} - {project_description}
+
+    CRITICAL VALIDATION:
+    STEP 0 - VERIFY INPUT:
+    - Check if document_content field contains actual text (NOT empty, NOT just a path/URL)
+    - If document_content is empty or less than 100 words, STOP and return ERROR status
+    - The document_content should contain the COMPLETE extracted text from all uploaded documents
+
+    STEP 1 - READ AND UNDERSTAND:
+    - Read the ENTIRE document_content carefully
+    - Identify the domain/subject area from the content (healthcare, finance, logistics, government, etc.)
+    - Understand the context and purpose described in the documents
+    - Note any specific regulations, standards, or frameworks mentioned
+
+    STEP 2 - EXTRACT REQUIREMENTS FROM TEXT:
+    Analyze the document content line-by-line and extract requirements ONLY from what is:
+    - Explicitly stated in the text
+    - Strongly implied by the context
+    - Required by regulations/standards mentioned in the documents
+
+    DO NOT invent generic requirements. Every requirement MUST be traceable to the document content.
+
+    For EACH requirement you extract, you MUST provide:
+    - Source: Which document (if multiple) and which section/paragraph
+    - Quote: Verbatim text from the document that led to this requirement
+    - Interpretation: Your translation of that text into a clear requirement statement
+
+    STEP 3 - CATEGORIZE AND STRUCTURE:
+    Extract the following categories from the ACTUAL DOCUMENT TEXT:
+
+    (1) FUNCTIONAL REQUIREMENTS (FR-XXX):
+       - ID: Sequential (FR-001, FR-002, ...)
+       - Description: What the system must DO (actions, features, capabilities)
+       - Priority: High/Medium/Low (infer from language: "must"=high, "should"=medium, "could"=low)
+       - Actors: Who uses/interacts with this functionality
+       - Source: Document name + section/page where found
+       - Source quote: Exact text from document
+       - Dependencies: Other requirements this depends on
+       - Acceptance criteria: How to verify this requirement is met
+
+    (2) NON-FUNCTIONAL REQUIREMENTS (NFR-XXX):
+       - ID: Sequential (NFR-001, NFR-002, ...)
+       - Description: Quality attributes (performance, security, usability, etc.)
+       - Category: Performance/Security/Usability/Reliability/Scalability/Maintainability
+       - Measurable metric: Specific measurement (e.g., "< 2 seconds", "99.9% uptime", "AES-256 encryption")
+       - Priority: High/Medium/Low
+       - Source: Document name + section where found
+       - Source quote: Exact text from document
+
+    (3) BUSINESS RULES (BR-XXX):
+       - ID: Sequential (BR-001, BR-002, ...)
+       - Description: Business constraints and policies
+       - Condition: When/If clause (trigger)
+       - Action: Then clause (what happens)
+       - Affected entities: What data/objects are impacted
+       - Rationale: WHY this rule exists (from document context)
+       - Source: Document name + section where found
+
+    (4) ACTORS/STAKEHOLDERS:
+       - Name: Specific role names from documents (e.g., "Patient", "Admin", "Auditor")
+       - Role: What they do
+       - Responsibilities: Their duties as described
+       - Interaction points: Where they interact with the system
+       - Source: Where mentioned in documents
+
+    (5) ENTITIES & DATA OBJECTS:
+       - Entity name: Key data concepts from documents
+       - Attributes: Properties mentioned
+       - Relationships: How entities relate (1-to-1, 1-to-many, many-to-many)
+       - Constraints: Rules governing the entity
+       - Source: Where described in documents
+
+    (6) WORKFLOWS/PROCESSES:
+       - Workflow ID: Sequential (WF-001, WF-002, ...)
+       - Name: Process name from documents
+       - Trigger: What starts this workflow
+       - Steps: Sequence of actions as described in documents
+       - Decision points: Conditional branches
+       - End states: Possible outcomes
+       - Source: Where described in documents
+
+    (7) DOMAIN GLOSSARY:
+       - Term: Technical term or acronym used in documents
+       - Definition: As defined in documents (or inferred from context)
+       - Context: How it's used
+       - Synonyms: Alternative terms found
+       - Source: Where first mentioned
+
+    STEP 4 - INFER IMPLICIT REQUIREMENTS (Carefully):
+    Based on the domain identified and explicit content, you MAY infer requirements that are:
+    - Industry standard for this domain (e.g., if healthcare mentioned → likely needs HIPAA compliance)
+    - Technical necessities (e.g., if user accounts mentioned → likely needs password reset)
+    - Legal requirements (e.g., if personal data → likely needs GDPR/LGPD compliance)
+
+    Mark ALL implicit requirements clearly as "Implicit - requires confirmation" with justification.
+
+    STEP 5 - MAP DEPENDENCIES:
+    Create dependency graph showing which requirements depend on others.
+
+    QUALITY REQUIREMENTS:
+    - Minimum 5 functional requirements (unless document is very small)
+    - EVERY requirement must have source citation
+    - NO generic requirements without specific context from documents
+    - ALL technical terms in glossary
+
   expected_output: >
-    JSON object: 'functional_requirements' (array), 'non_functional_requirements' (array), 'business_rules' (array), 'actors' (array),
-    'entities' (array with attributes and relationships), 'workflows' (array with steps and decision points),
-    'glossary' (array of domain terms), 'requirement_dependencies' (graph of dependencies), 'implicit_requirements' (detected implicit needs).
+    JSON object with complete extraction results:
+    'functional_requirements': array with id, description, priority, actors, source_document, source_section, source_quote, dependencies, acceptance_criteria
+    'non_functional_requirements': array with id, description, category, metric, priority, source_document, source_quote
+    'business_rules': array with id, description, condition, action, entities, rationale, source_document
+    'actors': array with name, role, responsibilities, interaction_points, source_document
+    'entities': array with name, attributes, relationships, constraints, source_document
+    'workflows': array with id, name, trigger, steps, decisions, end_states, source_document
+    'glossary': array with term, definition, context, synonyms, source_document
+    'requirement_dependencies': graph of dependencies between requirements
+    'implicit_requirements': array of inferred requirements with justification and "requires_confirmation: true"
+    'domain_identified': the domain/industry identified from documents
+    'extraction_metadata': word_count_analyzed, sections_processed, confidence_score
 
 research_additional_info:
   description: >
-    [2.1.3 - Complementary Verifications] Research complementary info for requirements: {requirements_json}. Additional instructions: {additional_instructions}.
-    Project domain: {project_name}.
-    Perform: (1) Knowledge base queries to enrich domain understanding; (2) Cross-document consistency verification (if multiple docs);
-    (3) Ambiguity detection & resolution (vague terms, conflicting statements); (4) Question generation for clarification of unclear requirements;
-    (5) Impact-based prioritization (critical path, dependencies, business value).
-    Search web for: (a) Industry best practices; (b) Technology standards/frameworks; (c) Security standards (OWASP, GDPR, SOC2, LGPD);
-    (d) Performance benchmarks; (e) API docs for integrations; (f) Accessibility (WCAG, ADA); (g) Compliance requirements for domain.
-    Prioritize authoritative sources (official docs, standards bodies, .gov, .edu, reputable tech sites).
+    [Web Research and Domain Enrichment] Enrich extracted requirements with industry knowledge and best practices.
+
+    YOU WILL RECEIVE:
+    - requirements_json: {requirements_json} (extracted requirements from documents)
+    - Project context: {project_name}
+    - Additional instructions: {additional_instructions}
+
+    STEP 1 - IDENTIFY THE DOMAIN:
+    From the extracted requirements, identify:
+    - Primary industry/domain (e.g., healthcare, finance, e-commerce, logistics, government/public sector, education, manufacturing)
+    - Application type (web application, mobile app, API/backend, desktop, embedded system, data platform)
+    - Key technologies mentioned (databases, frameworks, cloud services, integrations)
+    - Regulations/compliance needs mentioned (GDPR, HIPAA, SOX, PCI-DSS, LGPD, WCAG)
+    - Geographic region if relevant (affects regulations and standards)
+
+    STEP 2 - FORMULATE DOMAIN-SPECIFIC SEARCH QUERIES:
+    Create TARGETED search queries based on the identified domain and requirements.
+    DO NOT use generic queries - tailor them to the specific domain.
+
+    EXAMPLES of domain-specific queries:
+    - If domain=healthcare: "HIPAA compliance requirements", "HL7 FHIR standards", "healthcare data security best practices"
+    - If domain=finance: "PCI-DSS requirements", "financial transaction security", "SOX compliance checklist"
+    - If domain=e-commerce: "PCI-DSS e-commerce", "payment gateway integration best practices", "GDPR e-commerce requirements"
+    - If domain=government: "accessibility WCAG 2.1 government", "public sector data protection", "e-government security standards"
+    - If domain=logistics: "supply chain tracking standards", "EDI integration", "warehouse management best practices"
+
+    Combine domain + functional area + "best practices" or "standards" or "compliance"
+
+    STEP 3 - WEB RESEARCH CATEGORIES:
+
+    (a) INDUSTRY BEST PRACTICES:
+        Search for current best practices specific to the identified domain.
+        Query format: "[domain] [functional area] best practices [current year]"
+        Prioritize: Industry publications, whitepapers, case studies from domain leaders
+
+    (b) TECHNOLOGY STANDARDS/FRAMEWORKS:
+        Find relevant technical standards for technologies mentioned in requirements.
+        Examples: REST API standards, database design patterns, authentication protocols
+        Query format: "[technology] [standard] official documentation"
+
+    (c) SECURITY & COMPLIANCE:
+        Research applicable security standards based on domain:
+        - ALL domains: OWASP Top 10, secure coding practices
+        - Healthcare: HIPAA, HITECH, HL7, FHIR
+        - Finance: PCI-DSS, SOX, financial data protection
+        - E-commerce: PCI-DSS, consumer data protection
+        - Government: FedRAMP, NIST frameworks, accessibility standards
+        - EU/Brazil: GDPR, LGPD data protection
+        Query format: "[domain] [regulation] compliance requirements"
+
+    (d) PERFORMANCE BENCHMARKS:
+        Find industry benchmarks for performance metrics:
+        - Response times for similar applications in the domain
+        - Scalability expectations
+        - Availability/uptime requirements (SLA standards)
+        Query format: "[domain] [application type] performance benchmarks"
+
+    (e) INTEGRATION STANDARDS:
+        If requirements mention integrations, research:
+        - Official API documentation
+        - Integration patterns and examples
+        - Rate limits, quotas, authentication methods
+        Query format: "[system name] API documentation integration"
+
+    (f) ACCESSIBILITY REQUIREMENTS:
+        Research accessibility standards:
+        - WCAG 2.1 Level AA (minimum for most domains)
+        - ADA compliance (US)
+        - EN 301 549 (European standard)
+        - Domain-specific accessibility needs
+        Query format: "WCAG 2.1 [domain] accessibility requirements"
+
+    (g) COMPLIANCE CHECKLISTS:
+        Find detailed compliance checklists for the domain:
+        - Regulatory requirements lists
+        - Certification requirements
+        - Audit preparation guides
+        Query format: "[regulation] compliance checklist [domain]"
+
+    STEP 4 - EVALUATE SOURCE CREDIBILITY:
+    Prioritize sources in this order:
+    1. Official standards bodies (W3C, IETF, ISO, NIST, IEEE)
+    2. Government/regulatory sites (.gov, regulatory agencies)
+    3. Industry associations and consortiums
+    4. Major cloud providers documentation (AWS, Azure, GCP - for cloud/infrastructure)
+    5. Official product documentation (for specific technologies)
+    6. Reputable tech companies engineering blogs (Google, Microsoft, Meta, etc.)
+    7. Academic sources (.edu, research papers)
+    8. Well-known tech publications (only for general guidance)
+
+    AVOID: Marketing content, outdated sources (>2 years for tech topics), unverified blogs
+
+    STEP 5 - CROSS-DOCUMENT CONSISTENCY:
+    If multiple documents were analyzed, check for:
+    - Conflicting requirements between documents
+    - Duplicate requirements worded differently
+    - Missing connections between related documents
+    - Versioning issues (outdated information)
+
+    STEP 6 - DETECT AMBIGUITIES:
+    Identify vague or ambiguous requirements:
+    - Undefined terms or jargon without glossary entry
+    - Quantitative statements without specific values ("fast", "scalable", "secure", "many")
+    - Contradictory statements
+    - Missing critical details (who, what, when, where, how)
+
+    STEP 7 - GENERATE CLARIFICATION QUESTIONS:
+    For each ambiguity or gap, create SPECIFIC questions for stakeholders:
+    - Not: "How should this work?" (too vague)
+    - But: "Should the system support real-time updates (< 1 sec) or near-real-time (< 30 sec)?"
+    Prioritize by impact: critical path, security, compliance first.
+
+    STEP 8 - IDENTIFY POTENTIALLY MISSING REQUIREMENTS:
+    Based on research and domain knowledge, identify requirements typically needed but not mentioned:
+    - Standard features for application type (e.g., password reset, session timeout, audit logs)
+    - Legal requirements not mentioned (e.g., cookie consent, terms of service, data retention policies)
+    - Security measures expected for domain (e.g., encryption at rest, MFA, penetration testing)
+    - Operational requirements (backup, monitoring, disaster recovery, performance testing)
+
+    Mark these as "Potentially Missing - Requires stakeholder confirmation" with justification from research.
+
   expected_output: >
-    JSON object: (1) 'research_findings': array with source_url, title, summary, relevance_to_requirement_id, credibility_score, finding_type;
-    (2) 'consistency_issues': array of cross-document conflicts with affected_requirements, severity, suggested_resolution;
-    (3) 'ambiguities_detected': array with ambiguous_text, location, reason, clarification_question;
-    (4) 'clarification_questions': array of questions for stakeholders with priority, affected_requirements;
-    (5) 'recommended_standards': array of standards with name, url, description, applicability;
-    (6) 'suggested_technologies': array with name, use_case, docs_url, maturity_score;
-    (7) 'compliance_checklist': array of compliance items with regulation, requirement, status;
-    (8) 'missing_requirements': potentially missing requirements discovered; (9) 'prioritization_analysis': impact vs effort matrix.
+    JSON object with comprehensive research findings:
+    (1) 'domain_analysis': identified domain, application type, key technologies, compliance needs
+    (2) 'research_findings': array with source_url, title, summary, relevance_to_requirements, credibility_score (high/medium/low), finding_type (best_practice/standard/compliance/technology)
+    (3) 'consistency_issues': array of cross-document conflicts with affected_requirements, conflict_description, severity, suggested_resolution
+    (4) 'ambiguities_detected': array with ambiguous_text, location (requirement ID), reason, severity, clarification_question, examples_of_clear_alternatives
+    (5) 'clarification_questions': array with question, priority (critical/high/medium/low), affected_requirements, context_why_needed, example_valid_answers
+    (6) 'recommended_standards': array with name (e.g., "WCAG 2.1 Level AA"), url, description, applicability_reason, implementation_effort (low/medium/high)
+    (7) 'suggested_technologies': array with name, use_case, official_docs_url, maturity_score, pros, cons, related_requirements
+    (8) 'compliance_checklist': array with regulation_name, specific_requirement, current_status (addressed/partial/missing), related_requirements, gaps_to_fill
+    (9) 'missing_requirements_suggestions': array with proposed_id, description, justification_from_research, priority, source_research_finding, requires_confirmation:true
+    (10) 'prioritization_recommendations': impact vs effort analysis
+    (11) 'domain_specific_insights': key insights about the domain that affect requirements
 
 validate_requirements:
   description: >
-    [2.1.4 - Completeness Verification] Review requirements: {requirements_json} and research findings: {research_findings_json}.
-    Project: {project_name}.
-    Quality checks: (1) Ambiguous/vague language needing clarification; (2) Conflicts/contradictions between requirements;
-    (3) Missing testability criteria or acceptance conditions; (4) Incomplete actor definitions or workflows;
-    (5) Requirements lacking priority or source traceability.
-    Completeness evaluation: (a) Sufficiency of available information; (b) Identification of critical information gaps;
-    (c) Solicitation of complementary information needed; (d) Verification of essential requirements coverage;
-    (e) Comparative evaluation with completeness standards by application type (web app, API, mobile, etc.).
-    Assign severity (critical/high/medium/low) to each issue. Provide specific recommendations with examples.
+    [Requirements Validation and Final Document Generation] Validate extracted requirements and generate professional requirements document.
 
-    IMPORTANT: Generate the final REQUIREMENTS DOCUMENT in Markdown format using the provided template: {template}
-    Fill in ALL placeholders (enclosed in curly braces) with actual data from the requirements and research findings.
-    Maintain the exact structure and section numbering from the template. Generate mermaid diagrams where indicated.
-    The final document should be complete, professional, and ready for stakeholder review.
+    YOU WILL RECEIVE:
+    - requirements_json: {requirements_json} (all extracted requirements)
+    - research_findings_json: {research_findings_json} (web research results)
+    - template: {template} (Markdown template for final document)
+    - Project: {project_name}
+
+    CRITICAL INSTRUCTIONS FOR DOCUMENT GENERATION:
+    You are generating the FINAL REQUIREMENTS DOCUMENT that will be presented to stakeholders.
+    This document MUST be:
+    - COMPLETE (all sections filled with real data)
+    - PROFESSIONAL (ready for stakeholder review)
+    - ACCURATE (based on actual extracted requirements)
+    - TRACEABLE (every requirement linked to source)
+
+    DO NOT USE PLACEHOLDER TEXT:
+    - NO "To be filled by analysis"
+    - NO "TBD" or "N/A" without explanation
+    - NO "Lorem ipsum" or generic examples
+    - If data is missing for a section, explicitly state what is missing and why
+
+    STEP 1 - QUALITY VALIDATION:
+    Review all requirements for quality issues:
+
+    (a) AMBIGUOUS LANGUAGE:
+        - Identify vague terms ("fast", "scalable", "user-friendly", "secure")
+        - Flag requirements without specific measurable criteria
+        - Detect undefined terms not in glossary
+
+    (b) CONFLICTS/CONTRADICTIONS:
+        - Find requirements that contradict each other
+        - Identify conflicting priorities
+        - Detect inconsistent business rules
+
+    (c) TESTABILITY:
+        - Verify each requirement has clear acceptance criteria
+        - Check for measurable metrics (numbers, percentages, time limits)
+        - Ensure requirements are verifiable/testable
+
+    (d) COMPLETENESS:
+        - Verify all actors have defined responsibilities
+        - Check all workflows have complete steps
+        - Ensure all entities have attributes defined
+        - Confirm all business rules have conditions and actions
+
+    (e) TRACEABILITY:
+        - Verify every requirement has source document citation
+        - Check priority is assigned
+        - Ensure dependencies are mapped
+
+    STEP 2 - COMPLETENESS EVALUATION:
+
+    (a) INFORMATION SUFFICIENCY:
+        Assess if extracted information is sufficient for development to begin.
+        Score 0-100 based on completeness of FR, NFR, BR, actors, entities, workflows.
+
+    (b) CRITICAL GAPS:
+        Identify missing critical information:
+        - Missing functional areas (e.g., has "Create" but no "Update" or "Delete")
+        - Missing non-functional requirements for key areas (security, performance)
+        - Undefined actors or incomplete actor definitions
+        - Missing error handling or exception scenarios
+
+    (c) INFORMATION REQUESTS:
+        Generate specific questions to fill gaps:
+        - What information is needed
+        - Why it's critical
+        - What will be blocked without it
+
+    (d) COVERAGE BY APPLICATION TYPE:
+        Compare against standards for the application type identified:
+        - Web app: authentication, session management, responsive design, browser support
+        - API: authentication, rate limiting, versioning, error handling, documentation
+        - Mobile: offline mode, push notifications, app permissions, device compatibility
+        - Data platform: data pipeline, ETL, data quality, backup/recovery
+
+    STEP 3 - ASSIGN SEVERITY TO ISSUES:
+    For each issue found, assign severity:
+    - CRITICAL: Blocks development, security risk, regulatory violation
+    - HIGH: Significant impact on functionality or quality
+    - MEDIUM: Affects user experience or development efficiency
+    - LOW: Minor issue, cosmetic, or nice-to-have improvement
+
+    STEP 4 - GENERATE FINAL MARKDOWN DOCUMENT:
+    Use the provided template and fill ALL sections with REAL DATA from requirements_json and research_findings_json.
+
+    TEMPLATE FILLING RULES:
+    - Replace {project_name} with actual project name from requirements
+    - Fill {domain} with domain identified from requirements
+    - Populate all requirement lists with actual requirements from requirements_json
+    - Add source citations for every requirement
+    - Generate mermaid diagrams based on actual data (entity relationships, workflows, dependencies)
+    - Use research findings to populate "Best Practices" and "Standards" sections
+    - Fill compliance checklist with actual compliance needs from research
+    - Add actual glossary terms found in documents
+    - Populate metadata sections with real processing statistics
+
+    QUALITY CHECKS FOR GENERATED DOCUMENT:
+    - Minimum 20 requirements total (unless source documents were very small)
+    - Every requirement has source citation
+    - Every technical term in glossary
+    - All mermaid diagrams use real entity/requirement names
+    - Completeness score ≥ 70% for each category
+    - No placeholder text remaining
+
   expected_output: >
-    JSON validation report: (1) 'valid_requirements': approved requirements with quality scores;
-    (2) 'issues_found': array with type, severity, description, affected_requirement_id, recommended_fix, example;
-    (3) 'completeness_score': 0-100 with breakdown by category; (4) 'clarity_score': 0-100;
-    (5) 'consistency_score': 0-100; (6) 'coverage_analysis': requirements coverage by functional area;
-    (7) 'critical_gaps': array of missing critical requirements with justification;
-    (8) 'information_requests': specific questions/information needed to fill gaps;
-    (9) 'completeness_by_type': scores for FR/NFR/BR separately;
-    (10) 'requirements_document_md': full Markdown document following template with all sections populated.
+    JSON validation report with:
+    (1) 'valid_requirements': array of approved requirements with quality scores
+    (2) 'issues_found': array with type, severity (critical/high/medium/low), description, affected_requirement_id, recommended_fix, example_correction
+    (3) 'quality_scores': completeness_score (0-100), clarity_score (0-100), consistency_score (0-100), testability_score (0-100), traceability_score (0-100)
+    (4) 'completeness_breakdown': scores for functional_requirements, non_functional_requirements, business_rules, actors, entities, workflows separately
+    (5) 'coverage_analysis': which functional areas are covered, which are missing
+    (6) 'critical_gaps': array of missing critical requirements/information with severity, impact, justification
+    (7) 'information_requests': array of specific questions to stakeholders with priority, affected_requirements, why_critical
+    (8) 'application_type_checklist': coverage of standard requirements for the identified application type
+    (9) 'requirements_document_md': COMPLETE Markdown document following template, all sections filled with real data, no placeholders, ready for stakeholder review
 
 generate_specification:
   description: >

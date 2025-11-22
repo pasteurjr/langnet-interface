@@ -55,19 +55,55 @@ async def execute_analysis_in_background(
             {"type": "task_started", "task": "document_analysis", "message": "Iniciando análise com IA..."}
         )
 
-        # For now, we'll process the first document
-        # TODO: Support multiple documents analysis
-        doc_id, doc_filename, doc_path = documents[0]
+        # Extract content from ALL documents
+        from app.parsers import DocumentParser
+        from pathlib import Path
+
+        all_documents_info = []
+        all_documents_content = ""
+
+        for doc_id, doc_filename, doc_path in documents:
+            # Parse document
+            parsed = DocumentParser.parse(doc_path)
+            if not parsed["success"]:
+                print(f"[WARNING] Failed to parse {doc_filename}: {parsed.get('error', 'Unknown error')}")
+                continue
+
+            doc_text = parsed["text"]
+            doc_type = Path(doc_path).suffix[1:]  # .pdf -> pdf
+
+            all_documents_info.append({
+                "id": doc_id,
+                "filename": doc_filename,
+                "type": doc_type,
+                "word_count": len(doc_text.split()),
+                "path": doc_path
+            })
+
+            # Concatenate all documents with separators
+            all_documents_content += f"\n\n{'='*80}\n"
+            all_documents_content += f"DOCUMENT: {doc_filename} (type: {doc_type})\n"
+            all_documents_content += f"{'='*80}\n\n"
+            all_documents_content += doc_text
+
+        print(f"\n[INFO] Processed {len(all_documents_info)} documents")
+        print(f"[INFO] Total content length: {len(all_documents_content)} characters")
+        print(f"[INFO] Total words: {len(all_documents_content.split())}")
+
+        # Use first document ID for tracking (will be improved later)
+        primary_doc_id = documents[0][0] if documents else None
 
         # Execute LangNet workflow in thread pool (don't block async event loop)
         # This allows the workflow to run for 2-5 minutes without blocking
         result_state = await asyncio.to_thread(
             execute_document_analysis_workflow,
             project_id=project_id,
-            document_id=doc_id,
-            document_path=doc_path,
+            document_id=primary_doc_id,
+            document_path=f"Multiple documents: {', '.join([d['filename'] for d in all_documents_info])}",
             additional_instructions=instructions,
-            enable_web_research=use_web_research
+            enable_web_research=use_web_research,
+            document_content=all_documents_content,  # Pass ALL documents content
+            document_type="multiple"
             # use_deepseek defaults to False = uses GPT-4o-mini (OpenAI)
         )
 
