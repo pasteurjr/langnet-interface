@@ -400,7 +400,7 @@ validate_requirements:
 
     TEMPLATE FILLING RULES:
     - Replace {project_name} with actual project name from requirements
-    - Fill {domain} with domain identified from requirements
+    - Fill {project_domain} with domain identified from requirements
     - Populate all requirement lists with actual requirements from requirements_json
     - Add source citations for every requirement
     - Generate mermaid diagrams based on actual data (entity relationships, workflows, dependencies)
