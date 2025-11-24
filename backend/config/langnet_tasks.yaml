@@ -206,6 +206,84 @@ extract_requirements:
     - Mark source: "from_instructions"
 
     ═══════════════════════════════════════════════════════════
+    CRITICAL - REQUIREMENT EXTRACTION LOGIC
+    ═══════════════════════════════════════════════════════════
+
+    YOUR PRIMARY SOURCE for functional requirements is INSTRUCTIONS (additional_instructions).
+
+    STEP 1: Read additional_instructions
+    - Identify each MODULE, FEATURE, or FUNCTIONALITY explicitly requested
+    - Each one becomes a separate FR
+    - Description should match what was requested (not generic "automation")
+    - Example: If instructions say "Cadastro Inteligente do Portfólio", FR should be "Cadastro Inteligente do Portfólio", NOT "Automate portfolio management"
+
+    STEP 2: Read document_content to ENRICH requirements
+    - Look for PAIN POINTS that relate to the instructions
+    - Look for WORKFLOWS that should be automated
+    - Look for SPECIFIC CONSTRAINTS or REQUIREMENTS mentioned
+    - Use these to add evidence and context, NOT to replace instruction-based FRs
+
+    STEP 3: Combine both sources
+    - FR description = What was requested in instructions (preserve original wording)
+    - FR evidence = Quote from documents showing WHY it's needed or HOW it's currently done
+    - FR context/details = Specific data from documents (volumes, names, locations)
+
+    EXAMPLE OF CORRECT EXTRACTION:
+
+    additional_instructions says: "Agente de IA para Captura e Leitura dos Certames"
+    document_content says: "Farmac needs to monitor public procurement notices across Bahia, Sergipe, and Alagoas. Current manual process with 2-3 people."
+
+    ✅ CORRECT:
+    {
+      "id": "FR-002",
+      "description": "Agente de IA para captura e leitura dos certames de fontes públicas (federal, estaduais e municipais)",
+      "source": "from_instructions",
+      "evidence": "Current manual process with 2-3 person team monitoring procurement notices. Geographic scope: Bahia, Sergipe, and Alagoas.",
+      "priority": "high",
+      "context": {
+        "current_team_size": "2-3 people",
+        "geographic_scope": "Bahia, Sergipe, Alagoas",
+        "company": "Farmac"
+      }
+    }
+
+    ❌ WRONG (too generic, ignores instructions):
+    {
+      "id": "FR-002",
+      "description": "Automate the manual task of capturing procurement notices",
+      "source": "from_document",
+      "evidence": "Manual monitoring needed"
+    }
+
+    ═══════════════════════════════════════════════════════════
+    HANDLING SPECIFIC DATA FROM DOCUMENTS
+    ═══════════════════════════════════════════════════════════
+
+    IF documents mention specific data, use it APPROPRIATELY:
+
+    - Company name (e.g., "Farmac") → Include in:
+      * project_context section (NOT in every FR description)
+      * actors/stakeholders
+      * evidence field when relevant
+
+    - Specific volumes (e.g., "10,000 items") → Include in:
+      * NFR for performance/scalability
+      * Context field of related FRs
+      * Evidence when showing scale of problem
+
+    - Locations (e.g., "Bahia, Sergipe, Alagoas") → Include in:
+      * Scope definition
+      * Geographic filtering requirement
+      * Context of relevant FRs
+
+    - People names (e.g., "Douglas") → Include in:
+      * Actors/stakeholders section
+      * NOT in requirement descriptions
+
+    DO NOT force specific data into every requirement.
+    USE specific data to make requirements realistic and contextual.
+
+    ═══════════════════════════════════════════════════════════
     PART 3: INFER TECHNICAL REQUIREMENTS (not explicitly stated)
     ═══════════════════════════════════════════════════════════
 
@@ -245,20 +323,26 @@ extract_requirements:
 
     Before generating your output, verify ALL items:
 
-    ✓ I read and extracted requirements from document_content (not empty/placeholder)
-    ✓ I read and extracted requirements from additional_instructions (not empty/placeholder)
+    ✓ Each MODULE/FEATURE from additional_instructions has a corresponding FR
+    ✓ FR descriptions match the REQUESTED features (not generic "automation")
+    ✓ Evidence cites document_content showing WHY each requirement is needed
+    ✓ Specific data (company, volumes, locations) is in APPROPRIATE sections
     ✓ I inferred technical requirements (database, API, security, monitoring)
-    ✓ Each FR from documents has VERBATIM QUOTE as evidence
-    ✓ Each FR from instructions CITES the instruction text
     ✓ Each inferred requirement has RATIONALE explaining why necessary
-    ✓ I prepared web_research_queries for finding analogous systems
+    ✓ I prepared web_research_queries specific to the identified domain
 
     RED FLAGS - DO NOT do this:
-    ❌ Generic requirements like "user login" without context from documents
+    ❌ FR says "Automate procurement" when instruction said "Agente de IA para captura"
+    ❌ Company name appears in every FR description unnecessarily
+    ❌ Generic "user login" FR when not requested in instructions
+    ❌ Missing FRs for features explicitly requested in instructions
     ❌ Requirements with no source/evidence citation
     ❌ Invented stakeholders/companies not mentioned in documents
-    ❌ Fictional data or statistics
     ❌ Placeholder text like "TBD", "to be defined", "N/A" without explanation
+
+    QUALITY CHECK - Count your FRs:
+    - If additional_instructions lists 4 modules → you should have ~4+ FRs from instructions
+    - If you have many generic FRs but few instruction-based ones → REVIEW AGAIN
 
     If ANY checkbox is unchecked, REVIEW inputs again before returning.
 
