@@ -63,12 +63,27 @@ async def execute_analysis_in_background(
         all_documents_info = []
         all_documents_content = ""
 
-        for doc_id, doc_filename, doc_path in documents:
+        print(f"\n{'='*80}")
+        print(f"[PHASE 1 - EXTRACTION DEBUG] Starting document extraction")
+        print(f"[PHASE 1] Total documents to process: {len(documents)}")
+        print(f"{'='*80}\n")
+
+        for idx, (doc_id, doc_filename, doc_path) in enumerate(documents, 1):
             doc_type = Path(doc_path).suffix[1:]  # .pdf -> pdf
+
+            print(f"\n{'='*80}")
+            print(f"[PHASE 1] Document {idx}/{len(documents)}: {doc_filename}")
+            print(f"[PHASE 1] File type: {doc_type}")
+            print(f"[PHASE 1] File path: {doc_path}")
+            print(f"[PHASE 1] File exists: {Path(doc_path).exists()}")
+            if Path(doc_path).exists():
+                print(f"[PHASE 1] File size: {Path(doc_path).stat().st_size} bytes")
+            print(f"{'='*80}")
 
             # Use chunking for PDFs (optimal processing)
             if doc_type == "pdf":
                 try:
+                    print(f"[PHASE 1] Using process_pdf_for_agent with chunking...")
                     result = process_pdf_for_agent(
                         doc_path,
                         max_pages=50,
@@ -78,19 +93,28 @@ async def execute_analysis_in_background(
                     )
                     doc_text = "\n\n---CHUNK---\n\n".join(result['formatted_chunks'])
                     word_count = result['stats']['raw_text_words']
+
+                    print(f"[PHASE 1] ✅ PDF extracted successfully")
+                    print(f"[PHASE 1] Chunks: {len(result['formatted_chunks'])}")
+                    print(f"[PHASE 1] Word count: {word_count}")
+                    print(f"[PHASE 1] Text length: {len(doc_text)} chars")
+                    print(f"[PHASE 1] First 200 chars: {doc_text[:200]}")
+
                 except Exception as e:
-                    print(f"[WARNING] Chunking failed for {doc_filename}, using simple parser: {e}")
+                    print(f"[PHASE 1] ⚠️  Chunking failed for {doc_filename}, using simple parser: {e}")
                     parsed = DocumentParser.parse(doc_path)
                     if not parsed["success"]:
-                        print(f"[WARNING] Failed to parse {doc_filename}: {parsed.get('error', 'Unknown error')}")
+                        print(f"[PHASE 1] ❌ FAILED to parse {doc_filename}: {parsed.get('error', 'Unknown error')}")
                         continue
                     doc_text = parsed["text"]
                     word_count = len(doc_text.split())
+                    print(f"[PHASE 1] ✅ Fallback parser worked: {word_count} words, {len(doc_text)} chars")
             else:
                 # Simple parser for other formats (DOCX, TXT, MD)
+                print(f"[PHASE 1] Using simple parser for {doc_type}...")
                 parsed = DocumentParser.parse(doc_path)
                 if not parsed["success"]:
-                    print(f"[WARNING] Failed to parse {doc_filename}: {parsed.get('error', 'Unknown error')}")
+                    print(f"[PHASE 1] ❌ FAILED to parse {doc_filename}: {parsed.get('error', 'Unknown error')}")
                     continue
 
                 doc_text = parsed["text"]
@@ -98,11 +122,12 @@ async def execute_analysis_in_background(
 
                 # Apply chunking if text is long (>30k chars = ~20k words)
                 if len(doc_text) > 30000:
-                    print(f"[INFO] Document {doc_filename} is long ({len(doc_text)} chars), applying chunking...")
+                    print(f"[PHASE 1] Document is long ({len(doc_text)} chars), applying chunking...")
                     chunks = chunk_text(doc_text, max_chunk_size=4000, overlap=400)
                     doc_text = "\n\n---CHUNK---\n\n".join(
                         [f"[CHUNK {i+1}]\n{c}" for i, c in enumerate(chunks)]
                     )
+                    print(f"[PHASE 1] ✅ Chunked into {len(chunks)} parts")
 
             all_documents_info.append({
                 "id": doc_id,
@@ -113,17 +138,49 @@ async def execute_analysis_in_background(
             })
 
             # Concatenate all documents with separators
+            content_before_add = len(all_documents_content)
             all_documents_content += f"\n\n{'='*80}\n"
             all_documents_content += f"DOCUMENT: {doc_filename} (type: {doc_type})\n"
             all_documents_content += f"{'='*80}\n\n"
             all_documents_content += doc_text
+            content_after_add = len(all_documents_content)
 
-        print(f"\n[INFO] Processed {len(all_documents_info)} documents")
-        print(f"[INFO] Total content length: {len(all_documents_content)} characters")
-        print(f"[INFO] Total words: {len(all_documents_content.split())}")
+            print(f"[PHASE 1] Added {content_after_add - content_before_add} chars to all_documents_content")
+            print(f"[PHASE 1] Total accumulated: {content_after_add} chars")
+
+        print(f"\n{'='*80}")
+        print(f"[PHASE 1 - FINAL] Extraction complete")
+        print(f"[PHASE 1 - FINAL] Processed documents: {len(all_documents_info)}")
+        print(f"[PHASE 1 - FINAL] Total content length: {len(all_documents_content)} characters")
+        print(f"[PHASE 1 - FINAL] Total words: {len(all_documents_content.split())}")
+        print(f"[PHASE 1 - FINAL] Documents info:")
+        for info in all_documents_info:
+            print(f"[PHASE 1 - FINAL]   - {info['filename']}: {info['word_count']} words ({info['type']})")
+        print(f"\n[PHASE 1 - FINAL] Preview of all_documents_content (first 500 chars):")
+        print(f"{all_documents_content[:500]}")
+        print(f"\n[PHASE 1 - FINAL] Preview of all_documents_content (last 500 chars):")
+        print(f"{all_documents_content[-500:]}")
+        print(f"{'='*80}\n")
 
         # Use first document ID for tracking (will be improved later)
         primary_doc_id = documents[0][0] if documents else None
+
+        print(f"\n{'='*80}")
+        print(f"[PHASE 1] BEFORE calling execute_document_analysis_workflow")
+        print(f"[PHASE 1] Parameters being passed:")
+        print(f"[PHASE 1]   - project_id: {project_id}")
+        print(f"[PHASE 1]   - document_id: {primary_doc_id}")
+        print(f"[PHASE 1]   - document_path: Multiple documents: {', '.join([d['filename'] for d in all_documents_info])}")
+        print(f"[PHASE 1]   - additional_instructions length: {len(instructions)} chars")
+        print(f"[PHASE 1]   - additional_instructions preview: {instructions[:200] if instructions else 'None'}")
+        print(f"[PHASE 1]   - enable_web_research: {use_web_research}")
+        print(f"[PHASE 1]   - document_content length: {len(all_documents_content)} chars")
+        print(f"[PHASE 1]   - document_content preview (first 300 chars):")
+        print(f"{all_documents_content[:300]}")
+        print(f"[PHASE 1]   - document_type: multiple")
+        print(f"[PHASE 1]   - project_name: Análise de Requisitos - Projeto {project_id}")
+        print(f"[PHASE 1]   - project_description: {(instructions[:500] if instructions else 'Análise de documentos para geração de requisitos')[:100]}...")
+        print(f"{'='*80}\n")
 
         # Execute LangNet workflow in thread pool (don't block async event loop)
         # This allows the workflow to run for 2-5 minutes without blocking

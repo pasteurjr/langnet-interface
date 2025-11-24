@@ -343,7 +343,23 @@ def init_full_state(
     """
     now = datetime.now().isoformat()
 
-    return {
+    print(f"\n{'='*80}")
+    print(f"[PHASE 2] init_full_state() called")
+    print(f"[PHASE 2] Input parameters:")
+    print(f"[PHASE 2]   - project_id: {project_id}")
+    print(f"[PHASE 2]   - document_id: {document_id}")
+    print(f"[PHASE 2]   - document_path: {document_path}")
+    print(f"[PHASE 2]   - project_name: {project_name}")
+    print(f"[PHASE 2]   - project_description length: {len(project_description)} chars")
+    print(f"[PHASE 2]   - project_domain: {project_domain}")
+    print(f"[PHASE 2]   - additional_instructions length: {len(additional_instructions)} chars")
+    print(f"[PHASE 2]   - document_type: {document_type}")
+    print(f"[PHASE 2]   - document_content length: {len(document_content)} chars")
+    print(f"[PHASE 2]   - document_content preview (first 300 chars):")
+    print(f"{document_content[:300] if document_content else '(EMPTY!)'}")
+    print(f"{'='*80}\n")
+
+    state = {
         # Project context
         "project_id": project_id,
         "project_name": project_name,
@@ -374,3 +390,13 @@ def init_full_state(
         "failed_tasks": 0,
         "progress_percentage": 0.0
     }
+
+    print(f"\n{'='*80}")
+    print(f"[PHASE 2] init_full_state() RETURNED state")
+    print(f"[PHASE 2] State keys: {list(state.keys())}")
+    print(f"[PHASE 2] State['document_content'] length: {len(state.get('document_content', ''))} chars")
+    print(f"[PHASE 2] State['document_content'] preview:")
+    print(f"{state.get('document_content', '(MISSING!)')[:300]}")
+    print(f"{'='*80}\n")
+
+    return state

@@ -332,7 +332,13 @@ AGENTS = {
 
 def analyze_document_input_func(state: LangNetFullState) -> Dict[str, Any]:
     """Extract input for analyze_document task"""
-    return {
+    print(f"\n{'='*80}")
+    print(f"[PHASE 3] analyze_document_input_func() called")
+    print(f"[PHASE 3] state['document_content'] length: {len(state.get('document_content', ''))} chars")
+    print(f"[PHASE 3] state['additional_instructions'] length: {len(state.get('additional_instructions', ''))} chars")
+    print(f"{'='*80}\n")
+
+    task_input = {
         "document_path": state.get("document_path", ""),
         "document_type": state.get("document_type", ""),
         "document_content": state.get("document_content", ""),  # Pre-extracted chunked content
@@ -341,15 +347,39 @@ def analyze_document_input_func(state: LangNetFullState) -> Dict[str, Any]:
         "project_description": state.get("project_description", "")
     }
 
+    print(f"\n{'='*80}")
+    print(f"[PHASE 3] analyze_document_input_func() RETURNED")
+    print(f"[PHASE 3] task_input['document_content'] length: {len(task_input.get('document_content', ''))} chars")
+    print(f"[PHASE 3] task_input['document_content'] preview (first 300 chars):")
+    print(f"{task_input.get('document_content', '(EMPTY!)')[:300]}")
+    print(f"{'='*80}\n")
+
+    return task_input
+
 
 def extract_requirements_input_func(state: LangNetFullState) -> Dict[str, Any]:
     """Extract input for extract_requirements task"""
-    return {
+    print(f"\n{'='*80}")
+    print(f"[PHASE 3] extract_requirements_input_func() called")
+    print(f"[PHASE 3] state['document_content'] length: {len(state.get('document_content', ''))} chars")
+    print(f"[PHASE 3] state['additional_instructions'] length: {len(state.get('additional_instructions', ''))} chars")
+    print(f"{'='*80}\n")
+
+    task_input = {
         "document_content": state.get("document_content", ""),
         "additional_instructions": state.get("additional_instructions", ""),
         "project_name": state.get("project_name", ""),
         "project_description": state.get("project_description", "")
     }
+
+    print(f"\n{'='*80}")
+    print(f"[PHASE 3] extract_requirements_input_func() RETURNED")
+    print(f"[PHASE 3] task_input['document_content'] length: {len(task_input.get('document_content', ''))} chars")
+    print(f"[PHASE 3] task_input['document_content'] preview (first 300 chars):")
+    print(f"{task_input.get('document_content', '(EMPTY!)')[:300]}")
+    print(f"{'='*80}\n")
+
+    return task_input
 
 
 def research_additional_info_input_func(state: LangNetFullState) -> Dict[str, Any]:
@@ -1033,7 +1063,30 @@ def execute_task_with_context(
             agent = agent_ref
 
         # 3. Create task
+        print(f"\n{'='*80}")
+        print(f"[PHASE 3] BEFORE formatting task description for '{task_name}'")
+        print(f"[PHASE 3] task_input keys: {list(task_input.keys())}")
+        print(f"[PHASE 3] task_input['document_content'] length: {len(task_input.get('document_content', ''))} chars")
+        print(f"[PHASE 3] task_input['additional_instructions'] length: {len(task_input.get('additional_instructions', ''))} chars")
+        print(f"[PHASE 3] Raw task description template (first 500 chars):")
+        print(f"{TASKS_CONFIG[task_name]['description'][:500]}")
+        print(f"{'='*80}\n")
+
         task_description = TASKS_CONFIG[task_name]['description'].format(**task_input)
+
+        print(f"\n{'='*80}")
+        print(f"[PHASE 3] AFTER formatting task description for '{task_name}'")
+        print(f"[PHASE 3] Formatted description length: {len(task_description)} chars")
+        print(f"[PHASE 3] Formatted description preview (first 800 chars):")
+        print(f"{task_description[:800]}")
+        print(f"[PHASE 3] Formatted description preview (search for 'document_content' keyword):")
+        if 'document_content:' in task_description:
+            idx = task_description.index('document_content:')
+            print(f"{task_description[idx:idx+400]}")
+        else:
+            print("⚠️  'document_content:' NOT FOUND in formatted description!")
+        print(f"{'='*80}\n")
+
         task_expected_output = TASKS_CONFIG[task_name]['expected_output']
 
         # Convert tools to framework format: [(crewai_tool, phidata_tool), ...]
@@ -1206,6 +1259,14 @@ def execute_document_analysis_workflow(
     Returns:
         Final state with requirements document
     """
+    print(f"\n{'='*80}")
+    print(f"[PHASE 2] execute_document_analysis_workflow() called")
+    print(f"[PHASE 2] Parameters received:")
+    print(f"[PHASE 2]   - document_content length: {len(document_content)} chars")
+    print(f"[PHASE 2]   - document_content preview (first 300 chars):")
+    print(f"{document_content[:300] if document_content else '(EMPTY!)'}")
+    print(f"{'='*80}\n")
+
     # Initialize state with all parameters
     state = init_full_state(
         project_id=project_id,
@@ -1219,8 +1280,19 @@ def execute_document_analysis_workflow(
         document_content=document_content
     )
 
+    print(f"\n{'='*80}")
+    print(f"[PHASE 2] State returned from init_full_state")
+    print(f"[PHASE 2] state['document_content'] length: {len(state.get('document_content', ''))} chars")
+    print(f"[PHASE 2] state['additional_instructions'] length: {len(state.get('additional_instructions', ''))} chars")
+    print(f"{'='*80}\n")
+
     # Add DeepSeek flag to state
     state["use_deepseek"] = use_deepseek
+
+    print(f"\n{'='*80}")
+    print(f"[PHASE 2] About to execute analyze_document task")
+    print(f"[PHASE 2] State passed to task has document_content: {len(state.get('document_content', ''))} chars")
+    print(f"{'='*80}\n")
 
     # Execute workflow tasks
     state = execute_task_with_context("analyze_document", state)
