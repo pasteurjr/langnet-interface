@@ -239,6 +239,29 @@ extract_requirements:
 
     Make queries SPECIFIC to identified domain (not generic).
 
+    ═══════════════════════════════════════════════════════════
+    FINAL VALIDATION - CHECKLIST BEFORE RETURNING OUTPUT
+    ═══════════════════════════════════════════════════════════
+
+    Before generating your output, verify ALL items:
+
+    ✓ I read and extracted requirements from document_content (not empty/placeholder)
+    ✓ I read and extracted requirements from additional_instructions (not empty/placeholder)
+    ✓ I inferred technical requirements (database, API, security, monitoring)
+    ✓ Each FR from documents has VERBATIM QUOTE as evidence
+    ✓ Each FR from instructions CITES the instruction text
+    ✓ Each inferred requirement has RATIONALE explaining why necessary
+    ✓ I prepared web_research_queries for finding analogous systems
+
+    RED FLAGS - DO NOT do this:
+    ❌ Generic requirements like "user login" without context from documents
+    ❌ Requirements with no source/evidence citation
+    ❌ Invented stakeholders/companies not mentioned in documents
+    ❌ Fictional data or statistics
+    ❌ Placeholder text like "TBD", "to be defined", "N/A" without explanation
+
+    If ANY checkbox is unchecked, REVIEW inputs again before returning.
+
   expected_output: >
     JSON with requirements from 3 sources:
     {
@@ -435,6 +458,35 @@ validate_requirements:
     ❌ Missing technical infrastructure (database, API, hosting)
     ❌ No security requirements when sensitive data mentioned
     ❌ Industry standards from research not incorporated
+
+    ═══════════════════════════════════════════════════════════
+    STEP 0.5 - VERIFY INPUTS WERE ACTUALLY USED
+    ═══════════════════════════════════════════════════════════
+
+    Before proceeding to quality validation, answer these critical questions:
+
+    QUESTION 1: Does requirements_json mention SPECIFIC entities/data from documents?
+    - Example: If documents mention "Company X", "10,000 items", "CEO Name", are they referenced?
+    - Check: Are there concrete numbers, names, roles from the actual documents?
+    - ✓ YES → Proceed to STEP 1
+    - ✗ NO → REJECT with reason: "Requirements are too generic, not based on actual document content"
+
+    QUESTION 2: Does requirements_json address ALL features from additional_instructions?
+    - Example: If instructions list 4 modules, are there FRs for all 4?
+    - Check: Every requested module/feature has corresponding requirements?
+    - ✓ YES → Proceed to STEP 1
+    - ✗ NO → REJECT with reason: "Requirements incomplete, missing features from instructions"
+
+    QUESTION 3: Are there inferred technical requirements?
+    - Must include: Database/Storage, API/Backend, Security/Auth, Infrastructure/Hosting
+    - Check: At least 4-5 NFRs covering technical infrastructure
+    - ✓ YES → Proceed to STEP 1
+    - ✗ NO → REJECT with reason: "No technical requirements inferred, missing infrastructure planning"
+
+    If ANY question answered NO:
+    - Set validation_status: "REJECTED"
+    - Return detailed explanation of what's missing
+    - Do NOT proceed to generate final document
 
     STEP 1 - QUALITY VALIDATION:
     Review all requirements for quality issues:

@@ -135,7 +135,11 @@ async def execute_analysis_in_background(
             additional_instructions=instructions,
             enable_web_research=use_web_research,
             document_content=all_documents_content,  # Pass ALL documents content
-            document_type="multiple"
+            document_type="multiple",
+            # Metadados do projeto para contexto dos agentes
+            project_name=f"Análise de Requisitos - Projeto {project_id}",
+            project_description=instructions[:500] if instructions else "Análise de documentos para geração de requisitos",
+            project_domain=""  # Será identificado pelos agentes a partir dos documentos
             # use_deepseek defaults to False = uses GPT-4o-mini (OpenAI)
         )
 

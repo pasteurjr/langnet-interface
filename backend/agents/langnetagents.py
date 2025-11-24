@@ -584,10 +584,11 @@ def analyze_document_output_func(state: LangNetFullState, result: Any) -> LangNe
         parsed = {"error": "Failed to parse JSON", "raw": output_json}
 
     # Update state
+    # IMPORTANTE: NÃO sobrescrever document_content (precisa ser preservado para próximas tasks)
     updated_state = {
         **state,
         "document_analysis_json": output_json,
-        "document_content": parsed.get("content", ""),
+        # "document_content": parsed.get("content", ""),  # REMOVIDO: mantém original intacto
         "document_structure": parsed.get("structure", {}),
         "document_metadata": parsed.get("metadata", {})
     }
@@ -984,6 +985,21 @@ def execute_task_with_context(
     try:
         # 1. Extract input from context state
         task_input = task_config["input_func"](context_state)
+
+        # VALIDAÇÃO: Verificar se inputs críticos não estão vazios
+        if task_name in ["analyze_document", "extract_requirements", "validate_requirements"]:
+            doc_content = context_state.get("document_content", "")
+            if not doc_content or len(doc_content) < 100:
+                error_msg = f"ERROR: Task '{task_name}' requires document_content but it's empty or too short ({len(doc_content)} chars)"
+                print(f"\n{'='*80}")
+                print(f"[VALIDATION ERROR] {error_msg}")
+                print(f"{'='*80}\n")
+                return {
+                    **context_state,
+                    "errors": context_state.get("errors", []) + [error_msg],
+                    "status": "failed",
+                    "last_error": error_msg
+                }
 
         if verbose_callback:
             verbose_callback(f"Task input: {json.dumps(task_input, indent=2)[:200]}")
