@@ -55,28 +55,60 @@ async def execute_analysis_in_background(
             {"type": "task_started", "task": "document_analysis", "message": "Iniciando análise com IA..."}
         )
 
-        # Extract content from ALL documents
+        # Extract content from ALL documents WITH CHUNKING
         from app.parsers import DocumentParser
         from pathlib import Path
+        from utils.pdf_processor import process_pdf_for_agent, chunk_text
 
         all_documents_info = []
         all_documents_content = ""
 
         for doc_id, doc_filename, doc_path in documents:
-            # Parse document
-            parsed = DocumentParser.parse(doc_path)
-            if not parsed["success"]:
-                print(f"[WARNING] Failed to parse {doc_filename}: {parsed.get('error', 'Unknown error')}")
-                continue
-
-            doc_text = parsed["text"]
             doc_type = Path(doc_path).suffix[1:]  # .pdf -> pdf
+
+            # Use chunking for PDFs (optimal processing)
+            if doc_type == "pdf":
+                try:
+                    result = process_pdf_for_agent(
+                        doc_path,
+                        max_pages=50,
+                        chunk_size=4000,      # ~2500 words per chunk
+                        chunk_overlap=400,     # 10% overlap
+                        max_chunks=None        # Process all
+                    )
+                    doc_text = "\n\n---CHUNK---\n\n".join(result['formatted_chunks'])
+                    word_count = result['stats']['raw_text_words']
+                except Exception as e:
+                    print(f"[WARNING] Chunking failed for {doc_filename}, using simple parser: {e}")
+                    parsed = DocumentParser.parse(doc_path)
+                    if not parsed["success"]:
+                        print(f"[WARNING] Failed to parse {doc_filename}: {parsed.get('error', 'Unknown error')}")
+                        continue
+                    doc_text = parsed["text"]
+                    word_count = len(doc_text.split())
+            else:
+                # Simple parser for other formats (DOCX, TXT, MD)
+                parsed = DocumentParser.parse(doc_path)
+                if not parsed["success"]:
+                    print(f"[WARNING] Failed to parse {doc_filename}: {parsed.get('error', 'Unknown error')}")
+                    continue
+
+                doc_text = parsed["text"]
+                word_count = len(doc_text.split())
+
+                # Apply chunking if text is long (>30k chars = ~20k words)
+                if len(doc_text) > 30000:
+                    print(f"[INFO] Document {doc_filename} is long ({len(doc_text)} chars), applying chunking...")
+                    chunks = chunk_text(doc_text, max_chunk_size=4000, overlap=400)
+                    doc_text = "\n\n---CHUNK---\n\n".join(
+                        [f"[CHUNK {i+1}]\n{c}" for i, c in enumerate(chunks)]
+                    )
 
             all_documents_info.append({
                 "id": doc_id,
                 "filename": doc_filename,
                 "type": doc_type,
-                "word_count": len(doc_text.split()),
+                "word_count": word_count,
                 "path": doc_path
             })
 
