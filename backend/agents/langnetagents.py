@@ -369,7 +369,8 @@ def extract_requirements_input_func(state: LangNetFullState) -> Dict[str, Any]:
         "document_content": state.get("document_content", ""),
         "additional_instructions": state.get("additional_instructions", ""),
         "project_name": state.get("project_name", ""),
-        "project_description": state.get("project_description", "")
+        "project_description": state.get("project_description", ""),
+        "analysis_json": state.get("document_analysis_json", "{}")  # BUG FIX: Add analysis from task 1
     }
 
     print(f"\n{'='*80}")
@@ -386,6 +387,7 @@ def research_additional_info_input_func(state: LangNetFullState) -> Dict[str, An
     """Extract input for research_additional_info task"""
     return {
         "requirements_json": state.get("requirements_json", "{}"),
+        "document_content": state.get("document_content", ""),  # BUG FIX: Add document content for context
         "additional_instructions": state.get("additional_instructions", ""),
         "project_name": state.get("project_name", "")
     }
@@ -543,6 +545,8 @@ def validate_requirements_input_func(state: LangNetFullState) -> Dict[str, Any]:
     return {
         "requirements_json": state.get("requirements_json", "{}"),
         "research_findings_json": state.get("research_findings_json", "{}"),
+        "document_content": state.get("document_content", ""),  # BUG FIX: Add document content for LLM context
+        "additional_instructions": state.get("additional_instructions", ""),  # BUG FIX: Add instructions for LLM context
         "template": template,
         **template_vars  # Spread all template variables
     }
