@@ -124,32 +124,29 @@ analyze_document:
     - If information not present, state "not mentioned"
     - Process ALL chunks if document is divided
   expected_output: >
-    JSON object with analysis from BOTH documents and instructions:
-    {
-      "domain_identified": "Primary industry/sector",
-      "from_documents": {
-        "stakeholders": ["with quotes"],
-        "business_context": "key facts",
-        "pain_points": ["with evidence"],
-        "current_process": "how they work",
-        "current_tools": ["tools mentioned"],
-        "quantitative_data": ["numbers with quotes"],
-        "domain_terminology": ["technical terms"]
-      },
-      "from_instructions": {
-        "project_goals": ["goals"],
-        "desired_features": ["features"],
-        "system_vision": "system type",
-        "constraints": ["limitations"]
-      },
-      "synthesis": {
-        "current_state": "as-is summary",
-        "desired_state": "to-be summary",
-        "gap": "what needs to change"
-      },
-      "extraction_status": "success/failed",
-      "words_processed": count
-    }
+    JSON object with analysis from BOTH documents and instructions.
+
+    Structure: Top-level object containing the following fields:
+    - domain_identified: string describing primary industry or sector
+    - from_documents: object with nested fields
+      * stakeholders: array of strings with quotes from documents
+      * business_context: string with key facts
+      * pain_points: array of strings with evidence
+      * current_process: string describing how they work
+      * current_tools: array of tools mentioned
+      * quantitative_data: array of numbers with verbatim quotes
+      * domain_terminology: array of technical terms
+    - from_instructions: object with nested fields
+      * project_goals: array of goals
+      * desired_features: array of features
+      * system_vision: string describing system type
+      * constraints: array of limitations
+    - synthesis: object with nested fields
+      * current_state: string with as-is summary
+      * desired_state: string with to-be summary
+      * gap: string describing what needs to change
+    - extraction_status: string value "success" or "failed"
+    - words_processed: integer count
 
 extract_requirements:
   description: >
@@ -234,26 +231,20 @@ extract_requirements:
     document_content says: "Farmac needs to monitor public procurement notices across Bahia, Sergipe, and Alagoas. Current manual process with 2-3 people."
 
     ✅ CORRECT:
-    {
-      "id": "FR-002",
-      "description": "Agente de IA para captura e leitura dos certames de fontes públicas (federal, estaduais e municipais)",
-      "source": "from_instructions",
-      "evidence": "Current manual process with 2-3 person team monitoring procurement notices. Geographic scope: Bahia, Sergipe, and Alagoas.",
-      "priority": "high",
-      "context": {
-        "current_team_size": "2-3 people",
-        "geographic_scope": "Bahia, Sergipe, Alagoas",
-        "company": "Farmac"
-      }
-    }
+    Requirement object with fields:
+    - id: "FR-002"
+    - description: "Agente de IA para captura e leitura dos certames de fontes públicas (federal, estaduais e municipais)"
+    - source: "from_instructions"
+    - evidence: "Current manual process with 2-3 person team monitoring procurement notices. Geographic scope: Bahia, Sergipe, and Alagoas."
+    - priority: "high"
+    - context: nested object with current_team_size "2-3 people", geographic_scope "Bahia, Sergipe, Alagoas", company "Farmac"
 
     ❌ WRONG (too generic, ignores instructions):
-    {
-      "id": "FR-002",
-      "description": "Automate the manual task of capturing procurement notices",
-      "source": "from_document",
-      "evidence": "Manual monitoring needed"
-    }
+    Requirement with:
+    - id: "FR-002"
+    - description: "Automate the manual task of capturing procurement notices"
+    - source: "from_document"
+    - evidence: "Manual monitoring needed"
 
     ═══════════════════════════════════════════════════════════
     HANDLING SPECIFIC DATA FROM DOCUMENTS
@@ -347,25 +338,29 @@ extract_requirements:
     If ANY checkbox is unchecked, REVIEW inputs again before returning.
 
   expected_output: >
-    JSON with requirements from 3 sources:
-    {
-      "functional_requirements": [
-        {
-          "id": "FR-001",
-          "description": "...",
-          "source": "from_document|from_instructions|inferred",
-          "evidence": "verbatim quote" (if from doc/instructions),
-          "rationale": "explanation" (if inferred),
-          "priority": "high|medium|low"
-        }
-      ],
-      "non_functional_requirements": [...same structure...],
-      "business_rules": [...],
-      "entities": [...],
-      "actors": [...],
-      "workflows": [...],
-      "web_research_queries": ["query 1", "query 2", ...]
-    }
+    JSON with requirements from 3 sources.
+
+    Structure: Top-level object with the following arrays:
+
+    - functional_requirements: array of requirement objects, each containing:
+      * id: string like "FR-001", "FR-002", etc
+      * description: string with requirement description
+      * source: string value "from_document" or "from_instructions" or "inferred"
+      * evidence: string with verbatim quote (if from doc/instructions)
+      * rationale: string with explanation (if inferred)
+      * priority: string value "high" or "medium" or "low"
+
+    - non_functional_requirements: array with same structure as functional_requirements
+
+    - business_rules: array of business rule objects
+
+    - entities: array of data entity objects
+
+    - actors: array of actor/stakeholder objects
+
+    - workflows: array of workflow objects
+
+    - web_research_queries: array of strings with search queries for next step
 
 research_additional_info:
   description: >
@@ -460,30 +455,30 @@ research_additional_info:
     Example: If Brazil context evident, add "brasil" to queries
 
   expected_output: >
-    JSON with web research findings:
-    {
-      "analogous_systems": [
-        {
-          "name": "System name",
-          "description": "What it does",
-          "source_url": "...",
-          "key_features": [...],
-          "relevance": "Why similar"
-        }
-      ],
-      "best_practices": [...with sources...],
-      "recommended_technologies": [...],
-      "compliance_requirements": [...],
-      "performance_benchmarks": {...},
-      "potentially_missing_requirements": [
-        {
-          "type": "FR|NFR|BR",
-          "description": "...",
-          "justification": "Found in X similar systems",
-          "source": "URL"
-        }
-      ]
-    }
+    JSON with web research findings.
+
+    Structure: Top-level object with the following fields:
+
+    - analogous_systems: array of system objects, each containing:
+      * name: string with system name
+      * description: string describing what it does
+      * source_url: string with URL
+      * key_features: array of feature strings
+      * relevance: string explaining why similar
+
+    - best_practices: array of best practice objects with sources
+
+    - recommended_technologies: array of technology recommendation objects
+
+    - compliance_requirements: array of compliance requirement objects
+
+    - performance_benchmarks: object with benchmark data
+
+    - potentially_missing_requirements: array of requirement objects, each containing:
+      * type: string value "FR" or "NFR" or "BR"
+      * description: string with requirement description
+      * justification: string like "Found in X similar systems"
+      * source: string with URL
 
 validate_requirements:
   description: >
@@ -638,8 +633,8 @@ validate_requirements:
     Use the provided template and fill ALL sections with REAL DATA from requirements_json and research_findings_json.
 
     TEMPLATE FILLING RULES:
-    - Replace {project_name} with actual project name from requirements
-    - Fill {project_domain} with domain identified from requirements
+    - Replace placeholder PROJECT_NAME with actual project name from requirements
+    - Fill placeholder PROJECT_DOMAIN with domain identified from requirements
     - Populate all requirement lists with actual requirements from requirements_json
     - Add source citations for every requirement
     - Generate mermaid diagrams based on actual data (entity relationships, workflows, dependencies)
