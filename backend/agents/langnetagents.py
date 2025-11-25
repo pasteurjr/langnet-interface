@@ -107,7 +107,7 @@ def get_llm(use_deepseek: bool = False):
             print(f"[LangNet] Using Claude Code API at {claude_api_base}/v1")
 
             _llm_cache[cache_key] = LLM(
-                model="claude-code",
+                model="openai/claude-code",  # Use openai/ prefix for LiteLLM compatibility
                 base_url=f"{claude_api_base}/v1",
                 api_key="dummy",  # Required by CrewAI but not validated
                 temperature=0.3,
