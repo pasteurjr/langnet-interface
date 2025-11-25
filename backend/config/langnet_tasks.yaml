@@ -917,7 +917,22 @@ validate_requirements:
     - No placeholder text remaining
 
   expected_output: >
-    JSON validation report with:
+    RETURN ONLY VALID JSON. Do NOT add markdown code blocks (```json). Do NOT add explanatory text after the JSON.
+
+    JSON validation report structure:
+    {
+      "valid_requirements": [...],
+      "issues_found": [...],
+      "quality_scores": {...},
+      "completeness_breakdown": {...},
+      "coverage_analysis": {...},
+      "critical_gaps": [...],
+      "information_requests": [...],
+      "application_type_checklist": {...},
+      "requirements_document_md": "# COMPLETE Markdown document here..."
+    }
+
+    Fields specification:
     (1) 'valid_requirements': array of approved requirements with quality scores
     (2) 'issues_found': array with type, severity (critical/high/medium/low), description, affected_requirement_id, recommended_fix, example_correction
     (3) 'quality_scores': completeness_score (0-100), clarity_score (0-100), consistency_score (0-100), testability_score (0-100), traceability_score (0-100)
@@ -927,6 +942,8 @@ validate_requirements:
     (7) 'information_requests': array of specific questions to stakeholders with priority, affected_requirements, why_critical
     (8) 'application_type_checklist': coverage of standard requirements for the identified application type
     (9) 'requirements_document_md': COMPLETE Markdown document following template, all sections filled with real data, no placeholders, ready for stakeholder review
+
+    CRITICAL: The requirements_document_md field MUST contain the complete document. Do NOT return empty string or placeholders.
 
 generate_specification:
   description: >

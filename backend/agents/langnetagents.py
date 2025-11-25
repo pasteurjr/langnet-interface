@@ -13,6 +13,7 @@ Pattern: Context State List + Task Registry + Input/Output Functions
 import os
 import sys
 import json
+from json import JSONDecoder
 import yaml
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable
@@ -738,11 +739,41 @@ def validate_requirements_output_func(state: LangNetFullState, result: Any) -> L
 
             print(f"[DEBUG] After removing markdown, length: {len(team_result_str)}")
 
-            # Parse the NESTED JSON
+            # Detect if using Claude Code (check provider from config or state)
+            is_claude_code = False
             try:
-                nested_parsed = json.loads(team_result_str)
-                print(f"[DEBUG] Nested JSON parsing SUCCESS")
-                print(f"[DEBUG] Nested keys: {list(nested_parsed.keys()) if isinstance(nested_parsed, dict) else 'NOT A DICT'}")
+                # Try to detect from environment or config
+                import os
+                from app.config import settings
+                is_claude_code = settings.llm_provider.lower() == "claude_code"
+                print(f"[DEBUG] Detected LLM provider: {settings.llm_provider}")
+            except:
+                # Fallback: assume Claude if team_result exists
+                is_claude_code = True
+                print(f"[DEBUG] Could not detect provider, assuming Claude-like behavior")
+
+            # Parse the NESTED JSON - use different strategy for Claude vs GPT
+            try:
+                if is_claude_code:
+                    # CLAUDE CODE: Use raw_decode to handle extra text after JSON
+                    print(f"[DEBUG] Using raw_decode for Claude Code (handles extra text)")
+                    decoder = JSONDecoder()
+                    nested_parsed, json_end_index = decoder.raw_decode(team_result_str)
+
+                    print(f"[DEBUG] Nested JSON parsing SUCCESS via raw_decode")
+                    print(f"[DEBUG] JSON ends at index {json_end_index} of {len(team_result_str)}")
+                    print(f"[DEBUG] Nested keys: {list(nested_parsed.keys()) if isinstance(nested_parsed, dict) else 'NOT A DICT'}")
+
+                    # Extra text after JSON is ignored automatically by raw_decode
+                    if json_end_index < len(team_result_str):
+                        extra_text_preview = team_result_str[json_end_index:json_end_index+100].strip()
+                        print(f"[DEBUG] Extra text found after JSON (ignored): {extra_text_preview[:50]}...")
+                else:
+                    # GPT-4o-mini and others: Use standard json.loads (expects pure JSON)
+                    print(f"[DEBUG] Using json.loads for standard LLM (expects pure JSON)")
+                    nested_parsed = json.loads(team_result_str)
+                    print(f"[DEBUG] Nested JSON parsing SUCCESS via json.loads")
+                    print(f"[DEBUG] Nested keys: {list(nested_parsed.keys()) if isinstance(nested_parsed, dict) else 'NOT A DICT'}")
 
                 # NOW extract requirements_document_md from the nested JSON
                 requirements_doc_md = nested_parsed.get("requirements_document_md", "")
@@ -750,6 +781,7 @@ def validate_requirements_output_func(state: LangNetFullState, result: Any) -> L
 
                 # Update parsed to use the nested data
                 parsed = nested_parsed
+
             except json.JSONDecodeError as e2:
                 print(f"[DEBUG] Nested JSON parsing FAILED: {e2}")
 
