@@ -332,23 +332,19 @@ extract_requirements:
     5. USER EXPERIENCE (1 requirement):
        - Mobile responsiveness or accessibility (WCAG)
 
-    FORMAT FOR EACH SUGGESTED REQUIREMENT:
-    {
-      "id": "NFR-XXX" or "FR-XXX",
-      "description": "Short requirement title",
-      "source": "suggested_by_ai",
-      "rationale": "Explain WHY this is critical for this specific domain. Reference standards, regulations, or common problems in similar systems.",
-      "priority": "high" or "medium"
-    }
+    FORMAT FOR EACH SUGGESTED REQUIREMENT (return as JSON object with these fields):
+    - id: string like "NFR-XXX" or "FR-XXX"
+    - description: string with short requirement title
+    - source: must be "suggested_by_ai"
+    - rationale: string explaining WHY this is critical for this specific domain (reference standards, regulations, or common problems)
+    - priority: either "high" or "medium"
 
-    EXAMPLE - Brazil context, public procurement domain:
-    {
-      "id": "NFR-010",
-      "description": "Conformidade com LGPD para dados de licitações e fornecedores",
-      "source": "suggested_by_ai",
-      "rationale": "Sistema processa dados sensíveis de empresas e órgãos públicos incluindo CNPJs, contatos, e histórico de licitações. LGPD (Lei 13.709/2018) exige consentimento explícito, direito ao esquecimento, e relatório de impacto à privacidade. Não-conformidade pode resultar em multas de até 2% do faturamento. Crítico para operação legal no Brasil.",
-      "priority": "high"
-    }
+    EXAMPLE - Brazil context, public procurement domain (format as JSON with these fields):
+    - id: "NFR-010"
+    - description: "Conformidade com LGPD para dados de licitações e fornecedores"
+    - source: "suggested_by_ai"
+    - rationale: "Sistema processa dados sensíveis de empresas e órgãos públicos incluindo CNPJs, contatos, e histórico de licitações. LGPD (Lei 13.709/2018) exige consentimento explícito, direito ao esquecimento, e relatório de impacto à privacidade. Não-conformidade pode resultar em multas de até 2% do faturamento. Crítico para operação legal no Brasil."
+    - priority: "high"
 
     CRITICAL: You MUST generate at least 5 suggested requirements. If you generate less than 5, the validation will FAIL.
 
@@ -360,24 +356,15 @@ extract_requirements:
 
     From documents, extract and CREATE business_context object in your JSON output:
 
-    business_context: {
-      "geographic_scope": [array of strings],
-      "industry": "string",
-      "company_type": "string",
-      "products_services": [array of strings],
-      "target_market": "string",
-      "regulatory_bodies": [array of strings],
-      "domain_terminology": [
-        {"term": "string", "definition": "string"},
-        ...
-      ],
-      "quantitative_data": {
-        "team_size": "string or number",
-        "portfolio_size": "string or number",
-        "market_coverage": "string",
-        "other_metrics": {}
-      }
-    }
+    business_context: JSON object with these fields:
+      - geographic_scope: array of location strings
+      - industry: single string with primary sector
+      - company_type: string describing company type
+      - products_services: array of main offering strings
+      - target_market: string describing target customers
+      - regulatory_bodies: array of regulatory body strings
+      - domain_terminology: array of objects, each with "term" and "definition" fields
+      - quantitative_data: object with team_size, portfolio_size, market_coverage, and other_metrics fields
 
     EXTRACTION RULES:
 
@@ -403,18 +390,16 @@ extract_requirements:
        If none: []
 
     7. DOMAIN TERMINOLOGY - Extract 3-5 KEY terms with definitions:
-       Example: [
-         {"term": "Comodato", "definition": "Equipment loan contract where supplier provides equipment and consumables at unit price without fixed rental"},
-         {"term": "Licitação", "definition": "Public procurement process for goods and services"},
-         {"term": "Edital", "definition": "Public tender notice document with requirements"}
-       ]
+       Example: array with objects containing term and definition fields
+       - First object: term "Comodato", definition "Equipment loan contract where supplier provides equipment and consumables at unit price without fixed rental"
+       - Second object: term "Licitação", definition "Public procurement process for goods and services"
+       - Third object: term "Edital", definition "Public tender notice document with requirements"
 
     8. QUANTITATIVE DATA - Extract specific numbers:
-       Example: {
-         "team_size": "2-3 people",
-         "portfolio_size": "10,000 ANVISA-registered items",
-         "market_coverage": "3 Brazilian states"
-       }
+       Example: object with these fields
+       - team_size: "2-3 people"
+       - portfolio_size: "10,000 ANVISA-registered items"
+       - market_coverage: "3 Brazilian states"
 
     This structured context will populate the "Context and Justification" section of the requirements document.
 
