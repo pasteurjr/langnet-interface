@@ -301,54 +301,6 @@ extract_requirements:
     - Provide RATIONALE
 
     ═══════════════════════════════════════════════════════════
-    PART 3.5: SUGGEST CRITICAL MISSING REQUIREMENTS (MANDATORY)
-    ═══════════════════════════════════════════════════════════
-
-    YOU MUST SUGGEST 5-10 CRITICAL REQUIREMENTS NOT MENTIONED IN SOURCES.
-
-    For a production-ready system in this domain, CREATE requirements for:
-
-    1. LEGAL COMPLIANCE (2-3 requirements):
-       - IF Brazil detected → LGPD compliance (data privacy, consent, deletion rights)
-       - IF EU detected → GDPR compliance
-       - IF healthcare → HIPAA compliance
-       - Audit trail for compliance reporting
-
-    2. OPERATIONAL EXCELLENCE (2-3 requirements):
-       - Automated backup and disaster recovery (RTO/RPO defined)
-       - System monitoring and alerting (uptime, errors, performance)
-       - Logging and audit trail for all critical operations
-
-    3. SECURITY (1-2 requirements):
-       - Two-factor authentication (2FA) for administrative access
-       - Rate limiting to prevent abuse/DoS
-       - Data encryption at rest and in transit
-
-    4. PERFORMANCE & SCALABILITY (1-2 requirements):
-       - Caching strategy for frequently accessed data
-       - Database query optimization and indexing
-       - Load balancing for high availability
-
-    5. USER EXPERIENCE (1 requirement):
-       - Mobile responsiveness or accessibility (WCAG)
-
-    FORMAT FOR EACH SUGGESTED REQUIREMENT (return as JSON object with these fields):
-    - id: string like "NFR-XXX" or "FR-XXX"
-    - description: string with short requirement title
-    - source: must be "suggested_by_ai"
-    - rationale: string explaining WHY this is critical for this specific domain (reference standards, regulations, or common problems)
-    - priority: either "high" or "medium"
-
-    EXAMPLE - Brazil context, public procurement domain (format as JSON with these fields):
-    - id: "NFR-010"
-    - description: "Conformidade com LGPD para dados de licitações e fornecedores"
-    - source: "suggested_by_ai"
-    - rationale: "Sistema processa dados sensíveis de empresas e órgãos públicos incluindo CNPJs, contatos, e histórico de licitações. LGPD (Lei 13.709/2018) exige consentimento explícito, direito ao esquecimento, e relatório de impacto à privacidade. Não-conformidade pode resultar em multas de até 2% do faturamento. Crítico para operação legal no Brasil."
-    - priority: "high"
-
-    CRITICAL: You MUST generate at least 5 suggested requirements. If you generate less than 5, the validation will FAIL.
-
-    ═══════════════════════════════════════════════════════════
     PART 4: PREPARE FOR WEB RESEARCH + CONTEXT EXTRACTION
     ═══════════════════════════════════════════════════════════
 
@@ -446,12 +398,6 @@ extract_requirements:
     ✓ Specific data (company, volumes, locations) is in APPROPRIATE sections
     ✓ I inferred technical requirements (database, API, security, monitoring)
     ✓ Each inferred requirement has RATIONALE explaining why necessary
-
-    ✓ I suggested AT LEAST 5 requirements with source "suggested_by_ai"
-      COUNT THEM: ___ suggested requirements (must be >= 5)
-      - At least 2 for legal compliance (LGPD/GDPR/HIPAA/audit)
-      - At least 2 for operational excellence (backup/monitoring/logging)
-      - At least 1 for security (2FA/rate limiting/encryption)
 
     ✓ I extracted business_context object with ALL fields populated:
       - geographic_scope: array with locations
@@ -729,8 +675,52 @@ validate_requirements:
     - Return detailed explanation of what's missing
     - Do NOT proceed to generate final document
 
-    STEP 1 - QUALITY VALIDATION:
-    Review all requirements for quality issues:
+    STEP 1 - ADD CRITICAL MISSING REQUIREMENTS (AI SUGGESTIONS):
+
+    Based on requirements_json and business_context, ADD 5-10 production-critical requirements that are MISSING.
+
+    Analyze what's already there, then ADD requirements for:
+
+    1. LEGAL COMPLIANCE (if missing):
+       - IF Brazil context → LGPD compliance for data privacy
+       - IF EU context → GDPR compliance
+       - IF healthcare → regulatory compliance (ANVISA, HIPAA, etc.)
+       - Audit trail and compliance reporting
+
+    2. OPERATIONAL EXCELLENCE (if missing):
+       - Automated backup and disaster recovery with RTO/RPO
+       - System monitoring, alerting, and health checks
+       - Comprehensive logging for critical operations
+       - Error handling and recovery procedures
+
+    3. SECURITY (if missing):
+       - Multi-factor authentication for admin access
+       - Rate limiting and DDoS protection
+       - Data encryption (at rest and in transit)
+       - Access control and authorization
+
+    4. PERFORMANCE & SCALABILITY (if missing):
+       - Caching strategy for frequently accessed data
+       - Database optimization and indexing
+       - Load balancing and horizontal scaling
+       - Performance benchmarks and SLAs
+
+    5. USER EXPERIENCE (if missing):
+       - Mobile responsiveness or PWA support
+       - Accessibility compliance (WCAG)
+       - Internationalization if multi-region
+
+    For EACH suggested requirement you ADD:
+    - Assign new ID: continue numbering from last requirement (e.g., if last FR is FR-008, start at FR-009)
+    - Set source: "suggested_by_ai"
+    - Provide rationale: explain WHY this is critical for THIS specific domain and scale
+    - Set priority: "high" or "medium" based on domain criticality
+    - Reference standards: cite LGPD, ANVISA, industry standards when applicable
+
+    IMPORTANT: Only ADD requirements that are ACTUALLY MISSING. Don't duplicate what's already in requirements_json.
+
+    STEP 2 - QUALITY VALIDATION:
+    Review all requirements (original + suggested) for quality issues:
 
     (a) AMBIGUOUS LANGUAGE:
         - Identify vague terms ("fast", "scalable", "user-friendly", "secure")
@@ -758,7 +748,7 @@ validate_requirements:
         - Check priority is assigned
         - Ensure dependencies are mapped
 
-    STEP 2 - COMPLETENESS EVALUATION:
+    STEP 3 - COMPLETENESS EVALUATION:
 
     (a) INFORMATION SUFFICIENCY:
         Assess if extracted information is sufficient for development to begin.
@@ -784,14 +774,14 @@ validate_requirements:
         - Mobile: offline mode, push notifications, app permissions, device compatibility
         - Data platform: data pipeline, ETL, data quality, backup/recovery
 
-    STEP 3 - ASSIGN SEVERITY TO ISSUES:
+    STEP 4 - ASSIGN SEVERITY TO ISSUES:
     For each issue found, assign severity:
     - CRITICAL: Blocks development, security risk, regulatory violation
     - HIGH: Significant impact on functionality or quality
     - MEDIUM: Affects user experience or development efficiency
     - LOW: Minor issue, cosmetic, or nice-to-have improvement
 
-    STEP 4 - GENERATE FINAL MARKDOWN DOCUMENT:
+    STEP 5 - GENERATE FINAL MARKDOWN DOCUMENT:
     Use the provided template and fill ALL sections with REAL DATA from requirements_json and research_findings_json.
 
     TEMPLATE FILLING RULES:
