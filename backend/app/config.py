@@ -39,7 +39,11 @@ class Settings(BaseSettings):
     redis_db: int = Field(default=0, env="REDIS_DB")
 
     # LLM Configuration
-    llm_provider: str = Field(default="openai", env="LLM_PROVIDER")  # lmstudio, openai, deepseek, anthropic, google
+    llm_provider: str = Field(default="openai", env="LLM_PROVIDER")  # lmstudio, openai, deepseek, anthropic, google, claude_code
+
+    # Claude Code (local API)
+    claude_code_api_base: str = Field(default="http://localhost:8807", env="CLAUDE_CODE_API_BASE")
+    claude_code_model_name: str = Field(default="claude-code", env="CLAUDE_CODE_MODEL_NAME")
 
     # LM Studio (local)
     lmstudio_api_base: str = Field(default="http://localhost:1234/v1", env="LMSTUDIO_API_BASE")

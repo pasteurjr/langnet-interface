@@ -84,15 +84,36 @@ def get_llm(use_deepseek: bool = False):
     Get LLM instance based on configuration (with caching)
 
     Args:
-        use_deepseek: If True, returns DeepSeek LLM; if False, returns OpenAI
+        use_deepseek: If True, returns DeepSeek LLM; if False, checks LLM_PROVIDER env var
 
     Returns:
         LLM instance
     """
-    cache_key = "deepseek" if use_deepseek else "openai"
+    # Check LLM_PROVIDER environment variable
+    llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
+
+    # Override with use_deepseek parameter
+    if use_deepseek:
+        llm_provider = "deepseek"
+
+    cache_key = llm_provider
 
     if cache_key not in _llm_cache:
-        if use_deepseek:
+        if llm_provider == "claude_code":
+            # Claude Code via local API
+            from langchain_client import ClaudeCodeLLM
+
+            claude_api_base = os.getenv("CLAUDE_CODE_API_BASE", "http://localhost:8807")
+            print(f"[LangNet] Using Claude Code API at {claude_api_base}")
+
+            _llm_cache[cache_key] = ClaudeCodeLLM(
+                base_url=claude_api_base,
+                temperature=0.3,
+                max_tokens=16384,
+                timeout=300  # 5 minutes for complex tasks
+            )
+
+        elif llm_provider == "deepseek":
             # DeepSeek configuration
             deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
             if not deepseek_api_key:
