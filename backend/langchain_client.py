@@ -17,22 +17,33 @@ logger = logging.getLogger(__name__)
 class ClaudeCodeLLM(LLM):
     """
     LLM customizado para LangChain que usa a API Claude Code
-    
+
     Exemplo de uso:
         llm = ClaudeCodeLLM(base_url="http://localhost:8000")
         response = llm("Explique recursão em Python")
     """
-    
+
     base_url: str = Field(
         default="http://localhost:8000",
         description="URL base da API Claude Code"
     )
-    
+
     model: str = Field(
-        default="claude-code",
-        description="Nome do modelo"
+        default="openai/gpt-4o-mini",
+        description="Nome do modelo (formato LiteLLM compatible: provider/model)"
     )
-    
+
+    model_name: str = Field(
+        default=None,
+        description="Alias for model (CrewAI compatibility)"
+    )
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Sync model_name with model if not provided
+        if self.model_name is None:
+            object.__setattr__(self, 'model_name', self.model)
+
     temperature: float = Field(
         default=0.7,
         description="Temperatura para geração (0.0 a 1.0)"
@@ -50,8 +61,8 @@ class ClaudeCodeLLM(LLM):
     
     @property
     def _llm_type(self) -> str:
-        """Retorna tipo do LLM"""
-        return "claude-code"
+        """Retorna tipo do LLM - use openai-compatible for LiteLLM"""
+        return "openai"
     
     def _call(
         self,
