@@ -301,12 +301,131 @@ extract_requirements:
     - Provide RATIONALE
 
     ═══════════════════════════════════════════════════════════
-    PART 4: PREPARE FOR WEB RESEARCH
+    PART 3.5: SUGGEST IMPORTANT MISSING REQUIREMENTS
     ═══════════════════════════════════════════════════════════
 
-    Identify domain and formulate 5-10 search queries to find analogous systems and best practices.
+    Based on your expertise and the domain identified, SUGGEST requirements that:
+    - Are NOT mentioned in documents or instructions
+    - Are CRITICAL for a production-ready system
+    - Follow industry best practices
+    - Address common pitfalls in this domain
 
-    Make queries SPECIFIC to identified domain (not generic).
+    CATEGORIES TO CONSIDER:
+
+    COMPLIANCE & LEGAL:
+    - Industry-specific regulations (e.g., LGPD for Brazil, GDPR for EU, HIPAA for healthcare)
+    - Data retention policies
+    - Audit trail requirements
+    - Legal compliance specific to the domain/geography
+
+    OPERATIONAL EXCELLENCE:
+    - Backup and disaster recovery
+    - System monitoring and alerting
+    - Performance metrics and SLAs
+    - Maintenance windows and update procedures
+
+    USER EXPERIENCE:
+    - Accessibility requirements (WCAG compliance)
+    - Mobile responsiveness
+    - Offline capabilities
+    - Multi-language support (if geographic scope suggests it)
+
+    INTEGRATION & INTEROPERABILITY:
+    - API versioning strategy
+    - Data import/export capabilities
+    - Integration with common tools in the domain
+    - Webhook/notification systems
+
+    SECURITY BEYOND BASICS:
+    - Rate limiting and DDoS protection
+    - Session management
+    - Password policies
+    - Two-factor authentication
+    - Data encryption at rest and in transit
+
+    SCALABILITY & PERFORMANCE:
+    - Caching strategy
+    - Load balancing
+    - Database optimization
+    - CDN for static assets
+
+    For EACH suggested requirement:
+    - Mark source: "suggested_by_ai"
+    - Provide RATIONALE explaining why it's important for this specific domain
+    - Reference industry standards or common practices
+    - Indicate priority (critical vs nice-to-have)
+
+    IMPORTANT:
+    - Suggest 5-10 requirements maximum
+    - Focus on CRITICAL gaps that could cause problems in production
+    - DO NOT suggest obvious requirements already covered
+    - Tailor suggestions to the specific domain and scale identified
+
+    ═══════════════════════════════════════════════════════════
+    PART 4: PREPARE FOR WEB RESEARCH + CONTEXT EXTRACTION
+    ═══════════════════════════════════════════════════════════
+
+    STEP 4A: EXTRACT BUSINESS CONTEXT FOR DOCUMENT
+
+    From documents, extract for inclusion in final document:
+
+    GEOGRAPHIC CONTEXT:
+    - Countries, states, regions, cities mentioned
+    - Geographic scope of operations
+    - Location-specific regulations or requirements
+    - Market coverage areas
+
+    BUSINESS CONTEXT:
+    - Industry/sector (e.g., healthcare, finance, procurement, logistics)
+    - Company type (e.g., distributor, manufacturer, service provider)
+    - Products/services offered
+    - Target market/customers
+    - Business model specifics (e.g., B2B, B2C, B2G)
+
+    DOMAIN-SPECIFIC DETAILS:
+    - Technical terminology and their meanings
+    - Specific processes or workflows in the industry
+    - Regulatory bodies mentioned (e.g., ANVISA, FDA, SEC)
+    - Certifications or standards required
+
+    QUANTITATIVE BUSINESS DATA:
+    - Market size, volumes, capacities
+    - Team sizes, organizational structure
+    - Financial metrics if mentioned
+    - Performance baselines
+
+    This context will be used to fill the "Context and Justification" section of the requirements document.
+
+    STEP 4B: FORMULATE WEB RESEARCH QUERIES
+
+    Identify domain and formulate 8-15 search queries.
+
+    Make queries SPECIFIC to identified domain AND geography.
+
+    LANGUAGE STRATEGY:
+    - IF geographic context includes Brazil/Brasil/Portuguese → Use PORTUGUESE queries
+    - IF geographic context includes Spanish-speaking countries → Use SPANISH queries
+    - OTHERWISE → Use ENGLISH queries
+
+    EXAMPLE - Brazilian context detected:
+    - "melhores práticas licitações públicas brasil"
+    - "Lei 14.133 requisitos sistema licitação"
+    - "integração ComprasNet API brasil"
+    - "sistemas gestão licitações saúde brasil"
+
+    EXAMPLE - US context detected:
+    - "government procurement software best practices USA"
+    - "FAR compliance requirements procurement systems"
+
+    QUERY CATEGORIES (adapt to domain):
+    1. Best practices in [domain] + [country/region]
+    2. Legal/regulatory requirements [domain] + [country]
+    3. Industry standards and compliance [domain]
+    4. Similar systems/software [domain] + [country]
+    5. Technical architecture patterns [domain]
+    6. Integration standards [domain-specific systems]
+    7. Security requirements [domain] + [country regulations]
+    8. Performance benchmarks [domain]
 
     ═══════════════════════════════════════════════════════════
     FINAL VALIDATION - CHECKLIST BEFORE RETURNING OUTPUT
@@ -320,7 +439,10 @@ extract_requirements:
     ✓ Specific data (company, volumes, locations) is in APPROPRIATE sections
     ✓ I inferred technical requirements (database, API, security, monitoring)
     ✓ Each inferred requirement has RATIONALE explaining why necessary
-    ✓ I prepared web_research_queries specific to the identified domain
+    ✓ I suggested 5-10 critical missing requirements with source "suggested_by_ai"
+    ✓ I extracted business context (geographic, industry, domain-specific)
+    ✓ I prepared web_research_queries in APPROPRIATE LANGUAGE (PT-BR if Brazil detected)
+    ✓ Web queries are SPECIFIC to domain + geography (not generic)
 
     RED FLAGS - DO NOT do this:
     ❌ FR says "Automate procurement" when instruction said "Agente de IA para captura"
@@ -338,16 +460,16 @@ extract_requirements:
     If ANY checkbox is unchecked, REVIEW inputs again before returning.
 
   expected_output: >
-    JSON with requirements from 3 sources.
+    JSON with requirements from 4 sources (documents, instructions, inferred, suggested).
 
-    Structure: Top-level object with the following arrays:
+    Structure: Top-level object with the following fields:
 
     - functional_requirements: array of requirement objects, each containing:
       * id: string like "FR-001", "FR-002", etc
       * description: string with requirement description
-      * source: string value "from_document" or "from_instructions" or "inferred"
+      * source: string value "from_document" or "from_instructions" or "inferred" or "suggested_by_ai"
       * evidence: string with verbatim quote (if from doc/instructions)
-      * rationale: string with explanation (if inferred)
+      * rationale: string with explanation (if inferred or suggested)
       * priority: string value "high" or "medium" or "low"
 
     - non_functional_requirements: array with same structure as functional_requirements
@@ -356,11 +478,21 @@ extract_requirements:
 
     - entities: array of data entity objects
 
-    - actors: array of actor/stakeholder objects
+    - actors: array of actor/stakeholder objects with name and role
 
     - workflows: array of workflow objects
 
-    - web_research_queries: array of strings with search queries for next step
+    - business_context: object containing:
+      * geographic_scope: array of locations (countries, states, cities)
+      * industry: string describing industry/sector
+      * company_type: string (e.g., distributor, manufacturer)
+      * products_services: array of products/services offered
+      * target_market: string describing target customers
+      * regulatory_bodies: array of regulatory bodies mentioned (e.g., ANVISA, FDA)
+      * domain_terminology: array of objects with term and definition
+      * quantitative_data: object with key business metrics
+
+    - web_research_queries: array of strings with search queries in APPROPRIATE LANGUAGE for next step
 
 research_additional_info:
   description: >
@@ -505,10 +637,10 @@ validate_requirements:
     - If data is missing for a section, explicitly state what is missing and why
 
     ═══════════════════════════════════════════════════════════
-    STEP 0 - VALIDATE COMPLETENESS FROM 3 SOURCES
+    STEP 0 - VALIDATE COMPLETENESS FROM 4 SOURCES
     ═══════════════════════════════════════════════════════════
 
-    Requirements should come from 3 SOURCES:
+    Requirements should come from 4 SOURCES:
 
     SOURCE 1 - DOCUMENTS (from document_content):
     ✅ Every major concept from documents has requirements
@@ -529,6 +661,13 @@ validate_requirements:
     ✅ Industry standards from web research referenced
     ✅ Missing requirements from analogous systems addressed
     ✅ Each has rationale explaining why it's necessary
+
+    SOURCE 4 - AI SUGGESTIONS:
+    ✅ Critical missing requirements suggested (5-10 requirements)
+    ✅ Each with source "suggested_by_ai"
+    ✅ Each with rationale explaining importance
+    ✅ Tailored to specific domain and scale
+    ✅ Focus on compliance, security, scalability, operational excellence
 
     RED FLAGS (incomplete - reject and request fixes):
     ❌ No mention of stakeholders/actors from documents
@@ -636,12 +775,32 @@ validate_requirements:
     - Replace placeholder PROJECT_NAME with actual project name from requirements
     - Fill placeholder PROJECT_DOMAIN with domain identified from requirements
     - Populate all requirement lists with actual requirements from requirements_json
-    - Add source citations for every requirement
+    - Add source citations for every requirement indicating source type (from_document, from_instructions, inferred, suggested_by_ai)
     - Generate mermaid diagrams based on actual data (entity relationships, workflows, dependencies)
     - Use research findings to populate "Best Practices" and "Standards" sections
     - Fill compliance checklist with actual compliance needs from research
     - Add actual glossary terms found in documents
     - Populate metadata sections with real processing statistics
+
+    CONTEXT AND JUSTIFICATION SECTION (Section 1.2):
+    Use business_context from requirements_json to create a RICH, DETAILED context section:
+
+    - Geographic Scope: List all countries, states, regions, cities from geographic_scope
+      Example: "The system will operate primarily in Bahia, Sergipe, and Alagoas states in Brazil, with potential expansion to other Brazilian states."
+
+    - Industry Context: Use industry, company_type, products_services, target_market
+      Example: "Farmac is a distributor of laboratory reagents and clinical analysis equipment, operating in the healthcare sector with focus on B2G (business-to-government) procurement."
+
+    - Regulatory Environment: List regulatory_bodies and related compliance needs
+      Example: "All products must comply with ANVISA (Agência Nacional de Vigilância Sanitária) regulations, requiring management of approximately 10,000 product registrations."
+
+    - Domain Specifics: Include domain_terminology with definitions
+      Example: "The system operates in the public procurement domain, handling processes such as 'licitações' (public tenders), 'comodato' (equipment loan contracts combined with consumables), and 'editais' (procurement notices)."
+
+    - Business Scale: Use quantitative_data
+      Example: "Current operation involves a team of 2-3 people managing procurement processes, with a product portfolio of approximately 10,000 ANVISA-registered items."
+
+    If business_context is missing or incomplete, state: "Context information is limited. Additional stakeholder interviews recommended to understand full business scope."
 
     QUALITY CHECKS FOR GENERATED DOCUMENT:
     - Minimum 20 requirements total (unless source documents were very small)
