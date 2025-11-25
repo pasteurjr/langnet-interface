@@ -24,25 +24,14 @@ class ClaudeCodeLLM(LLM):
     """
 
     base_url: str = Field(
-        default="http://localhost:8000",
+        default="http://localhost:8807",
         description="URL base da API Claude Code"
     )
 
     model: str = Field(
-        default="openai/gpt-4o-mini",
-        description="Nome do modelo (formato LiteLLM compatible: provider/model)"
+        default="claude-code",
+        description="Nome do modelo"
     )
-
-    model_name: str = Field(
-        default=None,
-        description="Alias for model (CrewAI compatibility)"
-    )
-
-    def __init__(self, **data):
-        super().__init__(**data)
-        # Sync model_name with model if not provided
-        if self.model_name is None:
-            object.__setattr__(self, 'model_name', self.model)
 
     temperature: float = Field(
         default=0.7,
@@ -61,8 +50,8 @@ class ClaudeCodeLLM(LLM):
     
     @property
     def _llm_type(self) -> str:
-        """Retorna tipo do LLM - use openai-compatible for LiteLLM"""
-        return "openai"
+        """Retorna tipo do LLM"""
+        return "claude-code"
     
     def _call(
         self,
