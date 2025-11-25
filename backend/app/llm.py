@@ -33,6 +33,13 @@ class LLMClient:
         elif self.provider == "anthropic":
             self.client = Anthropic(api_key=settings.anthropic_api_key)
             self.model = settings.anthropic_model_name
+        elif self.provider == "claude_code":
+            # Claude Code uses OpenAI-compatible API
+            self.client = OpenAI(
+                api_key="not-needed",  # Claude Code API doesn't need key
+                base_url=settings.claude_code_api_base
+            )
+            self.model = settings.claude_code_model_name
         else:
             raise ValueError(f"Unsupported LLM provider: {self.provider}")
 
@@ -57,7 +64,7 @@ class LLMClient:
         Returns:
             Generated text
         """
-        if self.provider in ["openai", "deepseek", "lmstudio"]:
+        if self.provider in ["openai", "deepseek", "lmstudio", "claude_code"]:
             return self._complete_openai(prompt, system, temperature, max_tokens, **kwargs)
         elif self.provider == "anthropic":
             return self._complete_anthropic(prompt, system, temperature, max_tokens, **kwargs)
