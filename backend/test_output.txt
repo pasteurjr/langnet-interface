@@ -1,0 +1,25 @@
+🧪 LLM SPECIFICITY TEST
+
+This script tests if the LLM can preserve specific details from documents
+when extracting requirements.
+
+================================================================================
+TESTING GPT-4O-MINI SPECIFICITY
+================================================================================
+❌ ERROR: OPENAI_API_KEY not set in environment
+
+
+
+================================================================================
+TESTING GPT-4-TURBO SPECIFICITY (for comparison)
+================================================================================
+❌ Skipping GPT-4-Turbo test (no API key)
+
+
+
+================================================================================
+FINAL VERDICT
+================================================================================
+❌ GPT-4o-mini CANNOT handle specificity reliably
+   → Bug IS the LLM model being too weak
+   → Solution: Use GPT-4 or GPT-4-turbo instead

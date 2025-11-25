@@ -731,6 +731,18 @@ def validate_requirements_output_func(state: LangNetFullState, result: Any) -> L
             except json.JSONDecodeError as e2:
                 print(f"[DEBUG] Nested JSON parsing FAILED: {e2}")
 
+                # FALLBACK: Extract requirements_document_md directly from string using regex
+                # This handles cases where the JSON is malformed but the field exists
+                print(f"[DEBUG] Attempting regex extraction of requirements_document_md...")
+                import re
+                match = re.search(r'"requirements_document_md"\s*:\s*"((?:[^"\\]|\\.)*)"', team_result_str, re.DOTALL)
+                if match:
+                    # Unescape the JSON string
+                    requirements_doc_md = match.group(1).encode().decode('unicode_escape')
+                    print(f"[DEBUG] REGEX EXTRACTION SUCCESS: length={len(requirements_doc_md)}")
+                else:
+                    print(f"[DEBUG] REGEX EXTRACTION FAILED: field not found")
+
     # Fallback: try direct extraction
     if not requirements_doc_md:
         requirements_doc_md = parsed.get("requirements_document_md", "")

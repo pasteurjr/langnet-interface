@@ -812,23 +812,70 @@ validate_requirements:
 
     ---
 
-    ESTRUTURA DAS TABELAS DE REQUISITOS:
-    Coluna "Origem" deve vir LOGO APÓS a coluna "ID" em TODAS as tabelas.
+    ESTRUTURA DAS SEÇÕES DE REQUISITOS (CRITICAL - ORGANIZE BY SOURCE):
 
-    Exemplo para Seção 3.1 (Requisitos Funcionais por Categoria):
-    | ID | Origem | Nome do Requisito | Descrição | Prioridade | Atores Envolvidos | Fonte | Dependências | Critérios de Aceitação |
-    |----|--------|-------------------|-----------|------------|-------------------|-------|--------------|------------------------|
-    | FR-001 | 📘 REI | Cadastro Inteligente do Portfólio | Criação de máscara parametrizável | Alta | Douglas, Tarsis | from_instructions | N/A | Sistema permite cadastro de 10.000+ itens |
-    | FR-002 | 🔴 RED | Busca Automatizada de Editais | Sistema busca sem intervenção | Alta | Tarsis, Mário | from_document | N/A | Captação diária automatizada |
-    | FR-003 | 🔧 RI | API REST para Integração | Endpoint para consumo externo | Média | Arnaldo | inferred | N/A | API documentada com Swagger |
-    | FR-004 | 🤖 RIA | Conformidade com LGPD | Proteção de dados pessoais | Alta | Arnaldo | suggested_by_ai | N/A | Auditoria de conformidade aprovada |
+    ORGANIZE CADA TIPO DE REQUISITO EM SUBSEÇÕES POR ORIGEM:
 
-    Aplique o mesmo formato para:
-    - Seção 3.2 (Lista Completa de Requisitos Funcionais)
-    - Seção 4.1 (Requisitos Não-Funcionais por Categoria)
-    - Seção 4.2 (Lista Completa de NFRs)
-    - Seção 5.1 e 5.2 (Regras de Negócio)
-    - Seção 17.1 (Matriz de Rastreabilidade)
+    ## 3. Requisitos Funcionais (FR)
+
+    ### 3.1 Requisitos Extraídos dos Documentos (🔴 RED)
+    | ID | Origem | Nome | Descrição | Prioridade | Atores | Dependências | Critérios |
+    |----|--------|------|-----------|------------|--------|--------------|-----------|
+    | FR-001 | 🔴 RED | ... | ... | ... | ... | ... | ... |
+
+    **Total: X requisitos extraídos dos documentos**
+
+    ---
+
+    ### 3.2 Requisitos das Instruções do Usuário (📘 REI)
+    | ID | Origem | Nome | Descrição | Prioridade | Atores | Dependências | Critérios |
+    |----|--------|------|-----------|------------|--------|--------------|-----------|
+    | FR-005 | 📘 REI | ... | ... | ... | ... | ... | ... |
+
+    **Total: Y requisitos das instruções**
+
+    ---
+
+    ### 3.3 Requisitos Inferidos pelo LLM (🔧 RI)
+    | ID | Origem | Nome | Descrição | Prioridade | Atores | Dependências | Critérios |
+    |----|--------|------|-----------|------------|--------|--------------|-----------|
+    | FR-010 | 🔧 RI | ... | ... | ... | ... | ... | ... |
+
+    **Total: Z requisitos inferidos**
+
+    ---
+
+    ### 3.4 Requisitos da Pesquisa Web (🌐 RW)
+
+    SE HOUVER requisitos com source="from_web_research":
+    | ID | Origem | Nome | Descrição | Prioridade | Atores | Dependências | Critérios |
+    |----|--------|------|-----------|------------|--------|--------------|-----------|
+    | FR-015 | 🌐 RW | ... | ... | ... | ... | ... | ... |
+
+    **Total: W requisitos da web**
+
+    SE NÃO HOUVER requisitos com source="from_web_research":
+    ⚠️ **A pesquisa web foi realizada, mas não identificou requisitos funcionais adicionais relevantes para este domínio específico. A análise web focou em melhores práticas e padrões (ver Seção 13).**
+
+    ---
+
+    ### 3.5 Requisitos Sugeridos pela IA (🤖 RIA)
+    | ID | Origem | Nome | Descrição | Prioridade | Atores | Dependências | Critérios |
+    |----|--------|------|-----------|------------|--------|--------------|-----------|
+    | FR-020 | 🤖 RIA | ... | ... | ... | ... | ... | ... |
+
+    **Total: V requisitos sugeridos pela IA**
+
+    ---
+
+    ### 3.6 CONSOLIDADO - Todos os Requisitos Funcionais
+    (Tabela única com TODOS os FRs ordenados por ID, incluindo coluna Origem)
+
+    **Total Geral: XX requisitos funcionais**
+
+    APLIQUE A MESMA ESTRUTURA PARA:
+    - Seção 4 (Requisitos Não-Funcionais): 4.1=RED, 4.2=REI, 4.3=RI, 4.4=RW, 4.5=RIA, 4.6=Consolidado
+    - Seção 5 (Regras de Negócio): 5.1=RED, 5.2=REI, 5.3=RI, 5.4=RW, 5.5=RIA, 5.6=Consolidado
 
     TEMPLATE FILLING RULES:
     - Replace placeholder PROJECT_NAME with actual project name from requirements
