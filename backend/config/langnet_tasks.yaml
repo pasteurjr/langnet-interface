@@ -301,100 +301,122 @@ extract_requirements:
     - Provide RATIONALE
 
     ═══════════════════════════════════════════════════════════
-    PART 3.5: SUGGEST IMPORTANT MISSING REQUIREMENTS
+    PART 3.5: SUGGEST CRITICAL MISSING REQUIREMENTS (MANDATORY)
     ═══════════════════════════════════════════════════════════
 
-    Based on your expertise and the domain identified, SUGGEST requirements that:
-    - Are NOT mentioned in documents or instructions
-    - Are CRITICAL for a production-ready system
-    - Follow industry best practices
-    - Address common pitfalls in this domain
+    YOU MUST SUGGEST 5-10 CRITICAL REQUIREMENTS NOT MENTIONED IN SOURCES.
 
-    CATEGORIES TO CONSIDER:
+    For a production-ready system in this domain, CREATE requirements for:
 
-    COMPLIANCE & LEGAL:
-    - Industry-specific regulations (e.g., LGPD for Brazil, GDPR for EU, HIPAA for healthcare)
-    - Data retention policies
-    - Audit trail requirements
-    - Legal compliance specific to the domain/geography
+    1. LEGAL COMPLIANCE (2-3 requirements):
+       - IF Brazil detected → LGPD compliance (data privacy, consent, deletion rights)
+       - IF EU detected → GDPR compliance
+       - IF healthcare → HIPAA compliance
+       - Audit trail for compliance reporting
 
-    OPERATIONAL EXCELLENCE:
-    - Backup and disaster recovery
-    - System monitoring and alerting
-    - Performance metrics and SLAs
-    - Maintenance windows and update procedures
+    2. OPERATIONAL EXCELLENCE (2-3 requirements):
+       - Automated backup and disaster recovery (RTO/RPO defined)
+       - System monitoring and alerting (uptime, errors, performance)
+       - Logging and audit trail for all critical operations
 
-    USER EXPERIENCE:
-    - Accessibility requirements (WCAG compliance)
-    - Mobile responsiveness
-    - Offline capabilities
-    - Multi-language support (if geographic scope suggests it)
+    3. SECURITY (1-2 requirements):
+       - Two-factor authentication (2FA) for administrative access
+       - Rate limiting to prevent abuse/DoS
+       - Data encryption at rest and in transit
 
-    INTEGRATION & INTEROPERABILITY:
-    - API versioning strategy
-    - Data import/export capabilities
-    - Integration with common tools in the domain
-    - Webhook/notification systems
+    4. PERFORMANCE & SCALABILITY (1-2 requirements):
+       - Caching strategy for frequently accessed data
+       - Database query optimization and indexing
+       - Load balancing for high availability
 
-    SECURITY BEYOND BASICS:
-    - Rate limiting and DDoS protection
-    - Session management
-    - Password policies
-    - Two-factor authentication
-    - Data encryption at rest and in transit
+    5. USER EXPERIENCE (1 requirement):
+       - Mobile responsiveness or accessibility (WCAG)
 
-    SCALABILITY & PERFORMANCE:
-    - Caching strategy
-    - Load balancing
-    - Database optimization
-    - CDN for static assets
+    FORMAT FOR EACH SUGGESTED REQUIREMENT:
+    {
+      "id": "NFR-XXX" or "FR-XXX",
+      "description": "Short requirement title",
+      "source": "suggested_by_ai",
+      "rationale": "Explain WHY this is critical for this specific domain. Reference standards, regulations, or common problems in similar systems.",
+      "priority": "high" or "medium"
+    }
 
-    For EACH suggested requirement:
-    - Mark source: "suggested_by_ai"
-    - Provide RATIONALE explaining why it's important for this specific domain
-    - Reference industry standards or common practices
-    - Indicate priority (critical vs nice-to-have)
+    EXAMPLE - Brazil context, public procurement domain:
+    {
+      "id": "NFR-010",
+      "description": "Conformidade com LGPD para dados de licitações e fornecedores",
+      "source": "suggested_by_ai",
+      "rationale": "Sistema processa dados sensíveis de empresas e órgãos públicos incluindo CNPJs, contatos, e histórico de licitações. LGPD (Lei 13.709/2018) exige consentimento explícito, direito ao esquecimento, e relatório de impacto à privacidade. Não-conformidade pode resultar em multas de até 2% do faturamento. Crítico para operação legal no Brasil.",
+      "priority": "high"
+    }
 
-    IMPORTANT:
-    - Suggest 5-10 requirements maximum
-    - Focus on CRITICAL gaps that could cause problems in production
-    - DO NOT suggest obvious requirements already covered
-    - Tailor suggestions to the specific domain and scale identified
+    CRITICAL: You MUST generate at least 5 suggested requirements. If you generate less than 5, the validation will FAIL.
 
     ═══════════════════════════════════════════════════════════
     PART 4: PREPARE FOR WEB RESEARCH + CONTEXT EXTRACTION
     ═══════════════════════════════════════════════════════════
 
-    STEP 4A: EXTRACT BUSINESS CONTEXT FOR DOCUMENT
+    STEP 4A: EXTRACT BUSINESS CONTEXT FOR DOCUMENT (STRUCTURED JSON)
 
-    From documents, extract for inclusion in final document:
+    From documents, extract and CREATE business_context object in your JSON output:
 
-    GEOGRAPHIC CONTEXT:
-    - Countries, states, regions, cities mentioned
-    - Geographic scope of operations
-    - Location-specific regulations or requirements
-    - Market coverage areas
+    business_context: {
+      "geographic_scope": [array of strings],
+      "industry": "string",
+      "company_type": "string",
+      "products_services": [array of strings],
+      "target_market": "string",
+      "regulatory_bodies": [array of strings],
+      "domain_terminology": [
+        {"term": "string", "definition": "string"},
+        ...
+      ],
+      "quantitative_data": {
+        "team_size": "string or number",
+        "portfolio_size": "string or number",
+        "market_coverage": "string",
+        "other_metrics": {}
+      }
+    }
 
-    BUSINESS CONTEXT:
-    - Industry/sector (e.g., healthcare, finance, procurement, logistics)
-    - Company type (e.g., distributor, manufacturer, service provider)
-    - Products/services offered
-    - Target market/customers
-    - Business model specifics (e.g., B2B, B2C, B2G)
+    EXTRACTION RULES:
 
-    DOMAIN-SPECIFIC DETAILS:
-    - Technical terminology and their meanings
-    - Specific processes or workflows in the industry
-    - Regulatory bodies mentioned (e.g., ANVISA, FDA, SEC)
-    - Certifications or standards required
+    1. GEOGRAPHIC SCOPE - Extract ALL locations mentioned:
+       Example: ["Bahia", "Sergipe", "Alagoas", "Brazil"]
+       If no locations: ["Not specified"]
 
-    QUANTITATIVE BUSINESS DATA:
-    - Market size, volumes, capacities
-    - Team sizes, organizational structure
-    - Financial metrics if mentioned
-    - Performance baselines
+    2. INDUSTRY - Single string with primary sector:
+       Example: "Healthcare - Clinical Laboratory Supplies"
+       Example: "Public Procurement - Government Bidding"
 
-    This context will be used to fill the "Context and Justification" section of the requirements document.
+    3. COMPANY TYPE - What type of company:
+       Example: "Distributor", "Manufacturer", "Service Provider", "Platform", "Marketplace"
+
+    4. PRODUCTS/SERVICES - Array of main offerings:
+       Example: ["Laboratory reagents", "Clinical analysis equipment", "Hospital supplies"]
+
+    5. TARGET MARKET - Who are the customers:
+       Example: "B2G (Business-to-Government) - Public hospitals and laboratories"
+
+    6. REGULATORY BODIES - Extract ALL mentioned:
+       Example: ["ANVISA", "Ministry of Health"]
+       If none: []
+
+    7. DOMAIN TERMINOLOGY - Extract 3-5 KEY terms with definitions:
+       Example: [
+         {"term": "Comodato", "definition": "Equipment loan contract where supplier provides equipment and consumables at unit price without fixed rental"},
+         {"term": "Licitação", "definition": "Public procurement process for goods and services"},
+         {"term": "Edital", "definition": "Public tender notice document with requirements"}
+       ]
+
+    8. QUANTITATIVE DATA - Extract specific numbers:
+       Example: {
+         "team_size": "2-3 people",
+         "portfolio_size": "10,000 ANVISA-registered items",
+         "market_coverage": "3 Brazilian states"
+       }
+
+    This structured context will populate the "Context and Justification" section of the requirements document.
 
     STEP 4B: FORMULATE WEB RESEARCH QUERIES
 
@@ -431,7 +453,7 @@ extract_requirements:
     FINAL VALIDATION - CHECKLIST BEFORE RETURNING OUTPUT
     ═══════════════════════════════════════════════════════════
 
-    Before generating your output, verify ALL items:
+    Before generating your output, COUNT and verify:
 
     ✓ Each MODULE/FEATURE from additional_instructions has a corresponding FR
     ✓ FR descriptions match the REQUESTED features (not generic "automation")
@@ -439,9 +461,25 @@ extract_requirements:
     ✓ Specific data (company, volumes, locations) is in APPROPRIATE sections
     ✓ I inferred technical requirements (database, API, security, monitoring)
     ✓ Each inferred requirement has RATIONALE explaining why necessary
-    ✓ I suggested 5-10 critical missing requirements with source "suggested_by_ai"
-    ✓ I extracted business context (geographic, industry, domain-specific)
-    ✓ I prepared web_research_queries in APPROPRIATE LANGUAGE (PT-BR if Brazil detected)
+
+    ✓ I suggested AT LEAST 5 requirements with source "suggested_by_ai"
+      COUNT THEM: ___ suggested requirements (must be >= 5)
+      - At least 2 for legal compliance (LGPD/GDPR/HIPAA/audit)
+      - At least 2 for operational excellence (backup/monitoring/logging)
+      - At least 1 for security (2FA/rate limiting/encryption)
+
+    ✓ I extracted business_context object with ALL fields populated:
+      - geographic_scope: array with locations
+      - industry: string
+      - company_type: string
+      - regulatory_bodies: array (e.g., ANVISA, FDA)
+      - domain_terminology: array of term/definition objects
+
+    ✓ I prepared 8-15 web_research_queries in APPROPRIATE LANGUAGE
+      - Portuguese if Brazil/Brasil detected
+      - Spanish if Hispanic countries detected
+      - English otherwise
+
     ✓ Web queries are SPECIFIC to domain + geography (not generic)
 
     RED FLAGS - DO NOT do this:
