@@ -100,17 +100,18 @@ def get_llm(use_deepseek: bool = False):
 
     if cache_key not in _llm_cache:
         if llm_provider == "claude_code":
-            # Claude Code via local API
-            from langchain_client import ClaudeCodeLLM
+            # Claude Code via local API using CrewAI's LLM class
+            from crewai import LLM
 
             claude_api_base = os.getenv("CLAUDE_CODE_API_BASE", "http://localhost:8807")
-            print(f"[LangNet] Using Claude Code API at {claude_api_base}")
+            print(f"[LangNet] Using Claude Code API at {claude_api_base}/v1")
 
-            _llm_cache[cache_key] = ClaudeCodeLLM(
-                base_url=claude_api_base,
+            _llm_cache[cache_key] = LLM(
+                model="claude-code",
+                base_url=f"{claude_api_base}/v1",
+                api_key="dummy",  # Required by CrewAI but not validated
                 temperature=0.3,
-                max_tokens=16384,
-                timeout=300  # 5 minutes for complex tasks
+                max_tokens=16384
             )
 
         elif llm_provider == "deepseek":
