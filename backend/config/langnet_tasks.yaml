@@ -436,7 +436,7 @@ extract_requirements:
     - functional_requirements: array of requirement objects, each containing:
       * id: string like "FR-001", "FR-002", etc
       * description: string with requirement description
-      * source: string value "from_document" or "from_instructions" or "inferred" or "suggested_by_ai"
+      * source: string value "from_document" or "from_instructions" or "inferred" or "from_web_research" or "suggested_by_ai"
       * evidence: string with verbatim quote (if from doc/instructions)
       * rationale: string with explanation (if inferred or suggested)
       * priority: string value "high" or "medium" or "low"
@@ -784,11 +784,57 @@ validate_requirements:
     STEP 5 - GENERATE FINAL MARKDOWN DOCUMENT:
     Use the provided template and fill ALL sections with REAL DATA from requirements_json and research_findings_json.
 
+    INDICADORES DE ORIGEM (CRITICAL - MUST IMPLEMENT):
+
+    Adicione coluna "Origem" em TODAS as tabelas de requisitos mostrando de onde veio cada requisito.
+
+    MAPEAMENTO DE INDICADORES:
+    - source "from_document" → 🔴 RED (Requisito Extraído do Documento)
+    - source "from_instructions" → 📘 REI (Requisito Extraído das Instruções)
+    - source "inferred" → 🔧 RI (Requisito Inferido pelo LLM)
+    - source "from_web_research" → 🌐 RW (Requisito da Web Research)
+    - source "suggested_by_ai" → 🤖 RIA (Requisito sugerido pela IA)
+
+    FORMATO: emoji + espaço + sigla (exemplo: "🔴 RED", "📘 REI", "🤖 RIA")
+
+    LEGENDA OBRIGATÓRIA:
+    Adicione ANTES da Seção 3.1 (primeira tabela de requisitos):
+
+    ### Legenda de Indicadores de Origem
+
+    | Indicador | Significado | Descrição |
+    |-----------|-------------|-----------|
+    | 🔴 RED | Requisito Extraído do Documento | Identificado diretamente nos documentos fornecidos |
+    | 📘 REI | Requisito Extraído das Instruções | Especificado nas instruções do usuário |
+    | 🔧 RI | Requisito Inferido | Deduzido pelo LLM com base no contexto técnico |
+    | 🌐 RW | Requisito da Web Research | Identificado através de pesquisa complementar |
+    | 🤖 RIA | Requisito Sugerido pela IA | Adicionado pela IA para sistema production-ready |
+
+    ---
+
+    ESTRUTURA DAS TABELAS DE REQUISITOS:
+    Coluna "Origem" deve vir LOGO APÓS a coluna "ID" em TODAS as tabelas.
+
+    Exemplo para Seção 3.1 (Requisitos Funcionais por Categoria):
+    | ID | Origem | Nome do Requisito | Descrição | Prioridade | Atores Envolvidos | Fonte | Dependências | Critérios de Aceitação |
+    |----|--------|-------------------|-----------|------------|-------------------|-------|--------------|------------------------|
+    | FR-001 | 📘 REI | Cadastro Inteligente do Portfólio | Criação de máscara parametrizável | Alta | Douglas, Tarsis | from_instructions | N/A | Sistema permite cadastro de 10.000+ itens |
+    | FR-002 | 🔴 RED | Busca Automatizada de Editais | Sistema busca sem intervenção | Alta | Tarsis, Mário | from_document | N/A | Captação diária automatizada |
+    | FR-003 | 🔧 RI | API REST para Integração | Endpoint para consumo externo | Média | Arnaldo | inferred | N/A | API documentada com Swagger |
+    | FR-004 | 🤖 RIA | Conformidade com LGPD | Proteção de dados pessoais | Alta | Arnaldo | suggested_by_ai | N/A | Auditoria de conformidade aprovada |
+
+    Aplique o mesmo formato para:
+    - Seção 3.2 (Lista Completa de Requisitos Funcionais)
+    - Seção 4.1 (Requisitos Não-Funcionais por Categoria)
+    - Seção 4.2 (Lista Completa de NFRs)
+    - Seção 5.1 e 5.2 (Regras de Negócio)
+    - Seção 17.1 (Matriz de Rastreabilidade)
+
     TEMPLATE FILLING RULES:
     - Replace placeholder PROJECT_NAME with actual project name from requirements
     - Fill placeholder PROJECT_DOMAIN with domain identified from requirements
     - Populate all requirement lists with actual requirements from requirements_json
-    - Add source citations for every requirement indicating source type (from_document, from_instructions, inferred, suggested_by_ai)
+    - Add ORIGEM column with indicators based on source field (🔴 RED, 📘 REI, 🔧 RI, 🌐 RW, 🤖 RIA)
     - Generate mermaid diagrams based on actual data (entity relationships, workflows, dependencies)
     - Use research findings to populate "Best Practices" and "Standards" sections
     - Fill compliance checklist with actual compliance needs from research
