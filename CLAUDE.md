@@ -135,3 +135,4 @@ The navigation system uses a context-switching pattern:
 2. **Feature Integration**: Update types → implement services → add UI components → update navigation
 3. **MCP Integration**: Define service interfaces → implement connection logic → add UI controls
 4. **Testing**: Write component tests → integration tests → manual testing across contexts
+- database langnet

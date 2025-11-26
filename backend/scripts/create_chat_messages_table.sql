@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS `chat_messages` (
   `sender_name` VARCHAR(255) NULL
     COMMENT 'Nome do remetente (nome do agente ou usuário)',
 
-  `message_text` TEXT NOT NULL
-    COMMENT 'Conteúdo da mensagem',
+  `message_text` LONGTEXT NOT NULL
+    COMMENT 'Conteúdo da mensagem (suporta documentos grandes até 4GB)',
 
   `message_type` ENUM('chat', 'status', 'progress', 'result', 'error', 'warning', 'info', 'document') NOT NULL DEFAULT 'chat'
     COMMENT 'Tipo/categoria da mensagem',
