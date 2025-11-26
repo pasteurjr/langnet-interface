@@ -1033,15 +1033,13 @@ class UpdateRequirementsRequest(BaseModel):
 
 @router.get("/sessions/{session_id}/requirements")
 async def get_requirements_document(
-    session_id: str,
-    current_user: dict = Depends(get_current_user)
+    session_id: str
 ):
     """
     Get requirements document for a session
 
     Args:
         session_id: Execution session ID
-        current_user: Authenticated user
 
     Returns:
         Requirements document in markdown format
