@@ -160,3 +160,26 @@ export const getChatThreads = async (messageId: string): Promise<ChatMessage[]> 
   );
   return response.data;
 };
+
+export interface SessionStatus {
+  session_id: string;
+  session_name: string;
+  project_id: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
+  requirements_document: string;
+  doc_size: number;
+  started_at: string | null;
+  finished_at: string | null;
+  created_at: string | null;
+}
+
+/**
+ * Busca status da sessão e documento atualizado
+ */
+export const getSessionStatus = async (sessionId: string): Promise<SessionStatus> => {
+  const response = await axios.get<SessionStatus>(
+    `${API_BASE}/chat/sessions/${sessionId}/status`,
+    { headers: getAuthHeaders() }
+  );
+  return response.data;
+};

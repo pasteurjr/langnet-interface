@@ -532,6 +532,63 @@ async def list_documents(
     return documents
 
 
+@router.get("/sessions")
+async def list_execution_sessions(
+    limit: int = 50,
+    offset: int = 0
+):
+    """
+    List all execution sessions that have generated requirements documents
+
+    Args:
+        limit: Maximum number of sessions to return (default: 50)
+        offset: Number of sessions to skip (default: 0)
+
+    Returns:
+        List of sessions with metadata
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+
+        # Get sessions with requirements documents
+        cursor.execute("""
+            SELECT
+                id,
+                session_name,
+                status,
+                started_at as created_at,
+                finished_at,
+                LENGTH(requirements_document) as doc_size
+            FROM execution_sessions
+            WHERE requirements_document IS NOT NULL
+              AND requirements_document != ''
+            ORDER BY started_at DESC
+            LIMIT %s OFFSET %s
+        """, (limit, offset))
+
+        sessions = cursor.fetchall()
+
+        # Get total count
+        cursor.execute("""
+            SELECT COUNT(*) as total
+            FROM execution_sessions
+            WHERE requirements_document IS NOT NULL
+              AND requirements_document != ''
+        """)
+
+        total_result = cursor.fetchone()
+        total = total_result['total'] if total_result else 0
+
+        cursor.close()
+
+        return {
+            "sessions": sessions,
+            "total": total,
+            "limit": limit,
+            "offset": offset
+        }
+
+
 @router.get("/{document_id}")
 async def get_document(
     document_id: int,

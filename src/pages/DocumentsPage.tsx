@@ -9,6 +9,7 @@ import ProgressBar from '../components/documents/ProgressBar';
 import DocumentActionsCard from '../components/documents/DocumentActionsCard';
 import MarkdownEditorModal from '../components/documents/MarkdownEditorModal';
 import MarkdownViewerModal from '../components/documents/MarkdownViewerModal';
+import RequirementsHistoryModal from '../components/documents/RequirementsHistoryModal';
 import * as documentService from '../services/documentService';
 import langnetService from '../services/langnetService';
 import * as chatService from '../services/chatService';
@@ -55,6 +56,7 @@ const DocumentsPage: React.FC = () => {
   // Modal states
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
 
   useEffect(() => {
     loadDocuments();
@@ -72,34 +74,43 @@ const DocumentsPage: React.FC = () => {
     return () => clearInterval(intervalId);
   }, [isChatProcessing, currentSessionId]);
 
-  // POLLING DE FALLBACK: Tentar carregar documento periodicamente durante processamento
+  // POLLING: Verificar status da sessão e atualizar documento durante processamento
   useEffect(() => {
-    // NÃO fazer polling se já tem documento carregado
-    if (!isChatProcessing || !currentSessionId || generatedDocument.trim()) {
-      if (generatedDocument.trim()) {
-        console.log('✅ Polling NÃO iniciado: Documento já carregado');
-      }
+    if (!isChatProcessing || !currentSessionId) {
       return;
     }
 
-    console.log('🔄 Polling de documento iniciado para sessão:', currentSessionId);
+    console.log('🔄 Polling de status iniciado para sessão:', currentSessionId);
 
-    const intervalId = setInterval(() => {
-      // Verificar novamente se já tem documento antes de cada tentativa
-      if (generatedDocument.trim()) {
-        console.log('✅ Polling: Documento já carregado, parando...');
-        setIsChatProcessing(false);
-        return;
+    const intervalId = setInterval(async () => {
+      try {
+        console.log('🔄 Polling: Verificando status da sessão...');
+        const status = await chatService.getSessionStatus(currentSessionId);
+
+        // Se status mudou para completed, atualizar documento
+        if (status.status === 'completed' && status.requirements_document) {
+          console.log('✅ Sessão concluída, atualizando documento...');
+          setGeneratedDocument(status.requirements_document);
+          setIsChatProcessing(false);
+          toast.success('Documento atualizado!');
+
+          // Reload chat history to show completion messages
+          await loadChatHistory(currentSessionId);
+        } else if (status.status === 'failed') {
+          console.log('❌ Sessão falhou');
+          setIsChatProcessing(false);
+          toast.error('Processamento falhou');
+        }
+      } catch (err) {
+        console.error('Erro ao verificar status:', err);
       }
-      console.log('🔄 Polling: Tentando carregar documento gerado...');
-      loadGeneratedDocument(currentSessionId);
-    }, 10000); // Tentar a cada 10 segundos
+    }, 5000); // Verificar a cada 5 segundos
 
     return () => {
       console.log('🛑 Polling de documento encerrado');
       clearInterval(intervalId);
     };
-  }, [isChatProcessing, currentSessionId, generatedDocument]);
+  }, [isChatProcessing, currentSessionId]);
 
   // Converte mensagens do backend para formato do frontend
   const convertBackendMessage = (msg: chatService.ChatMessage): ChatMessage => {
@@ -537,13 +548,13 @@ const DocumentsPage: React.FC = () => {
       await loadChatHistory(currentSessionId);
 
       toast.success('Pedido de refinamento enviado!');
+      // Don't stop processing here - let polling detect completion
     } catch (err) {
       console.error('Failed to process chat message:', err);
       const errorMessage = err instanceof Error ? err.message : 'Erro ao processar mensagem';
       toast.error(errorMessage);
       addChatMessage('system', `❌ ${errorMessage}`, 'status');
-    } finally {
-      setIsChatProcessing(false);
+      setIsChatProcessing(false); // Only stop processing on error
     }
   };
 
@@ -597,6 +608,20 @@ const DocumentsPage: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  // Handler para quando usuário seleciona uma sessão do histórico
+  const handleSelectHistorySession = async (sessionId: string, sessionName: string) => {
+    console.log('📜 Selecionando sessão do histórico:', sessionId, sessionName);
+
+    // Atualiza o sessionId atual
+    setCurrentSessionId(sessionId);
+
+    // Carrega o documento gerado nessa sessão
+    await loadGeneratedDocument(sessionId);
+
+    // O card de visualização aparecerá automaticamente pois generatedDocument será populado
+    toast.info(`Carregando documento: ${sessionName}`);
+  };
+
   // Filtrar documentos
   const filteredDocuments = documents.filter(doc => {
     const matchesSearch = doc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -632,9 +657,14 @@ const DocumentsPage: React.FC = () => {
           <div className="documents-sidebar">
             <div className="sidebar-header">
               <h3>📁 Documentos ({documents.length})</h3>
-              <button className="btn-upload-compact" onClick={() => setIsUploadModalOpen(true)}>
-                + Upload
-              </button>
+              <div className="header-buttons">
+                <button className="btn-upload-compact" onClick={() => setIsUploadModalOpen(true)}>
+                  + Upload
+                </button>
+                <button className="btn-history-compact" onClick={() => setIsHistoryModalOpen(true)} title="Histórico de Documentos Gerados">
+                  📜 Histórico
+                </button>
+              </div>
             </div>
 
             {/* Compact Documents List */}
@@ -784,6 +814,13 @@ const DocumentsPage: React.FC = () => {
           const { exportMarkdownToPDF } = await import('../services/pdfExportService');
           await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
         }}
+      />
+
+      {/* Modal de Histórico de Documentos */}
+      <RequirementsHistoryModal
+        isOpen={isHistoryModalOpen}
+        onClose={() => setIsHistoryModalOpen(false)}
+        onSelectSession={handleSelectHistorySession}
       />
     </div>
   );
