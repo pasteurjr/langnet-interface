@@ -363,8 +363,26 @@ Please analyze the current requirements document and apply the requested refinem
 Maintain the structure and quality of the original document while incorporating the changes.
 """
 
-        # 4. Call LLM DIRECTLY for refinement (simpler and faster)
+        # 4. Save progress message - Starting analysis
+        save_chat_message(
+            session_id=session_id,
+            sender_type='system',
+            message_text='🔄 Analisando documentos originais e contexto do projeto...',
+            message_type='progress',
+            sender_name='Sistema'
+        )
+
+        # 5. Call LLM DIRECTLY for refinement (simpler and faster)
         print(f"[REFINEMENT] Calling LLM directly for refinement...")
+
+        # Save progress message - Processing with AI
+        save_chat_message(
+            session_id=session_id,
+            sender_type='agent',
+            message_text='🤔 Processando refinamento com IA. Isso pode levar alguns minutos...',
+            message_type='progress',
+            sender_name='Agente Analista'
+        )
 
         from app.llm import get_llm_client
 
@@ -393,6 +411,15 @@ Retorne APENAS o documento refinado completo em markdown, sem explicações adic
         )
 
         print(f"[REFINEMENT] LLM completed. Refined document length: {len(refined_requirements)} chars")
+
+        # Save progress message - Analysis completed
+        save_chat_message(
+            session_id=session_id,
+            sender_type='agent',
+            message_text='✅ Análise concluída. Aplicando refinamentos ao documento...',
+            message_type='progress',
+            sender_name='Agente Analista'
+        )
 
         if not refined_requirements or len(refined_requirements) < 100:
             print(f"[REFINEMENT] ⚠️ WARNING: LLM returned empty or too short document!")

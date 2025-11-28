@@ -10,13 +10,13 @@ import DocumentActionsCard from '../components/documents/DocumentActionsCard';
 import MarkdownEditorModal from '../components/documents/MarkdownEditorModal';
 import MarkdownViewerModal from '../components/documents/MarkdownViewerModal';
 import RequirementsHistoryModal from '../components/documents/RequirementsHistoryModal';
+import DiffViewerModal from '../components/documents/DiffViewerModal';
 import * as documentService from '../services/documentService';
 import langnetService from '../services/langnetService';
 import * as chatService from '../services/chatService';
 import * as analysisService from '../services/documentAnalysisService';
 import { useNavigation } from '../contexts/NavigationContext';
 import { toast } from 'react-toastify';
-import ReactDiffViewer from 'react-diff-viewer-continued';
 import './DocumentsPage.css';
 
 const DocumentsPage: React.FC = () => {
@@ -62,6 +62,7 @@ const DocumentsPage: React.FC = () => {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
 
   useEffect(() => {
     loadDocuments();
@@ -74,7 +75,7 @@ const DocumentsPage: React.FC = () => {
     const intervalId = setInterval(() => {
       console.log('🔄 Reloading chat history...');
       loadChatHistory(currentSessionId);
-    }, 10000); // Reload every 10 seconds (reduced from 3s to avoid log spam)
+    }, 2000); // Reload every 2 seconds for real-time updates
 
     return () => clearInterval(intervalId);
   }, [isChatProcessing, currentSessionId]);
@@ -137,7 +138,8 @@ const DocumentsPage: React.FC = () => {
       setOldDocument(lastMessage.data.old_document);
       setGeneratedDocument(lastMessage.data.new_document);
       setShowDiff(true);
-      toast.success('Documento refinado! Veja as alterações destacadas.');
+      setIsDiffModalOpen(true); // Abrir modal automaticamente
+      toast.success('Documento refinado! Clique em "Ver Diferenças" para comparar as alterações.');
     }
   }, [chatMessages]);
 
@@ -796,92 +798,26 @@ const DocumentsPage: React.FC = () => {
           {/* RIGHT PANEL: Document Actions */}
           <div className="actions-panel">
             {generatedDocument ? (
-              showDiff && oldDocument ? (
-                <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                  <div style={{
-                    padding: '16px',
-                    background: 'white',
-                    borderBottom: '2px solid #e5e7eb',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                  }}>
-                    <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600 }}>
-                      📊 Comparação de Alterações
-                    </h3>
-                    <button
-                      onClick={() => setShowDiff(false)}
-                      style={{
-                        padding: '8px 16px',
-                        background: '#667eea',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '6px',
-                        fontSize: '13px',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Esconder Diferenças
-                    </button>
-                  </div>
-                  <div style={{ flex: 1, overflow: 'auto', background: '#f8f9fa' }}>
-                    <ReactDiffViewer
-                      oldValue={oldDocument}
-                      newValue={generatedDocument}
-                      splitView={false}
-                      showDiffOnly={false}
-                      leftTitle="Antes do refinamento"
-                      rightTitle="Depois do refinamento"
-                      styles={{
-                        variables: {
-                          light: {
-                            diffViewerBackground: '#fff',
-                            diffViewerColor: '#212529',
-                            addedBackground: '#e6ffed',
-                            addedColor: '#24292e',
-                            removedBackground: '#ffeef0',
-                            removedColor: '#24292e',
-                            wordAddedBackground: '#acf2bd',
-                            wordRemovedBackground: '#fdb8c0',
-                            addedGutterBackground: '#cdffd8',
-                            removedGutterBackground: '#ffdce0',
-                            gutterBackground: '#f6f8fa',
-                            gutterBackgroundDark: '#f3f4f6',
-                            highlightBackground: '#fffbdd',
-                            highlightGutterBackground: '#fff5b1',
-                          },
-                        },
-                        line: {
-                          padding: '10px 2px',
-                          fontSize: '14px',
-                          lineHeight: '20px',
-                          fontFamily: 'monospace',
-                        },
-                      }}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <DocumentActionsCard
-                  filename={documentFilename}
-                  content={generatedDocument}
-                  executionId={currentExecutionId}
-                  projectId={projectId}
-                  onEdit={() => {
-                    console.log('📝 Abrindo editor de documento...');
-                    setIsEditorOpen(true);
-                  }}
-                  onView={() => {
-                    console.log('👁️ Abrindo visualizador de documento...');
-                    setIsViewerOpen(true);
-                  }}
-                  onExportPDF={async () => {
-                    const { exportMarkdownToPDF } = await import('../services/pdfExportService');
-                    await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
-                  }}
-                />
-              )
+              <DocumentActionsCard
+                filename={documentFilename}
+                content={generatedDocument}
+                executionId={currentExecutionId}
+                projectId={projectId}
+                hasDiff={showDiff && !!oldDocument}
+                onViewDiff={() => setIsDiffModalOpen(true)}
+                onEdit={() => {
+                  console.log('📝 Abrindo editor de documento...');
+                  setIsEditorOpen(true);
+                }}
+                onView={() => {
+                  console.log('👁️ Abrindo visualizador de documento...');
+                  setIsViewerOpen(true);
+                }}
+                onExportPDF={async () => {
+                  const { exportMarkdownToPDF } = await import('../services/pdfExportService');
+                  await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
+                }}
+              />
             ) : (
               <div className="no-document-placeholder">
                 <div className="placeholder-icon">📄</div>
@@ -934,6 +870,14 @@ const DocumentsPage: React.FC = () => {
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
         onSelectSession={handleSelectHistorySession}
+      />
+
+      {/* Modal de Diff Fullscreen */}
+      <DiffViewerModal
+        isOpen={isDiffModalOpen}
+        oldDocument={oldDocument}
+        newDocument={generatedDocument}
+        onClose={() => setIsDiffModalOpen(false)}
       />
     </div>
   );

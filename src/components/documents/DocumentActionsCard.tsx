@@ -6,6 +6,8 @@ interface DocumentActionsCardProps {
   content: string;
   executionId?: string;
   projectId?: string;
+  hasDiff?: boolean;
+  onViewDiff?: () => void;
   onEdit?: () => void;
   onView?: () => void;
   onExportPDF?: () => void;
@@ -16,6 +18,8 @@ const DocumentActionsCard: React.FC<DocumentActionsCardProps> = ({
   content,
   executionId,
   projectId,
+  hasDiff,
+  onViewDiff,
   onEdit,
   onView,
   onExportPDF
@@ -44,6 +48,12 @@ const DocumentActionsCard: React.FC<DocumentActionsCardProps> = ({
       </div>
 
       <div className="doc-card-actions">
+        {hasDiff && onViewDiff && (
+          <button className="btn-doc-action btn-diff" onClick={onViewDiff}>
+            <span className="icon">📊</span>
+            <span>Ver Diferenças</span>
+          </button>
+        )}
         {onEdit && (
           <button className="btn-doc-action btn-edit" onClick={onEdit}>
             <span className="icon">✏️</span>

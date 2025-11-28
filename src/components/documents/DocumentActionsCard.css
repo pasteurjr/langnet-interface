@@ -97,6 +97,16 @@
   box-shadow: 0 4px 12px rgba(245, 87, 108, 0.4);
 }
 
+.btn-diff {
+  background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+  color: white;
+}
+
+.btn-diff:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(250, 112, 154, 0.4);
+}
+
 @media (max-width: 600px) {
   .doc-card-actions {
     flex-direction: column;
