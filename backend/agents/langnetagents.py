@@ -981,7 +981,11 @@ TASK_REGISTRY = {
         "requires": ["requirements_json"],
         "produces": ["research_findings_json", "research_findings_data"],
         "agent": AGENTS["web_researcher"],
-        "tools": [LANGNET_TOOLS["serper_search"], LANGNET_TOOLS["serpapi_search"]],
+        "tools": [
+            LANGNET_TOOLS["serpapi_search"],  # DuckDuckGo for general searches
+            LANGNET_TOOLS["tavily_search"],   # Tavily for deep research
+            LANGNET_TOOLS["serper_search"]    # Google for specific/regulatory info
+        ],
         "phase": "requirements_extraction"
     },
     "validate_requirements": {

@@ -323,11 +323,34 @@ class SerperSearchToolInput(BaseModel):
 
 class SerperSearchTool(BaseTool):
     """
-    Tool for searching the web using Serper API (Google Search)
+    🔍 Serper (Google) Search - Use for SPECIFIC & UP-TO-DATE information:
+    - Specific technologies, frameworks, and libraries
+    - Regulatory and compliance information (LGPD, GDPR, PCI-DSS)
+    - Corporate and product-specific documentation
+    - Latest news, updates, and current best practices
+    - Official documentation and standards
+
+    WHEN TO USE: Need most current, specific, or regulatory information
+    BEST FOR: Compliance requirements, specific tech docs, latest standards
+    AVOID FOR: General tutorials, common patterns, academic research
+
+    EXAMPLES:
+    ✅ "LGPD data protection requirements Brazil 2024"
+    ✅ "React 19 new features official documentation"
+    ✅ "PCI-DSS compliance requirements e-commerce"
+    ❌ "how to build REST API tutorial" (use DuckDuckGo)
+    ❌ "microservices architecture research" (use Tavily)
     """
     name: str = "serper_search"
     description: str = """
-    Search the web using Serper API (Google Search).
+    🔍 Serper (Google) Search - Use for SPECIFIC & UP-TO-DATE info:
+    - Specific technologies, frameworks, libraries, official docs
+    - Regulatory/compliance (LGPD, GDPR, PCI-DSS, HIPAA)
+    - Corporate/product documentation, latest standards
+
+    WHEN TO USE: Need current, specific, or regulatory information
+    BEST FOR: Compliance, specific tech, latest updates
+
     Input: query (str), num_results (int, default=10)
     Returns: JSON with search results including title, link, snippet
     """
@@ -398,22 +421,45 @@ class SerpAPISearchToolInput(BaseModel):
     """Input schema for SerpAPISearchTool"""
     query: str = Field(description="Search query string")
     num_results: int = Field(default=10, description="Number of results to return")
-    search_engine: str = Field(default="google", description="Search engine: google, bing, duckduckgo")
+    search_engine: str = Field(default="duckduckgo", description="Search engine: duckduckgo, google, bing")
 
 
 class SerpAPISearchTool(BaseTool):
     """
-    Tool for searching the web using SerpAPI (supports multiple search engines)
+    🦆 SerpAPI (DuckDuckGo) Search - Use for GENERAL web searches:
+    - Common development patterns and best practices
+    - Public documentation, tutorials, and how-to guides
+    - General technical concepts and explanations
+    - Open source projects and community knowledge
+    - Programming languages, frameworks basics
+
+    WHEN TO USE: Default choice for most searches, privacy-focused, general knowledge
+    BEST FOR: Tutorials, common patterns, general best practices, how-to guides
+    AVOID FOR: Regulatory info, academic research, specific corporate docs
+
+    EXAMPLES:
+    ✅ "how to implement JWT authentication Node.js"
+    ✅ "React best practices component structure"
+    ✅ "microservices vs monolithic architecture pros cons"
+    ❌ "LGPD compliance requirements" (use Serper)
+    ❌ "security architecture research papers" (use Tavily)
     """
     name: str = "serpapi_search"
     description: str = """
-    Search the web using SerpAPI (supports Google, Bing, DuckDuckGo).
-    Input: query (str), num_results (int), search_engine (str)
+    🦆 SerpAPI (DuckDuckGo) Search - Use for GENERAL searches:
+    - Common patterns, best practices, tutorials, how-to guides
+    - Public documentation, general technical concepts
+    - Open source projects, community knowledge
+
+    WHEN TO USE: Default for most searches, general knowledge
+    BEST FOR: Tutorials, common patterns, general best practices
+
+    Input: query (str), num_results (int), search_engine (str, default='duckduckgo')
     Returns: JSON with search results
     """
     args_schema: type[BaseModel] = SerpAPISearchToolInput
 
-    def _run(self, query: str, num_results: int = 10, search_engine: str = "google") -> str:
+    def _run(self, query: str, num_results: int = 10, search_engine: str = "duckduckgo") -> str:
         """Execute web search"""
         try:
             import os
@@ -467,9 +513,116 @@ class SerpAPISearchTool(BaseTool):
                 "search_engine": search_engine
             })
 
-    async def _arun(self, query: str, num_results: int = 10, search_engine: str = "google") -> str:
+    async def _arun(self, query: str, num_results: int = 10, search_engine: str = "duckduckgo") -> str:
         """Async version"""
         return self._run(query, num_results, search_engine)
+
+
+class TavilySearchToolInput(BaseModel):
+    """Input schema for TavilySearchTool"""
+    query: str = Field(description="Search query string")
+    search_depth: str = Field(default="basic", description="Search depth: 'basic' or 'advanced'")
+    max_results: int = Field(default=5, description="Maximum number of results to return")
+
+
+class TavilySearchTool(BaseTool):
+    """
+    🔬 Tavily Search - Use for DEEP RESEARCH and authoritative analysis:
+    - Academic papers and scientific articles
+    - In-depth technical analysis and whitepapers
+    - Market trends and industry research reports
+    - Research-backed information with citations
+
+    WHEN TO USE: Need authoritative, well-researched, credible content
+    BEST FOR: Requirements analysis, compliance research, technical specifications
+    AVOID FOR: Quick lookups, general tutorials, common patterns
+
+    EXAMPLES:
+    ✅ "microservices architecture research papers security"
+    ✅ "LGPD compliance requirements academic analysis"
+    ✅ "healthcare system regulations Brazil ANVISA"
+    ❌ "how to implement JWT authentication" (use DuckDuckGo)
+    ❌ "React best practices tutorial" (use DuckDuckGo)
+    """
+    name: str = "tavily_search"
+    description: str = """
+    🔬 Tavily Search - Use for DEEP RESEARCH and analysis:
+    - Academic papers, scientific articles, research studies
+    - In-depth technical analysis, whitepapers, industry reports
+    - Regulatory and compliance research with citations
+    - Market trends backed by authoritative sources
+
+    WHEN TO USE: Need credible, well-researched, authoritative information
+    BEST FOR: Requirements analysis, regulatory compliance, technical specs
+
+    Input: query (str), search_depth ('basic' or 'advanced'), max_results (int)
+    Returns: JSON with detailed results including content, citations, relevance scores
+    """
+    args_schema: type[BaseModel] = TavilySearchToolInput
+
+    def _run(self, query: str, search_depth: str = "basic", max_results: int = 5) -> str:
+        """Execute Tavily deep search"""
+        try:
+            import os
+            import requests
+
+            api_key = os.getenv("TAVILY_API_KEY")
+            if not api_key:
+                return json.dumps({
+                    "success": False,
+                    "error": "TAVILY_API_KEY not configured"
+                })
+
+            url = "https://api.tavily.com/search"
+            payload = {
+                "api_key": api_key,
+                "query": query,
+                "search_depth": search_depth,  # "basic" or "advanced"
+                "max_results": max_results,
+                "include_answer": True,
+                "include_raw_content": False
+            }
+
+            response = requests.post(url, json=payload, timeout=30)
+            response.raise_for_status()
+
+            data = response.json()
+
+            # Extract results
+            results = []
+            for item in data.get("results", [])[:max_results]:
+                results.append({
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "content": item.get("content", ""),
+                    "score": item.get("score", 0.0),
+                    "published_date": item.get("published_date", "")
+                })
+
+            return json.dumps({
+                "success": True,
+                "query": query,
+                "search_depth": search_depth,
+                "answer": data.get("answer", ""),  # AI-generated summary
+                "total_results": len(results),
+                "results": results,
+                "search_metadata": {
+                    "engine": "tavily",
+                    "response_time": data.get("response_time", 0)
+                }
+            })
+
+        except Exception as e:
+            return json.dumps({
+                "success": False,
+                "error": str(e),
+                "query": query,
+                "search_depth": search_depth
+            })
+
+    async def _arun(self, query: str, search_depth: str = "basic", max_results: int = 5) -> str:
+        """Async version"""
+        return self._run(query, search_depth, max_results)
 
 
 # Factory function to create all tools
@@ -488,7 +641,8 @@ def create_langnet_tools() -> Dict[str, BaseTool]:
         "database_query": DatabaseQueryTool(),
         "yaml_validator": YAMLValidatorTool(),
         "serper_search": SerperSearchTool(),
-        "serpapi_search": SerpAPISearchTool()
+        "serpapi_search": SerpAPISearchTool(),
+        "tavily_search": TavilySearchTool()
     }
 
 
