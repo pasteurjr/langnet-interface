@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     # Other APIs
     serper_api_key: str = Field(default="", env="SERPER_API_KEY")
     serpapi_api_key: str = Field(default="", env="SERPAPI_API_KEY")
+    tavily_api_key: str = Field(default="", env="TAVILY_API_KEY")
     amadeus_api_key: str = Field(default="", env="AMADEUS_API_KEY")
     amadeus_api_secret: str = Field(default="", env="AMADEUS_API_SECRET")
 
