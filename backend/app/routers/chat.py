@@ -262,6 +262,18 @@ async def execute_refinement_workflow(
         print(f"[REFINEMENT] Current requirements length: {len(current_requirements)} chars")
         print(f"{'='*80}\n")
 
+        # 0. Update session status to 'processing'
+        with get_db_connection() as db:
+            cursor = db.cursor()
+            cursor.execute("""
+                UPDATE execution_sessions
+                SET status = 'processing'
+                WHERE id = %s
+            """, (session_id,))
+            db.commit()
+            cursor.close()
+        print(f"[REFINEMENT] Session status updated to 'processing'")
+
         # 1. Load original documents from the project
         with get_db_connection() as db:
             cursor = db.cursor(dictionary=True)
@@ -351,26 +363,41 @@ Please analyze the current requirements document and apply the requested refinem
 Maintain the structure and quality of the original document while incorporating the changes.
 """
 
-        # 4. Call agent with refinement context
-        print(f"[REFINEMENT] Calling agent with refinement context...")
-        result_state = await asyncio.to_thread(
-            execute_document_analysis_workflow,
-            project_id=project_id,
-            document_id=all_documents_info[0]['id'] if all_documents_info else "refinement",
-            document_path=f"Refinement: {', '.join([d['filename'] for d in all_documents_info])}",
-            additional_instructions=refinement_context,
-            enable_web_research=False,  # No web research for refinement
-            document_content=all_documents_content,
-            document_type="multiple",
-            project_name=f"Refinamento de Requisitos - Sessão {session_id}",
-            project_description=refinement_instructions[:500],
-            project_domain=""
+        # 4. Call LLM DIRECTLY for refinement (simpler and faster)
+        print(f"[REFINEMENT] Calling LLM directly for refinement...")
+
+        from app.llm import get_llm_client
+
+        refinement_prompt = f"""Você é um especialista em análise de requisitos de software.
+
+DOCUMENTO ATUAL DE REQUISITOS:
+{current_requirements}
+
+INSTRUÇÕES DE REFINAMENTO DO USUÁRIO:
+{refinement_instructions}
+
+CONTEXTO ADICIONAL DOS DOCUMENTOS ORIGINAIS:
+{all_documents_content[:10000]}
+
+TAREFA:
+Refine o documento de requisitos seguindo EXATAMENTE as instruções do usuário.
+Mantenha a mesma estrutura e formato markdown do documento original.
+Retorne APENAS o documento refinado completo em markdown, sem explicações adicionais.
+"""
+
+        llm_client = get_llm_client()
+        refined_requirements = llm_client.complete(
+            prompt=refinement_prompt,
+            temperature=0.7,
+            max_tokens=16000
         )
 
-        # 5. Extract refined requirements from result
-        refined_requirements = result_state.get("requirements_document", "")
+        print(f"[REFINEMENT] LLM completed. Refined document length: {len(refined_requirements)} chars")
 
-        print(f"[REFINEMENT] Agent completed. Refined document length: {len(refined_requirements)} chars")
+        if not refined_requirements or len(refined_requirements) < 100:
+            print(f"[REFINEMENT] ⚠️ WARNING: LLM returned empty or too short document!")
+            print(f"[REFINEMENT] Response length: {len(refined_requirements)}")
+            raise Exception("Refinement failed: LLM returned empty or invalid response")
 
         # 6. Update session with refined requirements
         with get_db_connection() as db:
@@ -394,14 +421,19 @@ Maintain the structure and quality of the original document while incorporating 
             metadata={'type': 'refinement_response', 'status': 'completed'}
         )
 
-        # 8. Send completion notification
+        # 8. Send completion notification with diff data
         save_chat_message(
             session_id=session_id,
             sender_type='system',
-            message_text='Documento de requisitos atualizado. Recarregue a página para ver as alterações.',
+            message_text='✅ Documento refinado com sucesso. Veja as alterações destacadas.',
             message_type='info',
             sender_name='Sistema',
-            metadata={'type': 'refinement_complete'}
+            metadata={
+                'type': 'refinement_complete',
+                'has_diff': True,
+                'old_document': current_requirements,
+                'new_document': refined_requirements
+            }
         )
 
         print(f"[REFINEMENT] ✅ Workflow completed successfully")
@@ -410,6 +442,20 @@ Maintain the structure and quality of the original document while incorporating 
         print(f"[REFINEMENT] ❌ Error during refinement: {e}")
         import traceback
         traceback.print_exc()
+
+        # Update session status to 'failed'
+        try:
+            with get_db_connection() as db:
+                cursor = db.cursor()
+                cursor.execute("""
+                    UPDATE execution_sessions
+                    SET status = 'failed'
+                    WHERE id = %s
+                """, (session_id,))
+                db.commit()
+                cursor.close()
+        except:
+            pass
 
         # Update agent message with error
         try:

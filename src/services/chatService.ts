@@ -165,7 +165,7 @@ export interface SessionStatus {
   session_id: string;
   session_name: string;
   project_id: string;
-  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'paused';
+  status: 'running' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'processing';
   requirements_document: string;
   doc_size: number;
   started_at: string | null;
