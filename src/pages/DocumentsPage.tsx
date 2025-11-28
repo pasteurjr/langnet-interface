@@ -163,7 +163,29 @@ const DocumentsPage: React.FC = () => {
       console.log('📨 Resposta do backend:', response);
       const converted = response.messages.map(convertBackendMessage);
       console.log('✅ Mensagens convertidas:', converted);
-      setChatMessages(converted);
+
+      // MERGE STRATEGY: Adicionar apenas mensagens novas, não substituir todas
+      setChatMessages(prev => {
+        // Criar set com IDs das mensagens existentes
+        const existingIds = new Set(prev.map(m => m.id));
+
+        // Filtrar apenas mensagens novas que ainda não existem
+        const newMessages = converted.filter(m => !existingIds.has(m.id));
+
+        // Se não há mensagens novas, retornar estado anterior
+        if (newMessages.length === 0) {
+          console.log('📭 Nenhuma mensagem nova encontrada');
+          return prev;
+        }
+
+        console.log(`✨ ${newMessages.length} novas mensagens adicionadas`);
+
+        // Combinar mensagens existentes com novas e ordenar por timestamp
+        return [...prev, ...newMessages].sort((a, b) =>
+          a.timestamp.getTime() - b.timestamp.getTime()
+        );
+      });
+
       return true;
     } catch (err) {
       console.error('❌ Failed to load chat history:', err);
@@ -573,6 +595,17 @@ const DocumentsPage: React.FC = () => {
 
     setIsChatProcessing(true);
 
+    // OPTIMISTIC UPDATE: Adicionar mensagem do usuário imediatamente
+    const userMessage: ChatMessage = {
+      id: `temp-user-${Date.now()}`,
+      sender: 'user',
+      text: message,
+      timestamp: new Date(),
+    };
+
+    setChatMessages(prev => [...prev, userMessage]);
+    console.log('💬 Mensagem do usuário adicionada otimisticamente');
+
     try {
       console.log('📤 Enviando mensagem de refinamento:', message);
 
@@ -583,7 +616,8 @@ const DocumentsPage: React.FC = () => {
 
       console.log('✅ Resposta do backend recebida:', response);
 
-      // Recarregar histórico do chat para mostrar mensagens
+      // Recarregar histórico do chat para mostrar mensagens do backend
+      // O merge strategy garantirá que não haja duplicatas
       const success = await loadChatHistory(currentSessionId);
 
       if (!success) {
