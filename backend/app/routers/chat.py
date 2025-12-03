@@ -65,8 +65,7 @@ async def list_messages(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=1, le=100),
     message_type: Optional[str] = Query(None),
-    include_deleted: bool = Query(False),
-    current_user: dict = Depends(get_current_user)
+    include_deleted: bool = Query(False)
 ):
     """List messages for a session with pagination"""
     try:
@@ -111,8 +110,7 @@ async def list_messages(
 
 @router.get("/messages/{message_id}", response_model=ChatMessageResponse)
 async def get_message(
-    message_id: str,
-    current_user: dict = Depends(get_current_user)
+    message_id: str
 ):
     """Get a single message by ID"""
     message = get_chat_message(message_id)
@@ -162,8 +160,7 @@ async def delete_message(
 
 @router.get("/messages/{message_id}/threads", response_model=list[ChatMessageResponse])
 async def get_message_threads(
-    message_id: str,
-    current_user: dict = Depends(get_current_user)
+    message_id: str
 ):
     """Get all replies/threads for a message"""
     threads = get_chat_threads(message_id)
@@ -172,15 +169,13 @@ async def get_message_threads(
 
 @router.get("/sessions/{session_id}/status")
 async def get_session_status(
-    session_id: str,
-    current_user: dict = Depends(get_current_user)
+    session_id: str
 ):
     """
     Get execution session status and updated requirements document
 
     Args:
         session_id: Execution session ID
-        current_user: Authenticated user
 
     Returns:
         Session status, requirements document, and metadata
@@ -206,10 +201,6 @@ async def get_session_status(
 
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
-
-        # Check authorization
-        if session['user_id'] != current_user['id']:
-            raise HTTPException(status_code=403, detail="Not authorized to access this session")
 
         return {
             "session_id": session['id'],

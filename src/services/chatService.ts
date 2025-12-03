@@ -74,7 +74,7 @@ export const loadChatMessages = async (
 
   const response = await axios.get<ChatMessagesResponse>(
     `${API_BASE}/chat/sessions/${sessionId}/messages`,
-    { params, headers: getAuthHeaders() }
+    { params }
   );
   return response.data;
 };
@@ -178,8 +178,7 @@ export interface SessionStatus {
  */
 export const getSessionStatus = async (sessionId: string): Promise<SessionStatus> => {
   const response = await axios.get<SessionStatus>(
-    `${API_BASE}/chat/sessions/${sessionId}/status`,
-    { headers: getAuthHeaders() }
+    `${API_BASE}/chat/sessions/${sessionId}/status`
   );
   return response.data;
 };
