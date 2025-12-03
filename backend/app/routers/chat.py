@@ -377,43 +377,23 @@ Maintain the structure and quality of the original document while incorporating 
 
         from app.llm import get_llm_client
 
-        refinement_prompt = f"""Você é um especialista em análise de requisitos de software.
-
-DOCUMENTO ATUAL DE REQUISITOS:
+        refinement_prompt = f"""DOCUMENTO ATUAL:
 {current_requirements}
 
 INSTRUÇÕES DO USUÁRIO:
 {refinement_instructions}
 
-CONTEXTO ADICIONAL DOS DOCUMENTOS ORIGINAIS:
+CONTEXTO DOS DOCUMENTOS ORIGINAIS:
 {all_documents_content[:10000]}
 
-TAREFA CRÍTICA - LEIA COM ATENÇÃO:
+TAREFA CRÍTICA:
+1. VOCÊ DEVE RETORNAR O DOCUMENTO COMPLETO refinado
+2. NÃO faça análise, NÃO comente sobre problemas
+3. Comece DIRETAMENTE com o markdown do documento
+4. COPIE todo conteúdo original + aplique as mudanças solicitadas
+5. Se output ficar grande, termine com '...' (sistema continuará automaticamente)
 
-1. VOCÊ DEVE ACRESCENTAR AO DOCUMENTO conforme solicitado, NÃO REDUZIR OU RESUMIR
-
-2. Para CADA ponto solicitado pelo usuário, ACRESCENTE:
-   - Contexto detalhado (3-4 parágrafos quando relevante)
-   - Exemplos práticos CONCRETOS com dados reais
-   - Implicações técnicas e decisões de arquitetura
-   - Critérios de aceitação DETALHADOS e mensuráveis
-   - Casos de teste completos quando aplicável
-   - Dependências e integrações
-   - Riscos e estratégias de mitigação
-   - Métricas de sucesso mensuráveis
-
-3. MANTENHA TODO O CONTEÚDO EXISTENTE - não remova, não resuma
-
-4. Se a resposta ficar muito grande:
-   - NÃO resuma ou encurte
-   - Continue normalmente
-   - Termine com '...' se necessário (o sistema detectará e continuará automaticamente)
-
-IMPORTANTE:
-- Retorne documento COMPLETO em markdown
-- Inclua todo conteúdo original MAIS acréscimos solicitados
-- Use tabelas, listas e diagramas quando apropriado
-- Seja detalhado ONDE NECESSÁRIO (não force verbosidade desnecessária)
+IMPORTANTE: Retorne SOMENTE o documento em markdown. Sem introduções, sem comentários.
 """
 
         llm_client = get_llm_client()
