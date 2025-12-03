@@ -391,16 +391,38 @@ Maintain the structure and quality of the original document while incorporating 
 DOCUMENTO ATUAL DE REQUISITOS:
 {current_requirements}
 
-INSTRUÇÕES DE REFINAMENTO DO USUÁRIO:
+INSTRUÇÕES DO USUÁRIO:
 {refinement_instructions}
 
 CONTEXTO ADICIONAL DOS DOCUMENTOS ORIGINAIS:
 {all_documents_content[:10000]}
 
-TAREFA:
-Refine o documento de requisitos seguindo EXATAMENTE as instruções do usuário.
-Mantenha a mesma estrutura e formato markdown do documento original.
-Retorne APENAS o documento refinado completo em markdown, sem explicações adicionais.
+TAREFA CRÍTICA - LEIA COM ATENÇÃO:
+
+1. VOCÊ DEVE ACRESCENTAR AO DOCUMENTO conforme solicitado, NÃO REDUZIR OU RESUMIR
+
+2. Para CADA ponto solicitado pelo usuário, ACRESCENTE:
+   - Contexto detalhado (3-4 parágrafos quando relevante)
+   - Exemplos práticos CONCRETOS com dados reais
+   - Implicações técnicas e decisões de arquitetura
+   - Critérios de aceitação DETALHADOS e mensuráveis
+   - Casos de teste completos quando aplicável
+   - Dependências e integrações
+   - Riscos e estratégias de mitigação
+   - Métricas de sucesso mensuráveis
+
+3. MANTENHA TODO O CONTEÚDO EXISTENTE - não remova, não resuma
+
+4. Se a resposta ficar muito grande:
+   - NÃO resuma ou encurte
+   - Continue normalmente
+   - Termine com '...' se necessário (o sistema detectará e continuará automaticamente)
+
+IMPORTANTE:
+- Retorne documento COMPLETO em markdown
+- Inclua todo conteúdo original MAIS acréscimos solicitados
+- Use tabelas, listas e diagramas quando apropriado
+- Seja detalhado ONDE NECESSÁRIO (não force verbosidade desnecessária)
 """
 
         llm_client = get_llm_client()
@@ -498,8 +520,7 @@ Retorne APENAS o documento refinado completo em markdown, sem explicações adic
 @router.post("/sessions/{session_id}/refine")
 async def refine_requirements(
     session_id: str,
-    request: RefineRequirementsRequest,
-    current_user: dict = Depends(get_current_user)
+    request: RefineRequirementsRequest
 ):
     """
     Conversational refinement of requirements

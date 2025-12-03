@@ -701,11 +701,30 @@ def validate_requirements_output_func(state: LangNetFullState, result: Any) -> L
     print(f"[DEBUG] validate_requirements_output_func - Processing result")
     print(f"[DEBUG] Result type: {type(result)}")
 
-    if isinstance(result, dict):
-        output_json = result.get("raw_output", json.dumps(result))
+    # CrewAI returns CrewOutput object (pydantic model), not a dict
+    # Must extract content properly using .raw, .json_dict, or .model_dump()
+    if hasattr(result, 'raw'):
+        # CrewOutput object - get raw string output
+        output_json = result.raw
+        print(f"[DEBUG] Extracted from CrewOutput.raw")
+    elif hasattr(result, 'json_dict') and result.json_dict:
+        # CrewOutput with pre-parsed JSON dictionary
+        output_json = json.dumps(result.json_dict)
+        print(f"[DEBUG] Extracted from CrewOutput.json_dict")
+    elif hasattr(result, 'model_dump'):
+        # Pydantic model - convert to dict then JSON
+        output_json = json.dumps(result.model_dump())
+        print(f"[DEBUG] Extracted from CrewOutput.model_dump()")
+    elif isinstance(result, dict):
+        # Already a dict (shouldn't happen with CrewAI but keep as fallback)
+        output_json = json.dumps(result)
+        print(f"[DEBUG] Result is already a dict")
     else:
+        # Last resort - string conversion (likely won't work correctly)
         output_json = str(result)
+        print(f"[DEBUG] WARNING: Using str() fallback - may not work correctly")
 
+    print(f"[DEBUG] output_json type: {type(output_json)}")
     print(f"[DEBUG] output_json length: {len(output_json)}")
     print(f"[DEBUG] output_json preview: {output_json[:500]}")
 
@@ -1191,6 +1210,21 @@ def execute_task_with_context(
             result = crew.executar(inputs=task_input)
         else:
             raise AttributeError(f"Team object has neither 'kickoff' nor 'executar' method: {type(crew).__name__}")
+
+        # Debug CrewOutput structure to understand what we're receiving
+        print(f"\n{'='*80}")
+        print(f"[CREW RESULT DEBUG] Task: {task_name}")
+        print(f"[CREW RESULT DEBUG] Result type: {type(result)}")
+        print(f"[CREW RESULT DEBUG] Has 'raw' attribute: {hasattr(result, 'raw')}")
+        print(f"[CREW RESULT DEBUG] Has 'json_dict' attribute: {hasattr(result, 'json_dict')}")
+        print(f"[CREW RESULT DEBUG] Has 'model_dump' method: {hasattr(result, 'model_dump')}")
+        if hasattr(result, 'raw'):
+            raw_preview = str(result.raw)[:500] if result.raw else '(None)'
+            print(f"[CREW RESULT DEBUG] result.raw preview (first 500 chars):\n{raw_preview}")
+        if hasattr(result, 'json_dict'):
+            json_dict_keys = list(result.json_dict.keys()) if result.json_dict else '(None)'
+            print(f"[CREW RESULT DEBUG] result.json_dict keys: {json_dict_keys}")
+        print(f"{'='*80}\n")
 
         if verbose_callback:
             verbose_callback(f"Task result: {str(result)[:200]}")

@@ -35,9 +35,14 @@ class LLMClient:
             self.model = settings.anthropic_model_name
         elif self.provider == "claude_code":
             # Claude Code uses OpenAI-compatible API
+            # Add /v1 if not present (OpenAI client doesn't add it automatically)
+            base_url = settings.claude_code_api_base
+            if not base_url.endswith("/v1"):
+                base_url = f"{base_url}/v1"
+
             self.client = OpenAI(
                 api_key="not-needed",  # Claude Code API doesn't need key
-                base_url=settings.claude_code_api_base
+                base_url=base_url
             )
             self.model = settings.claude_code_model_name
         else:
