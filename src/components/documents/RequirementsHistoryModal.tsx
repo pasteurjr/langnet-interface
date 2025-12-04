@@ -179,16 +179,34 @@ const RequirementsHistoryModal: React.FC<RequirementsHistoryModalProps> = ({
     <div className="modal-overlay">
       <div className="history-modal">
         <div className="modal-header">
-          <h2>
-            {viewMode === 'sessions' ? '📜 Histórico de Documentos' : '📜 Histórico de Versões'}
-            {viewMode === 'versions' && canGoBack && (
-              <button className="btn-back" onClick={handleBackToSessions} style={{marginLeft: '10px', fontSize: '14px'}}>
-                ← Voltar
-              </button>
-            )}
-          </h2>
+          <h2>{viewMode === 'sessions' ? '📜 Histórico de Documentos' : '📜 Histórico de Versões'}</h2>
           <button className="close-button" onClick={onClose}>×</button>
         </div>
+
+        {/* Botão Voltar - Bem visível no topo do conteúdo */}
+        {viewMode === 'versions' && canGoBack && (
+          <div style={{
+            padding: '10px 20px',
+            borderBottom: '1px solid #eee',
+            backgroundColor: '#f8f9fa'
+          }}>
+            <button
+              onClick={handleBackToSessions}
+              style={{
+                padding: '8px 16px',
+                fontSize: '14px',
+                fontWeight: 'bold',
+                cursor: 'pointer',
+                border: '1px solid #007bff',
+                borderRadius: '4px',
+                backgroundColor: 'white',
+                color: '#007bff'
+              }}
+            >
+              ← Voltar para Lista de Documentos
+            </button>
+          </div>
+        )}
 
         <div className="modal-content">
           {loading && (
