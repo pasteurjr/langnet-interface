@@ -354,14 +354,38 @@ export default {
  * Get all versions of a requirements document
  */
 export const getDocumentVersions = async (sessionId: string) => {
-  const response = await axios.get(`${API_BASE}/documents/sessions/${sessionId}/versions`);
-  return response.data;
+  const response = await fetch(`${API_BASE_URL}/documents/sessions/${sessionId}/versions`, {
+    method: 'GET',
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch document versions');
+  }
+
+  return response.json();
 };
 
 /**
  * Get a specific version of a requirements document
  */
 export const getDocumentVersion = async (sessionId: string, version: number) => {
-  const response = await axios.get(`${API_BASE}/documents/sessions/${sessionId}/versions/${version}`);
-  return response.data;
+  const response = await fetch(`${API_BASE_URL}/documents/sessions/${sessionId}/versions/${version}`, {
+    method: 'GET',
+    headers: {
+      ...getAuthHeaders(),
+      'Content-Type': 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.detail || 'Failed to fetch document version');
+  }
+
+  return response.json();
 };
