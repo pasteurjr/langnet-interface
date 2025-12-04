@@ -703,6 +703,30 @@ const DocumentsPage: React.FC = () => {
     toast.info(`Carregando documento: ${sessionName}`);
   };
 
+  // Handler para quando usuário seleciona uma versão específica
+  const handleSelectVersion = async (version: number) => {
+    if (!currentSessionId) {
+      toast.error('Nenhuma sessão ativa');
+      return;
+    }
+
+    try {
+      console.log('📜 Carregando versão:', version, 'da sessão:', currentSessionId);
+      const versionData = await documentService.getDocumentVersion(currentSessionId, version);
+
+      if (versionData && versionData.content) {
+        setGeneratedDocument(versionData.content);
+        setDocumentFilename(`requisitos_v${version}.md`);
+        toast.success(`Versão ${version} carregada com sucesso`);
+      } else {
+        toast.error('Conteúdo da versão não encontrado');
+      }
+    } catch (err) {
+      console.error('❌ Erro ao carregar versão:', err);
+      toast.error('Erro ao carregar versão do documento');
+    }
+  };
+
   // Filtrar documentos
   const filteredDocuments = documents.filter(doc => {
     const matchesSearch = doc.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -899,11 +923,12 @@ const DocumentsPage: React.FC = () => {
         }}
       />
 
-      {/* Modal de Histórico de Documentos */}
+      {/* Modal de Histórico de Versões */}
       <RequirementsHistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
-        onSelectSession={handleSelectHistorySession}
+        sessionId={currentSessionId || ''}
+        onSelectVersion={handleSelectVersion}
       />
 
       {/* Modal de Diff Fullscreen */}
