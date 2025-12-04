@@ -927,7 +927,8 @@ const DocumentsPage: React.FC = () => {
       <RequirementsHistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
-        sessionId={currentSessionId || ''}
+        sessionId={currentSessionId}
+        onSelectSession={handleSelectHistorySession}
         onSelectVersion={handleSelectVersion}
       />
 
