@@ -33,17 +33,20 @@ const RequirementsHistoryModal: React.FC<RequirementsHistoryModalProps> = ({
   const [viewMode, setViewMode] = useState<'sessions' | 'versions'>('sessions');
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
   const [selectedSessionName, setSelectedSessionName] = useState<string>('');
+  const [canGoBack, setCanGoBack] = useState(false); // Flag para controlar se pode voltar
 
   useEffect(() => {
     if (isOpen) {
       if (sessionId) {
-        // Se já tem sessionId, mostra versões direto
+        // Se já tem sessionId, mostra versões direto mas AINDA permite voltar
         setViewMode('versions');
         setSelectedSessionId(sessionId);
+        setCanGoBack(true); // Permite voltar para escolher outra sessão
         loadVersions(sessionId);
       } else {
         // Se não tem sessionId, mostra lista de sessões
         setViewMode('sessions');
+        setCanGoBack(false); // Ainda não pode voltar
         loadSessions();
       }
     }
@@ -128,6 +131,7 @@ const RequirementsHistoryModal: React.FC<RequirementsHistoryModalProps> = ({
     setSelectedSessionId(session.id);
     setSelectedSessionName(session.session_name);
     setViewMode('versions');
+    setCanGoBack(true); // Agora pode voltar para a lista de sessões
     loadVersions(session.id);
   };
 
@@ -145,6 +149,7 @@ const RequirementsHistoryModal: React.FC<RequirementsHistoryModalProps> = ({
   const handleBackToSessions = () => {
     setViewMode('sessions');
     setVersions([]);
+    setCanGoBack(false); // Reseta flag quando volta para sessões
     loadSessions();
   };
 
@@ -176,7 +181,7 @@ const RequirementsHistoryModal: React.FC<RequirementsHistoryModalProps> = ({
         <div className="modal-header">
           <h2>
             {viewMode === 'sessions' ? '📜 Histórico de Documentos' : '📜 Histórico de Versões'}
-            {viewMode === 'versions' && !sessionId && (
+            {viewMode === 'versions' && canGoBack && (
               <button className="btn-back" onClick={handleBackToSessions} style={{marginLeft: '10px', fontSize: '14px'}}>
                 ← Voltar
               </button>
