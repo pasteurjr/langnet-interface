@@ -349,3 +349,19 @@ export default {
   batchAnalyzeDocuments,
   getDocumentStats,
 };
+
+/**
+ * Get all versions of a requirements document
+ */
+export const getDocumentVersions = async (sessionId: string) => {
+  const response = await axios.get(`${API_BASE}/documents/sessions/${sessionId}/versions`);
+  return response.data;
+};
+
+/**
+ * Get a specific version of a requirements document
+ */
+export const getDocumentVersion = async (sessionId: string, version: number) => {
+  const response = await axios.get(`${API_BASE}/documents/sessions/${sessionId}/versions/${version}`);
+  return response.data;
+};

@@ -249,6 +249,23 @@ async def execute_analysis_in_background(
             print(f"[DEBUG] Match: {doc_length_db == len(requirements_doc)}")
             print(f"{'='*80}\n")
 
+            # ========== SAVE VERSION 1 ==========
+            # Get user_id from session
+            cursor.execute("SELECT user_id FROM execution_sessions WHERE id = %s", (session_id,))
+            user_result = cursor.fetchone()
+            user_id = user_result[0] if user_result else None
+
+            # Insert version 1 in session_requirements_version
+            print(f"[DEBUG] Salvando versão 1 na tabela session_requirements_version")
+            cursor.execute("""
+                INSERT INTO session_requirements_version
+                (session_id, version, requirements_document, created_by, change_description, change_type, doc_size)
+                VALUES (%s, 1, %s, %s, 'Análise inicial', 'analysis', %s)
+            """, (session_id, requirements_doc, user_id, len(requirements_doc)))
+            conn.commit()
+            print(f"[DEBUG] ✅ Versão 1 salva com sucesso")
+            # ====================================
+
             cursor.close()
 
         # Send completion message
@@ -1162,6 +1179,28 @@ async def update_requirements_document(
             WHERE id = %s
         """, (request.content, session_id))
         conn.commit()
+
+        # ========== SAVE NEW VERSION ==========
+        # Get next version number
+        cursor.execute("""
+            SELECT MAX(version) as max_version
+            FROM session_requirements_version
+            WHERE session_id = %s
+        """, (session_id,))
+        result = cursor.fetchone()
+        current_version = result[0] if result and result[0] else 0
+        new_version = current_version + 1
+
+        # Insert new version (manual edit)
+        cursor.execute("""
+            INSERT INTO session_requirements_version
+            (session_id, version, requirements_document, created_by, change_description, change_type, doc_size)
+            VALUES (%s, %s, %s, %s, 'Edição manual do documento', 'manual_edit', %s)
+        """, (session_id, new_version, request.content, current_user['id'], len(request.content)))
+        conn.commit()
+        print(f"[MANUAL EDIT] ✅ Versão {new_version} salva (tipo: manual_edit)")
+        # ======================================
+
         cursor.close()
 
         # Save edit notification in chat
@@ -1178,4 +1217,89 @@ async def update_requirements_document(
     return {
         "success": True,
         "message": "Requirements document updated successfully"
+    }
+
+@router.get("/sessions/{session_id}/versions")
+async def list_document_versions(session_id: str):
+    """
+    List all versions of a requirements document
+    
+    Args:
+        session_id: Execution session ID
+        
+    Returns:
+        List of versions with metadata
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        
+        # Verify session exists
+        cursor.execute("SELECT id FROM execution_sessions WHERE id = %s", (session_id,))
+        if not cursor.fetchone():
+            cursor.close()
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Get all versions
+        cursor.execute("""
+            SELECT 
+                version,
+                created_at,
+                change_description,
+                change_type,
+                doc_size
+            FROM session_requirements_version
+            WHERE session_id = %s
+            ORDER BY version DESC
+        """, (session_id,))
+        
+        versions = cursor.fetchall()
+        cursor.close()
+        
+    return {"versions": versions}
+
+
+@router.get("/sessions/{session_id}/versions/{version}")
+async def get_document_version(session_id: str, version: int):
+    """
+    Get a specific version of a requirements document
+    
+    Args:
+        session_id: Execution session ID
+        version: Version number
+        
+    Returns:
+        Document content and metadata for the specified version
+    """
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        
+        # Get specific version
+        cursor.execute("""
+            SELECT 
+                version,
+                requirements_document,
+                created_at,
+                change_description,
+                change_type,
+                doc_size
+            FROM session_requirements_version
+            WHERE session_id = %s AND version = %s
+        """, (session_id, version))
+        
+        result = cursor.fetchone()
+        cursor.close()
+        
+        if not result:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Version {version} not found for session {session_id}"
+            )
+            
+    return {
+        "version": result['version'],
+        "content": result['requirements_document'],
+        "created_at": result['created_at'],
+        "change_description": result['change_description'],
+        "change_type": result['change_type'],
+        "doc_size": result['doc_size']
     }

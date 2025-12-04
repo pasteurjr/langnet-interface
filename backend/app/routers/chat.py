@@ -430,6 +430,37 @@ IMPORTANTE: Retorne SOMENTE o documento em markdown. Sem introduções, sem come
                 WHERE id = %s
             """, (refined_requirements, session_id))
             db.commit()
+
+            # ========== SAVE NEW VERSION ==========
+            # Get next version number
+            cursor.execute("""
+                SELECT MAX(version) as max_version
+                FROM session_requirements_version
+                WHERE session_id = %s
+            """, (session_id,))
+            result = cursor.fetchone()
+            current_version = result['max_version'] if result and result['max_version'] else 0
+            new_version = current_version + 1
+
+            # Get user_id from session
+            cursor.execute("SELECT user_id FROM execution_sessions WHERE id = %s", (session_id,))
+            user_result = cursor.fetchone()
+            user_id = user_result['user_id'] if user_result else None
+
+            # Extract first words from user instructions for description
+            description = refinement_instructions[:100] + ('...' if len(refinement_instructions) > 100 else '')
+
+            # Insert new version
+            print(f"[REFINEMENT] Salvando versão {new_version} na tabela session_requirements_version")
+            cursor.execute("""
+                INSERT INTO session_requirements_version
+                (session_id, version, requirements_document, created_by, change_description, change_type, doc_size)
+                VALUES (%s, %s, %s, %s, %s, 'refinement', %s)
+            """, (session_id, new_version, refined_requirements, user_id, description, len(refined_requirements)))
+            db.commit()
+            print(f"[REFINEMENT] ✅ Versão {new_version} salva com sucesso")
+            # ======================================
+
             cursor.close()
 
         print(f"[REFINEMENT] Updated session {session_id} with refined requirements")
