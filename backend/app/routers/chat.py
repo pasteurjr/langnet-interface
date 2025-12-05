@@ -21,7 +21,8 @@ from app.database import (
     delete_chat_message,
     get_chat_message_count,
     get_chat_threads,
-    get_db_connection
+    get_db_connection,
+    get_previous_refinements
 )
 from app.dependencies import get_current_user
 from app.parsers import DocumentParser
@@ -377,14 +378,30 @@ Maintain the structure and quality of the original document while incorporating 
 
         from app.llm import get_llm_client
 
+        # ========== BUSCAR HISTÓRICO DE REFINAMENTOS ANTERIORES ==========
+        previous_refinements = get_previous_refinements(session_id, limit=10)
+
+        refinement_history = ""
+        if previous_refinements:
+            refinement_history = "HISTÓRICO DE REFINAMENTOS ANTERIORES:\n"
+            for idx, msg in enumerate(previous_refinements, 1):
+                timestamp = msg.get('timestamp', '')
+                message_text = msg.get('message_text', '')
+                refinement_history += f"{idx}. [{timestamp}] Usuário solicitou: {message_text}\n"
+            refinement_history += "\n"
+            print(f"[REFINEMENT] 📚 Incluindo {len(previous_refinements)} refinamentos anteriores no contexto")
+        else:
+            print(f"[REFINEMENT] 📭 Nenhum refinamento anterior encontrado")
+        # ==================================================================
+
         refinement_prompt = f"""DOCUMENTO ATUAL:
 {current_requirements}
 
-INSTRUÇÕES DO USUÁRIO:
+{refinement_history}NOVA SOLICITAÇÃO DO USUÁRIO:
 {refinement_instructions}
 
 CONTEXTO DOS DOCUMENTOS ORIGINAIS:
-{all_documents_content[:10000]}
+{all_documents_content[:20000]}
 
 TAREFA CRÍTICA:
 1. VOCÊ DEVE RETORNAR O DOCUMENTO COMPLETO refinado
@@ -392,6 +409,7 @@ TAREFA CRÍTICA:
 3. Comece DIRETAMENTE com o markdown do documento
 4. COPIE todo conteúdo original + aplique as mudanças solicitadas
 5. Se output ficar grande, termine com '...' (sistema continuará automaticamente)
+6. CONSIDERE o histórico de refinamentos anteriores para manter coerência
 
 IMPORTANTE: Retorne SOMENTE o documento em markdown. Sem introduções, sem comentários.
 """

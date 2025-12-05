@@ -329,6 +329,32 @@ def get_chat_message(message_id: str) -> dict:
     return msg
 
 
+def get_previous_refinements(session_id: str, limit: int = 10) -> list:
+    """
+    Get previous user refinement messages for context building
+
+    Args:
+        session_id: ID of the execution session
+        limit: Maximum number of previous refinements to return
+
+    Returns:
+        List of user message dictionaries ordered by timestamp ASC
+    """
+    query = """
+        SELECT message_text, timestamp, sender_type
+        FROM chat_messages
+        WHERE session_id = %s
+          AND sender_type = 'user'
+          AND message_type = 'chat'
+          AND is_deleted = 0
+        ORDER BY timestamp ASC
+        LIMIT %s
+    """
+
+    messages = execute_query(query, (session_id, limit), fetch_all=True)
+    return messages if messages else []
+
+
 def update_chat_message(
     message_id: str,
     message_text: str = None,
