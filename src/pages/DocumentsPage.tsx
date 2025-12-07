@@ -696,11 +696,11 @@ const DocumentsPage: React.FC = () => {
     // Atualiza o sessionId atual
     setCurrentSessionId(sessionId);
 
-    // Carrega o documento gerado nessa sessão
-    await loadGeneratedDocument(sessionId);
-
-    // Carrega o histórico de chat da sessão
+    // IMPORTANTE: Carrega chat PRIMEIRO para evitar race condition com useEffect
     await loadChatHistory(sessionId);
+
+    // Depois carrega o documento (não será sobrescrito pelo useEffect)
+    await loadGeneratedDocument(sessionId);
 
     // O card de visualização aparecerá automaticamente pois generatedDocument será populado
     toast.info(`Carregando documento: ${sessionName}`);
@@ -715,15 +715,16 @@ const DocumentsPage: React.FC = () => {
 
     try {
       console.log('📜 Carregando versão:', version, 'da sessão:', currentSessionId);
+
+      // IMPORTANTE: Carrega chat PRIMEIRO para evitar race condition com useEffect
+      await loadChatHistory(currentSessionId);
+
+      // Depois busca e seta a versão do documento (não será sobrescrito)
       const versionData = await documentService.getDocumentVersion(currentSessionId, version);
 
       if (versionData && versionData.content) {
         setGeneratedDocument(versionData.content);
         setDocumentFilename(`requisitos_v${version}.md`);
-
-        // Carrega o histórico de chat da sessão
-        await loadChatHistory(currentSessionId);
-
         toast.success(`Versão ${version} carregada com sucesso`);
       } else {
         toast.error('Conteúdo da versão não encontrado');
