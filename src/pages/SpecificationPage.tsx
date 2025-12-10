@@ -1,434 +1,215 @@
 /* src/pages/SpecificationPage.tsx */
-import React, { useState, useEffect } from 'react';
-import { 
-  FileText, 
-  Download, 
-  Share2, 
-  Eye, 
-  Edit, 
-  CheckCircle, 
-  AlertCircle, 
-  RefreshCw,
-  MessageSquare,
-  History,
-  Settings
-} from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  SpecificationDocument,
-  SpecificationStatus,
-  SpecificationSection,
-  SpecificationSectionType,
-  SpecificationIssue,
-  FunctionalRequirement,
-  NonFunctionalRequirement
-} from '../types/';
+  FileText,
+  Download,
+  RefreshCw,
+  Loader,
+  AlertCircle,
+  CheckCircle,
+  Clock,
+  Plus,
+  ChevronRight,
+  History
+} from 'lucide-react';
 import SpecificationGenerationModal from '../components/specification/SpecificationGenerationModal';
-import {SpecificationEditorModal} from '../components/specification/SpecificationEditorModal';
-import RequirementsTable from '../components/specification/RequirementsTable';
-import {DataModelViewer} from '../components/specification/DataModelViewer';
+import {
+  listSpecifications,
+  getSpecification,
+  listSpecificationVersions,
+  getSpecificationVersion,
+  SpecificationSession,
+  SpecificationVersion
+} from '../services/specificationService';
+import { toast } from 'react-toastify';
+import ReactMarkdown from 'react-markdown';
 import './SpecificationPage.css';
 
-// Mock data for demonstration
-const mockSpecification: SpecificationDocument = {
-  id: '1',
-  projectId: 'project1',
-  title: 'Sistema de Atendimento ao Cliente - Especificação Funcional',
-  version: '2.1',
-  status: SpecificationStatus.APPROVED,
-  createdAt: '2024-03-01T09:00:00',
-  updatedAt: '2024-03-15T14:30:00',
-  lastGeneratedAt: '2024-03-15T10:00:00',
-  sections: [
-    {
-      id: 'intro',
-      type: SpecificationSectionType.INTRODUCTION,
-      title: '1. Introdução',
-      content: `## 1.1 Propósito
-
-Este documento especifica os requisitos funcionais e não-funcionais para o Sistema de Atendimento ao Cliente, projetado para automatizar e otimizar o processo de suporte ao cliente através de agentes inteligentes.
-
-## 1.2 Escopo
-
-O sistema abrangerá:
-- Classificação automática de consultas
-- Roteamento inteligente para agentes especializados
-- Geração de respostas automatizadas
-- Análise de sentimento em tempo real
-- Escalação de casos complexos
-- Monitoramento de performance e qualidade`,
-      order: 1,
-      isRequired: true,
-      isGenerated: true,
-      lastModified: '2024-03-15T10:00:00',
-      wordCount: 89,
-      completeness: 95,
-      issues: []
-    },
-    {
-      id: 'overview',
-      type: SpecificationSectionType.OVERVIEW,
-      title: '2. Visão Geral do Sistema',
-      content: `## 2.1 Contexto do Negócio
-
-O sistema será implementado para atender a crescente demanda de suporte ao cliente, oferecendo respostas rápidas e precisas através de tecnologia de inteligência artificial.
-
-## 2.2 Objetivos do Sistema
-
-- Reduzir tempo médio de resposta de 24h para 5 minutos
-- Aumentar satisfação do cliente para >95%
-- Automatizar 80% das consultas rotineiras
-- Melhorar rastreabilidade e análise de problemas
-
-## 2.3 Arquitetura Conceitual
-
-O sistema utilizará uma arquitetura baseada em agentes inteligentes, onde cada agente possui especialização específica:
-- Agente de Atendimento Geral
-- Agente de Suporte Técnico
-- Agente de Análise de Sentimento
-- Agente de Escalação`,
-      order: 2,
-      isRequired: true,
-      isGenerated: true,
-      lastModified: '2024-03-15T10:00:00',
-      wordCount: 124,
-      completeness: 90,
-      issues: [
-        {
-          id: 'issue1',
-          type: 'clarity',
-          severity: 'medium',
-          title: 'Métricas específicas necessárias',
-          description: 'Detalhar como será medida a satisfação do cliente',
-          sectionId: 'overview',
-          suggestions: ['Incluir metodologia de pesquisa NPS', 'Definir intervalos de medição'],
-          isResolved: false
-        }
-      ]
-    }
-  ],
-  functionalRequirements: [
-    {
-      id: 'fr001',
-      code: 'FR001',
-      title: 'Processamento de Consultas',
-      description: 'O sistema deve ser capaz de receber e processar consultas de clientes em texto natural',
-      priority: 'must_have',
-      complexity: 'high',
-      source: 'requirements.pdf',
-      dependencies: [],
-      acceptanceCriteria: [
-        'Processar consultas em português',
-        'Responder em menos de 5 segundos',
-        'Identificar intenção com 95% de precisão'
-      ],
-      category: 'Processamento',
-      status: 'approved' as any
-    },
-    {
-      id: 'fr002',
-      code: 'FR002',
-      title: 'Análise de Sentimento',
-      description: 'O sistema deve analisar o sentimento das mensagens do cliente (positivo, neutro, negativo)',
-      priority: 'should_have',
-      complexity: 'medium',
-      source: 'business_rules.docx',
-      dependencies: ['fr001'],
-      acceptanceCriteria: [
-        'Classificar sentimento com 90% de precisão',
-        'Detectar urgência em mensagens negativas',
-        'Priorizar atendimento baseado no sentimento'
-      ],
-      category: 'Análise',
-      status: 'approved' as any
-    }
-  ],
-  nonFunctionalRequirements: [
-    {
-      id: 'nfr001',
-      code: 'NFR001',
-      title: 'Tempo de Resposta',
-      description: 'O sistema deve responder a consultas em menos de 5 segundos',
-      category: 'performance',
-      metric: 'Tempo médio de resposta',
-      targetValue: '< 5 segundos',
-      priority: 'must_have',
-      testMethod: 'Testes de carga com 1000 consultas simultâneas',
-      status: 'approved' as any
-    },
-    {
-      id: 'nfr002',
-      code: 'NFR002',
-      title: 'Disponibilidade do Sistema',
-      description: 'O sistema deve estar disponível 99.9% do tempo',
-      category: 'reliability',
-      metric: 'Uptime percentual',
-      targetValue: '99.9%',
-      priority: 'must_have',
-      testMethod: 'Monitoramento contínuo por 30 dias',
-      status: 'approved' as any
-    },
-    {
-      id: 'nfr003',
-      code: 'NFR003',
-      title: 'Segurança de Dados',
-      description: 'Todos os dados do cliente devem ser criptografados em trânsito e em repouso',
-      category: 'security',
-      metric: 'Nível de criptografia',
-      targetValue: 'AES-256',
-      priority: 'must_have',
-      testMethod: 'Auditoria de segurança e testes de penetração',
-      status: 'approved' as any
-    }
-  ],
-  dataEntities: [
-    {
-      id: 'customer',
-      name: 'Customer',
-      description: 'Entidade que representa um cliente do sistema',
-      attributes: [
-        {
-          id: 'customer_id',
-          name: 'customer_id',
-          type: 'UUID',
-          isRequired: true,
-          isPrimaryKey: true,
-          isForeignKey: false,
-          description: 'Identificador único do cliente',
-          constraints: ['NOT NULL', 'UNIQUE']
-        },
-        {
-          id: 'name',
-          name: 'name',
-          type: 'VARCHAR(255)',
-          isRequired: true,
-          isPrimaryKey: false,
-          isForeignKey: false,
-          description: 'Nome completo do cliente',
-          constraints: ['NOT NULL']
-        },
-        {
-          id: 'email',
-          name: 'email',
-          type: 'VARCHAR(255)',
-          isRequired: true,
-          isPrimaryKey: false,
-          isForeignKey: false,
-          description: 'Email do cliente',
-          constraints: ['NOT NULL', 'UNIQUE', 'EMAIL_FORMAT']
-        }
-      ],
-      relationships: [
-        {
-          id: 'customer_tickets',
-          sourceEntityId: 'customer',
-          targetEntityId: 'ticket',
-          type: 'one_to_many',
-          description: 'Um cliente pode ter múltiplos tickets',
-          isRequired: false
-        }
-      ],
-      businessRules: [
-        'Email deve ser único no sistema',
-        'Nome não pode estar vazio',
-        'Cliente deve ser maior de idade'
-      ]
-    }
-  ],
-  userStories: [
-    {
-      id: 'us001',
-      title: 'Enviar consulta como cliente',
-      description: 'Como cliente, eu quero enviar uma consulta para receber suporte',
-      asA: 'cliente',
-      iWant: 'enviar uma consulta ao sistema',
-      soThat: 'possa receber suporte rápido e eficiente',
-      acceptanceCriteria: [
-        'Posso digitar minha consulta em texto livre',
-        'Recebo confirmação de que a consulta foi recebida',
-        'Sou notificado quando há uma resposta'
-      ],
-      priority: 1,
-      storyPoints: 5,
-      epic: 'Atendimento Básico',
-      theme: 'Experiência do Cliente',
-      relatedRequirements: ['fr001']
-    }
-  ],
-  businessRules: [
-    {
-      id: 'br001',
-      code: 'BR001',
-      name: 'Priorização por Sentimento',
-      description: 'Consultas com sentimento negativo devem ter prioridade alta',
-      type: 'action_enabler',
-      condition: 'sentiment_score < -0.5',
-      action: 'set_priority = HIGH',
-      priority: 'high',
-      source: 'business_rules.docx',
-      relatedRequirements: ['fr002'],
-      examples: [
-        'Cliente reclamando de produto = prioridade alta',
-        'Cliente elogiando = prioridade normal'
-      ]
-    }
-  ],
-  metadata: {
-    totalWordCount: 2847,
-    totalPages: 12,
-    completeness: 85,
-    qualityScore: 92,
-    lastReviewDate: '2024-03-14T16:00:00',
-    reviewers: ['João Silva', 'Maria Santos'],
-    approvers: ['Carlos Oliveira']
-  },
-  generationConfig: {
-    includeDataModel: true,
-    includeUserStories: true,
-    includeBusinessRules: true,
-    includeGlossary: true,
-    detailLevel: 'detailed',
-    targetAudience: 'mixed',
-    templateStyle: 'agile'
-  }
-};
-
 const SpecificationPage: React.FC = () => {
-  const [specification, setSpecification] = useState<SpecificationDocument>(mockSpecification);
-  const [selectedSection, setSelectedSection] = useState<string>('intro');
-  const [sidebarTab, setSidebarTab] = useState<'outline' | 'issues' | 'comments'>('outline');
+  // List of specifications
+  const [specifications, setSpecifications] = useState<SpecificationSession[]>([]);
+  const [loadingList, setLoadingList] = useState(true);
+
+  // Selected specification
+  const [selectedSpec, setSelectedSpec] = useState<SpecificationSession | null>(null);
+  const [loadingSpec, setLoadingSpec] = useState(false);
+
+  // Versions
+  const [versions, setVersions] = useState<SpecificationVersion[]>([]);
+  const [selectedVersion, setSelectedVersion] = useState<number>(0);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+
+  // Document content
+  const [documentContent, setDocumentContent] = useState<string>('');
+
+  // Modal
   const [showGenerationModal, setShowGenerationModal] = useState(false);
-  const [showEditorModal, setShowEditorModal] = useState(false);
-  const [selectedSectionForEdit, setSelectedSectionForEdit] = useState<SpecificationSection | null>(null);
 
-  const currentProjectId = 'project1'; // This should come from context/props
+  // Polling for generating specs
+  const [pollingInterval, setPollingInterval] = useState<NodeJS.Timeout | null>(null);
 
-  const getStatusIcon = (status: SpecificationStatus) => {
-    switch (status) {
-      case SpecificationStatus.DRAFT:
-        return '📝';
-      case SpecificationStatus.GENERATED:
-        return '✨';
-      case SpecificationStatus.REVIEWING:
-        return '👁️';
-      case SpecificationStatus.APPROVED:
-        return '✅';
-      case SpecificationStatus.NEEDS_REVISION:
-        return '⚠️';
-      default:
-        return '📄';
-    }
-  };
+  const currentProjectId = 'project1'; // TODO: Get from context
 
-  const getStatusText = (status: SpecificationStatus) => {
-    switch (status) {
-      case SpecificationStatus.DRAFT:
-        return 'Rascunho';
-      case SpecificationStatus.GENERATED:
-        return 'Gerado';
-      case SpecificationStatus.REVIEWING:
-        return 'Em Revisão';
-      case SpecificationStatus.APPROVED:
-        return 'Aprovado';
-      case SpecificationStatus.NEEDS_REVISION:
-        return 'Precisa Revisão';
-      default:
-        return 'Desconhecido';
-    }
-  };
+  // Load specifications on mount
+  useEffect(() => {
+    loadSpecifications();
+    return () => {
+      if (pollingInterval) clearInterval(pollingInterval);
+    };
+  }, []);
 
-  const getSectionIcon = (type: SpecificationSectionType) => {
-    switch (type) {
-      case SpecificationSectionType.INTRODUCTION:
-        return '📖';
-      case SpecificationSectionType.OVERVIEW:
-        return '🔍';
-      case SpecificationSectionType.FUNCTIONAL_REQUIREMENTS:
-        return '⚙️';
-      case SpecificationSectionType.NON_FUNCTIONAL_REQUIREMENTS:
-        return '📊';
-      case SpecificationSectionType.DATA_MODEL:
-        return '🗃️';
-      case SpecificationSectionType.USER_INTERFACE:
-        return '🖥️';
-      case SpecificationSectionType.INTEGRATION:
-        return '🔗';
-      case SpecificationSectionType.BUSINESS_RULES:
-        return '📋';
-      case SpecificationSectionType.GLOSSARY:
-        return '📚';
-      default:
-        return '📄';
-    }
-  };
+  const loadSpecifications = async () => {
+    setLoadingList(true);
+    try {
+      const response = await listSpecifications(undefined, undefined, 50, 0);
+      setSpecifications(response.sessions || []);
 
-  const getSectionStatusIcon = (section: SpecificationSection) => {
-    if (section.issues.filter(i => i.severity === 'critical' || i.severity === 'high').length > 0) {
-      return '🔴';
-    }
-    if (section.issues.filter(i => i.severity === 'medium').length > 0) {
-      return '🟡';
-    }
-    if (section.completeness < 80) {
-      return '🟠';
-    }
-    return '🟢';
-  };
-
-  const handleGenerateSpecification = () => {
-    setShowGenerationModal(true);
-  };
-
-  const handleEditSection = (section: SpecificationSection) => {
-    setSelectedSectionForEdit(section);
-    setShowEditorModal(true);
-  };
-
-  const handleSaveSection = (sectionId: string, content: string) => {
-    setSpecification(prev => ({
-      ...prev,
-      sections: prev.sections.map(section =>
-        section.id === sectionId
-          ? {
-              ...section,
-              content,
-              lastModified: new Date().toISOString(),
-              wordCount: content.split(' ').length
-            }
-          : section
-      ),
-      updatedAt: new Date().toISOString()
-    }));
-    setShowEditorModal(false);
-  };
-
-  const handleDownloadSpecification = () => {
-    // Simulate download
-    console.log('Downloading specification...');
-  };
-
-  const handleShareSpecification = () => {
-    // Simulate sharing
-    console.log('Sharing specification...');
-  };
-
-  const handleApproveSpecification = () => {
-    setSpecification(prev => ({
-      ...prev,
-      status: SpecificationStatus.APPROVED,
-      updatedAt: new Date().toISOString(),
-      metadata: {
-        ...prev.metadata,
-        approvers: [...prev.metadata.approvers, 'Current User']
+      // Auto-select first spec if available and none selected
+      if (response.sessions && response.sessions.length > 0 && !selectedSpec) {
+        handleSelectSpecification(response.sessions[0]);
       }
-    }));
+    } catch (err) {
+      console.error('Error loading specifications:', err);
+      toast.error('Erro ao carregar especificações');
+    } finally {
+      setLoadingList(false);
+    }
   };
 
-  const getCurrentSection = () => {
-    return specification.sections.find(s => s.id === selectedSection);
+  const handleSelectSpecification = async (spec: SpecificationSession) => {
+    setSelectedSpec(spec);
+    setLoadingSpec(true);
+    setDocumentContent('');
+
+    try {
+      // Load full specification details
+      const fullSpec = await getSpecification(spec.id);
+      setSelectedSpec(fullSpec);
+
+      // Set document content
+      if (fullSpec.specification_document) {
+        setDocumentContent(fullSpec.specification_document);
+      }
+
+      // Load versions
+      await loadVersions(spec.id);
+
+      // If status is 'generating', start polling
+      if (fullSpec.status === 'generating') {
+        startPolling(spec.id);
+      } else {
+        stopPolling();
+      }
+    } catch (err) {
+      console.error('Error loading specification:', err);
+      toast.error('Erro ao carregar especificação');
+    } finally {
+      setLoadingSpec(false);
+    }
+  };
+
+  const loadVersions = async (sessionId: string) => {
+    setLoadingVersions(true);
+    try {
+      const response = await listSpecificationVersions(sessionId);
+      setVersions(response.versions || []);
+
+      // Auto-select latest version
+      if (response.versions && response.versions.length > 0) {
+        const latestVersion = Math.max(...response.versions.map((v: SpecificationVersion) => v.version));
+        setSelectedVersion(latestVersion);
+      }
+    } catch (err) {
+      console.error('Error loading versions:', err);
+    } finally {
+      setLoadingVersions(false);
+    }
+  };
+
+  const handleVersionChange = async (version: number) => {
+    if (!selectedSpec) return;
+
+    setSelectedVersion(version);
+    try {
+      const versionData = await getSpecificationVersion(selectedSpec.id, version);
+      if (versionData && versionData.specification_document) {
+        setDocumentContent(versionData.specification_document);
+      }
+    } catch (err) {
+      console.error('Error loading version:', err);
+      toast.error('Erro ao carregar versão');
+    }
+  };
+
+  const startPolling = useCallback((sessionId: string) => {
+    stopPolling();
+    const interval = setInterval(async () => {
+      try {
+        const spec = await getSpecification(sessionId);
+        setSelectedSpec(spec);
+
+        if (spec.status === 'completed' || spec.status === 'failed') {
+          stopPolling();
+          if (spec.status === 'completed') {
+            toast.success('Especificação gerada com sucesso!');
+            if (spec.specification_document) {
+              setDocumentContent(spec.specification_document);
+            }
+            await loadVersions(sessionId);
+          } else {
+            toast.error('Falha na geração da especificação');
+          }
+        }
+      } catch (err) {
+        console.error('Polling error:', err);
+      }
+    }, 3000);
+    setPollingInterval(interval);
+  }, []);
+
+  const stopPolling = () => {
+    if (pollingInterval) {
+      clearInterval(pollingInterval);
+      setPollingInterval(null);
+    }
+  };
+
+  const handleGenerationSuccess = async (sessionId: string) => {
+    setShowGenerationModal(false);
+    toast.info('Geração de especificação iniciada...');
+
+    // Refresh list and select new spec
+    await loadSpecifications();
+
+    // Find and select the new spec
+    try {
+      const newSpec = await getSpecification(sessionId);
+      setSelectedSpec(newSpec);
+      setDocumentContent('');
+
+      // Start polling for this spec
+      startPolling(sessionId);
+    } catch (err) {
+      console.error('Error loading new specification:', err);
+    }
+  };
+
+  const handleDownload = () => {
+    if (!documentContent || !selectedSpec) return;
+
+    const blob = new Blob([documentContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${selectedSpec.session_name || 'especificacao'}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('pt-BR', {
+    return new Date(dateString).toLocaleString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
@@ -437,275 +218,227 @@ const SpecificationPage: React.FC = () => {
     });
   };
 
-  const allIssues = specification.sections.flatMap(s => s.issues);
-  const criticalIssues = allIssues.filter(i => i.severity === 'critical').length;
-  const highIssues = allIssues.filter(i => i.severity === 'high').length;
-  const totalIssues = allIssues.length;
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'generating':
+        return <Loader className="status-icon spinning" size={16} />;
+      case 'completed':
+        return <CheckCircle className="status-icon success" size={16} />;
+      case 'failed':
+        return <AlertCircle className="status-icon error" size={16} />;
+      default:
+        return <Clock className="status-icon" size={16} />;
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    const labels: { [key: string]: string } = {
+      'generating': 'Gerando...',
+      'completed': 'Concluído',
+      'failed': 'Falhou',
+      'cancelled': 'Cancelado',
+      'paused': 'Pausado',
+      'reviewing': 'Em Revisão'
+    };
+    return labels[status] || status;
+  };
 
   return (
     <div className="specification-page">
+      {/* Header */}
       <div className="specification-header">
         <div className="specification-header-left">
           <h1>
-            {getStatusIcon(specification.status)} Especificação Funcional
-            <span className={`spec-status-badge status-${specification.status}`}>
-              {getStatusText(specification.status)}
-            </span>
+            <FileText size={28} />
+            Especificação Funcional
           </h1>
-          <p>Documente e valide os requisitos funcionais do seu projeto</p>
+          <p>Gere e gerencie especificações funcionais a partir dos requisitos do projeto</p>
         </div>
         <div className="specification-header-actions">
-          <button className="spec-action-button secondary" onClick={handleDownloadSpecification}>
-            <Download size={18} />
-            Exportar PDF
+          <button
+            className="spec-action-button secondary"
+            onClick={loadSpecifications}
+            disabled={loadingList}
+          >
+            <RefreshCw size={18} className={loadingList ? 'spinning' : ''} />
+            Atualizar
           </button>
-          <button className="spec-action-button secondary" onClick={handleShareSpecification}>
-            <Share2 size={18} />
-            Compartilhar
-          </button>
-          {specification.status !== SpecificationStatus.APPROVED && (
-            <button className="spec-action-button success" onClick={handleApproveSpecification}>
-              <CheckCircle size={18} />
-              Aprovar
-            </button>
-          )}
-          <button className="spec-action-button primary" onClick={handleGenerateSpecification}>
-            <RefreshCw size={18} />
-            Gerar/Atualizar
+          <button
+            className="spec-action-button primary"
+            onClick={() => setShowGenerationModal(true)}
+          >
+            <Plus size={18} />
+            Nova Especificação
           </button>
         </div>
       </div>
 
       <div className="specification-content">
+        {/* Sidebar - List of specifications */}
         <div className="specification-sidebar">
           <div className="spec-sidebar-header">
-            <h3>Progresso da Especificação</h3>
-            <div className="spec-progress-bar">
-              <div 
-                className="spec-progress-fill" 
-                style={{ width: `${specification.metadata.completeness}%` }}
-              />
-            </div>
-            <div className="spec-stats">
-              <div className="spec-stat">
-                <span className="spec-stat-number">{specification.metadata.completeness}%</span>
-                <span className="spec-stat-label">Completo</span>
-              </div>
-              <div className="spec-stat">
-                <span className="spec-stat-number">{specification.metadata.qualityScore}</span>
-                <span className="spec-stat-label">Qualidade</span>
-              </div>
-              <div className="spec-stat">
-                <span className="spec-stat-number">{specification.metadata.totalWordCount}</span>
-                <span className="spec-stat-label">Palavras</span>
-              </div>
-              <div className="spec-stat">
-                <span className="spec-stat-number">{totalIssues}</span>
-                <span className="spec-stat-label">Issues</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="spec-sidebar-tabs">
-            <button 
-              className={`spec-sidebar-tab ${sidebarTab === 'outline' ? 'active' : ''}`}
-              onClick={() => setSidebarTab('outline')}
-            >
-              📋 Estrutura
-            </button>
-            <button 
-              className={`spec-sidebar-tab ${sidebarTab === 'issues' ? 'active' : ''}`}
-              onClick={() => setSidebarTab('issues')}
-            >
-              ⚠️ Issues ({totalIssues})
-            </button>
-            <button 
-              className={`spec-sidebar-tab ${sidebarTab === 'comments' ? 'active' : ''}`}
-              onClick={() => setSidebarTab('comments')}
-            >
-              💬 Comentários
-            </button>
+            <h3>Especificações ({specifications.length})</h3>
           </div>
 
           <div className="spec-sidebar-content">
-            {sidebarTab === 'outline' && (
-              <ul className="spec-outline-list">
-                {specification.sections.map(section => (
-                  <li key={section.id} className="spec-outline-item">
-                    <a
-                      href={`#${section.id}`}
-                      className={`spec-outline-link ${selectedSection === section.id ? 'active' : ''}`}
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setSelectedSection(section.id);
-                      }}
-                    >
-                      <span className="section-status-icon">
-                        {getSectionStatusIcon(section)}
+            {loadingList ? (
+              <div className="spec-loading">
+                <Loader className="spinning" size={32} />
+                <p>Carregando...</p>
+              </div>
+            ) : specifications.length === 0 ? (
+              <div className="spec-empty-state">
+                <FileText size={48} />
+                <h4>Nenhuma especificação</h4>
+                <p>Clique em "Nova Especificação" para gerar uma</p>
+              </div>
+            ) : (
+              <ul className="spec-list">
+                {specifications.map(spec => (
+                  <li
+                    key={spec.id}
+                    className={`spec-list-item ${selectedSpec?.id === spec.id ? 'active' : ''}`}
+                    onClick={() => handleSelectSpecification(spec)}
+                  >
+                    <div className="spec-list-item-header">
+                      {getStatusIcon(spec.status)}
+                      <span className="spec-list-item-name">
+                        {spec.session_name || 'Sem nome'}
                       </span>
-                      <span>{getSectionIcon(section.type)}</span>
-                      <span>{section.title}</span>
-                    </a>
+                      <ChevronRight size={16} />
+                    </div>
+                    <div className="spec-list-item-meta">
+                      <span className={`spec-status-badge ${spec.status}`}>
+                        {getStatusLabel(spec.status)}
+                      </span>
+                      <span className="spec-list-item-date">
+                        {formatDate(spec.created_at)}
+                      </span>
+                    </div>
                   </li>
                 ))}
               </ul>
             )}
-
-            {sidebarTab === 'issues' && (
-              <div className="spec-issues-list">
-                {allIssues.length === 0 ? (
-                  <div className="spec-empty-state">
-                    <CheckCircle size={48} />
-                    <h4>Nenhuma issue encontrada</h4>
-                    <p>A especificação está em conformidade</p>
-                  </div>
-                ) : (
-                  allIssues.map(issue => (
-                    <div key={issue.id} className={`spec-issue-item ${issue.severity}`}>
-                      <div className="spec-issue-title">{issue.title}</div>
-                      <div className="spec-issue-description">{issue.description}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {sidebarTab === 'comments' && (
-              <div className="spec-empty-state">
-                <MessageSquare size={48} />
-                <h4>Sem comentários</h4>
-                <p>Adicione comentários para colaborar na especificação</p>
-              </div>
-            )}
           </div>
         </div>
 
+        {/* Main content - Document viewer */}
         <div className="specification-main">
-          <div className="spec-main-header">
-            <div className="spec-document-info">
-              <h2>{specification.title}</h2>
-              <div className="spec-document-meta">
-                <div className="spec-version-info">
-                  <History size={16} />
-                  <span>Versão {specification.version}</span>
+          {!selectedSpec ? (
+            <div className="spec-empty-state large">
+              <FileText size={64} />
+              <h3>Selecione uma especificação</h3>
+              <p>Escolha uma especificação na lista ou gere uma nova</p>
+              <button
+                className="spec-action-button primary"
+                onClick={() => setShowGenerationModal(true)}
+              >
+                <Plus size={18} />
+                Nova Especificação
+              </button>
+            </div>
+          ) : (
+            <>
+              {/* Document header */}
+              <div className="spec-main-header">
+                <div className="spec-document-info">
+                  <h2>{selectedSpec.session_name || 'Especificação'}</h2>
+                  <div className="spec-document-meta">
+                    {getStatusIcon(selectedSpec.status)}
+                    <span className={`spec-status-badge ${selectedSpec.status}`}>
+                      {getStatusLabel(selectedSpec.status)}
+                    </span>
+                    <span>Criado em {formatDate(selectedSpec.created_at)}</span>
+                    {selectedSpec.generation_time_ms && (
+                      <span>Tempo: {(selectedSpec.generation_time_ms / 1000).toFixed(1)}s</span>
+                    )}
+                  </div>
                 </div>
-                <span>Atualizado em {formatDate(specification.updatedAt)}</span>
-                <span>{specification.metadata.totalPages} páginas</span>
-              </div>
-            </div>
-            <div className="spec-main-actions">
-              <button className="spec-action-button secondary">
-                <Eye size={16} />
-                Pré-visualizar
-              </button>
-              <button className="spec-action-button secondary">
-                <Settings size={16} />
-                Configurar
-              </button>
-            </div>
-          </div>
-
-          <div className="spec-editor-container">
-            <div className="spec-editor-main">
-              {specification.sections.length === 0 ? (
-                <div className="spec-empty-state">
-                  <FileText size={64} />
-                  <h3>Especificação não gerada</h3>
-                  <p>Gere sua especificação funcional a partir dos documentos do projeto</p>
-                  <button className="spec-action-button primary" onClick={handleGenerateSpecification}>
-                    <RefreshCw size={18} />
-                    Gerar Especificação
+                <div className="spec-main-actions">
+                  {versions.length > 0 && (
+                    <div className="spec-version-selector">
+                      <History size={16} />
+                      <select
+                        value={selectedVersion}
+                        onChange={(e) => handleVersionChange(parseInt(e.target.value))}
+                        disabled={loadingVersions}
+                      >
+                        {versions.map(v => (
+                          <option key={v.version} value={v.version}>
+                            Versão {v.version}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <button
+                    className="spec-action-button secondary"
+                    onClick={handleDownload}
+                    disabled={!documentContent}
+                  >
+                    <Download size={16} />
+                    Download MD
                   </button>
                 </div>
-              ) : (
-                specification.sections.map(section => (
-                  <div key={section.id} id={section.id} className="spec-section">
-                    <div className="spec-section-header">
-                      <h2 className="spec-section-title">
-                        {getSectionIcon(section.type)}
-                        {section.title}
-                      </h2>
-                      <div className="spec-section-actions">
-                        <button 
-                          className="spec-section-action"
-                          onClick={() => handleEditSection(section)}
-                        >
-                          <Edit size={14} />
-                          Editar
-                        </button>
-                        <button className="spec-section-action">
-                          <MessageSquare size={14} />
-                          Comentar
-                        </button>
+              </div>
+
+              {/* Document content */}
+              <div className="spec-document-container">
+                {loadingSpec ? (
+                  <div className="spec-loading">
+                    <Loader className="spinning" size={48} />
+                    <p>Carregando especificação...</p>
+                  </div>
+                ) : selectedSpec.status === 'generating' ? (
+                  <div className="spec-generating">
+                    <Loader className="spinning" size={64} />
+                    <h3>Gerando Especificação...</h3>
+                    <p>Isso pode levar alguns minutos. A página será atualizada automaticamente.</p>
+                    <div className="spec-generating-progress">
+                      <div className="progress-bar">
+                        <div className="progress-fill animate"></div>
                       </div>
                     </div>
-                    <div 
-                      className="spec-section-content"
-                      dangerouslySetInnerHTML={{ __html: section.content.replace(/\n/g, '<br>') }}
-                    />
                   </div>
-                ))
-              )}
-
-              {/* Seção de Requisitos Funcionais */}
-              {specification.functionalRequirements.length > 0 && (
-                <div id="functional-requirements" className="spec-section">
-                  <div className="spec-section-header">
-                    <h2 className="spec-section-title">
-                      ⚙️ 3. Requisitos Funcionais
-                    </h2>
+                ) : selectedSpec.status === 'failed' ? (
+                  <div className="spec-error">
+                    <AlertCircle size={64} />
+                    <h3>Falha na Geração</h3>
+                    <p>Ocorreu um erro ao gerar a especificação.</p>
+                    {selectedSpec.generation_log && (
+                      <pre className="error-log">{selectedSpec.generation_log}</pre>
+                    )}
+                    <button
+                      className="spec-action-button primary"
+                      onClick={() => setShowGenerationModal(true)}
+                    >
+                      Tentar Novamente
+                    </button>
                   </div>
-                  <RequirementsTable requirements={specification.functionalRequirements} />
-                </div>
-              )}
-
-              {/* Seção de Requisitos Não-Funcionais */}
-              {specification.nonFunctionalRequirements.length > 0 && (
-                <div id="non-functional-requirements" className="spec-section">
-                  <div className="spec-section-header">
-                    <h2 className="spec-section-title">
-                      📊 4. Requisitos Não-Funcionais
-                    </h2>
+                ) : documentContent ? (
+                  <div className="spec-markdown-content">
+                    <ReactMarkdown>{documentContent}</ReactMarkdown>
                   </div>
-                  <RequirementsTable requirements={specification.nonFunctionalRequirements} />
-                </div>
-              )}
-
-              {/* Seção do Modelo de Dados */}
-              {specification.dataEntities.length > 0 && (
-                <div id="data-model" className="spec-section">
-                  <div className="spec-section-header">
-                    <h2 className="spec-section-title">
-                      🗃️ 5. Modelo de Dados
-                    </h2>
+                ) : (
+                  <div className="spec-empty-state">
+                    <FileText size={48} />
+                    <h4>Documento vazio</h4>
+                    <p>Esta especificação não possui conteúdo</p>
                   </div>
-                  <DataModelViewer entities={specification.dataEntities} />
-                </div>
-              )}
-            </div>
-          </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
 
+      {/* Generation Modal */}
       {showGenerationModal && (
         <SpecificationGenerationModal
           isOpen={showGenerationModal}
           onClose={() => setShowGenerationModal(false)}
-          onSuccess={(sessionId: string) => {
-            console.log('Specification generation started, session ID:', sessionId);
-            setShowGenerationModal(false);
-            // TODO: Navigate to view the generated specification or refresh list
-          }}
+          onSuccess={handleGenerationSuccess}
           projectId={currentProjectId}
-        />
-      )}
-
-      {showEditorModal && selectedSectionForEdit && (
-        <SpecificationEditorModal
-          isOpen={showEditorModal}
-          section={selectedSectionForEdit}
-          onClose={() => setShowEditorModal(false)}
-          onSave={handleSaveSection}
         />
       )}
     </div>
