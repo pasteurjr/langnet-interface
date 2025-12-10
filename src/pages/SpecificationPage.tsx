@@ -691,10 +691,10 @@ const SpecificationPage: React.FC = () => {
         <SpecificationGenerationModal
           isOpen={showGenerationModal}
           onClose={() => setShowGenerationModal(false)}
-          onGenerate={(request) => {
-            // Simulate generation
-            console.log('Generating specification with request:', request);
+          onSuccess={(sessionId: string) => {
+            console.log('Specification generation started, session ID:', sessionId);
             setShowGenerationModal(false);
+            // TODO: Navigate to view the generated specification or refresh list
           }}
           projectId={currentProjectId}
         />

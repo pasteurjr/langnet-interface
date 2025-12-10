@@ -99,7 +99,7 @@ const SpecificationGenerationModal: React.FC<SpecificationGenerationModalProps> 
 
       // Auto-select latest version (highest version number)
       if (response.versions && response.versions.length > 0) {
-        const latestVersion = Math.max(...response.versions.map(v => v.version));
+        const latestVersion = Math.max(...response.versions.map((v: DocumentVersion) => v.version));
         setSelectedVersion(latestVersion);
       }
     } catch (err) {
