@@ -7,6 +7,7 @@ from app.config import settings
 from app.database import test_connection
 from app.routers import auth_router, users_router, projects_router, agents_router, tasks_router, documents_router
 from app.routers.chat import router as chat_router
+from app.routers.specification import router as specification_router
 from api.langnetapi import router as langnet_router
 from api.langnetwebsocket import websocket_endpoint
 from app.utils import decode_access_token
@@ -36,6 +37,7 @@ app.include_router(agents_router, prefix="/api")
 app.include_router(tasks_router, prefix="/api")
 app.include_router(documents_router, prefix="/api")
 app.include_router(chat_router, prefix="/api")  # Chat with agents (memory-enabled)
+app.include_router(specification_router, prefix="/api")  # Functional specification generation
 app.include_router(langnet_router, prefix="/api")  # LangNet multi-agent system
 
 
