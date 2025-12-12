@@ -53,7 +53,7 @@ class LLMClient:
         prompt: str,
         system: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: int = 4096,
+        max_tokens: int = 8192,  # Claude MAX output tokens
         **kwargs
     ) -> str:
         """

@@ -12,6 +12,10 @@ interface SpecificationGenerationModalProps {
   onClose: () => void;
   onSuccess?: (sessionId: string) => void;
   projectId: string;
+  /** Callback when selection changes (for selection-only mode) */
+  onSelectionChange?: (sessionId: string, version: number, sessionName: string) => void;
+  /** If true, shows only selection UI with a "Select" button instead of "Generate" */
+  selectionOnly?: boolean;
 }
 
 interface DocumentVersion {
@@ -26,7 +30,9 @@ const SpecificationGenerationModal: React.FC<SpecificationGenerationModalProps> 
   isOpen,
   onClose,
   onSuccess,
-  projectId
+  projectId,
+  onSelectionChange,
+  selectionOnly = false
 }) => {
   // Requirements selection
   const [requirementsSessions, setRequirementsSessions] = useState<SessionSummary[]>([]);
@@ -69,6 +75,13 @@ const SpecificationGenerationModal: React.FC<SpecificationGenerationModalProps> 
       setSelectedVersion(0);
     }
   }, [selectedSessionId]);
+
+  // Notify parent when selection changes (for selection-only mode)
+  useEffect(() => {
+    if (onSelectionChange && selectedSessionId && selectedVersion > 0) {
+      onSelectionChange(selectedSessionId, selectedVersion, selectedSessionName);
+    }
+  }, [selectedSessionId, selectedVersion, selectedSessionName, onSelectionChange]);
 
   const loadRequirementsSessions = async () => {
     setLoadingSessions(true);
@@ -118,6 +131,17 @@ const SpecificationGenerationModal: React.FC<SpecificationGenerationModalProps> 
     if (session) {
       setSelectedSessionName(session.session_name);
     }
+  };
+
+  // Handle selection-only mode confirmation
+  const handleSelect = () => {
+    if (!selectedSessionId || !selectedVersion) {
+      toast.error('Selecione uma sessão de requisitos e versão');
+      return;
+    }
+    // Selection is already passed via onSelectionChange callback
+    toast.success(`Requisitos selecionados: ${selectedSessionName} (v${selectedVersion})`);
+    onClose();
   };
 
   const handleGenerate = async () => {
@@ -194,19 +218,26 @@ const SpecificationGenerationModal: React.FC<SpecificationGenerationModalProps> 
 
   return (
     <div className="modal-overlay">
-      <div className="spec-generation-modal">
+      <div className={`spec-generation-modal ${selectionOnly ? 'selection-only-mode' : ''}`}>
         <div className="modal-header">
-          <h2>🚀 Gerar Especificação Funcional</h2>
+          <h2>{selectionOnly ? '📋 Selecionar Documento de Requisitos' : '🚀 Gerar Especificação Funcional'}</h2>
           <button className="close-button" onClick={onClose} disabled={isGenerating}>×</button>
         </div>
 
         <div className="modal-content">
           {/* Requirements Source Selection */}
           <div className="generation-step">
-            <h3>📄 Documento de Requisitos (Fonte Principal)</h3>
-            <p className="step-description">
-              Selecione a sessão e versão do documento de requisitos que será usada como <strong>fonte primária</strong> para gerar a especificação funcional.
-            </p>
+            {!selectionOnly && <h3>📄 Documento de Requisitos (Fonte Principal)</h3>}
+            {!selectionOnly && (
+              <p className="step-description">
+                Selecione a sessão e versão do documento de requisitos que será usada como <strong>fonte primária</strong> para gerar a especificação funcional.
+              </p>
+            )}
+            {selectionOnly && (
+              <p className="step-description" style={{ marginBottom: '16px' }}>
+                Selecione o documento de requisitos que servirá como base para a especificação funcional:
+              </p>
+            )}
 
             <div className="selection-group">
               <label className="selection-label">
@@ -264,23 +295,30 @@ const SpecificationGenerationModal: React.FC<SpecificationGenerationModalProps> 
             )}
           </div>
 
-          {/* Optional Session Name */}
-          <div className="generation-step">
-            <h3>📝 Nome da Especificação (Opcional)</h3>
-            <input
-              type="text"
-              className="session-name-input"
-              placeholder="Ex: Especificação Funcional v1.0"
-              value={sessionName}
-              onChange={(e) => setSessionName(e.target.value)}
-              disabled={isGenerating}
-            />
-            <p className="input-hint">Se não especificado, será gerado automaticamente com data/hora</p>
-          </div>
+          {/* Show advanced options only when NOT in selection-only mode */}
+          {!selectionOnly && (
+            <>
+              {/* Optional Session Name */}
+              <div className="generation-step">
+                <h3>📝 Nome da Especificação (Opcional)</h3>
+                <input
+                  type="text"
+                  className="session-name-input"
+                  placeholder="Ex: Especificação Funcional v1.0"
+                  value={sessionName}
+                  onChange={(e) => setSessionName(e.target.value)}
+                  disabled={isGenerating}
+                />
+                <p className="input-hint">Se não especificado, será gerado automaticamente com data/hora</p>
+              </div>
+            </>
+          )}
 
-          {/* Advanced Configuration */}
-          <div className="generation-step">
-            <h3>⚙️ Configurações da Geração</h3>
+          {/* Advanced Configuration - only when NOT in selection-only mode */}
+          {!selectionOnly && (
+            <>
+            <div className="generation-step">
+              <h3>⚙️ Configurações da Geração</h3>
             <div className="config-grid">
               <div className="config-group">
                 <h4>Seções a Incluir</h4>
@@ -420,53 +458,55 @@ const SpecificationGenerationModal: React.FC<SpecificationGenerationModalProps> 
                 </div>
               </div>
             </div>
-          </div>
+            </div>
 
-          {/* Custom Instructions */}
-          <div className="generation-step">
-            <h3>💬 Instruções Personalizadas (Opcional)</h3>
-            <p>Adicione instruções específicas para personalizar a geração da especificação:</p>
-            <textarea
-              className="instructions-textarea"
-              placeholder="Ex: Incluir diagramas de sequência UML, focar em aspectos de segurança, usar terminologia específica do domínio bancário, incluir métricas de performance detalhadas..."
-              value={customInstructions}
-              onChange={(e) => setCustomInstructions(e.target.value)}
-              rows={4}
-              disabled={isGenerating}
-            />
-          </div>
+            {/* Custom Instructions */}
+            <div className="generation-step">
+              <h3>💬 Instruções Personalizadas (Opcional)</h3>
+              <p>Adicione instruções específicas para personalizar a geração da especificação:</p>
+              <textarea
+                className="instructions-textarea"
+                placeholder="Ex: Incluir diagramas de sequência UML, focar em aspectos de segurança, usar terminologia específica do domínio bancário, incluir métricas de performance detalhadas..."
+                value={customInstructions}
+                onChange={(e) => setCustomInstructions(e.target.value)}
+                rows={4}
+                disabled={isGenerating}
+              />
+            </div>
 
-          {/* Generation Summary */}
-          <div className="generation-summary">
-            <h3>📋 Resumo da Geração</h3>
-            <div className="summary-grid">
-              <div className="summary-item">
-                <span className="summary-label">Requisitos:</span>
-                <span className="summary-value">
-                  {selectedSessionName || 'Não selecionado'} (v{selectedVersion || '-'})
-                </span>
-              </div>
-              <div className="summary-item">
-                <span className="summary-label">Nível de detalhamento:</span>
-                <span className="summary-value">{detailLevel}</span>
-              </div>
-              <div className="summary-item">
-                <span className="summary-label">Público-alvo:</span>
-                <span className="summary-value">{targetAudience}</span>
-              </div>
-              <div className="summary-item">
-                <span className="summary-label">Seções incluídas:</span>
-                <span className="summary-value">
-                  {[
-                    includeDataModel && 'Modelo de Dados',
-                    includeUseCases && 'Casos de Uso',
-                    includeBusinessRules && 'Regras de Negócio',
-                    includeGlossary && 'Glossário'
-                  ].filter(Boolean).join(', ') || 'Seções padrão'}
-                </span>
+            {/* Generation Summary */}
+            <div className="generation-summary">
+              <h3>📋 Resumo da Geração</h3>
+              <div className="summary-grid">
+                <div className="summary-item">
+                  <span className="summary-label">Requisitos:</span>
+                  <span className="summary-value">
+                    {selectedSessionName || 'Não selecionado'} (v{selectedVersion || '-'})
+                  </span>
+                </div>
+                <div className="summary-item">
+                  <span className="summary-label">Nível de detalhamento:</span>
+                  <span className="summary-value">{detailLevel}</span>
+                </div>
+                <div className="summary-item">
+                  <span className="summary-label">Público-alvo:</span>
+                  <span className="summary-value">{targetAudience}</span>
+                </div>
+                <div className="summary-item">
+                  <span className="summary-label">Seções incluídas:</span>
+                  <span className="summary-value">
+                    {[
+                      includeDataModel && 'Modelo de Dados',
+                      includeUseCases && 'Casos de Uso',
+                      includeBusinessRules && 'Regras de Negócio',
+                      includeGlossary && 'Glossário'
+                    ].filter(Boolean).join(', ') || 'Seções padrão'}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+            </>
+          )}
         </div>
 
         <div className="modal-footer">
@@ -486,22 +526,32 @@ const SpecificationGenerationModal: React.FC<SpecificationGenerationModalProps> 
             >
               Cancelar
             </button>
-            <button
-              className="btn-generate"
-              onClick={handleGenerate}
-              disabled={!selectedSessionId || !selectedVersion || isGenerating}
-            >
-              {isGenerating ? (
-                <>
-                  <span className="spinner"></span>
-                  Gerando Especificação...
-                </>
-              ) : (
-                <>
-                  ✨ Gerar Especificação
-                </>
-              )}
-            </button>
+            {selectionOnly ? (
+              <button
+                className="btn-generate"
+                onClick={handleSelect}
+                disabled={!selectedSessionId || !selectedVersion}
+              >
+                ✅ Confirmar Seleção
+              </button>
+            ) : (
+              <button
+                className="btn-generate"
+                onClick={handleGenerate}
+                disabled={!selectedSessionId || !selectedVersion || isGenerating}
+              >
+                {isGenerating ? (
+                  <>
+                    <span className="spinner"></span>
+                    Gerando Especificação...
+                  </>
+                ) : (
+                  <>
+                    ✨ Gerar Especificação
+                  </>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </div>

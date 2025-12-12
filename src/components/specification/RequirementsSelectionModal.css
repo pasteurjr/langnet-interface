@@ -1,0 +1,243 @@
+/* RequirementsSelectionModal.css - Estilos adicionais */
+
+/* Garantir que o modal overlay fique acima de TUDO */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999 !important;
+}
+
+/* Modal maior quando em modo preview */
+.history-modal.preview-mode {
+  max-width: 1200px;
+  max-height: 95vh;
+  z-index: 10000;
+}
+
+/* Barra de navegação */
+.navigation-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 24px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.btn-back {
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #007bff;
+  border-radius: 6px;
+  background-color: white;
+  color: #007bff;
+  transition: all 0.2s;
+}
+
+.btn-back:hover {
+  background-color: #007bff;
+  color: white;
+}
+
+.selection-info {
+  font-size: 14px;
+  color: #374151;
+}
+
+.selection-info strong {
+  color: #1f2937;
+}
+
+/* Preview do documento */
+.document-preview {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.preview-header {
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e5e7eb;
+  margin-bottom: 16px;
+}
+
+.preview-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #374151;
+}
+
+.preview-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  max-height: 60vh;
+}
+
+/* Markdown styling */
+.preview-content.markdown-body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #24292e;
+}
+
+.preview-content.markdown-body h1,
+.preview-content.markdown-body h2,
+.preview-content.markdown-body h3,
+.preview-content.markdown-body h4,
+.preview-content.markdown-body h5,
+.preview-content.markdown-body h6 {
+  margin-top: 24px;
+  margin-bottom: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.preview-content.markdown-body h1 {
+  font-size: 2em;
+  border-bottom: 1px solid #eaecef;
+  padding-bottom: 0.3em;
+}
+
+.preview-content.markdown-body h2 {
+  font-size: 1.5em;
+  border-bottom: 1px solid #eaecef;
+  padding-bottom: 0.3em;
+}
+
+.preview-content.markdown-body h3 {
+  font-size: 1.25em;
+}
+
+.preview-content.markdown-body p {
+  margin-top: 0;
+  margin-bottom: 16px;
+}
+
+.preview-content.markdown-body ul,
+.preview-content.markdown-body ol {
+  padding-left: 2em;
+  margin-bottom: 16px;
+}
+
+.preview-content.markdown-body li {
+  margin-bottom: 4px;
+}
+
+.preview-content.markdown-body code {
+  padding: 0.2em 0.4em;
+  margin: 0;
+  font-size: 85%;
+  background-color: rgba(27, 31, 35, 0.05);
+  border-radius: 3px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.preview-content.markdown-body pre {
+  padding: 16px;
+  overflow: auto;
+  font-size: 85%;
+  line-height: 1.45;
+  background-color: #f6f8fa;
+  border-radius: 6px;
+  margin-bottom: 16px;
+}
+
+.preview-content.markdown-body pre code {
+  padding: 0;
+  margin: 0;
+  background-color: transparent;
+  border: 0;
+}
+
+.preview-content.markdown-body blockquote {
+  padding: 0 1em;
+  color: #6a737d;
+  border-left: 0.25em solid #dfe2e5;
+  margin: 0 0 16px 0;
+}
+
+.preview-content.markdown-body table {
+  border-spacing: 0;
+  border-collapse: collapse;
+  margin-bottom: 16px;
+  width: 100%;
+}
+
+.preview-content.markdown-body table th,
+.preview-content.markdown-body table td {
+  padding: 6px 13px;
+  border: 1px solid #dfe2e5;
+}
+
+.preview-content.markdown-body table tr:nth-child(2n) {
+  background-color: #f6f8fa;
+}
+
+/* Botão de seleção */
+.btn-select {
+  padding: 12px 24px;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  background-color: #28a745;
+  color: white;
+  border: none;
+}
+
+.btn-select:hover:not(:disabled) {
+  background-color: #218838;
+}
+
+.btn-select:disabled {
+  background-color: #d1d5db;
+  cursor: not-allowed;
+}
+
+/* Badge para tipo de mudança */
+.type-analysis {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.type-refinement {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.type-manual {
+  background-color: #e0e7ff;
+  color: #3730a3;
+}
+
+/* Responsivo */
+@media (max-width: 768px) {
+  .history-modal.preview-mode {
+    max-width: 95%;
+  }
+
+  .navigation-bar {
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .preview-content {
+    max-height: 50vh;
+  }
+}

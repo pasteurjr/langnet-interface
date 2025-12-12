@@ -114,6 +114,7 @@ const App: React.FC = () => {
             <Route path="help" element={<HelpPage />} />
             {/* Rotas standalone para acesso direto */}
             <Route path="/yaml" element={<YamlPage />} />
+            <Route path="/spec" element={<SpecificationPage />} />
             <Route path="/specification" element={<SpecificationPage />} />
             <Route path="/code" element={<CodePage />} />
             <Route path="/monitoring" element={<MonitoringPage />} />

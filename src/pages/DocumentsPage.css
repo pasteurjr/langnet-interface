@@ -69,26 +69,42 @@
 
   .header-buttons {
     display: flex;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: 4px;
+    max-width: 200px;
+    justify-content: flex-end;
   }
 
   .btn-upload-compact,
-  .btn-history-compact {
-    padding: 8px 16px;
+  .btn-history-compact,
+  .btn-requirements-compact {
+    padding: 4px 8px;
     background: rgba(255, 255, 255, 0.2);
     color: white;
     border: 1px solid rgba(255, 255, 255, 0.3);
-    border-radius: 6px;
-    font-size: 13px;
+    border-radius: 4px;
+    font-size: 11px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s;
+    white-space: nowrap;
   }
 
   .btn-upload-compact:hover,
-  .btn-history-compact:hover {
+  .btn-history-compact:hover,
+  .btn-requirements-compact:hover {
     background: rgba(255, 255, 255, 0.3);
     transform: translateY(-1px);
+  }
+
+  /* Requisitos selecionados */
+  .btn-requirements-compact.selected {
+    background: rgba(40, 167, 69, 0.8);
+    border-color: rgba(40, 167, 69, 0.9);
+  }
+
+  .btn-requirements-compact.selected:hover {
+    background: rgba(40, 167, 69, 0.9);
   }
 
   /* COMPACT DOCUMENTS LIST */

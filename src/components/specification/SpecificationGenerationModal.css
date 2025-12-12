@@ -459,7 +459,35 @@
     to { transform: rotate(360deg); }
   }
   
-  @media (max-width: 768px) {
+  /* Selection-only mode - smaller, simpler modal */
+.spec-generation-modal.selection-only-mode {
+  max-width: 500px;
+}
+
+.spec-generation-modal.selection-only-mode .modal-content {
+  padding: 20px;
+}
+
+.spec-generation-modal.selection-only-mode .generation-step {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.spec-generation-modal.selection-only-mode .selection-group {
+  margin-bottom: 16px;
+}
+
+.spec-generation-modal.selection-only-mode .selection-group:last-child {
+  margin-bottom: 0;
+}
+
+.spec-generation-modal.selection-only-mode .version-info {
+  padding: 10px;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 768px) {
     .spec-generation-modal {
       width: 95%;
       margin: 20px;

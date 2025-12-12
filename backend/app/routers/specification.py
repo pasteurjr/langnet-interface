@@ -8,11 +8,66 @@ from pydantic import BaseModel
 import uuid
 from datetime import datetime
 import asyncio
-from app.database import get_db_connection, save_chat_message, get_previous_refinements
+from app.database import (
+    get_db_connection,
+    save_chat_message,
+    get_chat_message,
+    get_chat_messages,
+    update_chat_message,
+    get_previous_refinements
+)
 from app.dependencies import get_current_user
 from app.llm import get_llm_client
 
 router = APIRouter(prefix="/specifications", tags=["specifications"])
+
+
+# ============================================================
+# VALIDATION FUNCTIONS
+# ============================================================
+
+def validate_specification_completeness(doc: str) -> dict:
+    """
+    Verifica se todas as 14 seções obrigatórias estão presentes no documento.
+
+    Returns:
+        dict com 'complete' (bool), 'missing_sections' (list), 'section_count' (int)
+    """
+    required_sections = [
+        ("## 1.", "Introdução"),
+        ("## 2.", "Visão Geral"),
+        ("## 3.", "Requisitos Funcionais"),
+        ("## 4.", "Requisitos Não-Funcionais"),
+        ("## 5.", "Casos de Uso"),
+        ("## 6.", "Modelo de Dados"),
+        ("## 7.", "Interfaces"),
+        ("## 8.", "Regras de Negócio"),
+        ("## 9.", "Fluxos de Trabalho"),
+        ("## 10.", "Análise de Arquitetura"),
+        ("## 11.", "Controle de Qualidade"),
+        ("## 12.", "Glossário"),
+        ("## 13.", "Rastreabilidade"),
+        ("## 14.", "Apêndices")
+    ]
+
+    doc_lower = doc.lower()
+    missing = []
+    found = []
+
+    for section_marker, section_name in required_sections:
+        # Check if section exists (case insensitive)
+        if section_marker.lower() in doc_lower:
+            found.append(section_name)
+        else:
+            missing.append(f"{section_marker} {section_name}")
+
+    return {
+        "complete": len(missing) == 0,
+        "missing_sections": missing,
+        "found_sections": found,
+        "section_count": len(found),
+        "total_expected": 14
+    }
 
 
 # ============================================================
@@ -391,13 +446,18 @@ async def execute_specification_generation(
 
         print(f"[SPEC GENERATION] ✅ Prompt built: {len(prompt)} chars")
 
-        # 4. Call LLM
+        # 4. Call LLM (usa max_tokens=8192 default do llm.py)
         print(f"[SPEC GENERATION] Calling LLM...")
         llm = get_llm_client()
-        result = await llm.generate(prompt, max_tokens=16000)
-        specification_document = result['text']
+        specification_document = llm.complete(prompt)  # max_tokens=8192 by default
 
         print(f"[SPEC GENERATION] ✅ LLM response: {len(specification_document)} chars")
+
+        # 4.1 Validate completeness
+        validation = validate_specification_completeness(specification_document)
+        print(f"[SPEC GENERATION] 📋 Validation: {validation['section_count']}/{validation['total_expected']} sections found")
+        if not validation['complete']:
+            print(f"[SPEC GENERATION] ⚠️ Missing sections: {validation['missing_sections']}")
 
         # 5. Save results
         with get_db_connection() as conn:
@@ -454,6 +514,231 @@ async def execute_specification_generation(
 
 
 # ============================================================
+# REFINEMENT WORKFLOW (BACKGROUND)
+# ============================================================
+
+async def execute_specification_refinement(
+    session_id: str,
+    refinement_instructions: str,
+    current_specification: str,
+    requirements_session_id: str,
+    agent_message_id: str
+):
+    """
+    Execute specification refinement workflow in background
+    Similar to chat.py:execute_refinement_workflow but for specifications
+    """
+    try:
+        print(f"\n{'='*80}")
+        print(f"[SPEC REFINEMENT] Starting refinement for session {session_id}")
+        print(f"[SPEC REFINEMENT] Instructions length: {len(refinement_instructions)} chars")
+        print(f"[SPEC REFINEMENT] Current specification length: {len(current_specification)} chars")
+        print(f"{'='*80}\n")
+
+        # 1. Update session status to 'processing'
+        with get_db_connection() as db:
+            cursor = db.cursor()
+            cursor.execute("""
+                UPDATE execution_specification_sessions
+                SET status = 'processing'
+                WHERE id = %s
+            """, (session_id,))
+            db.commit()
+            cursor.close()
+        print(f"[SPEC REFINEMENT] Session status updated to 'processing'")
+
+        # 2. Load original requirements document for context
+        original_requirements = ""
+        if requirements_session_id:
+            with get_db_connection() as db:
+                cursor = db.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT requirements_document FROM execution_sessions
+                    WHERE id = %s
+                """, (requirements_session_id,))
+                req_data = cursor.fetchone()
+                cursor.close()
+            if req_data:
+                original_requirements = req_data.get('requirements_document', '')
+                print(f"[SPEC REFINEMENT] ✅ Requirements loaded: {len(original_requirements)} chars")
+
+        # 3. Get previous refinements history
+        previous_refinements = get_previous_refinements(session_id, limit=10)
+        refinement_history = ""
+        if previous_refinements:
+            refinement_history = "HISTÓRICO DE REFINAMENTOS ANTERIORES:\n"
+            for idx, msg in enumerate(previous_refinements, 1):
+                timestamp = msg.get('timestamp', '')
+                message_text = msg.get('message_text', '')
+                refinement_history += f"{idx}. [{timestamp}] Usuário solicitou: {message_text}\n"
+            refinement_history += "\n"
+            print(f"[SPEC REFINEMENT] 📚 Incluindo {len(previous_refinements)} refinamentos anteriores")
+        else:
+            print(f"[SPEC REFINEMENT] 📭 Nenhum refinamento anterior encontrado")
+
+        # 4. Save progress message
+        save_chat_message(
+            session_id=session_id,
+            sender_type='system',
+            message_text='🔄 Analisando especificação e aplicando refinamentos...',
+            message_type='progress',
+            sender_name='Sistema'
+        )
+
+        # 5. Build refinement prompt (ESPECÍFICO PARA ESPECIFICAÇÃO)
+        refinement_prompt = f"""ESPECIFICAÇÃO FUNCIONAL ATUAL:
+{current_specification}
+
+DOCUMENTO DE REQUISITOS BASE (REFERÊNCIA):
+{original_requirements[:15000] if original_requirements else "Não disponível"}
+
+{refinement_history}NOVA SOLICITAÇÃO DO USUÁRIO:
+{refinement_instructions}
+
+TAREFA CRÍTICA:
+1. Aplique as mudanças solicitadas à especificação funcional
+2. Mantenha a estrutura IEEE 830 intacta (seções numeradas)
+3. Mantenha rastreabilidade com requisitos originais (RF-XXX, UC-XXX, RN-XXX)
+4. Retorne o documento COMPLETO refinado em markdown
+5. NÃO adicione comentários, análises ou introduções
+6. CONSIDERE o histórico de refinamentos anteriores para manter coerência
+
+IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente com o título "# Especificação Funcional".
+"""
+
+        print(f"[SPEC REFINEMENT] Prompt built: {len(refinement_prompt)} chars")
+
+        # 6. Save progress message - Processing
+        save_chat_message(
+            session_id=session_id,
+            sender_type='agent',
+            message_text='🤔 Processando refinamento com IA. Isso pode levar alguns minutos...',
+            message_type='progress',
+            sender_name='Agente Especificação'
+        )
+
+        # 7. Call LLM
+        print(f"[SPEC REFINEMENT] Calling LLM...")
+        llm_client = get_llm_client()
+        refined_specification = llm_client.complete(
+            prompt=refinement_prompt,
+            temperature=0.7,
+            max_tokens=16000
+        )
+
+        print(f"[SPEC REFINEMENT] LLM completed. Refined document length: {len(refined_specification)} chars")
+
+        if not refined_specification or len(refined_specification) < 100:
+            print(f"[SPEC REFINEMENT] ⚠️ WARNING: LLM returned empty or too short document!")
+            raise Exception("Refinement failed: LLM returned empty or invalid response")
+
+        # 8. Save progress message - Analysis completed
+        save_chat_message(
+            session_id=session_id,
+            sender_type='agent',
+            message_text='✅ Análise concluída. Aplicando refinamentos ao documento...',
+            message_type='progress',
+            sender_name='Agente Especificação'
+        )
+
+        # 9. Update session with refined specification
+        with get_db_connection() as db:
+            cursor = db.cursor(dictionary=True)
+            cursor.execute("""
+                UPDATE execution_specification_sessions
+                SET specification_document = %s,
+                    status = 'completed',
+                    updated_at = NOW()
+                WHERE id = %s
+            """, (refined_specification, session_id))
+
+            # Get next version number
+            cursor.execute("""
+                SELECT MAX(version) as max_version
+                FROM specification_version_history
+                WHERE specification_session_id = %s
+            """, (session_id,))
+            result = cursor.fetchone()
+            current_version = result['max_version'] if result and result['max_version'] else 0
+            new_version = current_version + 1
+
+            # Get user_id from session
+            cursor.execute("SELECT user_id FROM execution_specification_sessions WHERE id = %s", (session_id,))
+            user_result = cursor.fetchone()
+            user_id = user_result['user_id'] if user_result else None
+
+            # Extract first words from instructions for description
+            description = refinement_instructions[:100] + ('...' if len(refinement_instructions) > 100 else '')
+
+            # Save new version
+            print(f"[SPEC REFINEMENT] Salvando versão {new_version}")
+            cursor.execute("""
+                INSERT INTO specification_version_history
+                (specification_session_id, version, specification_document, created_by,
+                 change_description, change_type, doc_size)
+                VALUES (%s, %s, %s, %s, %s, 'ai_refinement', %s)
+            """, (session_id, new_version, refined_specification, user_id, description, len(refined_specification)))
+
+            db.commit()
+            cursor.close()
+
+        print(f"[SPEC REFINEMENT] ✅ Versão {new_version} salva com sucesso")
+
+        # 10. Update agent message with completion
+        update_chat_message(
+            message_id=agent_message_id,
+            message_text=f"✅ Refinamento concluído! O documento foi atualizado com base em suas instruções.",
+            metadata={'type': 'refinement_response', 'status': 'completed'}
+        )
+
+        # 11. Send completion notification with diff data
+        save_chat_message(
+            session_id=session_id,
+            sender_type='system',
+            message_text='✅ Especificação refinada com sucesso. Veja as alterações destacadas.',
+            message_type='info',
+            sender_name='Sistema',
+            metadata={
+                'type': 'refinement_complete',
+                'has_diff': True,
+                'old_document': current_specification,
+                'new_document': refined_specification
+            }
+        )
+
+        print(f"[SPEC REFINEMENT] ✅ Workflow completed successfully")
+
+    except Exception as e:
+        print(f"[SPEC REFINEMENT] ❌ Error during refinement: {e}")
+        import traceback
+        traceback.print_exc()
+
+        # Update session status to 'completed' (not failed, to allow retry)
+        try:
+            with get_db_connection() as db:
+                cursor = db.cursor()
+                cursor.execute("""
+                    UPDATE execution_specification_sessions
+                    SET status = 'completed'
+                    WHERE id = %s
+                """, (session_id,))
+                db.commit()
+                cursor.close()
+        except:
+            pass
+
+        # Update agent message with error
+        try:
+            update_chat_message(
+                message_id=agent_message_id,
+                message_text=f"❌ Erro ao processar refinamento: {str(e)}",
+                metadata={'type': 'refinement_response', 'status': 'error', 'error': str(e)}
+            )
+        except:
+            pass
+
+
+# ============================================================
 # REFINEMENT ENDPOINT
 # ============================================================
 
@@ -465,8 +750,153 @@ async def refine_specification(
 ):
     """
     Refine specification via chat with agent
-    Similar to requirements refinement workflow
+    Similar to requirements refinement workflow in chat.py
     """
-    # TODO: Implement refinement workflow
-    # This will be similar to chat.py:execute_refinement_workflow
-    raise HTTPException(status_code=501, detail="Refinement not yet implemented")
+    try:
+        # Get session data
+        with get_db_connection() as db:
+            cursor = db.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT specification_document, requirements_session_id
+                FROM execution_specification_sessions
+                WHERE id = %s
+            """, (session_id,))
+            session = cursor.fetchone()
+            cursor.close()
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Specification session not found")
+
+        current_specification = session.get('specification_document', '')
+        requirements_session_id = session.get('requirements_session_id')
+
+        if not current_specification:
+            raise HTTPException(status_code=400, detail="No specification document found in session")
+
+        # Save user message
+        user_message_id = save_chat_message(
+            session_id=session_id,
+            sender_type='user',
+            message_text=request.message,
+            message_type='chat',
+            sender_name='Você',
+            parent_message_id=request.parent_message_id,
+            metadata={'type': 'refinement_request'}
+        )
+
+        # Save agent initial response
+        agent_response = "Entendi sua solicitação. Processando refinamento da especificação..."
+        agent_message_id = save_chat_message(
+            session_id=session_id,
+            sender_type='agent',
+            message_text=agent_response,
+            message_type='chat',
+            sender_name='Agente Especificação',
+            parent_message_id=user_message_id,
+            metadata={'type': 'refinement_response', 'status': 'processing'}
+        )
+
+        agent_message = get_chat_message(agent_message_id)
+
+        # Execute refinement in background
+        asyncio.create_task(execute_specification_refinement(
+            session_id=session_id,
+            refinement_instructions=request.message,
+            current_specification=current_specification,
+            requirements_session_id=requirements_session_id,
+            agent_message_id=agent_message_id
+        ))
+
+        return {
+            "user_message_id": user_message_id,
+            "agent_message": agent_message,
+            "status": "processing",
+            "message": "Refinement request received. Processing with AI agent..."
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to process refinement: {str(e)}")
+
+
+# ============================================================
+# CHAT HISTORY ENDPOINT
+# ============================================================
+
+@router.get("/{session_id}/chat-history")
+async def get_chat_history(session_id: str):
+    """Get chat history for specification session"""
+    try:
+        # Verify session exists
+        with get_db_connection() as db:
+            cursor = db.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT id FROM execution_specification_sessions WHERE id = %s
+            """, (session_id,))
+            if not cursor.fetchone():
+                cursor.close()
+                raise HTTPException(status_code=404, detail="Specification session not found")
+            cursor.close()
+
+        # Get messages
+        messages = get_chat_messages(session_id=session_id, limit=100, offset=0)
+        return {"messages": messages, "total": len(messages)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error getting chat history: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================
+# STATUS ENDPOINT
+# ============================================================
+
+@router.get("/{session_id}/status")
+async def get_specification_status(session_id: str):
+    """Get specification session status and document"""
+    try:
+        with get_db_connection() as db:
+            cursor = db.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT
+                    id,
+                    session_name,
+                    status,
+                    specification_document,
+                    requirements_session_id,
+                    requirements_version,
+                    started_at,
+                    finished_at,
+                    updated_at
+                FROM execution_specification_sessions
+                WHERE id = %s
+            """, (session_id,))
+            session = cursor.fetchone()
+            cursor.close()
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Specification session not found")
+
+        return {
+            "session_id": session['id'],
+            "session_name": session['session_name'],
+            "status": session['status'],
+            "specification_document": session['specification_document'],
+            "doc_size": len(session['specification_document'] or ''),
+            "requirements_session_id": session['requirements_session_id'],
+            "requirements_version": session['requirements_version'],
+            "started_at": session['started_at'].isoformat() if session['started_at'] else None,
+            "finished_at": session['finished_at'].isoformat() if session['finished_at'] else None,
+            "updated_at": session['updated_at'].isoformat() if session['updated_at'] else None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"❌ Error getting specification status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

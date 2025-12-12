@@ -242,28 +242,51 @@ Para CADA requisito funcional identificado no documento de requisitos:
 
 ## 5. Casos de Uso
 {f'''
+### ⚠️ INSTRUÇÕES CRÍTICAS PARA CASOS DE USO:
+1. Criar um UC para CADA requisito funcional principal (mínimo 10 UCs)
+2. CADA UC DEVE ter NO MÍNIMO:
+   - 5-10 passos detalhados no fluxo principal
+   - 2-3 fluxos alternativos completos
+   - 2-3 fluxos de exceção com tratamento
+   - Pré-condições e pós-condições específicas
+3. NÃO resumir - detalhar CADA passo com ações concretas
+4. Incluir interações de UI quando aplicável
+5. Referenciar TODOS os RFs relacionados
+
 ### 5.1 Diagrama de Casos de Uso
-[Descrição textual do diagrama - listar principais atores e casos de uso]
+[Descrição textual do diagrama - listar TODOS os atores e casos de uso identificados]
 
-### 5.2 Especificação de Casos de Uso
+### 5.2 Especificação Detalhada de Casos de Uso
 
-Para cada caso de uso principal:
+Para CADA caso de uso (mínimo 10):
 
 **UC-XXX: [Nome do Caso de Uso]**
-- **Ator Principal:** [Quem executa]
-- **Pré-condições:** [Estado necessário antes]
-- **Fluxo Principal:**
-  1. [Passo 1]
-  2. [Passo 2]
-  3. [...]
-- **Fluxos Alternativos:**
-  - [Variações do fluxo]
-- **Fluxos de Exceção:**
-  - [Tratamento de erros]
-- **Pós-condições:** [Estado após execução]
-- **Requisitos Relacionados:** [RF-XXX, RF-YYY]
+- **Ator Principal:** [Quem executa - nome do perfil de usuário]
+- **Atores Secundários:** [Outros envolvidos, se houver]
+- **Objetivo:** [O que o ator deseja alcançar]
+- **Pré-condições:**
+  1. [Condição específica 1]
+  2. [Condição específica 2]
+- **Fluxo Principal:** (MÍNIMO 5 PASSOS DETALHADOS)
+  1. [Ator/Sistema] [Ação detalhada com contexto]
+  2. [Ator/Sistema] [Próxima ação específica]
+  3. [Sistema] [Validação ou processamento]
+  4. [Sistema] [Exibição de resultado ou feedback]
+  5. [Ator] [Confirmação ou próxima interação]
+  6. [...]
+- **Fluxos Alternativos:** (MÍNIMO 2)
+  - A1. [Condição]: [Descrição do fluxo alternativo completo]
+  - A2. [Condição]: [Descrição do fluxo alternativo completo]
+- **Fluxos de Exceção:** (MÍNIMO 2)
+  - E1. [Erro/Problema]: [Como o sistema trata, mensagem exibida]
+  - E2. [Erro/Problema]: [Tratamento e recuperação]
+- **Pós-condições:**
+  1. [Estado do sistema após execução bem-sucedida]
+  2. [Dados alterados ou criados]
+- **Regras de Negócio Aplicáveis:** [RN-XXX, RN-YYY]
+- **Requisitos Relacionados:** [RF-XXX, RF-YYY, RNF-ZZZ]
 
-[Repetir para casos de uso principais]
+[REPETIR PARA TODOS OS CASOS DE USO - MÍNIMO 10]
 ''' if include_use_cases else ''}
 
 ---
@@ -406,7 +429,28 @@ Tabela relacionando requisitos originais com elementos desta especificação:
 ---
 ```
 
-## INSTRUÇÕES CRÍTICAS DE EXECUÇÃO
+## ⚠️ INSTRUÇÕES CRÍTICAS DE EXECUÇÃO - LEIA COM ATENÇÃO
+
+### OBRIGATÓRIO: TODAS AS 14 SEÇÕES
+O documento DEVE conter EXATAMENTE estas 14 seções numeradas:
+1. Introdução (1.1-1.4)
+2. Visão Geral do Sistema (2.1-2.5)
+3. Requisitos Funcionais Detalhados
+4. Requisitos Não-Funcionais (4.1-4.5)
+5. Casos de Uso (MÍNIMO 10 UCs detalhados)
+6. Modelo de Dados Conceitual
+7. Interfaces do Sistema
+8. Regras de Negócio (RN-XXX)
+9. Fluxos de Trabalho
+10. Análise de Arquitetura Preliminar
+11. Controle de Qualidade
+12. Glossário
+13. Rastreabilidade (Matriz obrigatória)
+14. Apêndices
+
+**SE QUALQUER SEÇÃO ESTIVER FALTANDO, O DOCUMENTO SERÁ REJEITADO.**
+
+### REGRAS DE EXECUÇÃO
 
 1. **PRIORIDADE ABSOLUTA:** O Documento de Requisitos é a FONTE PRIMÁRIA. TODO requisito funcional mencionado lá DEVE estar refletido nesta especificação.
 
@@ -414,7 +458,11 @@ Tabela relacionando requisitos originais com elementos desta especificação:
 
 3. **RESOLUÇÃO DE CONFLITOS:** Se houver inconsistências entre documentos complementares e requisitos, os REQUISITOS têm precedência absoluta.
 
-4. **COMPLETUDE:** Certifique-se de que TODOS os requisitos funcionais foram especificados detalhadamente.
+4. **COMPLETUDE TOTAL:**
+   - TODOS os requisitos funcionais documentados
+   - MÍNIMO 10 casos de uso detalhados
+   - TODAS as regras de negócio identificadas
+   - Matriz de rastreabilidade COMPLETA
 
 5. **CONSISTÊNCIA:** Verifique que não há contradições internas no documento.
 
@@ -422,17 +470,33 @@ Tabela relacionando requisitos originais com elementos desta especificação:
 
 7. **FORMATO:** Retorne SOMENTE o documento em Markdown. Não inclua comentários, análises ou introduções fora do documento.
 
-8. **EXTENSÃO:** Gere o documento COMPLETO conforme estrutura acima. Se necessário, use continuação automática.
+8. **EXTENSÃO:** Gere o documento COMPLETO. NÃO truncar, NÃO resumir, NÃO pular seções.
 
-## IMPORTANTE
+## CHECKLIST FINAL - VERIFIQUE ANTES DE RETORNAR:
+☐ Seção 1 (Introdução) presente?
+☐ Seção 2 (Visão Geral) presente?
+☐ Seção 3 (RFs) presente e TODOS os RFs documentados?
+☐ Seção 4 (RNFs) presente?
+☐ Seção 5 (Casos de Uso) presente com MÍNIMO 10 UCs?
+☐ Seção 6 (Modelo de Dados) presente?
+☐ Seção 7 (Interfaces) presente?
+☐ Seção 8 (Regras de Negócio RN-XXX) presente?
+☐ Seção 9 (Fluxos de Trabalho) presente?
+☐ Seção 10 (Arquitetura) presente?
+☐ Seção 11 (Qualidade) presente?
+☐ Seção 12 (Glossário) presente?
+☐ Seção 13 (Rastreabilidade) presente com MATRIZ?
+☐ Seção 14 (Apêndices) presente?
 
-- Comece DIRETAMENTE com o cabeçalho markdown "# Especificação Funcional - {project_name}"
+## FORMATO DE SAÍDA
+
+- Comece DIRETAMENTE com o cabeçalho: "# Especificação Funcional - {project_name}"
 - NÃO inclua análises ou comentários antes/depois do documento
 - Mantenha formatação markdown consistente
-- Use numeração e hierarquia clara
+- Use numeração sequencial: ## 1., ## 2., ... ## 14.
 - Inclua tabelas e listas quando apropriado
 
-Gere agora a especificação funcional completa:
+Gere agora a especificação funcional COMPLETA com TODAS as 14 seções:
 """
 
     return prompt
