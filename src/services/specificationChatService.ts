@@ -61,6 +61,7 @@ export interface SessionStatusResponse {
   status: string;
   specification_document: string;
   doc_size: number;
+  current_version: number;
   requirements_session_id: string;
   requirements_version: number;
   started_at: string | null;

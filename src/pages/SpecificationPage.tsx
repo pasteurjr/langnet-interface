@@ -68,6 +68,7 @@ const SpecificationPage: React.FC = () => {
   // Document states
   const [generatedDocument, setGeneratedDocument] = useState<string>('');
   const [documentFilename, setDocumentFilename] = useState<string>('especificacao.md');
+  const [currentLoadedVersion, setCurrentLoadedVersion] = useState<number | null>(null);
 
   // Diff states
   const [showDiff, setShowDiff] = useState(false);
@@ -112,8 +113,11 @@ const SpecificationPage: React.FC = () => {
         if (status.status === 'completed' && status.specification_document) {
           console.log('✅ Sessão concluída, atualizando documento...');
           setGeneratedDocument(status.specification_document);
+          const version = status.current_version || 1;
+          setCurrentLoadedVersion(version);
+          setDocumentFilename(`especificacao_v${version}.md`);
           await loadChatHistory(currentSessionId);
-          toast.success('Geração/Refinamento concluído!');
+          toast.success(`Geração/Refinamento concluído! (v${version})`);
           setIsChatProcessing(false);
         } else if (status.status === 'failed') {
           console.log('❌ Sessão falhou');
@@ -321,6 +325,7 @@ const SpecificationPage: React.FC = () => {
     setIsChatProcessing(true);
     setChatMessages([]);
     setGeneratedDocument('');
+    setCurrentLoadedVersion(null);
 
     try {
       const currentProjectId = projectId || 'project1';
@@ -440,10 +445,12 @@ const SpecificationPage: React.FC = () => {
       const spec = await getSpecification(sessionId);
       if (spec.specification_document) {
         setGeneratedDocument(spec.specification_document);
-        setDocumentFilename(`${sessionName || 'especificacao'}.md`);
+        const version = spec.current_version || 1;
+        setCurrentLoadedVersion(version);
+        setDocumentFilename(`${sessionName || 'especificacao'}_v${version}.md`);
       }
       await loadChatHistory(sessionId);
-      toast.info(`Carregando: ${sessionName}`);
+      toast.info(`Carregando: ${sessionName} (v${spec.current_version || 1})`);
     } catch (err) {
       console.error('Erro ao carregar sessão:', err);
       toast.error('Erro ao carregar sessão');
@@ -461,6 +468,7 @@ const SpecificationPage: React.FC = () => {
       if (versionData && versionData.specification_document) {
         setGeneratedDocument(versionData.specification_document);
         setDocumentFilename(`especificacao_v${version}.md`);
+        setCurrentLoadedVersion(version);
         toast.success(`Versão ${version} carregada`);
       }
     } catch (err) {
@@ -608,6 +616,7 @@ const SpecificationPage: React.FC = () => {
                 executionId={currentExecutionId}
                 projectId={projectId}
                 hasDiff={showDiff && !!oldDocument}
+                version={currentLoadedVersion}
                 onViewDiff={() => setIsDiffModalOpen(true)}
                 onEdit={() => setIsEditorOpen(true)}
                 onView={() => setIsViewerOpen(true)}

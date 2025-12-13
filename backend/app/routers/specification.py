@@ -234,7 +234,7 @@ async def list_specifications(
 
 @router.get("/{session_id}")
 async def get_specification(session_id: str):
-    """Get single specification session"""
+    """Get single specification session with current version"""
     try:
         with get_db_connection() as conn:
             cursor = conn.cursor(dictionary=True)
@@ -244,11 +244,21 @@ async def get_specification(session_id: str):
             """, (session_id,))
 
             session = cursor.fetchone()
-            cursor.close()
 
             if not session:
+                cursor.close()
                 raise HTTPException(status_code=404, detail="Specification not found")
 
+            # Get latest version number
+            cursor.execute("""
+                SELECT MAX(version) as current_version
+                FROM specification_version_history
+                WHERE specification_session_id = %s
+            """, (session_id,))
+            version_result = cursor.fetchone()
+            session['current_version'] = version_result['current_version'] if version_result and version_result['current_version'] else 1
+
+            cursor.close()
             return session
 
     except HTTPException:
@@ -876,10 +886,21 @@ async def get_specification_status(session_id: str):
                 WHERE id = %s
             """, (session_id,))
             session = cursor.fetchone()
-            cursor.close()
 
-        if not session:
-            raise HTTPException(status_code=404, detail="Specification session not found")
+            if not session:
+                cursor.close()
+                raise HTTPException(status_code=404, detail="Specification session not found")
+
+            # Get latest version number
+            cursor.execute("""
+                SELECT MAX(version) as current_version
+                FROM specification_version_history
+                WHERE specification_session_id = %s
+            """, (session_id,))
+            version_result = cursor.fetchone()
+            current_version = version_result['current_version'] if version_result and version_result['current_version'] else 1
+
+            cursor.close()
 
         return {
             "session_id": session['id'],
@@ -887,6 +908,7 @@ async def get_specification_status(session_id: str):
             "status": session['status'],
             "specification_document": session['specification_document'],
             "doc_size": len(session['specification_document'] or ''),
+            "current_version": current_version,
             "requirements_session_id": session['requirements_session_id'],
             "requirements_version": session['requirements_version'],
             "started_at": session['started_at'].isoformat() if session['started_at'] else None,

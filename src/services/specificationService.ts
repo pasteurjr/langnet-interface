@@ -52,6 +52,7 @@ export interface SpecificationSession {
   finished_at?: string;
   status: 'generating' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'reviewing';
   specification_document?: string;
+  current_version?: number;
   generation_log?: string;
   execution_metadata?: string;
   generation_time_ms?: number;

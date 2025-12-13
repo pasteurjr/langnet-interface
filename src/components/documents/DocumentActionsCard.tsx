@@ -7,6 +7,7 @@ interface DocumentActionsCardProps {
   executionId?: string;
   projectId?: string;
   hasDiff?: boolean;
+  version?: number | null;
   onViewDiff?: () => void;
   onEdit?: () => void;
   onView?: () => void;
@@ -19,6 +20,7 @@ const DocumentActionsCard: React.FC<DocumentActionsCardProps> = ({
   executionId,
   projectId,
   hasDiff,
+  version,
   onViewDiff,
   onEdit,
   onView,
@@ -38,7 +40,10 @@ const DocumentActionsCard: React.FC<DocumentActionsCardProps> = ({
       <div className="doc-card-header">
         <span className="doc-icon">📋</span>
         <div className="doc-info">
-          <h4 className="doc-filename">{filename || 'requisitos.md'}</h4>
+          <h4 className="doc-filename">
+            {filename || 'requisitos.md'}
+            {version && <span className="version-badge">v{version}</span>}
+          </h4>
           <span className="doc-meta">
             {executionId && `ID: ${getExecutionIdShort()}`}
             {executionId && ' • '}
