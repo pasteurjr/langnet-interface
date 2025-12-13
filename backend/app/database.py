@@ -253,6 +253,109 @@ def save_chat_message(
     return message_id
 
 
+def save_specification_chat_message(
+    session_id: str,
+    sender_type: str,
+    message_text: str,
+    message_type: str = "chat",
+    sender_name: str = None,
+    parent_message_id: str = None,
+    metadata: dict = None
+) -> str:
+    """
+    Save a chat message for specification sessions (uses specification_chat_messages table)
+    """
+    import uuid
+    import json
+
+    message_id = str(uuid.uuid4())
+
+    metadata_json = json.dumps(metadata) if metadata else None
+
+    query = """
+        INSERT INTO specification_chat_messages (
+            id, session_id, sender_type, sender_name, message_text,
+            message_type, parent_message_id, metadata
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+    """
+
+    params = (
+        message_id, session_id, sender_type, sender_name, message_text,
+        message_type, parent_message_id, metadata_json
+    )
+
+    with get_db_cursor() as cursor:
+        cursor.execute(query, params)
+
+    return message_id
+
+
+def get_specification_chat_messages(session_id: str, limit: int = 50) -> list:
+    """Get chat messages for a specification session"""
+    import json
+
+    query = """
+        SELECT * FROM specification_chat_messages
+        WHERE session_id = %s
+        ORDER BY timestamp ASC LIMIT %s
+    """
+
+    messages = execute_query(query, (session_id, limit), fetch_all=True)
+
+    for msg in messages:
+        if msg.get('metadata') and isinstance(msg['metadata'], str):
+            try:
+                msg['metadata'] = json.loads(msg['metadata'])
+            except:
+                msg['metadata'] = None
+
+    return messages
+
+
+def get_specification_chat_message(message_id: str) -> dict:
+    """Get a single specification chat message by ID"""
+    import json
+
+    query = "SELECT * FROM specification_chat_messages WHERE id = %s"
+    msg = execute_query(query, (message_id,), fetch_one=True)
+
+    if msg and msg.get('metadata') and isinstance(msg['metadata'], str):
+        try:
+            msg['metadata'] = json.loads(msg['metadata'])
+        except:
+            msg['metadata'] = None
+
+    return msg
+
+
+def update_specification_chat_message(
+    message_id: str,
+    message_text: str = None,
+    metadata: dict = None
+) -> int:
+    """Update a specification chat message"""
+    import json
+
+    updates = []
+    params = []
+
+    if message_text is not None:
+        updates.append("message_text = %s")
+        params.append(message_text)
+
+    if metadata is not None:
+        updates.append("metadata = %s")
+        params.append(json.dumps(metadata))
+
+    if not updates:
+        return 0
+
+    query = f"UPDATE specification_chat_messages SET {', '.join(updates)} WHERE id = %s"
+    params.append(message_id)
+
+    return execute_update(query, tuple(params))
+
+
 def get_chat_messages(
     session_id: str,
     limit: int = 50,

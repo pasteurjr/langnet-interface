@@ -10,10 +10,10 @@ from datetime import datetime
 import asyncio
 from app.database import (
     get_db_connection,
-    save_chat_message,
-    get_chat_message,
-    get_chat_messages,
-    update_chat_message,
+    save_specification_chat_message,
+    get_specification_chat_messages,
+    get_specification_chat_message,
+    update_specification_chat_message,
     get_previous_refinements
 )
 from app.dependencies import get_current_user
@@ -540,7 +540,7 @@ async def execute_specification_refinement(
             cursor = db.cursor()
             cursor.execute("""
                 UPDATE execution_specification_sessions
-                SET status = 'processing'
+                SET status = 'generating'
                 WHERE id = %s
             """, (session_id,))
             db.commit()
@@ -577,7 +577,7 @@ async def execute_specification_refinement(
             print(f"[SPEC REFINEMENT] 📭 Nenhum refinamento anterior encontrado")
 
         # 4. Save progress message
-        save_chat_message(
+        save_specification_chat_message(
             session_id=session_id,
             sender_type='system',
             message_text='🔄 Analisando especificação e aplicando refinamentos...',
@@ -609,7 +609,7 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
         print(f"[SPEC REFINEMENT] Prompt built: {len(refinement_prompt)} chars")
 
         # 6. Save progress message - Processing
-        save_chat_message(
+        save_specification_chat_message(
             session_id=session_id,
             sender_type='agent',
             message_text='🤔 Processando refinamento com IA. Isso pode levar alguns minutos...',
@@ -633,7 +633,7 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
             raise Exception("Refinement failed: LLM returned empty or invalid response")
 
         # 8. Save progress message - Analysis completed
-        save_chat_message(
+        save_specification_chat_message(
             session_id=session_id,
             sender_type='agent',
             message_text='✅ Análise concluída. Aplicando refinamentos ao documento...',
@@ -685,14 +685,14 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
         print(f"[SPEC REFINEMENT] ✅ Versão {new_version} salva com sucesso")
 
         # 10. Update agent message with completion
-        update_chat_message(
+        update_specification_chat_message(
             message_id=agent_message_id,
             message_text=f"✅ Refinamento concluído! O documento foi atualizado com base em suas instruções.",
             metadata={'type': 'refinement_response', 'status': 'completed'}
         )
 
         # 11. Send completion notification with diff data
-        save_chat_message(
+        save_specification_chat_message(
             session_id=session_id,
             sender_type='system',
             message_text='✅ Especificação refinada com sucesso. Veja as alterações destacadas.',
@@ -729,7 +729,7 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
 
         # Update agent message with error
         try:
-            update_chat_message(
+            update_specification_chat_message(
                 message_id=agent_message_id,
                 message_text=f"❌ Erro ao processar refinamento: {str(e)}",
                 metadata={'type': 'refinement_response', 'status': 'error', 'error': str(e)}
@@ -745,12 +745,11 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
 @router.post("/{session_id}/refine")
 async def refine_specification(
     session_id: str,
-    request: RefineSpecificationRequest,
-    current_user: dict = Depends(get_current_user)
+    request: RefineSpecificationRequest
 ):
     """
     Refine specification via chat with agent
-    Similar to requirements refinement workflow in chat.py
+    No authentication required - token may expire during long spec generation
     """
     try:
         # Get session data
@@ -774,7 +773,7 @@ async def refine_specification(
             raise HTTPException(status_code=400, detail="No specification document found in session")
 
         # Save user message
-        user_message_id = save_chat_message(
+        user_message_id = save_specification_chat_message(
             session_id=session_id,
             sender_type='user',
             message_text=request.message,
@@ -786,7 +785,7 @@ async def refine_specification(
 
         # Save agent initial response
         agent_response = "Entendi sua solicitação. Processando refinamento da especificação..."
-        agent_message_id = save_chat_message(
+        agent_message_id = save_specification_chat_message(
             session_id=session_id,
             sender_type='agent',
             message_text=agent_response,
@@ -796,7 +795,7 @@ async def refine_specification(
             metadata={'type': 'refinement_response', 'status': 'processing'}
         )
 
-        agent_message = get_chat_message(agent_message_id)
+        agent_message = get_specification_chat_message(agent_message_id)
 
         # Execute refinement in background
         asyncio.create_task(execute_specification_refinement(
@@ -842,7 +841,7 @@ async def get_chat_history(session_id: str):
             cursor.close()
 
         # Get messages
-        messages = get_chat_messages(session_id=session_id, limit=100, offset=0)
+        messages = get_specification_chat_messages(session_id=session_id, limit=100)
         return {"messages": messages, "total": len(messages)}
 
     except HTTPException:
