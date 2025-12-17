@@ -117,7 +117,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
           <span className="message-timestamp">{formatTimestamp(message.timestamp)}</span>
         </div>
         <div className="message-content">
-          {message.type === 'document' ? (
+          {message.type === 'progress' ? (
+            <div className="progress-message">
+              <div className="progress-icon">⏳</div>
+              <div className="progress-text">
+                <ReactMarkdown>{message.text}</ReactMarkdown>
+              </div>
+            </div>
+          ) : message.type === 'document' ? (
             <DocumentActionsCard
               filename={message.data?.filename || 'requisitos.md'}
               content={message.text}

@@ -57,6 +57,7 @@ const SpecificationPage: React.FC = () => {
   const [isChatProcessing, setIsChatProcessing] = useState(false);
   const [currentExecutionId, setCurrentExecutionId] = useState<string | undefined>(undefined);
   const [currentSessionId, setCurrentSessionId] = useState<string | undefined>(undefined);
+  const [isInitialGeneration, setIsInitialGeneration] = useState(false);
 
   // Progress states
   const [progressPercentage, setProgressPercentage] = useState(0);
@@ -119,10 +120,16 @@ const SpecificationPage: React.FC = () => {
           await loadChatHistory(currentSessionId);
           toast.success(`Geração/Refinamento concluído! (v${version})`);
           setIsChatProcessing(false);
+          setIsInitialGeneration(false); // Reset indicator
+          clearInterval(intervalId); // Stop polling quando completo
+          console.log('🛑 Polling encerrado: sessão concluída');
         } else if (status.status === 'failed') {
           console.log('❌ Sessão falhou');
           setIsChatProcessing(false);
+          setIsInitialGeneration(false); // Reset indicator
           toast.error('Processamento falhou');
+          clearInterval(intervalId); // Stop polling quando falha
+          console.log('🛑 Polling encerrado: sessão falhou');
         }
       } catch (err) {
         console.error('Erro ao verificar status:', err);
@@ -323,6 +330,7 @@ const SpecificationPage: React.FC = () => {
 
     setIsAnalyzing(true);
     setIsChatProcessing(true);
+    setIsInitialGeneration(true); // Indicar que é geração inicial
     setChatMessages([]);
     setGeneratedDocument('');
     setCurrentLoadedVersion(null);
@@ -382,6 +390,7 @@ const SpecificationPage: React.FC = () => {
     }
 
     setIsChatProcessing(true);
+    setIsInitialGeneration(false); // É refinamento, não geração inicial
 
     const userMessage: ChatMessage = {
       id: `temp-user-${Date.now()}`,
@@ -588,6 +597,26 @@ const SpecificationPage: React.FC = () => {
 
           {/* MIDDLE AREA: Chat Interface with Progress Bar */}
           <div className="chat-area">
+            {isChatProcessing && (
+              <div className="generating-indicator">
+                <div className="indicator-content">
+                  {isInitialGeneration ? (
+                    <>
+                      <span className="spinner">⏳</span>
+                      <strong>🚀 GERANDO ESPECIFICAÇÃO INICIAL...</strong>
+                      <span className="blink">Aguarde, isso pode levar 1-3 minutos</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="spinner">⏳</span>
+                      <strong>✏️ GERANDO REFINAMENTO...</strong>
+                      <span className="blink">Processando com IA...</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+
             {isChatProcessing && (
               <ProgressBar
                 percentage={progressPercentage}

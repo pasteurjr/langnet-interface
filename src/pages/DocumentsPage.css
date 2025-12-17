@@ -636,3 +636,55 @@
   color: #999;
   max-width: 300px;
 }
+
+/* GENERATING INDICATOR - STICKY BANNER */
+.generating-indicator {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  animation: pulse 2s infinite;
+}
+
+.indicator-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 16px;
+}
+
+.indicator-content strong {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.indicator-content .spinner {
+  animation: spin 1s linear infinite;
+  font-size: 24px;
+}
+
+.indicator-content .blink {
+  animation: blink 1.5s ease-in-out infinite;
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.5; }
+}

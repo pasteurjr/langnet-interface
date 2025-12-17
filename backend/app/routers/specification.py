@@ -412,6 +412,17 @@ async def execute_specification_generation(
         print(f"{'='*80}\n")
         sys.stdout.flush()
 
+        # Save progress message to chat
+        save_specification_chat_message(
+            session_id=session_id,
+            sender_type="system",
+            message_text="🚀 GERANDO ESPECIFICAÇÃO INICIAL...\n\nAguarde, isso pode levar 1-3 minutos enquanto a IA analisa os requisitos e gera o documento completo.",
+            message_type="progress",
+            sender_name="Sistema"
+        )
+        print(f"[SPEC GENERATION] ✅ Mensagem de progresso salva no chat")
+        sys.stdout.flush()
+
         # 1. Load requirements version
         print(f"[SPEC GENERATION] 📥 STEP 1: Carregando requisitos do banco...")
         sys.stdout.flush()
@@ -626,7 +637,7 @@ async def execute_specification_refinement(
         save_specification_chat_message(
             session_id=session_id,
             sender_type='system',
-            message_text='🔄 Analisando especificação e aplicando refinamentos...',
+            message_text='✏️ GERANDO REFINAMENTO...\n\nProcessando com IA. Aguarde enquanto analiso suas instruções e atualizo o documento.',
             message_type='progress',
             sender_name='Sistema'
         )
