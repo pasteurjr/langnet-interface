@@ -404,13 +404,17 @@ async def execute_specification_generation(
     Execute specification generation workflow in background
     """
     try:
+        import sys
         print(f"\n{'='*80}")
-        print(f"[SPEC GENERATION] Starting generation for session {session_id}")
+        print(f"[SPEC GENERATION] 🚀 INICIANDO GERAÇÃO - Session: {session_id}")
         print(f"[SPEC GENERATION] Project: {request.project_id}")
         print(f"[SPEC GENERATION] Requirements: {request.requirements_session_id} v{request.requirements_version}")
         print(f"{'='*80}\n")
+        sys.stdout.flush()
 
         # 1. Load requirements version
+        print(f"[SPEC GENERATION] 📥 STEP 1: Carregando requisitos do banco...")
+        sys.stdout.flush()
         with get_db_connection() as conn:
             cursor = conn.cursor(dictionary=True)
 
@@ -427,15 +431,21 @@ async def execute_specification_generation(
             raise Exception("Requirements version not found")
 
         requirements_document = requirements_data['requirements_document']
-        print(f"[SPEC GENERATION] ✅ Requirements loaded: {len(requirements_document)} chars")
+        print(f"[SPEC GENERATION] ✅ STEP 1 OK: Requirements loaded: {len(requirements_document)} chars")
+        sys.stdout.flush()
 
         # 2. Load complementary documents (if any)
+        print(f"[SPEC GENERATION] 📄 STEP 2: Verificando documentos complementares...")
+        sys.stdout.flush()
         complementary_docs_content = ""
         if request.complementary_document_ids:
             # TODO: Implement loading of complementary documents
             print(f"[SPEC GENERATION] Loading {len(request.complementary_document_ids)} complementary docs...")
 
         # 3. Build generation prompt
+        print(f"[SPEC GENERATION] 📝 STEP 3: Construindo prompt para LLM...")
+        sys.stdout.flush()
+
         from app.templates.specification_prompt import build_specification_prompt
 
         prompt = build_specification_prompt(
@@ -454,22 +464,40 @@ async def execute_specification_generation(
             project_name=request.project_id  # TODO: Get actual project name
         )
 
-        print(f"[SPEC GENERATION] ✅ Prompt built: {len(prompt)} chars")
+        print(f"[SPEC GENERATION] ✅ STEP 3 OK: Prompt built: {len(prompt)} chars")
+        sys.stdout.flush()
 
-        # 4. Call LLM (usa max_tokens=8192 default do llm.py)
-        print(f"[SPEC GENERATION] Calling LLM...")
+        # 4. Call LLM (aumentado para 24000 tokens para geração completa das 14 seções)
+        print(f"\n[SPEC GENERATION] 🤖 STEP 4: CHAMANDO LLM AGORA... (max_tokens=24000)")
+        print(f"[SPEC GENERATION] ⏳ Aguarde... isso pode levar 1-3 minutos...")
+        import sys
+        sys.stdout.flush()
+
         llm = get_llm_client()
-        specification_document = llm.complete(prompt)  # max_tokens=8192 by default
+        print(f"[SPEC GENERATION] 🔌 LLM client obtido, iniciando chamada...")
+        sys.stdout.flush()
 
-        print(f"[SPEC GENERATION] ✅ LLM response: {len(specification_document)} chars")
+        specification_document = llm.complete(
+            prompt=prompt,
+            max_tokens=24000
+        )
+
+        print(f"[SPEC GENERATION] ✅ STEP 4 OK - LLM RETORNOU! Tamanho: {len(specification_document)} chars")
+        sys.stdout.flush()
 
         # 4.1 Validate completeness
+        print(f"[SPEC GENERATION] 🔍 STEP 5: Validando completude do documento...")
+        sys.stdout.flush()
+
         validation = validate_specification_completeness(specification_document)
-        print(f"[SPEC GENERATION] 📋 Validation: {validation['section_count']}/{validation['total_expected']} sections found")
+        print(f"[SPEC GENERATION] 📋 Validação: {validation['section_count']}/{validation['total_expected']} seções encontradas")
         if not validation['complete']:
             print(f"[SPEC GENERATION] ⚠️ Missing sections: {validation['missing_sections']}")
 
         # 5. Save results
+        print(f"\n[SPEC GENERATION] 💾 STEP 6: Salvando no banco de dados...")
+        sys.stdout.flush()
+
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
@@ -503,10 +531,18 @@ async def execute_specification_generation(
             conn.commit()
             cursor.close()
 
-        print(f"[SPEC GENERATION] ✅ Generation completed successfully")
+        print(f"\n{'='*80}")
+        print(f"[SPEC GENERATION] ✅ STEP 6 OK: Documento salvo no banco!")
+        print(f"[SPEC GENERATION] 🎉 GERAÇÃO CONCLUÍDA COM SUCESSO!")
+        print(f"[SPEC GENERATION] Documento final: {len(specification_document)} chars, {validation['section_count']} seções")
+        print(f"{'='*80}\n")
+        sys.stdout.flush()
 
     except Exception as e:
-        print(f"[SPEC GENERATION] ❌ Error: {e}")
+        print(f"\n{'='*80}")
+        print(f"[SPEC GENERATION] ❌ ERRO DURANTE GERAÇÃO: {e}")
+        print(f"{'='*80}\n")
+        sys.stdout.flush()
 
         # Update session status to failed
         try:
