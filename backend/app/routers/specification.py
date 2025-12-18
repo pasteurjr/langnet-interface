@@ -659,8 +659,9 @@ TAREFA CRÍTICA:
 4. Retorne o documento COMPLETO refinado em markdown
 5. NÃO adicione comentários, análises ou introduções
 6. CONSIDERE o histórico de refinamentos anteriores para manter coerência
+7. ⚠️ NÃO REPRODUZA o documento de requisitos na saída - ele é apenas contexto de referência
 
-IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente com o título "# Especificação Funcional".
+IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente com o título "# Especificação Funcional". NÃO inclua o documento de requisitos base no final da resposta.
 """
 
         print(f"[SPEC REFINEMENT] Prompt built: {len(refinement_prompt)} chars")
