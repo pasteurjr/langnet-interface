@@ -90,13 +90,29 @@ class LLMClient:
 
         messages.append({"role": "user", "content": prompt})
 
+        # ETAPA 3: Garantir thinking mode ativo explicitamente para DeepSeek-Reasoner
+        extra_params = {}
+        if self.provider == "deepseek" and "reasoner" in self.model.lower():
+            extra_params["extra_body"] = {"thinking": {"type": "enabled"}}
+            print(f"[LLM] Thinking mode explicitamente ativado para {self.model}")
+
         response = self.client.chat.completions.create(
             model=self.model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            **extra_params,  # Adiciona thinking mode se deepseek-reasoner
             **kwargs
         )
+
+        # ETAPA 4: Detectar truncamento
+        finish_reason = response.choices[0].finish_reason
+        if finish_reason == 'length':
+            print(f"⚠️ WARNING: LLM response was truncated due to max_tokens limit!")
+            print(f"⚠️ Model: {self.model}, max_tokens: {max_tokens}")
+            print(f"⚠️ Consider using a model with higher output capacity or reduce document size")
+        elif finish_reason != 'stop':
+            print(f"⚠️ WARNING: Unexpected finish_reason: {finish_reason}")
 
         return response.choices[0].message.content
 

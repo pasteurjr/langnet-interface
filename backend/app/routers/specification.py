@@ -490,7 +490,7 @@ async def execute_specification_generation(
 
         specification_document = llm.complete(
             prompt=prompt,
-            max_tokens=24000
+            max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
         )
 
         print(f"[SPEC GENERATION] ✅ STEP 4 OK - LLM RETORNOU! Tamanho: {len(specification_document)} chars")
@@ -680,7 +680,7 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
         refined_specification = llm_client.complete(
             prompt=refinement_prompt,
             temperature=0.7,
-            max_tokens=16000
+            max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
         )
 
         print(f"[SPEC REFINEMENT] LLM completed. Refined document length: {len(refined_specification)} chars")
