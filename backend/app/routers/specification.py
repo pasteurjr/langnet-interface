@@ -4,7 +4,7 @@ Handles functional specification generation, refinement, and versioning
 """
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 import uuid
 from datetime import datetime
 import asyncio
@@ -91,7 +91,17 @@ class GenerateSpecificationRequest(BaseModel):
 
 class RefineSpecificationRequest(BaseModel):
     message: str
+    action_type: str = Field(
+        default="refine",
+        description="Tipo de ação: 'refine' modifica documento, 'chat' apenas responde"
+    )
     parent_message_id: Optional[str] = None
+
+    @validator('action_type')
+    def validate_action_type(cls, v):
+        if v not in ['refine', 'chat']:
+            raise ValueError("action_type deve ser 'refine' ou 'chat'")
+        return v
 
 
 class UpdateSpecificationRequest(BaseModel):
@@ -488,7 +498,7 @@ async def execute_specification_generation(
         print(f"[SPEC GENERATION] 🔌 LLM client obtido, iniciando chamada...")
         sys.stdout.flush()
 
-        specification_document = llm.complete(
+        specification_document = await llm.complete_async(
             prompt=prompt,
             max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
         )
@@ -678,7 +688,7 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
         # 7. Call LLM
         print(f"[SPEC REFINEMENT] Calling LLM...")
         llm_client = get_llm_client()
-        refined_specification = llm_client.complete(
+        refined_specification = await llm_client.complete_async(
             prompt=refinement_prompt,
             temperature=0.7,
             max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
@@ -796,6 +806,126 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
             pass
 
 
+async def execute_specification_chat(
+    session_id: str,
+    user_message_id: str,
+    agent_message_id: str,
+    chat_message: str,
+    requirements_session_id: Optional[str]
+):
+    """
+    Execute chat/analysis workflow - DOES NOT modify specification
+    """
+    try:
+        print(f"\n{'='*80}")
+        print(f"[SPEC CHAT] 💬 INICIANDO ANÁLISE - Session: {session_id}")
+        print(f"{'='*80}\n")
+
+        # 1. Load current specification
+        with get_db_connection() as db:
+            cursor = db.cursor(dictionary=True)
+            cursor.execute("""
+                SELECT specification_document
+                FROM execution_specification_sessions
+                WHERE id = %s
+            """, (session_id,))
+            spec_data = cursor.fetchone()
+            cursor.close()
+
+        if not spec_data:
+            raise Exception("Specification session not found")
+
+        current_specification = spec_data['specification_document']
+        print(f"[SPEC CHAT] ✅ Specification loaded: {len(current_specification)} chars")
+
+        # 2. Load requirements for context (optional)
+        original_requirements = ""
+        if requirements_session_id:
+            with get_db_connection() as db:
+                cursor = db.cursor(dictionary=True)
+                cursor.execute("""
+                    SELECT requirements_document FROM execution_sessions
+                    WHERE id = %s
+                """, (requirements_session_id,))
+                req_data = cursor.fetchone()
+                cursor.close()
+            if req_data:
+                original_requirements = req_data.get('requirements_document', '')
+                print(f"[SPEC CHAT] ✅ Requirements loaded: {len(original_requirements)} chars")
+
+        # 3. Build chat/analysis prompt (NO refinement instructions)
+        chat_prompt = f"""ESPECIFICAÇÃO FUNCIONAL (PARA ANÁLISE):
+{current_specification}
+
+DOCUMENTO DE REQUISITOS BASE (REFERÊNCIA):
+{original_requirements[:15000] if original_requirements else "Não disponível"}
+
+SOLICITAÇÃO DO USUÁRIO:
+{chat_message}
+
+TAREFA:
+Analise a especificação funcional acima e responda à solicitação do usuário.
+
+IMPORTANTE:
+- NÃO modifique o documento
+- NÃO retorne uma versão refinada da especificação
+- Apenas ANALISE e RESPONDA à pergunta/solicitação
+- Seja objetivo e direto
+- Se identificar problemas, liste-os claramente
+- Se for pergunta sobre completude, verifique se todas as 14 seções estão presentes
+
+Responda de forma conversacional e útil.
+"""
+
+        print(f"[SPEC CHAT] Prompt built: {len(chat_prompt)} chars")
+
+        # 4. Save progress message
+        save_specification_chat_message(
+            session_id=session_id,
+            sender_type='system',
+            message_text='🔍 ANALISANDO ESPECIFICAÇÃO...\n\nProcessando com IA. Aguarde...',
+            message_type='progress',
+            sender_name='Sistema'
+        )
+
+        # 5. Call LLM (NO document modification)
+        print(f"[SPEC CHAT] Calling LLM for analysis...")
+        llm_client = get_llm_client()
+        analysis_response = await llm_client.complete_async(
+            prompt=chat_prompt,
+            temperature=0.7,
+            max_tokens=4096  # Menor - apenas resposta, não documento completo
+        )
+
+        print(f"[SPEC CHAT] LLM completed. Response length: {len(analysis_response)} chars")
+
+        # 6. Update agent message with analysis (NO database modification)
+        update_specification_chat_message(
+            message_id=agent_message_id,
+            message_text=analysis_response,
+            metadata={'type': 'chat_response', 'status': 'completed'}
+        )
+
+        print(f"\n{'='*80}")
+        print(f"[SPEC CHAT] ✅ ANÁLISE CONCLUÍDA!")
+        print(f"[SPEC CHAT] Response: {len(analysis_response)} chars")
+        print(f"{'='*80}\n")
+
+    except Exception as e:
+        print(f"[SPEC CHAT] ❌ ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
+
+        # Update agent message with error
+        update_specification_chat_message(
+            message_id=agent_message_id,
+            message_text=f"❌ Erro ao processar análise: {str(e)}",
+            metadata={'type': 'chat_response', 'status': 'error', 'error': str(e)}
+        )
+    except:
+        pass
+
+
 # ============================================================
 # REFINEMENT ENDPOINT
 # ============================================================
@@ -806,7 +936,10 @@ async def refine_specification(
     request: RefineSpecificationRequest
 ):
     """
-    Refine specification via chat with agent
+    Process specification chat message
+    Supports two modes:
+    - action_type="refine": Modifies specification document
+    - action_type="chat": Analyzes and responds without modification
     No authentication required - token may expire during long spec generation
     """
     try:
@@ -814,7 +947,7 @@ async def refine_specification(
         with get_db_connection() as db:
             cursor = db.cursor(dictionary=True)
             cursor.execute("""
-                SELECT specification_document, requirements_session_id
+                SELECT specification_document, requirements_session_id, user_id
                 FROM execution_specification_sessions
                 WHERE id = %s
             """, (session_id,))
@@ -826,11 +959,12 @@ async def refine_specification(
 
         current_specification = session.get('specification_document', '')
         requirements_session_id = session.get('requirements_session_id')
+        user_id = session.get('user_id')
 
         if not current_specification:
             raise HTTPException(status_code=400, detail="No specification document found in session")
 
-        # Save user message
+        # Save user message with action_type metadata
         user_message_id = save_specification_chat_message(
             session_id=session_id,
             sender_type='user',
@@ -838,11 +972,17 @@ async def refine_specification(
             message_type='chat',
             sender_name='Você',
             parent_message_id=request.parent_message_id,
-            metadata={'type': 'refinement_request'}
+            metadata={'action_type': request.action_type, 'type': f'{request.action_type}_request'}
         )
 
-        # Save agent initial response
-        agent_response = "Entendi sua solicitação. Processando refinamento da especificação..."
+        # Create agent initial response based on action type
+        if request.action_type == "chat":
+            agent_response = "🔍 Entendi sua solicitação de análise. Vou verificar a especificação..."
+            metadata_type = 'chat_response'
+        else:  # refine
+            agent_response = "✏️ Entendi sua solicitação de refinamento. Vou processar as mudanças..."
+            metadata_type = 'refinement_response'
+
         agent_message_id = save_specification_chat_message(
             session_id=session_id,
             sender_type='agent',
@@ -850,25 +990,41 @@ async def refine_specification(
             message_type='chat',
             sender_name='Agente Especificação',
             parent_message_id=user_message_id,
-            metadata={'type': 'refinement_response', 'status': 'processing'}
+            metadata={'type': metadata_type, 'status': 'processing'}
         )
 
         agent_message = get_specification_chat_message(agent_message_id)
 
-        # Execute refinement in background
-        asyncio.create_task(execute_specification_refinement(
-            session_id=session_id,
-            refinement_instructions=request.message,
-            current_specification=current_specification,
-            requirements_session_id=requirements_session_id,
-            agent_message_id=agent_message_id
-        ))
+        # Execute appropriate workflow in background based on action_type
+        if request.action_type == "chat":
+            # CHAT MODE: Analyze without modifying
+            asyncio.create_task(execute_specification_chat(
+                session_id=session_id,
+                user_message_id=user_message_id,
+                agent_message_id=agent_message_id,
+                chat_message=request.message,
+                requirements_session_id=requirements_session_id
+            ))
+            print(f"[API] 💬 Chat analysis task spawned for session {session_id}")
+            response_message = "Análise em processamento..."
+        else:  # refine
+            # REFINE MODE: Modify document (existing behavior)
+            asyncio.create_task(execute_specification_refinement(
+                session_id=session_id,
+                refinement_instructions=request.message,
+                current_specification=current_specification,
+                requirements_session_id=requirements_session_id,
+                agent_message_id=agent_message_id
+            ))
+            print(f"[API] ✏️ Refinement task spawned for session {session_id}")
+            response_message = "Refinamento em processamento..."
 
         return {
             "user_message_id": user_message_id,
             "agent_message": agent_message,
+            "action_type": request.action_type,
             "status": "processing",
-            "message": "Refinement request received. Processing with AI agent..."
+            "message": response_message
         }
 
     except HTTPException:
@@ -876,7 +1032,7 @@ async def refine_specification(
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to process refinement: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to process request: {str(e)}")
 
 
 # ============================================================

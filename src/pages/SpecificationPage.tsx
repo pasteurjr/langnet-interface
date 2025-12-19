@@ -383,14 +383,14 @@ const SpecificationPage: React.FC = () => {
   };
 
   // Handle chat messages for conversational refinement
-  const handleSendChatMessage = async (message: string) => {
+  const handleSendChatMessage = async (message: string, actionType: 'refine' | 'chat' = 'refine') => {
     if (!currentSessionId) {
       toast.error('Gere uma especificação primeiro');
       return;
     }
 
     setIsChatProcessing(true);
-    setIsInitialGeneration(false); // É refinamento, não geração inicial
+    setIsInitialGeneration(false); // É refinamento ou análise, não geração inicial
 
     const userMessage: ChatMessage = {
       id: `temp-user-${Date.now()}`,
@@ -402,15 +402,17 @@ const SpecificationPage: React.FC = () => {
     setChatMessages(prev => [...prev, userMessage]);
 
     try {
-      console.log('📤 Enviando mensagem de refinamento:', message);
+      const actionLabel = actionType === 'chat' ? 'análise' : 'refinamento';
+      console.log(`📤 Enviando mensagem de ${actionLabel}:`, message);
 
       const response = await refineSpecification(currentSessionId, {
-        message: message
+        message: message,
+        action_type: actionType
       });
 
       console.log('✅ Resposta do backend recebida:', response);
       await loadChatHistory(currentSessionId);
-      toast.success('Pedido de refinamento enviado!');
+      toast.success(`Pedido de ${actionLabel} enviado!`);
     } catch (err) {
       console.error('❌ Failed to process chat message:', err);
       const errorMessage = err instanceof Error ? err.message : 'Erro ao processar mensagem';
@@ -629,7 +631,8 @@ const SpecificationPage: React.FC = () => {
 
             <ChatInterface
               messages={chatMessages}
-              onSendMessage={handleSendChatMessage}
+              onSendMessage={(msg) => handleSendChatMessage(msg, 'refine')}
+              onAnalyze={(msg) => handleSendChatMessage(msg, 'chat')}
               isProcessing={false}
               executionId={currentExecutionId}
               sessionId={currentSessionId}

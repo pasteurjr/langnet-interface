@@ -28,6 +28,7 @@ const getAuthHeaders = (): HeadersInit => {
  */
 export interface RefineSpecificationRequest {
   message: string;
+  action_type?: 'refine' | 'chat';  // 'refine' modifies document, 'chat' only analyzes
   parent_message_id?: string;
 }
 
@@ -134,10 +135,27 @@ export const getSessionStatus = async (
 };
 
 /**
+ * Analyze specification without modifying it (chat mode)
+ * Convenience function that calls refineSpecification with action_type='chat'
+ */
+export const analyzeSpecification = async (
+  sessionId: string,
+  question: string,
+  parentMessageId?: string
+): Promise<RefineResponse> => {
+  return refineSpecification(sessionId, {
+    message: question,
+    action_type: 'chat',
+    parent_message_id: parentMessageId,
+  });
+};
+
+/**
  * Export all functions
  */
 export default {
   refineSpecification,
+  analyzeSpecification,
   getChatHistory,
   getSessionStatus,
 };

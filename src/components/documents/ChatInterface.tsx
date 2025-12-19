@@ -19,6 +19,7 @@ export interface ChatMessage {
 interface ChatInterfaceProps {
   messages: ChatMessage[];
   onSendMessage: (message: string) => void;
+  onAnalyze?: (message: string) => void;  // Optional analyze callback for dual-mode chat
   isProcessing?: boolean;
   executionId?: string;
   sessionId?: string;
@@ -27,6 +28,7 @@ interface ChatInterfaceProps {
 const ChatInterface: React.FC<ChatInterfaceProps> = ({
   messages,
   onSendMessage,
+  onAnalyze,
   isProcessing = false,
   executionId,
   sessionId
@@ -47,6 +49,14 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
     e.preventDefault();
     if (inputValue.trim() && !isProcessing) {
       onSendMessage(inputValue.trim());
+      setInputValue('');
+    }
+  };
+
+  const handleAnalyze = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (inputValue.trim() && !isProcessing && onAnalyze) {
+      onAnalyze(inputValue.trim());
       setInputValue('');
     }
   };
@@ -190,18 +200,40 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({
         <input
           type="text"
           className="chat-input"
-          placeholder="Digite sua mensagem para refinar a análise..."
+          placeholder={onAnalyze ? "Digite sua mensagem..." : "Digite sua mensagem para refinar a análise..."}
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           disabled={isProcessing}
         />
-        <button
-          type="submit"
-          className="btn-send"
-          disabled={isProcessing || !inputValue.trim()}
-        >
-          {isProcessing ? '⏳' : '📤'} Enviar
-        </button>
+        {onAnalyze ? (
+          <div className="button-group">
+            <button
+              type="button"
+              className="btn-analyze"
+              onClick={handleAnalyze}
+              disabled={isProcessing || !inputValue.trim()}
+              title="Analisar sem modificar documento"
+            >
+              {isProcessing ? '⏳' : '🔍'} Analisar
+            </button>
+            <button
+              type="submit"
+              className="btn-refine"
+              disabled={isProcessing || !inputValue.trim()}
+              title="Refinar documento"
+            >
+              {isProcessing ? '⏳' : '✏️'} Refinar
+            </button>
+          </div>
+        ) : (
+          <button
+            type="submit"
+            className="btn-send"
+            disabled={isProcessing || !inputValue.trim()}
+          >
+            {isProcessing ? '⏳' : '📤'} Enviar
+          </button>
+        )}
       </form>
 
       {/* Modais */}

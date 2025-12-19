@@ -74,6 +74,40 @@ class LLMClient:
         elif self.provider == "anthropic":
             return self._complete_anthropic(prompt, system, temperature, max_tokens, **kwargs)
 
+    async def complete_async(
+        self,
+        prompt: str,
+        system: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: int = 8192,
+        **kwargs
+    ) -> str:
+        """
+        Generate completion from LLM (ASYNC version)
+        Offloads blocking I/O to thread pool to avoid blocking event loop
+
+        Args:
+            prompt: User prompt
+            system: System prompt (optional)
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            **kwargs: Additional provider-specific parameters
+
+        Returns:
+            Generated text
+        """
+        import asyncio
+
+        # Run blocking complete() in separate thread
+        return await asyncio.to_thread(
+            self.complete,
+            prompt=prompt,
+            system=system,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs
+        )
+
     def _complete_openai(
         self,
         prompt: str,
