@@ -14,6 +14,7 @@ import SpecificationHistoryModal from '../components/specification/Specification
 import DiffViewerModal from '../components/documents/DiffViewerModal';
 import SpecificationGenerationModal from '../components/specification/SpecificationGenerationModal';
 import RequirementsSelectionModal from '../components/specification/RequirementsSelectionModal';
+import ReviewSuggestionsModal from '../components/specification/ReviewSuggestionsModal';
 import * as documentService from '../services/documentService';
 import * as chatService from '../services/chatService';
 import {
@@ -25,6 +26,7 @@ import {
 } from '../services/specificationService';
 import {
   refineSpecification,
+  reviewSpecification,
   getChatHistory,
   getSessionStatus
 } from '../services/specificationChatService';
@@ -80,6 +82,12 @@ const SpecificationPage: React.FC = () => {
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
+
+  // Review modal states
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewSuggestions, setReviewSuggestions] = useState<string>('');
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [isApplyingSuggestions, setIsApplyingSuggestions] = useState(false);
 
   useEffect(() => {
     loadDocuments();
@@ -488,6 +496,75 @@ const SpecificationPage: React.FC = () => {
     }
   };
 
+  // Review: Analisa documento e mostra sugestões em modal
+  const handleReview = async () => {
+    if (!currentSessionId) {
+      toast.error('Gere uma especificação primeiro');
+      return;
+    }
+
+    setIsReviewing(true);
+    try {
+      console.log('🔍 Iniciando revisão da especificação...');
+      const result = await reviewSpecification(currentSessionId);
+      setReviewSuggestions(result.suggestions);
+      setIsReviewModalOpen(true);
+
+      // Add review message to chat
+      const reviewMsg: ChatMessage = {
+        id: result.review_message_id,
+        sender: 'agent',
+        text: result.suggestions,
+        timestamp: new Date(),
+        type: 'result'
+      };
+      setChatMessages(prev => [...prev, reviewMsg]);
+
+      toast.success('Revisão concluída!');
+    } catch (error) {
+      console.error('Erro ao revisar especificação:', error);
+      toast.error('Erro ao revisar especificação. Tente novamente.');
+    } finally {
+      setIsReviewing(false);
+    }
+  };
+
+  // Apply: Aplica sugestões de revisão com instruções opcionais
+  const handleApplySuggestions = async (additionalInstructions?: string) => {
+    if (!currentSessionId) {
+      toast.error('Nenhuma sessão ativa');
+      return;
+    }
+
+    setIsApplyingSuggestions(true);
+    try {
+      // Build refinement message
+      let message = "Aplique as seguintes sugestões de melhoria ao documento:\n\n";
+      message += reviewSuggestions;
+
+      if (additionalInstructions) {
+        message += `\n\n---\n\nINSTRUÇÕES COMPLEMENTARES:\n${additionalInstructions}`;
+      }
+
+      console.log('✏️ Aplicando sugestões de revisão...');
+
+      // Send refinement request
+      await refineSpecification(currentSessionId, {
+        message: message,
+        action_type: 'refine'
+      });
+
+      setIsReviewModalOpen(false);
+      setIsChatProcessing(true);
+      toast.success('Aplicando sugestões... Aguarde a atualização do documento.');
+    } catch (error) {
+      console.error('Erro ao aplicar sugestões:', error);
+      toast.error('Erro ao aplicar sugestões. Tente novamente.');
+    } finally {
+      setIsApplyingSuggestions(false);
+    }
+  };
+
   return (
     <div className="documents-page-chat">
       <div className="page-header">
@@ -592,6 +669,21 @@ const SpecificationPage: React.FC = () => {
               {!selectedRequirementsSessionId && (
                 <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
                   ⚠️ Selecione um documento de requisitos primeiro
+                </p>
+              )}
+
+              <button
+                className="btn-review"
+                onClick={handleReview}
+                disabled={isReviewing || !generatedDocument}
+                title="Revisar documento e obter sugestões de melhoria"
+              >
+                {isReviewing ? '⏳ Revisando...' : '🔍 Revisar Especificação'}
+              </button>
+
+              {!generatedDocument && (
+                <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
+                  💡 Gere uma especificação primeiro para revisar
                 </p>
               )}
             </div>
@@ -731,6 +823,15 @@ const SpecificationPage: React.FC = () => {
           setSelectedRequirementsContent(content);
           toast.success(`Requisitos selecionados: ${sessionName} v${version}`);
         }}
+      />
+
+      {/* Modal de Revisão de Sugestões */}
+      <ReviewSuggestionsModal
+        isOpen={isReviewModalOpen}
+        suggestions={reviewSuggestions}
+        onClose={() => setIsReviewModalOpen(false)}
+        onApply={handleApplySuggestions}
+        isApplying={isApplyingSuggestions}
       />
     </div>
   );

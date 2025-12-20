@@ -70,6 +70,13 @@ export interface SessionStatusResponse {
   updated_at: string | null;
 }
 
+export interface ReviewSpecificationResponse {
+  review_message_id: string;
+  suggestions: string;
+  status: string;
+  message: string;
+}
+
 /**
  * Send refinement request for specification
  */
@@ -151,11 +158,37 @@ export const analyzeSpecification = async (
 };
 
 /**
+ * Review specification and get improvement suggestions
+ * Does NOT modify the document - only analyzes and returns suggestions
+ */
+export const reviewSpecification = async (
+  sessionId: string
+): Promise<ReviewSpecificationResponse> => {
+  console.log('🔍 Sending review request:', sessionId);
+
+  const response = await fetch(`${API_BASE_URL}/specifications/${sessionId}/review`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    console.error('❌ Failed to review specification:', error);
+    throw new Error(error.detail || 'Failed to review specification');
+  }
+
+  const result = await response.json();
+  console.log('✅ Review completed:', result);
+  return result;
+};
+
+/**
  * Export all functions
  */
 export default {
   refineSpecification,
   analyzeSpecification,
+  reviewSpecification,
   getChatHistory,
   getSessionStatus,
 };

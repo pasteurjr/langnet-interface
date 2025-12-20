@@ -10,6 +10,7 @@ from datetime import datetime
 import asyncio
 from app.database import (
     get_db_connection,
+    get_db_cursor,
     save_specification_chat_message,
     get_specification_chat_messages,
     get_specification_chat_message,
@@ -926,6 +927,77 @@ Responda de forma conversacional e útil.
         pass
 
 
+async def execute_specification_review(
+    session_id: str,
+    user_id: str
+):
+    """
+    Execute automatic review of specification without modifying it
+    Returns structured suggestions for improvement
+    """
+    try:
+        print(f"\n{'='*80}")
+        print(f"[SPEC REVIEW] 🔍 Starting review for session {session_id}")
+        print(f"{'='*80}\n")
+
+        # 1. Get current specification
+        with get_db_cursor() as cursor:
+            cursor.execute("""
+                SELECT specification_document
+                FROM execution_specification_sessions
+                WHERE id = %s
+            """, (session_id,))
+            result = cursor.fetchone()
+
+            if not result or not result['specification_document']:
+                raise ValueError("No specification document found")
+
+            current_spec = result['specification_document']
+
+        print(f"[SPEC REVIEW] Current specification size: {len(current_spec)} chars")
+
+        # 2. Generate review prompt
+        from prompts.review_specification import get_review_specification_prompt
+        review_prompt = get_review_specification_prompt(current_spec)
+        print(f"[SPEC REVIEW] Review prompt generated: {len(review_prompt)} chars")
+
+        # 3. Call LLM for review
+        llm_client = get_llm_client()
+        print(f"[SPEC REVIEW] Calling LLM for analysis...")
+
+        suggestions = await llm_client.complete_async(
+            prompt=review_prompt,
+            temperature=0.7,
+            max_tokens=4096
+        )
+
+        print(f"[SPEC REVIEW] ✅ Review completed. Suggestions length: {len(suggestions)} chars")
+
+        # 4. Save review message to chat history
+        review_msg_id = save_specification_chat_message(
+            session_id=session_id,
+            sender_type='agent',
+            message_text=suggestions,
+            message_type='chat',
+            sender_name='Agente Especificação - Revisão'
+        )
+
+        print(f"[SPEC REVIEW] ✅ Review message saved with ID: {review_msg_id}")
+
+        return {
+            "review_message_id": review_msg_id,
+            "suggestions": suggestions,
+            "status": "success",
+            "message": "Revisão concluída com sucesso"
+        }
+
+    except Exception as e:
+        print(f"[SPEC REVIEW] ❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise
+
+
 # ============================================================
 # REFINEMENT ENDPOINT
 # ============================================================
@@ -1033,6 +1105,50 @@ async def refine_specification(
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to process request: {str(e)}")
+
+
+# ============================================================
+# REVIEW ENDPOINT
+# ============================================================
+
+@router.post("/{session_id}/review")
+async def review_specification(
+    session_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Automatic review of specification - generates improvement suggestions
+    Does NOT modify the document
+    """
+    try:
+        user_id = current_user['id']
+
+        # Verify session exists and belongs to user
+        with get_db_cursor() as cursor:
+            cursor.execute("""
+                SELECT id
+                FROM execution_specification_sessions
+                WHERE id = %s AND user_id = %s
+            """, (session_id, user_id))
+
+            if not cursor.fetchone():
+                raise HTTPException(status_code=404, detail="Session not found")
+
+        # Execute review
+        print(f"[API] 🔍 Review task starting for session {session_id}")
+
+        # Call review function
+        result = await execute_specification_review(session_id, user_id)
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] Error in review endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================================
