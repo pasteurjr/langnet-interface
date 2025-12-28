@@ -582,6 +582,234 @@ def get_chat_threads(parent_message_id: str) -> list:
     return messages
 
 
+# ════════════════════════════════════════════════════════════════
+# AGENT TASK SPECIFICATION SESSIONS
+# ════════════════════════════════════════════════════════════════
+
+def create_agent_task_spec_session(session_data: dict) -> str:
+    """Create a new agent task specification session"""
+    import json
+
+    # Convert execution_metadata dict to JSON string if present
+    if 'execution_metadata' in session_data and isinstance(session_data['execution_metadata'], dict):
+        session_data['execution_metadata'] = json.dumps(session_data['execution_metadata'])
+
+    query = """
+        INSERT INTO agent_task_specification_sessions (
+            id, project_id, user_id, specification_session_id, specification_version,
+            session_name, status, execution_metadata
+        ) VALUES (
+            %(id)s, %(project_id)s, %(user_id)s, %(specification_session_id)s, %(specification_version)s,
+            %(session_name)s, %(status)s, %(execution_metadata)s
+        )
+    """
+
+    with get_db_cursor() as cursor:
+        cursor.execute(query, session_data)
+
+    return session_data["id"]
+
+
+def get_agent_task_spec_session(session_id: str) -> dict:
+    """Get a specific agent task specification session"""
+    import json
+
+    query = "SELECT * FROM agent_task_specification_sessions WHERE id = %s"
+    session = execute_query(query, (session_id,), fetch_one=True)
+
+    if session and session.get('execution_metadata') and isinstance(session['execution_metadata'], str):
+        try:
+            session['execution_metadata'] = json.loads(session['execution_metadata'])
+        except:
+            session['execution_metadata'] = None
+
+    return session
+
+
+def update_agent_task_spec_session(session_id: str, updates: dict) -> int:
+    """Update an agent task specification session"""
+    import json
+
+    # Convert execution_metadata dict to JSON string if present
+    if 'execution_metadata' in updates and isinstance(updates['execution_metadata'], dict):
+        updates['execution_metadata'] = json.dumps(updates['execution_metadata'])
+
+    set_clauses = []
+    params = []
+
+    for key, value in updates.items():
+        set_clauses.append(f"{key} = %s")
+        params.append(value)
+
+    params.append(session_id)
+
+    query = f"""
+        UPDATE agent_task_specification_sessions
+        SET {', '.join(set_clauses)}
+        WHERE id = %s
+    """
+
+    with get_db_cursor() as cursor:
+        cursor.execute(query, tuple(params))
+        return cursor.rowcount
+
+
+def list_agent_task_spec_sessions(project_id: str) -> list:
+    """List all agent task specification sessions for a project"""
+    import json
+
+    query = """
+        SELECT * FROM agent_task_specification_sessions
+        WHERE project_id = %s
+        ORDER BY created_at DESC
+    """
+
+    sessions = execute_query(query, (project_id,), fetch_all=True)
+
+    # Parse execution_metadata JSON
+    for session in sessions:
+        if session.get('execution_metadata') and isinstance(session['execution_metadata'], str):
+            try:
+                session['execution_metadata'] = json.loads(session['execution_metadata'])
+            except:
+                session['execution_metadata'] = None
+
+    return sessions
+
+
+# ════════════════════════════════════════════════════════════════
+# AGENT TASK SPEC VERSION HISTORY
+# ════════════════════════════════════════════════════════════════
+
+def create_agent_task_spec_version(version_data: dict) -> None:
+    """Create a new version of agent task specification document"""
+    import json
+
+    # Convert section_changes dict to JSON string if present
+    if 'section_changes' in version_data and isinstance(version_data['section_changes'], dict):
+        version_data['section_changes'] = json.dumps(version_data['section_changes'])
+
+    query = """
+        INSERT INTO agent_task_spec_version_history (
+            session_id, version, agent_task_spec_document,
+            created_by, change_type, doc_size
+        ) VALUES (
+            %(session_id)s, %(version)s, %(agent_task_spec_document)s,
+            %(created_by)s, %(change_type)s, %(doc_size)s
+        )
+    """
+
+    with get_db_cursor() as cursor:
+        cursor.execute(query, version_data)
+
+
+def get_agent_task_spec_versions(session_id: str) -> list:
+    """Get version history for an agent task specification session"""
+    import json
+
+    query = """
+        SELECT * FROM agent_task_spec_version_history
+        WHERE session_id = %s
+        ORDER BY version DESC
+    """
+
+    versions = execute_query(query, (session_id,), fetch_all=True)
+
+    # Parse section_changes JSON
+    for version in versions:
+        if version.get('section_changes') and isinstance(version['section_changes'], str):
+            try:
+                version['section_changes'] = json.loads(version['section_changes'])
+            except:
+                version['section_changes'] = None
+
+    return versions
+
+
+# ════════════════════════════════════════════════════════════════
+# AGENT TASK SPEC CHAT MESSAGES
+# ════════════════════════════════════════════════════════════════
+
+def save_agent_task_spec_chat_message(message_data: dict) -> str:
+    """Save a chat message for agent task specification sessions"""
+    import uuid
+    import json
+
+    message_id = str(uuid.uuid4())
+
+    # Convert metadata dict to JSON string if present
+    if 'metadata' in message_data and isinstance(message_data['metadata'], dict):
+        message_data['metadata'] = json.dumps(message_data['metadata'])
+
+    query = """
+        INSERT INTO agent_task_spec_chat_messages (
+            id, session_id, sender_type, sender_name, message_text,
+            message_type, parent_message_id, metadata
+        ) VALUES (
+            %(id)s, %(session_id)s, %(sender_type)s, %(sender_name)s, %(message_text)s,
+            %(message_type)s, %(parent_message_id)s, %(metadata)s
+        )
+    """
+
+    # Add message_id to data
+    params = {**message_data, 'id': message_id}
+
+    # Set defaults
+    params.setdefault('sender_name', None)
+    params.setdefault('parent_message_id', None)
+    params.setdefault('metadata', None)
+    params.setdefault('message_type', 'chat')
+
+    with get_db_cursor() as cursor:
+        cursor.execute(query, params)
+
+    return message_id
+
+
+def get_agent_task_spec_chat_messages(session_id: str, limit: int = 50) -> list:
+    """Get chat messages for an agent task specification session"""
+    import json
+
+    query = """
+        SELECT * FROM agent_task_spec_chat_messages
+        WHERE session_id = %s
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """
+
+    messages = execute_query(query, (session_id, limit), fetch_all=True)
+
+    # Parse metadata JSON and reverse to chronological order
+    for msg in messages:
+        if msg.get('metadata') and isinstance(msg['metadata'], str):
+            try:
+                msg['metadata'] = json.loads(msg['metadata'])
+            except:
+                msg['metadata'] = None
+
+    return list(reversed(messages))  # Return in chronological order
+
+
+def get_previous_agent_task_spec_refinements(session_id: str, limit: int = 10) -> list:
+    """
+    Busca últimos N refinamentos de um documento de especificação de agentes/tarefas
+
+    Retorna mensagens de usuário do tipo 'chat' para incluir como contexto em refinamentos
+    """
+    query = """
+        SELECT message_text, timestamp, sender_type
+        FROM agent_task_spec_chat_messages
+        WHERE session_id = %s
+          AND sender_type = 'user'
+          AND message_type = 'chat'
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """
+
+    messages = execute_query(query, (session_id, limit), fetch_all=True)
+    return list(reversed(messages))  # Return in chronological order
+
+
 # Initialize pool on module import
 try:
     init_db_pool()
