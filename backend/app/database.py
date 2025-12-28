@@ -692,10 +692,10 @@ def create_agent_task_spec_version(version_data: dict) -> None:
     query = """
         INSERT INTO agent_task_spec_version_history (
             session_id, version, agent_task_spec_document,
-            created_by, change_type, doc_size
+            created_by, change_type, change_description, doc_size
         ) VALUES (
             %(session_id)s, %(version)s, %(agent_task_spec_document)s,
-            %(created_by)s, %(change_type)s, %(doc_size)s
+            %(created_by)s, %(change_type)s, %(change_description)s, %(doc_size)s
         )
     """
 
