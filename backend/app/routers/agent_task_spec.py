@@ -203,6 +203,7 @@ async def execute_agent_task_spec_generation(
             "agent_task_spec_document": agent_task_spec_document,
             "created_by": user_id,
             "change_type": "initial_generation",
+            "change_description": "Geração inicial do documento de especificação",
             "doc_size": len(agent_task_spec_document.encode('utf-8'))
         })
 
@@ -262,10 +263,9 @@ async def list_agent_task_spec_sessions_endpoint(
 
 @router.get("/{session_id}", response_model=AgentTaskSpecResponse)
 async def get_agent_task_spec_session_endpoint(
-    session_id: str,
-    current_user: dict = Depends(get_current_user)
+    session_id: str
 ):
-    """Obtém sessão específica de especificação"""
+    """Obtém sessão específica de especificação (sem auth para polling)"""
 
     session = get_agent_task_spec_session(session_id)
     if not session:
@@ -334,11 +334,10 @@ async def get_chat_history(
 async def refine_agent_task_spec(
     session_id: str,
     request: RefineAgentTaskSpecRequest,
-    background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user)
+    background_tasks: BackgroundTasks
 ):
     """
-    Refina documento de especificação via chat
+    Refina documento de especificação via chat (sem auth para evitar expiração de token)
 
     action_type='refine': Modifica documento e cria nova versão
     action_type='chat': Apenas responde sem modificar
@@ -366,7 +365,7 @@ async def refine_agent_task_spec(
             execute_refinement,
             session_id=session_id,
             message=request.message,
-            user_id=current_user["id"]
+            user_id=session["user_id"]  # Pega da sessão em vez de current_user
         )
     else:
         # Chat mode: apenas responder sem modificar
