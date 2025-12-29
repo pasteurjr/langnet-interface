@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import ChatInterface, { ChatMessage } from '../components/documents/ChatInterface';
 import SpecificationHistoryModal from '../components/specification/SpecificationHistoryModal';
 import AgentTaskSpecHistoryModal from '../components/agent-task/AgentTaskSpecHistoryModal';
+import ReviewSuggestionsModal from '../components/agent-task/ReviewSuggestionsModal';
 import DocumentActionsCard from '../components/documents/DocumentActionsCard';
 import MarkdownViewerModal from '../components/documents/MarkdownViewerModal';
 import MarkdownEditorModal from '../components/documents/MarkdownEditorModal';
@@ -58,6 +59,12 @@ const AgentTaskPage: React.FC = () => {
   const [showDiff, setShowDiff] = useState(false);
   const [oldDocument, setOldDocument] = useState<string>('');
   const [isDiffModalOpen, setIsDiffModalOpen] = useState(false);
+
+  // Review modal states
+  const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
+  const [reviewSuggestions, setReviewSuggestions] = useState<string>('');
+  const [isReviewing, setIsReviewing] = useState(false);
+  const [isApplyingSuggestions, setIsApplyingSuggestions] = useState(false);
 
   // useEffect para detectar diffs automaticamente (padrão SpecificationPage)
   useEffect(() => {
@@ -380,6 +387,152 @@ const AgentTaskPage: React.FC = () => {
     }
   };
 
+  // Handler for review
+  const handleReview = async () => {
+    if (!currentSessionId) {
+      toast.error('Gere uma especificação primeiro');
+      return;
+    }
+
+    setIsReviewing(true);
+    try {
+      console.log('🔍 Iniciando revisão da especificação de agentes/tarefas...');
+      const result = await agentTaskService.reviewAgentTaskSpec(currentSessionId);
+      setReviewSuggestions(result.suggestions);
+      setIsReviewModalOpen(true);
+
+      // Add review message to chat
+      const reviewMsg: ChatMessage = {
+        id: result.review_message_id,
+        sender: 'agent',
+        text: result.suggestions,
+        timestamp: new Date(),
+        type: 'result'
+      };
+      setChatMessages(prev => [...prev, reviewMsg]);
+
+      toast.success('Revisão concluída!');
+    } catch (error: any) {
+      console.error('Erro ao revisar especificação:', error);
+      toast.error('Erro ao revisar especificação. Tente novamente.');
+    } finally {
+      setIsReviewing(false);
+    }
+  };
+
+  // Handler for applying suggestions
+  const handleApplySuggestions = async (additionalInstructions?: string) => {
+    if (!currentSessionId) {
+      toast.error('Nenhuma sessão ativa');
+      return;
+    }
+
+    setIsApplyingSuggestions(true);
+
+    // Salvar documento antes do refinamento para diff
+    const documentBeforeRefinement = generatedDocument;
+
+    try {
+      // Build refinement message
+      let message = "Aplique as seguintes sugestões de melhoria ao documento:\n\n";
+      message += reviewSuggestions;
+
+      if (additionalInstructions) {
+        message += `\n\n---\n\nINSTRUÇÕES COMPLEMENTARES:\n${additionalInstructions}`;
+      }
+
+      console.log('✏️ Aplicando sugestões de revisão...');
+
+      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+
+      // Chamar endpoint de refinamento
+      const response = await fetch(`${API_BASE_URL}/agent-task-spec/${currentSessionId}/refine`, {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : '',
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: message,
+          action_type: 'refine'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Falha ao aplicar sugestões');
+      }
+
+      setIsReviewModalOpen(false);
+      setIsChatProcessing(true);
+      toast.success('Aplicando sugestões... Aguarde a atualização do documento.');
+
+      // Iniciar polling para aguardar refinamento
+      const pollInterval = setInterval(async () => {
+        const statusRes = await fetch(`${API_BASE_URL}/agent-task-spec/${currentSessionId}`, {
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : '',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (statusRes.ok) {
+          const statusData = await statusRes.json();
+
+          if (statusData.status === 'completed') {
+            clearInterval(pollInterval);
+
+            const refinedDocument = statusData.agent_task_spec_document || '';
+
+            // Atualizar documento refinado
+            setGeneratedDocument(refinedDocument);
+            setTotalAgents(statusData.total_agents || 0);
+            setTotalTasks(statusData.total_tasks || 0);
+
+            // Ativar diff
+            setOldDocument(documentBeforeRefinement);
+            setShowDiff(true);
+
+            // Incrementar versão
+            const newVersion = (currentLoadedVersion || 1) + 1;
+            setCurrentLoadedVersion(newVersion);
+            setDocumentFilename(`especificacao_agentes_tarefas_v${newVersion}.md`);
+
+            // Mensagem da assistente no chat
+            const assistantMsg: ChatMessage = {
+              id: (Date.now() + 1).toString(),
+              sender: 'agent',
+              text: `✅ Sugestões aplicadas com sucesso!\n\nVersão ${newVersion} criada. Clique em "Ver Diferenças" para comparar as alterações.`,
+              timestamp: new Date(),
+              type: 'result',
+              data: {
+                has_diff: true,
+                old_document: documentBeforeRefinement,
+                new_document: refinedDocument
+              }
+            };
+            setChatMessages(prev => [...prev, assistantMsg]);
+
+            setIsChatProcessing(false);
+            setIsApplyingSuggestions(false);
+            toast.success(`Sugestões aplicadas - v${newVersion} criada`);
+          } else if (statusData.status === 'failed') {
+            clearInterval(pollInterval);
+            setIsChatProcessing(false);
+            setIsApplyingSuggestions(false);
+            toast.error('Refinamento falhou');
+          }
+        }
+      }, 3000); // Poll a cada 3 segundos
+
+    } catch (error: any) {
+      console.error('Erro ao aplicar sugestões:', error);
+      toast.error('Erro ao aplicar sugestões. Tente novamente.');
+      setIsApplyingSuggestions(false);
+      setIsChatProcessing(false);
+    }
+  };
+
   const handleDownloadMarkdown = () => {
     if (!generatedDocument) {
       toast.error('Nenhum documento para baixar');
@@ -523,6 +676,16 @@ const AgentTaskPage: React.FC = () => {
               {isGenerating ? '⏳ Gerando...' : '🚀 Gerar Agentes & Tarefas'}
             </button>
 
+            <button
+              className="btn-review"
+              onClick={handleReview}
+              disabled={isReviewing || !generatedDocument}
+              title="Revisar documento e obter sugestões de melhoria"
+              style={{ marginTop: '12px' }}
+            >
+              {isReviewing ? '⏳ Revisando...' : '🔍 Revisar Especificação'}
+            </button>
+
             {!selectedSpecSessionId && (
               <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
                 ⚠️ Selecione uma especificação funcional primeiro
@@ -623,6 +786,15 @@ const AgentTaskPage: React.FC = () => {
         oldDocument={oldDocument}
         newDocument={generatedDocument}
         onClose={() => setIsDiffModalOpen(false)}
+      />
+
+      {/* Review Suggestions Modal */}
+      <ReviewSuggestionsModal
+        isOpen={isReviewModalOpen}
+        suggestions={reviewSuggestions}
+        onClose={() => setIsReviewModalOpen(false)}
+        onApply={handleApplySuggestions}
+        isApplying={isApplyingSuggestions}
       />
     </div>
   );

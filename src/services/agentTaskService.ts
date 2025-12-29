@@ -296,6 +296,45 @@ export const downloadYamlsZip = async (sessionId: string, filename: string = 'ag
 };
 
 /**
+ * Review agent/task specification response
+ */
+export interface ReviewAgentTaskSpecResponse {
+  review_message_id: string;
+  suggestions: string;  // Markdown
+  status: string;
+  message: string;
+}
+
+/**
+ * Review agent/task specification document
+ * Returns structured suggestions for improvement
+ * IMPORTANT: Review is SYNCHRONOUS - returns immediately with suggestions
+ */
+export const reviewAgentTaskSpec = async (
+  sessionId: string
+): Promise<ReviewAgentTaskSpecResponse> => {
+  console.log('🔍 Sending review request:', sessionId);
+
+  const response = await fetch(`${API_BASE_URL}/agent-task-spec/${sessionId}/review`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    console.error('❌ Failed to review:', error);
+    throw new Error(error.detail || 'Failed to review specification');
+  }
+
+  const result = await response.json();
+  console.log('✅ Review completed:', result);
+
+  // IMPORTANTE: Review é SÍNCRONO - retorna imediatamente com as sugestões
+  // NÃO precisa de polling (diferente do refinement)
+  return result;
+};
+
+/**
  * Export all functions
  */
 export default {
@@ -307,4 +346,5 @@ export default {
   getChatHistory,
   exportYamlsAsZip,
   downloadYamlsZip,
+  reviewAgentTaskSpec,
 };

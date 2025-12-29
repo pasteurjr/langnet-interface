@@ -467,18 +467,26 @@ Você é um arquiteto de sistemas multi-agente especializado em CrewAI.
 
 ## INSTRUÇÕES CRÍTICAS
 
-1. **Mantenha a estrutura**: Preserve todas as 5 seções (Visão Geral, Agentes, Tarefas, Rastreabilidade, Grafo)
-2. **Mantenha IDs existentes**: Não altere IDs de agentes (AG-XX) ou tasks (T-XXX-XXX) já definidos
-3. **Aplique APENAS as mudanças solicitadas**: Não faça modificações não pedidas
-4. **Rastreabilidade**: Se adicionar tasks, mapeie para UC e RF da especificação funcional
-5. **Formato Markdown**: Mantenha tabelas bem formatadas
-6. **Dependencies**: Se adicionar/modificar tasks, atualize dependencies
+1. **Mantenha a estrutura**: Preserve EXATAMENTE as 5 seções existentes (Visão Geral, Agentes, Tarefas, Rastreabilidade, Grafo)
+2. **Mantenha IDs existentes**: NÃO altere IDs de agentes (AG-XX) ou tasks (T-XXX-XXX) já definidos
+3. **Aplique APENAS as mudanças solicitadas**: NÃO faça modificações não pedidas
+4. **Seja CIRÚRGICO**: Modifique APENAS o que foi solicitado, mantendo todo o resto IDÊNTICO
+5. **Rastreabilidade**: Se adicionar tasks, mapeie para UC e RF da especificação funcional
+6. **Formato Markdown**: Mantenha tabelas bem formatadas (NÃO adicione colunas extras)
+7. **Dependencies**: Se adicionar/modificar tasks, atualize dependencies
+8. **NÃO EXPANDA**: NÃO adicione explicações extras, seções adicionais ou detalhes não solicitados
+9. **TAMANHO**: O documento refinado deve ter tamanho SIMILAR ao original (~{len(current_document)} caracteres)
 
-⚠️ **NÃO REPRODUZA a especificação funcional**. Apenas modifique o documento de agentes/tarefas.
+⚠️ **CRÍTICO**:
+- NÃO reproduza a especificação funcional
+- NÃO adicione seções extras como "Considerações", "Observações", "Notas"
+- NÃO expanda descrições desnecessariamente
+- Seja CONCISO e OBJETIVO
 
 ## OUTPUT
 
-Retorne o documento COMPLETO de especificação de agentes/tarefas com as modificações aplicadas.
+Retorne APENAS o documento COMPLETO de especificação de agentes/tarefas com as modificações aplicadas.
+NÃO adicione preâmbulos, explicações ou conclusões.
 
 Gere agora o documento refinado:
 """
@@ -610,3 +618,112 @@ Responda:
             "message_text": f"❌ Erro: {str(e)}",
             "message_type": "error"
         })
+
+
+# ═══════════════════════════════════════════════════════════
+# REVISÃO (REVIEW)
+# ═══════════════════════════════════════════════════════════
+
+@router.post("/{session_id}/review")
+async def review_agent_task_spec(
+    session_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Revisão automática de especificação - gera sugestões de melhoria
+    NÃO modifica o documento
+
+    Padrão idêntico a specification.py:review_specification()
+    """
+    try:
+        user_id = current_user['id']
+
+        # Verificar que sessão existe e pertence ao usuário
+        session = get_agent_task_spec_session(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Sessão não encontrada")
+
+        if session["user_id"] != user_id:
+            raise HTTPException(status_code=403, detail="Acesso negado")
+
+        if not session.get("agent_task_spec_document"):
+            raise HTTPException(status_code=400, detail="Nenhum documento para revisar")
+
+        print(f"[API] 🔍 Review task starting for session {session_id}")
+
+        # Executar revisão SÍNCRONA
+        result = await execute_agent_task_spec_review(session_id, user_id)
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[API] Error in review endpoint: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def execute_agent_task_spec_review(session_id: str, user_id: str):
+    """
+    Executa revisão automática de especificação de agentes/tarefas sem modificá-la
+    Retorna sugestões estruturadas para melhoria
+
+    Padrão idêntico a specification.py:execute_specification_review()
+    """
+    try:
+        print(f"\n{'='*80}")
+        print(f"[AGENT_TASK_SPEC_REVIEW] 🔍 Starting review for session {session_id}")
+        print(f"{'='*80}\n")
+
+        # 1. Buscar documento atual
+        session = get_agent_task_spec_session(session_id)
+        if not session or not session.get("agent_task_spec_document"):
+            raise ValueError("No agent/task specification document found")
+
+        current_document = session["agent_task_spec_document"]
+
+        print(f"[AGENT_TASK_SPEC_REVIEW] Current document size: {len(current_document)} chars")
+
+        # 2. Gerar prompt de revisão usando função dedicada
+        from prompts.review_agent_task_spec import get_review_agent_task_spec_prompt
+        review_prompt = get_review_agent_task_spec_prompt(current_document)
+        print(f"[AGENT_TASK_SPEC_REVIEW] Review prompt generated: {len(review_prompt)} chars")
+
+        # 3. Chamar LLM para revisão
+        print(f"[AGENT_TASK_SPEC_REVIEW] Calling LLM for analysis...")
+
+        suggestions = await get_llm_response_async(
+            prompt=review_prompt,
+            system="Você é um especialista em análise de sistemas multi-agente e especificações CrewAI.",
+            temperature=0.7,
+            max_tokens=4096
+        )
+
+        print(f"[AGENT_TASK_SPEC_REVIEW] ✅ Review completed. Suggestions length: {len(suggestions)} chars")
+
+        # 4. Salvar mensagem de revisão no histórico de chat
+        review_msg_id = str(uuid.uuid4())
+        save_agent_task_spec_chat_message({
+            "id": review_msg_id,
+            "session_id": session_id,
+            "sender_type": "agent",
+            "message_text": suggestions,
+            "message_type": "chat"
+        })
+
+        print(f"[AGENT_TASK_SPEC_REVIEW] ✅ Review message saved with ID: {review_msg_id}")
+
+        return {
+            "review_message_id": review_msg_id,
+            "suggestions": suggestions,
+            "status": "success",
+            "message": "Revisão concluída com sucesso"
+        }
+
+    except Exception as e:
+        print(f"[AGENT_TASK_SPEC_REVIEW] ❌ Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        raise
