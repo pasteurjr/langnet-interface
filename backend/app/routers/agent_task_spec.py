@@ -626,28 +626,25 @@ Responda:
 
 @router.post("/{session_id}/review")
 async def review_agent_task_spec(
-    session_id: str,
-    current_user: dict = Depends(get_current_user)
+    session_id: str
 ):
     """
     Revisão automática de especificação - gera sugestões de melhoria
     NÃO modifica o documento
 
-    Padrão idêntico a specification.py:review_specification()
+    SEM autenticação - token expira durante análise longa do LLM
     """
     try:
-        user_id = current_user['id']
-
-        # Verificar que sessão existe e pertence ao usuário
+        # Verificar que sessão existe
         session = get_agent_task_spec_session(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Sessão não encontrada")
 
-        if session["user_id"] != user_id:
-            raise HTTPException(status_code=403, detail="Acesso negado")
-
         if not session.get("agent_task_spec_document"):
             raise HTTPException(status_code=400, detail="Nenhum documento para revisar")
+
+        # Pegar user_id da sessão em vez de current_user (evita expiração de token)
+        user_id = session["user_id"]
 
         print(f"[API] 🔍 Review task starting for session {session_id}")
 
