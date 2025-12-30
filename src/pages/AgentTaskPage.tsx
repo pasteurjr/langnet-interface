@@ -137,7 +137,7 @@ const AgentTaskPage: React.FC = () => {
       const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
       const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
 
-      // Buscar versão específica da API
+      // Buscar TODAS as versões da API
       const response = await fetch(`${API_BASE_URL}/agent-task-spec/${sessionId}/versions`, {
         headers: {
           'Authorization': token ? `Bearer ${token}` : '',
@@ -150,10 +150,21 @@ const AgentTaskPage: React.FC = () => {
       }
 
       const versions = await response.json();
+
+      // Buscar a versão solicitada
       const versionData = versions.find((v: any) => v.version === version);
 
       if (!versionData || !versionData.agent_task_spec_document) {
         throw new Error('Versão não encontrada');
+      }
+
+      // Buscar a versão ANTERIOR (se existir) para diff
+      let previousVersionDocument = '';
+      if (version > 1) {
+        const previousVersionData = versions.find((v: any) => v.version === version - 1);
+        if (previousVersionData && previousVersionData.agent_task_spec_document) {
+          previousVersionDocument = previousVersionData.agent_task_spec_document;
+        }
       }
 
       // Atualizar estados
@@ -162,7 +173,17 @@ const AgentTaskPage: React.FC = () => {
       setCurrentLoadedVersion(version);
       setDocumentFilename(`especificacao_agentes_tarefas_v${version}.md`);
 
-      toast.success(`Versão ${version} carregada com sucesso`);
+      // Ativar diff se houver versão anterior
+      if (previousVersionDocument) {
+        setOldDocument(previousVersionDocument);
+        setShowDiff(true);
+        toast.success(`Versão ${version} carregada. Clique em "Ver Diferenças" para comparar com v${version - 1}.`);
+      } else {
+        // Limpar diff se for a versão 1
+        setOldDocument('');
+        setShowDiff(false);
+        toast.success(`Versão ${version} carregada (versão inicial)`);
+      }
     } catch (error: any) {
       console.error('Erro ao carregar versão:', error);
       toast.error('Erro ao carregar versão do histórico');
