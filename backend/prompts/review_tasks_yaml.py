@@ -19,14 +19,90 @@ YAML ATUAL:
 
 TAREFA: Revise este tasks.yaml e identifique melhorias.
 
-Analise:
-1. **Completude**: Faltam campos? description/expected_output claros?
-2. **Description**: Process steps bem definidos? Input format claro?
-3. **Expected Output**: Formato TEXTUAL correto? Sem JSON literal?
-4. **Nomenclatura**: Snake_case? Verbo+objeto?
-5. **Placeholders**: {{variavel}} correto?
-6. **Dependências**: Inputs/outputs entre tasks coerentes?
-7. **Sintaxe YAML**: Identação, multiline (`>`), encoding
+Analise com ATENÇÃO ESPECIAL ao expected_output:
+
+1. **Completude**:
+   - Faltam campos obrigatórios (description, expected_output)?
+   - Description tem "Input data format" e "Process steps"?
+   - Expected_output está presente e completo?
+
+2. **Description**:
+   - Process steps numerados (1., 2., 3.)?
+   - Input format explicitamente descrito?
+   - Placeholders {{variavel}} com chaves duplas?
+
+3. **Expected Output - VALIDAÇÃO CRÍTICA**:
+   ✅ Verificar SE JÁ está correto (formato textual descritivo):
+      - Usa linguagem natural: "Retornar um texto em formato JSON contendo..."
+      - Descreve campos: "- campo: descrição do campo"
+      - Descreve listas: "lista de X, onde cada X deve conter as keys: * subcampo"
+
+   ❌ APENAS sugerir correção SE:
+      - Usar formato tipado: List[{...}], Dict[str, Any]
+      - Usar JSON literal: {"campo": "valor"}
+      - Usar schema: {"type": "object", "properties": {...}}
+
+   🚨 SE JÁ ESTÁ EM FORMATO TEXTUAL: Marcar como ✅ correto, NÃO sugerir mudança!
+
+4. **Nomenclatura**:
+   - Snake_case?
+   - Nome com verbo+objeto (ex: read_email, classify_message)?
+
+5. **Placeholders**:
+   - Usando {{variavel}} (chaves duplas)?
+   - Placeholders referenciados na description?
+
+6. **Dependências**:
+   - Inputs/outputs entre tasks coerentes?
+   - Tasks referenciam outputs de tasks anteriores corretamente?
+
+7. **Sintaxe YAML**:
+   - Identação correta (2 espaços)?
+   - Multiline com `>`?
+   - Encoding UTF-8 válido?
+
+## VALIDAÇÃO CRÍTICA DE EXPECTED_OUTPUT
+
+⚠️ PADRÃO CREWAI OFICIAL: Expected_output é DESCRIÇÃO TEXTUAL em linguagem natural!
+
+✅ FORMATO CORRETO (NÃO sugerir mudança):
+```yaml
+expected_output: >
+  Retornar um texto em formato JSON contendo as seguintes keys:
+  - timestamp: data e hora da execução
+  - emails: lista de emails, onde cada email deve conter as keys:
+    * email_id: identificador único
+    * from: email do remetente
+    * subject: assunto do email
+```
+
+❌ FORMATOS INCORRETOS (NUNCA sugerir):
+```yaml
+# ERRADO 1: Formato tipado (Python/TypeScript-like)
+expected_output: "List[{{email_id: str, from: str, subject: str}}]"
+
+# ERRADO 2: JSON literal
+expected_output: '{{"emails": [{{"email_id": "...", "from": "..."}}]}}'
+
+# ERRADO 3: Schema estruturado
+expected_output: |
+  {{
+    "type": "object",
+    "properties": {{"emails": {{...}}}}
+  }}
+```
+
+🚨 SE O YAML JÁ USA FORMATO TEXTUAL DESCRITIVO: NÃO sugerir "correção" para formato estruturado!
+
+## IMPORTANTE: PADRÃO CREWAI vs. OUTROS FRAMEWORKS
+
+O CrewAI **recomenda oficialmente** expected_output como DESCRIÇÃO TEXTUAL, não como schema estruturado.
+
+- Outros frameworks (AutoGen, LangChain) podem usar schemas JSON
+- CrewAI usa descrição natural para flexibilidade do LLM
+- NÃO confundir com TypeScript/Python type hints
+
+REFERÊNCIA: https://docs.crewai.com/core-concepts/Tasks/#task-output
 
 FORMATO DE SAÍDA (Markdown):
 
@@ -59,5 +135,7 @@ FORMATO DE SAÍDA (Markdown):
 
 IMPORTANTE:
 - Seja específico, construtivo, acionável
-- Verifique se expected_output está em formato TEXTUAL
-- Valide coerência entre inputs/outputs das tasks"""
+- Verifique se expected_output está em formato TEXTUAL (linguagem natural)
+- NÃO sugerir mudança de formato textual para List[...] ou JSON literal
+- Valide coerência entre inputs/outputs das tasks
+- Cite linha/task específica ao sugerir melhorias"""
