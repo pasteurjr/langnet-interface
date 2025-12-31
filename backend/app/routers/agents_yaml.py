@@ -45,12 +45,13 @@ class RefineRequest(BaseModel):
 @router.post("/")
 async def generate_agents_yaml(
     request: GenerateRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user)
 ):
     """
     Gera agents.yaml a partir de documento MD de agentes/tarefas
     """
-    user_id = "system"  # Removido autenticação para evitar expiração de token
+    user_id = current_user['id']
     session_id = str(uuid.uuid4())
 
     # Buscar documento MD base
