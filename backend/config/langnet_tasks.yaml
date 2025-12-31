@@ -983,3 +983,797 @@ generate_python_code:
     Generate production-ready Python code implementing multi-agent system using framework: {framework_choice}. Include: (1) Imports and dependencies; (2) Agent initialization from YAML; (3) Tool creation and registration; (4) Task definitions with input/output functions; (5) Task Registry; (6) Workflow executor; (7) Main orchestration logic; (8) Error handling and logging; (9) Type hints and docstrings; (10) Entry point with CLI. Follow PEP 8, include comments, make code modular and testable.
   expected_output: >
     JSON object with: (1) 'main_file': complete Python code as string; (2) 'additional_files': dict of filename to content for supporting files (utils, config, etc); (3) 'requirements_txt': Python dependencies; (4) 'readme_md': usage documentation; (5) 'test_file': basic test suite.
+
+# =============================================================================
+# SPECIFICATION GENERATION TASKS (Multi-Step Pipeline)
+# Based on Generative Computing principles - IBM Research
+# Pipeline: Router → EntityExtractor → Composer → Verifier → Compliance → Formatter
+# =============================================================================
+
+classify_specification_intent:
+  description: >
+    [Specification Router] Classify the specification generation task intent and determine pipeline.
+
+    YOU RECEIVE:
+    - requirements_document: {requirements_document}
+    - requirements_version: {requirements_version}
+    - project_name: {project_name}
+    - detail_level: {detail_level}
+    - target_audience: {target_audience}
+
+    YOUR TASK:
+
+    1. ANALYZE the requirements document to determine:
+       - Is this a CREATE (new specification), UPDATE (modify existing), or VALIDATE (check consistency) task?
+       - What is the scope of the specification needed?
+       - Which of the 14 mandatory sections need to be generated?
+
+    2. DETERMINE TARGET SECTIONS (all 14 are mandatory for CREATE):
+       1. Introdução
+       2. Visão Geral do Sistema
+       3. Requisitos Funcionais Detalhados
+       4. Requisitos Não-Funcionais
+       5. Casos de Uso (MÍNIMO 10 detalhados)
+       6. Modelo de Dados Conceitual
+       7. Interfaces do Sistema
+       8. Regras de Negócio
+       9. Fluxos de Trabalho
+       10. Análise de Arquitetura Preliminar
+       11. Controle de Qualidade
+       12. Glossário
+       13. Rastreabilidade (Matriz)
+       14. Apêndices
+
+    3. ASSESS complexity based on:
+       - Number of functional requirements
+       - Number of actors/stakeholders
+       - Number of integrations
+       - Domain complexity
+
+    SCHEMA OUTPUT REQUIRED - Return ONLY valid JSON.
+
+  expected_output: >
+    Return a JSON object with these fields:
+    - intent: one of create, update, or validate
+    - scope: functional_spec
+    - target_sections: array of section numbers from 1 to 14
+    - requirements_version: the version number
+    - project_name: name of the project
+    - detail_level: one of basic, detailed, or comprehensive
+    - target_audience: one of technical, business, or mixed
+    - estimated_complexity: one of low, medium, or high
+    - estimated_use_cases: estimated number of use cases
+    - estimated_business_rules: estimated number of business rules
+    - routing_decision: description of the routing decision made
+
+extract_specification_entities:
+  description: >
+    [Entity Extraction] Extract ALL entities from requirements document for specification.
+
+    YOU RECEIVE:
+    - requirements_document: {requirements_document}
+    - classification_json: {classification_json}
+    - project_name: {project_name}
+
+    YOUR TASK: Extract EVERY entity from the requirements document with FULL TRACEABILITY.
+
+    ═══════════════════════════════════════════════════════════
+    EXTRACTION CATEGORIES
+    ═══════════════════════════════════════════════════════════
+
+    1. ACTORS (stakeholders, users, systems):
+       For each actor extract:
+       - id: A-XXX (sequential)
+       - name: Actor name
+       - type: human|system|external
+       - role: Description of role
+       - permissions: What they can do
+       - context_id: Reference to source in requirements
+       - quote: Verbatim text from requirements
+
+    2. FUNCTIONAL REQUIREMENTS:
+       For each FR extract:
+       - id: FR-XXX (use existing IDs from requirements if present)
+       - name: Short name
+       - description: Full description
+       - priority: Alta|Média|Baixa
+       - acceptance_criteria: List of measurable criteria
+       - dependencies: Related FRs
+       - actors_involved: List of actor IDs
+       - context_id: Reference to source
+       - quote: Verbatim text
+
+    3. NON-FUNCTIONAL REQUIREMENTS:
+       For each RNF extract:
+       - id: RNF-XXX
+       - category: Performance|Segurança|Usabilidade|Confiabilidade|Manutenibilidade
+       - description: Full description
+       - metric: Measurable metric (e.g., "< 2 segundos")
+       - context_id: Reference to source
+       - quote: Verbatim text
+
+    4. USE CASES (MINIMUM 10):
+       For each UC extract:
+       - id: UC-XXX
+       - name: Use case name
+       - primary_actor: Actor ID
+       - secondary_actors: List of actor IDs
+       - related_frs: List of FR IDs
+       - preconditions: List of conditions
+       - postconditions: List of conditions
+       - context_id: Reference to source
+
+    5. BUSINESS RULES:
+       For each RN extract:
+       - id: RN-XXX
+       - name: Rule name
+       - condition: When does it apply
+       - action: What must happen
+       - validation: How to verify
+       - related_frs: List of FR IDs
+       - context_id: Reference to source
+       - quote: Verbatim text
+
+    6. DATA ENTITIES:
+       For each entity extract:
+       - name: Entity name
+       - attributes: List of (name, type, required, description)
+       - relationships: List of (related_entity, type, cardinality)
+       - context_id: Reference to source
+
+    7. APIS/INTERFACES:
+       For each API extract:
+       - name: API name
+       - type: REST|SOAP|GraphQL|gRPC|Integration
+       - method: GET|POST|PUT|DELETE|etc
+       - path: Endpoint path
+       - input: Input schema
+       - output: Output schema
+       - context_id: Reference to source
+
+    8. WORKFLOWS:
+       For each workflow extract:
+       - name: Workflow name
+       - steps: List of (step_number, description, actor, system_action)
+       - triggers: What starts the workflow
+       - outcomes: Possible outcomes
+       - context_id: Reference to source
+
+    9. GAPS AND QUESTIONS:
+       Identify missing information:
+       - type: missing_actor|missing_rule|ambiguous_requirement|undefined_term
+       - description: What is missing
+       - question: Specific question to clarify
+       - impact: What cannot be specified without this
+
+    ═══════════════════════════════════════════════════════════
+    CRITICAL RULES
+    ═══════════════════════════════════════════════════════════
+
+    - EVERY item MUST have a context_id tracing to source
+    - NEVER invent information not in requirements
+    - If unsure, mark as GAP with question
+    - Extract VERBATIM quotes as evidence
+    - Maintain sequential IDs within each category
+
+    SCHEMA OUTPUT REQUIRED - Return ONLY valid JSON.
+
+  expected_output: >
+    Return a JSON object with these arrays and objects:
+
+    actors: array of objects with fields id (A-XXX format), name, type, role, permissions array, context_id, quote
+
+    functional_requirements: array of objects with fields id (FR-XXX format), name, description, priority, acceptance_criteria array, dependencies array, actors_involved array, context_id, quote
+
+    non_functional_requirements: array of objects with fields id (RNF-XXX format), category, description, metric, context_id, quote
+
+    use_cases: array of objects with fields id (UC-XXX format), name, primary_actor, secondary_actors array, related_frs array, preconditions array, postconditions array, context_id
+
+    business_rules: array of objects with fields id (RN-XXX format), name, condition, action, validation, related_frs array, context_id, quote
+
+    data_entities: array of objects with fields name, attributes array, relationships array, context_id
+
+    apis: array of objects with fields name, type, method, path, input object, output object, context_id
+
+    workflows: array of objects with fields name, steps array, triggers array, outcomes array, context_id
+
+    gaps: array of objects with fields type, description, question, impact
+
+    extraction_summary: object with fields total_actors, total_frs, total_rnfs, total_ucs, total_rns, total_entities, total_apis, total_workflows, total_gaps (all numbers)
+
+research_specification_context:
+  description: >
+    [Specification Web Research] Find relevant technical standards, best practices, and industry references to enrich the functional specification.
+
+    YOU RECEIVE:
+    - entities_json: {entities_json} (extracted entities with context_ids)
+    - project_name: {project_name}
+
+    YOUR TASK:
+    1. Analyze extracted entities to identify key technical domains (authentication, payments, data storage, etc.)
+    2. Research relevant technical standards:
+       - ISO standards (ISO 27001 security, ISO 25010 quality)
+       - IEEE standards (IEEE 830 requirements)
+       - OWASP guidelines (security best practices)
+       - WCAG (accessibility if applicable)
+    3. Research compliance requirements based on domain:
+       - LGPD/GDPR for personal data
+       - PCI-DSS for payments
+       - SOX for financial data
+       - HIPAA for health data
+    4. Find industry best practices for similar systems
+    5. Identify reference architectures and patterns
+
+    SEARCH STRATEGY:
+    - Use specific domain + standard queries (e.g., "authentication OWASP best practices")
+    - Search for compliance requirements by data type
+    - Look for architectural patterns by system type
+    - Prioritize authoritative sources (official standard bodies, recognized institutions)
+
+    IMPORTANT:
+    - Only include findings with clear source citations
+    - Focus on standards and practices relevant to the extracted entities
+    - Do not invent or extrapolate - only report verified findings
+    - Limit to 3-5 most relevant items per category
+
+  expected_output: >
+    Return a JSON object with these fields:
+    - technical_standards: array of objects with fields name (standard name), description (brief description), relevance (why relevant to this project), source (URL or reference)
+    - compliance_requirements: array of objects with fields name (requirement name), description (brief description), applicability (when this applies), source (URL or reference)
+    - best_practices: array of objects with fields name (practice name), description (brief description), recommendation (how to apply), source (URL or reference)
+    - reference_architectures: array of objects with fields name (architecture name), description (brief description), applicability (when to use), source (URL or reference)
+    - research_summary: object with fields total_standards (number), total_compliance (number), total_practices (number), total_architectures (number), domains_researched (array of domain names)
+
+  agent: specification_web_researcher_agent
+  tools:
+    - tavily_search_tool
+    - serpapi_search_tool
+    - serper_search_tool
+
+compose_specification_sections:
+  description: >
+    [Specification Composition] Generate ALL 14 sections of functional specification document.
+
+    YOU RECEIVE:
+    - entities_json: {entities_json} (extracted entities with context_ids)
+    - research_context_json: {research_context_json} (web research findings: standards, compliance, best practices)
+    - requirements_document: {requirements_document}
+    - project_name: {project_name}
+    - requirements_version: {requirements_version}
+    - requirements_created_at: {requirements_created_at}
+    - detail_level: {detail_level}
+    - target_audience: {target_audience}
+
+    IMPORTANT: Use research_context_json to enrich the specification with:
+    - References to applicable technical standards in section 2 (Scope)
+    - Compliance requirements in sections 6 (Security) and 10 (Constraints)
+    - Industry best practices throughout the document
+    - Reference architectures when describing system components
+
+    ═══════════════════════════════════════════════════════════
+    DOCUMENT STRUCTURE - ALL 14 SECTIONS MANDATORY
+    ═══════════════════════════════════════════════════════════
+
+    Generate each section in Markdown format following this structure:
+
+    # Especificação Funcional - {project_name}
+
+    **Versão:** 1.0
+    **Data:** {requirements_created_at}
+    **Baseado em:** Requisitos v{requirements_version}
+
+    ---
+
+    ## 1. Introdução
+
+    ### 1.1 Objetivo do Documento
+    Descrever o propósito desta especificação funcional.
+
+    ### 1.2 Escopo do Sistema
+    Definir claramente o que está dentro e fora do escopo.
+
+    ### 1.3 Definições, Acrônimos e Abreviações
+    Listar termos importantes para entendimento do documento.
+
+    ### 1.4 Referências
+    - Documento de Requisitos v{requirements_version}
+
+    ---
+
+    ## 2. Visão Geral do Sistema
+
+    ### 2.1 Perspectiva do Sistema
+    ### 2.2 Principais Funcionalidades
+    ### 2.3 Usuários e Características
+    ### 2.4 Restrições Gerais
+    ### 2.5 Premissas e Dependências
+
+    ---
+
+    ## 3. Requisitos Funcionais Detalhados
+
+    Para CADA RF do entities_json, gerar:
+
+    **RF-XXX: [Nome do Requisito]**
+    - **Descrição:** [Descrição completa]
+    - **Prioridade:** [Alta/Média/Baixa]
+    - **Origem:** [context_id - Rastreamento para documento de requisitos]
+    - **Critérios de Aceitação:**
+      1. [Critério mensurável 1]
+      2. [Critério mensurável 2]
+    - **Regras de Negócio Associadas:** [RN-XXX, RN-YYY]
+    - **Dependências:** [FR-AAA, FR-BBB]
+
+    ---
+
+    ## 4. Requisitos Não-Funcionais
+
+    ### 4.1 Requisitos de Performance
+    ### 4.2 Requisitos de Segurança
+    ### 4.3 Requisitos de Usabilidade
+    ### 4.4 Requisitos de Confiabilidade
+    ### 4.5 Requisitos de Manutenibilidade
+
+    ---
+
+    ## 5. Casos de Uso
+
+    ⚠️ INSTRUÇÕES CRÍTICAS PARA CASOS DE USO:
+    1. Criar UC para CADA requisito funcional principal (MÍNIMO 10 UCs)
+    2. CADA UC DEVE ter:
+       - 5-10 passos detalhados no fluxo principal
+       - 2-3 fluxos alternativos completos
+       - 2-3 fluxos de exceção com tratamento
+       - Pré-condições e pós-condições específicas
+    3. NÃO resumir - detalhar CADA passo com ações concretas
+    4. Incluir interações de UI quando aplicável
+    5. Referenciar TODOS os RFs relacionados
+
+    ### 5.1 Diagrama de Casos de Uso
+    [Lista de todos os atores e casos de uso]
+
+    ### 5.2 Especificação Detalhada de Casos de Uso
+
+    Para CADA caso de uso (MÍNIMO 10):
+
+    **UC-XXX: [Nome do Caso de Uso]**
+    - **Ator Principal:** [Nome do perfil de usuário]
+    - **Atores Secundários:** [Outros envolvidos]
+    - **Objetivo:** [O que o ator deseja alcançar]
+    - **Pré-condições:**
+      1. [Condição específica 1]
+      2. [Condição específica 2]
+    - **Fluxo Principal:** (MÍNIMO 5-10 PASSOS)
+      1. [Ator/Sistema] [Ação detalhada com contexto]
+      2. [Ator/Sistema] [Próxima ação específica]
+      3. [Sistema] [Validação ou processamento]
+      4. [Sistema] [Exibição de resultado ou feedback]
+      5. [Ator] [Confirmação ou próxima interação]
+      6. ...
+    - **Fluxos Alternativos:** (MÍNIMO 2)
+      - A1. [Condição]: [Descrição do fluxo alternativo completo]
+      - A2. [Condição]: [Descrição do fluxo alternativo completo]
+    - **Fluxos de Exceção:** (MÍNIMO 2)
+      - E1. [Erro/Problema]: [Como o sistema trata, mensagem exibida]
+      - E2. [Erro/Problema]: [Tratamento e recuperação]
+    - **Pós-condições:**
+      1. [Estado do sistema após execução bem-sucedida]
+      2. [Dados alterados ou criados]
+    - **Regras de Negócio Aplicáveis:** [RN-XXX, RN-YYY]
+    - **Requisitos Relacionados:** [RF-XXX, RF-YYY, RNF-ZZZ]
+    - **Origem:** [context_id]
+
+    ---
+
+    ## 6. Modelo de Dados Conceitual
+
+    ### 6.1 Entidades Principais
+    ### 6.2 Relacionamentos
+    ### 6.3 Atributos Principais
+    ### 6.4 Regras de Integridade
+
+    ---
+
+    ## 7. Interfaces do Sistema
+
+    ### 7.1 Interfaces de Usuário
+    ### 7.2 Interfaces de Hardware
+    ### 7.3 Interfaces de Software (APIs)
+    ### 7.4 Interfaces de Comunicação
+
+    ---
+
+    ## 8. Regras de Negócio
+
+    Para CADA RN do entities_json:
+
+    **RN-XXX: [Nome da Regra]**
+    - **Descrição:** [Regra detalhada]
+    - **Condições:** [Quando se aplica]
+    - **Ações:** [O que deve acontecer]
+    - **Validações:** [Verificações necessárias]
+    - **Requisitos Relacionados:** [RF-XXX]
+    - **Origem:** [context_id]
+
+    ---
+
+    ## 9. Fluxos de Trabalho
+
+    ### 9.1 Processos Principais
+    ### 9.2 Interações entre Componentes
+    ### 9.3 Sequências Críticas
+
+    ---
+
+    ## 10. Análise de Arquitetura Preliminar
+
+    ### 10.1 Componentes e Serviços Necessários
+    ### 10.2 Padrões de Interação
+    ### 10.3 Integrações Externas
+    ### 10.4 Considerações de Performance
+    ### 10.5 Considerações de Segurança
+    ### 10.6 Considerações de Escalabilidade
+    ### 10.7 Tecnologias Recomendadas
+
+    ---
+
+    ## 11. Controle de Qualidade
+
+    ### 11.1 Critérios de Aceitação Gerais
+    ### 11.2 Estratégia de Testes
+    ### 11.3 Riscos Identificados
+    ### 11.4 Complexidades Previstas
+
+    ---
+
+    ## 12. Glossário
+
+    Lista alfabética de termos técnicos e de domínio:
+    **[Termo]:** [Definição clara e concisa]
+
+    ---
+
+    ## 13. Rastreabilidade
+
+    ### 13.1 Matriz de Rastreabilidade
+    | Requisito Original | Seção | RF | UC | RN |
+    |--------------------|-------|----|----|-----|
+    | [context_id] | [Seção X.Y] | RF-XXX | UC-XXX | RN-XXX |
+
+    ---
+
+    ## 14. Apêndices
+
+    ### 14.1 Histórico de Versões
+    | Versão | Data | Descrição | Autor |
+    |--------|------|-----------|-------|
+    | 1.0 | {requirements_created_at} | Versão inicial | Sistema |
+
+    ### 14.2 Aprovações
+
+    ═══════════════════════════════════════════════════════════
+    CRITICAL RULES
+    ═══════════════════════════════════════════════════════════
+
+    - ALL 14 sections are MANDATORY
+    - EVERY item must have context_id for traceability
+    - MINIMUM 10 detailed use cases with 5-10 steps each
+    - NEVER invent information not in entities_json
+    - If information missing, mark as GAP with question
+    - Use pt-BR language, no first person
+
+    SCHEMA OUTPUT REQUIRED - Return ONLY valid JSON.
+
+  expected_output: >
+    Return a JSON object with these fields:
+
+    sections: array of 14 section objects, each with fields number, title, content (Markdown text), subsections array, context_ids array, status (complete or partial or gap)
+
+    document_md: the complete Markdown document as a single string
+
+    use_cases_count: total number of use cases generated
+
+    use_cases_with_min_steps: number of use cases with at least 5 steps
+
+    business_rules_count: total number of business rules
+
+    traceability_entries: number of entries in traceability matrix
+
+    gaps: array of gap objects with fields section (number), description, question
+
+    generation_summary: object with fields total_sections (14), complete_sections, partial_sections, gap_sections, total_words (all numbers)
+
+verify_specification_grounding:
+  description: >
+    [Grounding Verification] Validate each specification item against requirements.
+
+    YOU RECEIVE:
+    - draft_sections_json: {draft_sections_json}
+    - entities_json: {entities_json}
+    - requirements_document: {requirements_document}
+
+    YOUR TASK: Verify that EVERY specification item has supporting context from requirements.
+
+    ═══════════════════════════════════════════════════════════
+    VERIFICATION TASKS
+    ═══════════════════════════════════════════════════════════
+
+    1. FOR EACH FUNCTIONAL REQUIREMENT (RF-XXX):
+       - Check context_id exists in requirements
+       - Verify quote matches source text
+       - Confirm acceptance criteria are derivable from requirements
+       - Mark status: supported | unsupported | ambiguous
+
+    2. FOR EACH USE CASE (UC-XXX):
+       - Verify related FRs exist in entities
+       - Check all steps have basis in requirements
+       - Verify pre/post conditions are grounded
+       - Flag any extrapolated steps
+
+    3. FOR EACH BUSINESS RULE (RN-XXX):
+       - Verify condition/action grounded in requirements
+       - Check related FRs exist
+       - Confirm validation logic is supported
+
+    4. FOR EACH DATA ENTITY:
+       - Verify entity mentioned in requirements
+       - Check attributes have basis
+       - Confirm relationships are documented
+
+    5. CONSISTENCY CHECK:
+       - No contradictions between sections
+       - All cross-references valid (FR-XXX, UC-XXX, RN-XXX)
+       - IDs are consistent and sequential
+       - No orphan references
+
+    ═══════════════════════════════════════════════════════════
+    ISSUE CATEGORIES
+    ═══════════════════════════════════════════════════════════
+
+    - unsupported: Item not found in requirements document
+    - ambiguous: Multiple interpretations possible
+    - inconsistent_with_requirements: Contradicts requirements
+    - extrapolation: Information added not present in source
+    - broken_reference: Cross-reference to non-existent item
+    - format_violation: Does not follow required structure
+
+    ═══════════════════════════════════════════════════════════
+    RECOMMENDED ACTIONS
+    ═══════════════════════════════════════════════════════════
+
+    For each issue, recommend ONE action:
+    - retry_with_context: Try again with more context
+    - request_additional_source: Ask for more information
+    - remove_unsourced: Delete item without source
+    - move_to_gaps: Move to gaps list with question
+    - fix_reference: Correct the cross-reference
+
+    SCHEMA OUTPUT REQUIRED - Return ONLY valid JSON.
+
+  expected_output: >
+    Return a JSON object with these fields:
+
+    verified_items: array of objects with fields id, type, status (supported or unsupported or ambiguous), context_id, confidence (number 0-1)
+
+    issues: object containing these arrays:
+    - unsupported: array of objects with fields item_id, type, section, reason
+    - ambiguous: array of objects with fields item_id, type, section, interpretations array
+    - inconsistent_with_requirements: array of objects with fields item_id, type, section, contradiction
+    - extrapolations: array of objects with fields item_id, type, section, extrapolated_content
+    - broken_references: array of objects with fields source_id, target_id, section
+    - format_violations: array of objects with fields section, violation
+
+    actions_recommended: array of objects with fields item_id, action, rationale, priority (high or medium or low)
+
+    verification_summary: object with fields total_items_verified, supported, unsupported, ambiguous, extrapolations, grounding_score (all numbers)
+
+validate_specification_compliance:
+  description: >
+    [Compliance Validation] Check specification against policies and standards.
+
+    YOU RECEIVE:
+    - draft_sections_json: {draft_sections_json}
+    - verification_results_json: {verification_results_json}
+    - target_audience: {target_audience}
+
+    YOUR TASK: Verify compliance with all standards and policies.
+
+    ═══════════════════════════════════════════════════════════
+    COMPLIANCE CHECKS
+    ═══════════════════════════════════════════════════════════
+
+    1. LANGUAGE COMPLIANCE:
+       - Document in pt-BR (Portuguese - Brazil)
+       - No first person (eu, nós, nosso, meu, nossa)
+       - Technical terms consistent throughout
+       - No informal language
+
+    2. STYLE COMPLIANCE:
+       - Professional tone
+       - Clear and objective descriptions
+       - No ambiguous terms without definition in glossary
+       - Consistent terminology
+
+    3. STRUCTURE COMPLIANCE:
+       - All 14 sections present
+       - Correct numbering (## 1., ## 2., ... ## 14.)
+       - Subsections properly nested
+       - Tables formatted correctly
+       - Lists properly indented
+
+    4. CONTENT POLICIES:
+       - No sensitive data (PII) unauthorized
+       - No security vulnerabilities documented in detail
+       - Compliance with IEEE 830 structure
+       - No confidential information exposed
+
+    5. TRACEABILITY COMPLIANCE:
+       - Every RF has context_id
+       - Every UC references related FRs
+       - Every RN references related FRs
+       - Traceability matrix complete
+       - No orphan references
+
+    6. CONSISTENCY COMPLIANCE:
+       - Versions referenced correctly
+       - Dates consistent
+       - IDs unique and sequential
+       - Cross-references valid
+
+    7. MINIMUM REQUIREMENTS:
+       - At least 10 use cases
+       - Each UC has minimum 5 steps in main flow
+       - Each UC has minimum 2 alternative flows
+       - Each UC has minimum 2 exception flows
+       - Traceability matrix has all FRs mapped
+
+    ═══════════════════════════════════════════════════════════
+    VIOLATION SEVERITY
+    ═══════════════════════════════════════════════════════════
+
+    - critical: Blocks approval (missing sections, security issues)
+    - high: Must fix before delivery (first person, missing traceability)
+    - medium: Should fix (formatting issues, inconsistent terms)
+    - low: Nice to fix (minor style issues)
+
+    SCHEMA OUTPUT REQUIRED - Return ONLY valid JSON.
+
+  expected_output: >
+    Return a JSON object with these fields:
+
+    compliance_ok: boolean indicating overall compliance
+
+    violations: array of violation objects with fields type (language or style or structure or policy or traceability or consistency or minimum_requirements), location (section or item ID), description, severity (critical or high or medium or low), current_value, expected_value
+
+    checks_passed: object with boolean fields language, style, structure, policies, traceability, consistency, minimum_requirements
+
+    compliance_score: number from 0 to 100
+
+    corrections_needed: array of objects with fields location, current, corrected, reason
+
+    minimum_requirements_check: object with fields use_cases_count, use_cases_with_min_steps, use_cases_with_alt_flows, use_cases_with_exc_flows (all numbers), and traceability_complete (boolean)
+
+format_final_specification:
+  description: >
+    [Final Formatting] Generate final Markdown document with fallback.
+
+    YOU RECEIVE:
+    - draft_sections_json: {draft_sections_json}
+    - verification_results_json: {verification_results_json}
+    - compliance_results_json: {compliance_results_json}
+    - project_name: {project_name}
+    - requirements_version: {requirements_version}
+    - requirements_created_at: {requirements_created_at}
+
+    YOUR TASK: Produce the final formatted specification document.
+
+    ═══════════════════════════════════════════════════════════
+    FORMATTING TASKS
+    ═══════════════════════════════════════════════════════════
+
+    1. APPLY CORRECTIONS:
+       - Fix all compliance violations from compliance_results_json
+       - Remove or mark unsupported items from verification_results_json
+       - Move extrapolations to gaps section
+       - Fix broken references
+
+    2. NORMALIZE STRUCTURE:
+       - Consistent heading levels (## for sections, ### for subsections)
+       - Sequential numbering (1., 2., 3., ...)
+       - Tables properly aligned
+       - Lists properly formatted
+       - Code blocks for technical content
+
+    3. ADD METADATA:
+       - Document version
+       - Generation date
+       - Requirements reference
+       - trace_id for audit trail
+
+    4. GENERATE FINAL DOCUMENT:
+       Start with header:
+       ```markdown
+       # Especificação Funcional - {project_name}
+
+       **Versão:** 1.0
+       **Data:** {requirements_created_at}
+       **Baseado em:** Requisitos v{requirements_version}
+       **Status:** [DETERMINAR: "complete" se grounding_score >= 70 e todas seções preenchidas, senão "partial"]
+       **trace_id:** [GERAR: UUID v4 único, ex: "550e8400-e29b-41d4-a716-446655440000"]
+
+       ---
+       ```
+
+       Then include ALL 14 sections with content.
+
+    ═══════════════════════════════════════════════════════════
+    FALLBACK HANDLING
+    ═══════════════════════════════════════════════════════════
+
+    IF grounding_score < 70:
+    - Set status = "partial"
+    - Add warning banner at top
+    - List all unsupported items in gaps
+
+    IF compliance_score < 80:
+    - Add compliance warning section
+    - List all violations
+
+    IF sections are incomplete:
+    - Generate placeholder with explicit warning:
+      ```markdown
+      ### X.Y [Section Name]
+
+      ⚠️ **SEÇÃO INCOMPLETA**
+
+      Esta seção não pôde ser completamente gerada devido a:
+      - [Motivo 1]
+      - [Motivo 2]
+
+      **Perguntas para Completar:**
+      1. [Pergunta específica 1]
+      2. [Pergunta específica 2]
+      ```
+
+    ALWAYS add section at end if there are gaps:
+    ```markdown
+    ## 15. Limitações e Próximos Passos
+
+    ### 15.1 Gaps Identificados
+    | # | Seção | Descrição | Pergunta |
+    |---|-------|-----------|----------|
+    | 1 | X | ... | ... |
+
+    ### 15.2 Informações Necessárias
+    [List of information needed to complete]
+
+    ### 15.3 Recomendações
+    [Next steps to complete specification]
+    ```
+
+    ═══════════════════════════════════════════════════════════
+    CRITICAL RULES
+    ═══════════════════════════════════════════════════════════
+
+    - NEVER invent content - prefer partial with gaps
+    - ALWAYS include all 14 base sections (even if incomplete)
+    - ALWAYS generate traceability matrix
+    - Document MUST be in pt-BR
+    - NO first person language
+
+    SCHEMA OUTPUT REQUIRED - Return ONLY valid JSON.
+
+  expected_output: >
+    Return a JSON object with these fields:
+
+    status: one of complete, partial, or failed
+
+    document_md: the complete Markdown document as a single string with all 14+ sections
+
+    gaps: array of objects with fields section (number), title, missing, question
+
+    warnings: array of objects with fields type, message
+
+    corrections_applied: array of objects with fields location, original, corrected
+
+    metadata: object with fields trace_id (string), generation_timestamp (string), requirements_version (number), grounding_score (number), compliance_score (number), total_sections (number), complete_sections (number), partial_sections (number), total_frs (number), total_ucs (number), total_rns (number), total_words (number)

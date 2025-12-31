@@ -296,6 +296,32 @@
     cursor: not-allowed;
   }
 
+  /* Review Button */
+  .btn-review {
+    width: 100%;
+    padding: 12px;
+    background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 12px;
+  }
+
+  .btn-review:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.4);
+  }
+
+  .btn-review:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+    transform: none;
+  }
+
   /* RIGHT CHAT AREA */
   .chat-area {
     background: #f8f9fa;

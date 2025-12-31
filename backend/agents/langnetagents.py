@@ -295,6 +295,109 @@ def create_web_researcher_agent(memory_system: Optional[Any] = None, llm_instanc
     return AgentClass(**agent_kwargs)
 
 
+# =============================================================================
+# SPECIFICATION GENERATION AGENTS (Multi-Step Pipeline)
+# Based on Generative Computing principles - IBM Research
+# =============================================================================
+
+def create_specification_router_agent(memory_system: Optional[Any] = None, llm_instance: Optional[Any] = None) -> Any:
+    """Create Specification Router agent for intent classification"""
+    agent_kwargs = {
+        "name": "specification_router_agent",
+        "config": AGENTS_CONFIG['specification_router_agent'],
+        "llm": llm_instance if llm_instance else get_llm(),
+        "verbose": True,
+        "allow_delegation": False
+    }
+    if memory_system:
+        agent_kwargs["memory"] = memory_system
+    return AgentClass(**agent_kwargs)
+
+
+def create_specification_entity_extractor_agent(memory_system: Optional[Any] = None, llm_instance: Optional[Any] = None) -> Any:
+    """Create Specification Entity Extractor agent"""
+    agent_kwargs = {
+        "name": "specification_entity_extractor_agent",
+        "config": AGENTS_CONFIG['specification_entity_extractor_agent'],
+        "llm": llm_instance if llm_instance else get_llm(),
+        "verbose": True,
+        "allow_delegation": False
+    }
+    if memory_system:
+        agent_kwargs["memory"] = memory_system
+    return AgentClass(**agent_kwargs)
+
+
+def create_specification_composer_agent(memory_system: Optional[Any] = None, llm_instance: Optional[Any] = None) -> Any:
+    """Create Specification Composer agent"""
+    agent_kwargs = {
+        "name": "specification_composer_agent",
+        "config": AGENTS_CONFIG['specification_composer_agent'],
+        "llm": llm_instance if llm_instance else get_llm(),
+        "verbose": True,
+        "allow_delegation": False
+    }
+    if memory_system:
+        agent_kwargs["memory"] = memory_system
+    return AgentClass(**agent_kwargs)
+
+
+def create_specification_verifier_agent(memory_system: Optional[Any] = None, llm_instance: Optional[Any] = None) -> Any:
+    """Create Specification Verifier agent for grounding validation"""
+    agent_kwargs = {
+        "name": "specification_verifier_agent",
+        "config": AGENTS_CONFIG['specification_verifier_agent'],
+        "llm": llm_instance if llm_instance else get_llm(),
+        "verbose": True,
+        "allow_delegation": False
+    }
+    if memory_system:
+        agent_kwargs["memory"] = memory_system
+    return AgentClass(**agent_kwargs)
+
+
+def create_specification_compliance_agent(memory_system: Optional[Any] = None, llm_instance: Optional[Any] = None) -> Any:
+    """Create Specification Compliance agent"""
+    agent_kwargs = {
+        "name": "specification_compliance_agent",
+        "config": AGENTS_CONFIG['specification_compliance_agent'],
+        "llm": llm_instance if llm_instance else get_llm(),
+        "verbose": True,
+        "allow_delegation": False
+    }
+    if memory_system:
+        agent_kwargs["memory"] = memory_system
+    return AgentClass(**agent_kwargs)
+
+
+def create_specification_formatter_agent(memory_system: Optional[Any] = None, llm_instance: Optional[Any] = None) -> Any:
+    """Create Specification Formatter agent with fallback support"""
+    agent_kwargs = {
+        "name": "specification_formatter_agent",
+        "config": AGENTS_CONFIG['specification_formatter_agent'],
+        "llm": llm_instance if llm_instance else get_llm(),
+        "verbose": True,
+        "allow_delegation": False
+    }
+    if memory_system:
+        agent_kwargs["memory"] = memory_system
+    return AgentClass(**agent_kwargs)
+
+
+def create_specification_web_researcher_agent(memory_system: Optional[Any] = None, llm_instance: Optional[Any] = None) -> Any:
+    """Create Specification Web Researcher agent for external knowledge enrichment"""
+    agent_kwargs = {
+        "name": "specification_web_researcher_agent",
+        "config": AGENTS_CONFIG['specification_web_researcher_agent'],
+        "llm": llm_instance if llm_instance else get_llm(),
+        "verbose": True,
+        "allow_delegation": False
+    }
+    if memory_system:
+        agent_kwargs["memory"] = memory_system
+    return AgentClass(**agent_kwargs)
+
+
 # Agents cache (lazy initialization)
 _agents_cache = {}
 
@@ -324,7 +427,15 @@ def get_agent(agent_name: str, use_deepseek: bool = False):
             "petri_net_designer": create_petri_net_designer_agent,
             "yaml_generator": create_yaml_generator_agent,
             "code_generator": create_code_generator_agent,
-            "web_researcher": create_web_researcher_agent
+            "web_researcher": create_web_researcher_agent,
+            # Specification multi-step pipeline agents
+            "specification_router": create_specification_router_agent,
+            "specification_entity_extractor": create_specification_entity_extractor_agent,
+            "specification_web_researcher": create_specification_web_researcher_agent,
+            "specification_composer": create_specification_composer_agent,
+            "specification_verifier": create_specification_verifier_agent,
+            "specification_compliance": create_specification_compliance_agent,
+            "specification_formatter": create_specification_formatter_agent
         }
 
         if agent_name not in agent_creators:
@@ -345,7 +456,15 @@ AGENTS = {
     "petri_net_designer": None,
     "yaml_generator": None,
     "code_generator": None,
-    "web_researcher": None
+    "web_researcher": None,
+    # Specification multi-step pipeline agents
+    "specification_router": None,
+    "specification_entity_extractor": None,
+    "specification_web_researcher": None,
+    "specification_composer": None,
+    "specification_verifier": None,
+    "specification_compliance": None,
+    "specification_formatter": None
 }
 
 
@@ -620,6 +739,74 @@ def generate_code_input_func(state: LangNetFullState) -> Dict[str, Any]:
     """Extract input for generate_python_code task"""
     return {
         "framework_choice": state.get("framework_choice", "crewai")
+    }
+
+
+# =============================================================================
+# SPECIFICATION PIPELINE INPUT FUNCTIONS
+# =============================================================================
+
+def classify_specification_intent_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for classify_specification_intent task (Router)"""
+    return {
+        "requirements_document": state.get("requirements_document", ""),
+        "requirements_version": state.get("requirements_version", 1),
+        "project_name": state.get("project_name", "Sistema"),
+        "detail_level": state.get("spec_detail_level", "detailed"),
+        "target_audience": state.get("spec_target_audience", "mixed")
+    }
+
+
+def extract_specification_entities_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for extract_specification_entities task (EntityExtractor)"""
+    return {
+        "requirements_document": state.get("requirements_document", ""),
+        "classification_json": state.get("spec_classification_json", "{}"),
+        "project_name": state.get("project_name", "Sistema")
+    }
+
+
+def compose_specification_sections_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for compose_specification_sections task (Composer)"""
+    return {
+        "entities_json": state.get("spec_entities_json", "{}"),
+        "research_context_json": state.get("spec_research_context_json", "{}"),
+        "requirements_document": state.get("requirements_document", ""),
+        "project_name": state.get("project_name", "Sistema"),
+        "requirements_version": state.get("requirements_version", 1),
+        "requirements_created_at": state.get("requirements_created_at", datetime.now().strftime("%Y-%m-%d")),
+        "detail_level": state.get("spec_detail_level", "detailed"),
+        "target_audience": state.get("spec_target_audience", "mixed")
+    }
+
+
+def verify_specification_grounding_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for verify_specification_grounding task (Verifier)"""
+    return {
+        "draft_sections_json": state.get("spec_draft_sections_json", "{}"),
+        "entities_json": state.get("spec_entities_json", "{}"),
+        "requirements_document": state.get("requirements_document", "")
+    }
+
+
+def validate_specification_compliance_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for validate_specification_compliance task (Compliance)"""
+    return {
+        "draft_sections_json": state.get("spec_draft_sections_json", "{}"),
+        "verification_results_json": state.get("spec_verification_json", "{}"),
+        "target_audience": state.get("spec_target_audience", "mixed")
+    }
+
+
+def format_final_specification_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for format_final_specification task (Formatter)"""
+    return {
+        "draft_sections_json": state.get("spec_draft_sections_json", "{}"),
+        "verification_results_json": state.get("spec_verification_json", "{}"),
+        "compliance_results_json": state.get("spec_compliance_json", "{}"),
+        "project_name": state.get("project_name", "Sistema"),
+        "requirements_version": state.get("requirements_version", 1),
+        "requirements_created_at": state.get("requirements_created_at", datetime.now().strftime("%Y-%m-%d"))
     }
 
 
@@ -971,6 +1158,222 @@ def generate_code_output_func(state: LangNetFullState, result: Any) -> LangNetFu
     return log_task_complete(updated_state, "generate_python_code")
 
 
+# =============================================================================
+# SPECIFICATION PIPELINE OUTPUT FUNCTIONS
+# =============================================================================
+
+def _extract_crewai_result(result: Any) -> str:
+    """Helper to extract raw output from CrewAI result"""
+    raw_output = ""
+
+    if hasattr(result, 'raw'):
+        raw_output = result.raw
+    elif hasattr(result, 'json_dict') and result.json_dict:
+        return json.dumps(result.json_dict)
+    elif hasattr(result, 'model_dump'):
+        return json.dumps(result.model_dump())
+    elif isinstance(result, dict):
+        # Check if it's the new CrewAI format with 'team_result'
+        if 'team_result' in result:
+            raw_output = result['team_result']
+        else:
+            return json.dumps(result)
+    else:
+        raw_output = str(result)
+
+    # Remove markdown code fences if present
+    if isinstance(raw_output, str):
+        # Remove ```json ... ``` wrappers
+        import re
+        raw_output = re.sub(r'^```json\s*\n', '', raw_output)
+        raw_output = re.sub(r'\n```\s*$', '', raw_output)
+        raw_output = re.sub(r'^```\s*\n', '', raw_output)  # Also handle plain ``` without json
+
+    return raw_output
+
+
+def classify_specification_intent_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with classify_specification_intent results (Router)"""
+    output_json = _extract_crewai_result(result)
+
+    try:
+        parsed = json.loads(output_json)
+    except json.JSONDecodeError:
+        parsed = {"intent": "create", "scope": "functional_spec"}
+
+    updated_state = {
+        **state,
+        "spec_classification_json": output_json,
+        "spec_intent": parsed.get("intent", "create"),
+        "spec_scope": parsed.get("scope", "functional_spec"),
+        "spec_target_sections": parsed.get("target_sections", list(range(1, 15))),
+        "spec_estimated_complexity": parsed.get("estimated_complexity", "medium")
+    }
+
+    return log_task_complete(updated_state, "classify_specification_intent", output_json[:200])
+
+
+def extract_specification_entities_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with extract_specification_entities results (EntityExtractor)"""
+    output_json = _extract_crewai_result(result)
+
+    try:
+        parsed = json.loads(output_json)
+    except json.JSONDecodeError:
+        parsed = {}
+
+    updated_state = {
+        **state,
+        "spec_entities_json": output_json,
+        "spec_actors": parsed.get("actors", []),
+        "spec_functional_requirements": parsed.get("functional_requirements", []),
+        "spec_non_functional_requirements": parsed.get("non_functional_requirements", []),
+        "spec_use_cases": parsed.get("use_cases", []),
+        "spec_business_rules": parsed.get("business_rules", []),
+        "spec_data_entities": parsed.get("data_entities", []),
+        "spec_apis": parsed.get("apis", []),
+        "spec_workflows": parsed.get("workflows", []),
+        "spec_gaps": parsed.get("gaps", []),
+        "spec_extraction_summary": parsed.get("extraction_summary", {})
+    }
+
+    return log_task_complete(updated_state, "extract_specification_entities", output_json[:200])
+
+
+def research_specification_context_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for research_specification_context task (WebResearcher)"""
+    return {
+        "entities_json": state.get("spec_entities_json", "{}"),
+        "project_name": state.get("project_name", "Sistema")
+    }
+
+
+def research_specification_context_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with research_specification_context results (WebResearcher)"""
+    output_json = _extract_crewai_result(result)
+
+    try:
+        parsed = json.loads(output_json)
+    except json.JSONDecodeError:
+        parsed = {}
+
+    updated_state = {
+        **state,
+        "spec_research_context_json": output_json,
+        "spec_technical_standards": parsed.get("technical_standards", []),
+        "spec_compliance_requirements": parsed.get("compliance_requirements", []),
+        "spec_best_practices": parsed.get("best_practices", []),
+        "spec_reference_architectures": parsed.get("reference_architectures", []),
+        "spec_research_summary": parsed.get("research_summary", {})
+    }
+
+    return log_task_complete(updated_state, "research_specification_context", output_json[:200])
+
+
+def compose_specification_sections_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with compose_specification_sections results (Composer)"""
+    output_json = _extract_crewai_result(result)
+
+    try:
+        parsed = json.loads(output_json)
+    except json.JSONDecodeError:
+        parsed = {}
+
+    # Extract the document_md from the response
+    document_md = parsed.get("document_md", "")
+
+    updated_state = {
+        **state,
+        "spec_draft_sections_json": output_json,
+        "spec_draft_document_md": document_md,
+        "spec_sections": parsed.get("sections", []),
+        "spec_use_cases_count": parsed.get("use_cases_count", 0),
+        "spec_business_rules_count": parsed.get("business_rules_count", 0),
+        "spec_generation_gaps": parsed.get("gaps", []),
+        "spec_generation_summary": parsed.get("generation_summary", {})
+    }
+
+    return log_task_complete(updated_state, "compose_specification_sections", output_json[:200])
+
+
+def verify_specification_grounding_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with verify_specification_grounding results (Verifier)"""
+    output_json = _extract_crewai_result(result)
+
+    try:
+        parsed = json.loads(output_json)
+    except json.JSONDecodeError:
+        parsed = {}
+
+    verification_summary = parsed.get("verification_summary", {})
+
+    updated_state = {
+        **state,
+        "spec_verification_json": output_json,
+        "spec_verified_items": parsed.get("verified_items", []),
+        "spec_verification_issues": parsed.get("issues", {}),
+        "spec_actions_recommended": parsed.get("actions_recommended", []),
+        "spec_grounding_score": verification_summary.get("grounding_score", 0),
+        "spec_verification_summary": verification_summary
+    }
+
+    return log_task_complete(updated_state, "verify_specification_grounding", output_json[:200])
+
+
+def validate_specification_compliance_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with validate_specification_compliance results (Compliance)"""
+    output_json = _extract_crewai_result(result)
+
+    try:
+        parsed = json.loads(output_json)
+    except json.JSONDecodeError:
+        parsed = {}
+
+    updated_state = {
+        **state,
+        "spec_compliance_json": output_json,
+        "spec_compliance_ok": parsed.get("compliance_ok", False),
+        "spec_compliance_violations": parsed.get("violations", []),
+        "spec_checks_passed": parsed.get("checks_passed", {}),
+        "spec_compliance_score": parsed.get("compliance_score", 0),
+        "spec_corrections_needed": parsed.get("corrections_needed", []),
+        "spec_minimum_requirements_check": parsed.get("minimum_requirements_check", {})
+    }
+
+    return log_task_complete(updated_state, "validate_specification_compliance", output_json[:200])
+
+
+def format_final_specification_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with format_final_specification results (Formatter)"""
+    output_json = _extract_crewai_result(result)
+
+    try:
+        parsed = json.loads(output_json)
+    except json.JSONDecodeError:
+        parsed = {}
+
+    # Extract the final document
+    document_md = parsed.get("document_md", "")
+    metadata = parsed.get("metadata", {})
+
+    updated_state = {
+        **state,
+        "spec_final_json": output_json,
+        "spec_status": parsed.get("status", "failed"),
+        "spec_document_md": document_md,
+        "spec_final_gaps": parsed.get("gaps", []),
+        "spec_warnings": parsed.get("warnings", []),
+        "spec_corrections_applied": parsed.get("corrections_applied", []),
+        "spec_metadata": metadata,
+        "spec_grounding_score_final": metadata.get("grounding_score", 0),
+        "spec_compliance_score_final": metadata.get("compliance_score", 0),
+        "spec_total_sections": metadata.get("total_sections", 0),
+        "spec_complete_sections": metadata.get("complete_sections", 0)
+    }
+
+    return log_task_complete(updated_state, "format_final_specification", output_json[:200])
+
+
 # ============================================================================
 # TASK REGISTRY (Maps task names to configurations)
 # ============================================================================
@@ -1069,6 +1472,78 @@ TASK_REGISTRY = {
         "agent": AGENTS["code_generator"],
         "tools": [LANGNET_TOOLS["python_code_writer"]],
         "phase": "code_generation"
+    },
+
+    # =========================================================================
+    # SPECIFICATION GENERATION PIPELINE (Multi-Step following Generative Computing)
+    # =========================================================================
+
+    "classify_specification_intent": {
+        "input_func": classify_specification_intent_input_func,
+        "output_func": classify_specification_intent_output_func,
+        "requires": ["requirements_document"],
+        "produces": ["spec_classification_json", "spec_intent", "spec_scope", "spec_target_sections"],
+        "agent": AGENTS["specification_router"],
+        "tools": [],
+        "phase": "specification_generation"
+    },
+    "extract_specification_entities": {
+        "input_func": extract_specification_entities_input_func,
+        "output_func": extract_specification_entities_output_func,
+        "requires": ["requirements_document", "spec_classification_json"],
+        "produces": ["spec_entities_json", "spec_actors", "spec_functional_requirements", "spec_use_cases"],
+        "agent": AGENTS["specification_entity_extractor"],
+        "tools": [],
+        "phase": "specification_generation"
+    },
+    "research_specification_context": {
+        "input_func": research_specification_context_input_func,
+        "output_func": research_specification_context_output_func,
+        "requires": ["spec_entities_json"],
+        "produces": ["spec_research_context_json", "spec_technical_standards", "spec_compliance_requirements", "spec_best_practices"],
+        "agent": AGENTS["specification_web_researcher"],
+        "tools": [
+            LANGNET_TOOLS["tavily_search"],
+            LANGNET_TOOLS["serpapi_search"],
+            LANGNET_TOOLS["serper_search"]
+        ],
+        "phase": "specification_generation"
+    },
+    "compose_specification_sections": {
+        "input_func": compose_specification_sections_input_func,
+        "output_func": compose_specification_sections_output_func,
+        "requires": ["spec_entities_json", "spec_research_context_json", "requirements_document"],
+        "produces": ["spec_draft_sections_json", "spec_draft_document_md", "spec_sections"],
+        "agent": AGENTS["specification_composer"],
+        "tools": [],
+        "phase": "specification_generation"
+    },
+    "verify_specification_grounding": {
+        "input_func": verify_specification_grounding_input_func,
+        "output_func": verify_specification_grounding_output_func,
+        "requires": ["spec_draft_sections_json", "spec_entities_json", "requirements_document"],
+        "produces": ["spec_verification_json", "spec_verified_items", "spec_grounding_score"],
+        "agent": AGENTS["specification_verifier"],
+        "tools": [],
+        "phase": "specification_generation"
+    },
+    "validate_specification_compliance": {
+        "input_func": validate_specification_compliance_input_func,
+        "output_func": validate_specification_compliance_output_func,
+        "requires": ["spec_draft_sections_json", "spec_verification_json"],
+        "produces": ["spec_compliance_json", "spec_compliance_ok", "spec_compliance_score"],
+        "agent": AGENTS["specification_compliance"],
+        "tools": [],
+        "phase": "specification_generation"
+    },
+    "format_final_specification": {
+        "input_func": format_final_specification_input_func,
+        "output_func": format_final_specification_output_func,
+        "requires": ["spec_draft_sections_json", "spec_verification_json", "spec_compliance_json"],
+        "produces": ["spec_final_json", "spec_status", "spec_document_md", "spec_metadata"],
+        "agent": AGENTS["specification_formatter"],
+        "tools": [],
+        "phase": "specification_generation"
     }
 }
 
@@ -1144,7 +1619,15 @@ def execute_task_with_context(
                 "decompose_tasks": "task_decomposer",
                 "design_petri_net": "petri_net_designer",
                 "generate_yaml_files": "yaml_generator",
-                "generate_python_code": "code_generator"
+                "generate_python_code": "code_generator",
+                # Specification multi-step pipeline agents
+                "classify_specification_intent": "specification_router",
+                "extract_specification_entities": "specification_entity_extractor",
+                "research_specification_context": "specification_web_researcher",
+                "compose_specification_sections": "specification_composer",
+                "verify_specification_grounding": "specification_verifier",
+                "validate_specification_compliance": "specification_compliance",
+                "format_final_specification": "specification_formatter"
             }
 
             agent_name = agent_name_map.get(task_name)
@@ -1167,6 +1650,10 @@ def execute_task_with_context(
 
         task_description = TASKS_CONFIG[task_name]['description'].format(**task_input)
 
+        # Note: After .format(), all template variables have been replaced with actual values.
+        # Any remaining braces {} in the content (from JSON in LLM outputs) should not be
+        # interpreted as template variables by CrewAI - we'll pass empty inputs to prevent this.
+
         print(f"\n{'='*80}")
         print(f"[PHASE 3] AFTER formatting task description for '{task_name}'")
         print(f"[PHASE 3] Formatted description length: {len(task_description)} chars")
@@ -1181,6 +1668,7 @@ def execute_task_with_context(
         print(f"{'='*80}\n")
 
         task_expected_output = TASKS_CONFIG[task_name]['expected_output']
+        # No escaping needed - expected_output now uses textual descriptions instead of JSON with braces
 
         # Convert tools to framework format: [(crewai_tool, phidata_tool), ...]
         # Since we only use CrewAI tools, we create tuples with (tool, None)
@@ -1204,10 +1692,13 @@ def execute_task_with_context(
 
         # Execute the crew - check which method is available
         # LangGraphTeamAdapter uses executar(), CrewAI Crew uses kickoff()
+        # Pass empty inputs since we've already formatted the description with all values
+        # This prevents CrewAI from trying to interpolate any braces in the content
+
         if hasattr(crew, 'kickoff'):
-            result = crew.kickoff(inputs=task_input)
+            result = crew.kickoff(inputs={})
         elif hasattr(crew, 'executar'):
-            result = crew.executar(inputs=task_input)
+            result = crew.executar(inputs={})
         else:
             raise AttributeError(f"Team object has neither 'kickoff' nor 'executar' method: {type(crew).__name__}")
 
@@ -1430,6 +1921,132 @@ def execute_agent_design_workflow(requirements_data: Dict, specification_data: D
     state["requirements_json"] = json.dumps(requirements_data)
     state = execute_task_with_context("suggest_agents", state)
     state = execute_task_with_context("decompose_tasks", state)
+    return state
+
+
+def execute_specification_workflow(
+    project_id: str,
+    requirements_document: str,
+    requirements_version: int = 1,
+    requirements_created_at: str = "",
+    project_name: str = "Sistema",
+    detail_level: str = "detailed",
+    target_audience: str = "mixed",
+    use_deepseek: bool = False,
+    verbose_callback: Optional[Callable[[str], None]] = None
+) -> LangNetFullState:
+    """
+    Execute the multi-step specification generation workflow following Generative Computing principles.
+
+    Pipeline:
+    1. classify_specification_intent (RouterAgent) - Classify intent and scope
+    2. extract_specification_entities (EntityExtractorAgent) - Extract all entities with context_ids
+    3. research_specification_context (WebResearcherAgent) - Research standards and best practices
+    4. compose_specification_sections (ComposerAgent) - Generate 14 sections with grounding
+    5. verify_specification_grounding (VerifierAgent) - Validate all items have context support
+    6. validate_specification_compliance (ComplianceAgent) - Check language, structure, policies
+    7. format_final_specification (FormatterAgent) - Apply corrections, fallback for gaps
+
+    Args:
+        project_id: Project UUID
+        requirements_document: The requirements document (Markdown) to generate specification from
+        requirements_version: Version number of the requirements document
+        requirements_created_at: Creation date of the requirements document
+        project_name: Name of the project/system
+        detail_level: Level of detail ("detailed", "summary", "executive")
+        target_audience: Target audience ("technical", "business", "mixed")
+        use_deepseek: If True, uses DeepSeek LLM; if False, uses configured LLM
+        verbose_callback: Optional callback for progress updates
+
+    Returns:
+        Final state with specification document in spec_document_md
+    """
+    print(f"\n{'='*80}")
+    print(f"[SPECIFICATION] Starting multi-step specification generation workflow")
+    print(f"[SPECIFICATION] Pipeline: Router → EntityExtractor → WebResearcher → Composer → Verifier → Compliance → Formatter")
+    print(f"[SPECIFICATION] Requirements document length: {len(requirements_document)} chars")
+    print(f"[SPECIFICATION] Project: {project_name}, Version: {requirements_version}")
+    print(f"{'='*80}\n")
+
+    # Initialize state with specification-specific parameters
+    state = init_full_state(
+        project_id=project_id,
+        document_id="spec_gen",
+        document_path=""
+    )
+
+    # Add specification-specific state
+    state["requirements_document"] = requirements_document
+    state["requirements_version"] = requirements_version
+    state["requirements_created_at"] = requirements_created_at or datetime.now().strftime("%Y-%m-%d")
+    state["project_name"] = project_name
+    state["spec_detail_level"] = detail_level
+    state["spec_target_audience"] = target_audience
+    state["use_deepseek"] = use_deepseek
+
+    # Define specification pipeline tasks (7 steps following Generative Computing)
+    spec_pipeline_tasks = [
+        "classify_specification_intent",      # Step 1: Router - classify intent
+        "extract_specification_entities",     # Step 2: EntityExtractor - extract entities with context_ids
+        "research_specification_context",     # Step 3: WebResearcher - research standards and best practices
+        "compose_specification_sections",     # Step 4: Composer - generate 14 sections
+        "verify_specification_grounding",     # Step 5: Verifier - validate grounding
+        "validate_specification_compliance",  # Step 6: Compliance - check language/structure
+        "format_final_specification"          # Step 7: Formatter - final document + fallback
+    ]
+
+    # Execute each task sequentially
+    for i, task_name in enumerate(spec_pipeline_tasks, 1):
+        if verbose_callback:
+            verbose_callback(f"\n[Step {i}/7] Executing: {task_name}")
+
+        print(f"\n{'='*80}")
+        print(f"[SPECIFICATION] Step {i}/7: {task_name}")
+        print(f"{'='*80}\n")
+
+        state = execute_task_with_context(task_name, state, verbose_callback)
+
+        # Check for errors
+        if state.get("errors") and len(state["errors"]) > 0:
+            print(f"\n⚠️  [SPECIFICATION] Pipeline stopped due to error in {task_name}")
+            if verbose_callback:
+                verbose_callback(f"Pipeline stopped due to error in {task_name}")
+            break
+
+        # Log intermediate progress
+        if verbose_callback:
+            if task_name == "classify_specification_intent":
+                verbose_callback(f"   Intent: {state.get('spec_intent', 'N/A')}, Scope: {state.get('spec_scope', 'N/A')}")
+            elif task_name == "extract_specification_entities":
+                verbose_callback(f"   Extracted: {len(state.get('spec_actors', []))} actors, {len(state.get('spec_use_cases', []))} use cases")
+            elif task_name == "research_specification_context":
+                summary = state.get('spec_research_summary', {})
+                verbose_callback(f"   Researched: {summary.get('total_standards', 0)} standards, {summary.get('total_compliance', 0)} compliance, {summary.get('total_practices', 0)} practices")
+            elif task_name == "compose_specification_sections":
+                verbose_callback(f"   Generated: {len(state.get('spec_sections', []))} sections")
+            elif task_name == "verify_specification_grounding":
+                verbose_callback(f"   Grounding score: {state.get('spec_grounding_score', 'N/A')}%")
+            elif task_name == "validate_specification_compliance":
+                verbose_callback(f"   Compliance: {'OK' if state.get('spec_compliance_ok') else 'Issues found'}")
+            elif task_name == "format_final_specification":
+                verbose_callback(f"   Final status: {state.get('spec_status', 'N/A')}")
+
+    # Mark completion
+    state["completed_at"] = datetime.now().isoformat()
+
+    # Log final results
+    print(f"\n{'='*80}")
+    print(f"[SPECIFICATION] Workflow completed")
+    print(f"[SPECIFICATION] Status: {state.get('spec_status', 'unknown')}")
+    print(f"[SPECIFICATION] Document length: {len(state.get('spec_document_md', ''))} chars")
+    print(f"[SPECIFICATION] Grounding score: {state.get('spec_grounding_score_final', 'N/A')}")
+    print(f"[SPECIFICATION] Compliance score: {state.get('spec_compliance_score_final', 'N/A')}")
+    print(f"[SPECIFICATION] Total sections: {state.get('spec_total_sections', 'N/A')}")
+    print(f"[SPECIFICATION] Complete sections: {state.get('spec_complete_sections', 'N/A')}")
+    print(f"[SPECIFICATION] Gaps: {len(state.get('spec_final_gaps', []))}")
+    print(f"[SPECIFICATION] Warnings: {len(state.get('spec_warnings', []))}")
+    print(f"{'='*80}\n")
+
     return state
 
 
