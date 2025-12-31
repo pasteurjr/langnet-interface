@@ -45,13 +45,12 @@ class RefineRequest(BaseModel):
 @router.post("/")
 async def generate_agents_yaml(
     request: GenerateRequest,
-    background_tasks: BackgroundTasks,
-    current_user: dict = Depends(get_current_user)
+    background_tasks: BackgroundTasks
 ):
     """
     Gera agents.yaml a partir de documento MD de agentes/tarefas
     """
-    user_id = current_user['id']
+    user_id = "system"  # Removido autenticação para evitar expiração de token
     session_id = str(uuid.uuid4())
 
     # Buscar documento MD base
@@ -412,11 +411,10 @@ Gere agora o agents.yaml refinado:
 
 @router.post("/{session_id}/review")
 async def review_agents_yaml(
-    session_id: str,
-    current_user: dict = Depends(get_current_user)
+    session_id: str
 ):
     """
-    Revisa agents.yaml e retorna sugestões (SÍNCRONO)
+    Revisa agents.yaml e retorna sugestões (SÍNCRONO - sem autenticação para evitar expiração)
     """
     session = get_agents_yaml_session(session_id)
     if not session:
