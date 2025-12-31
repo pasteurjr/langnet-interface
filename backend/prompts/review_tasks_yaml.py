@@ -38,9 +38,9 @@ Analise com ATENÇÃO ESPECIAL ao expected_output:
       - Descreve listas: "lista de X, onde cada X deve conter as keys: * subcampo"
 
    ❌ APENAS sugerir correção SE:
-      - Usar formato tipado: List[{...}], Dict[str, Any]
-      - Usar JSON literal: {"campo": "valor"}
-      - Usar schema: {"type": "object", "properties": {...}}
+      - Usar formato tipado: List[...], Dict[str, Any]
+      - Usar JSON literal com chaves fixas
+      - Usar schema tipo objeto com properties
 
    🚨 SE JÁ ESTÁ EM FORMATO TEXTUAL: Marcar como ✅ correto, NÃO sugerir mudança!
 
@@ -79,18 +79,19 @@ expected_output: >
 ❌ FORMATOS INCORRETOS (NUNCA sugerir):
 ```yaml
 # ERRADO 1: Formato tipado (Python/TypeScript-like)
-expected_output: "List[{{email_id: str, from: str, subject: str}}]"
+expected_output: "List[Email]" ou "Dict[str, Any]"
 
-# ERRADO 2: JSON literal
-expected_output: '{{"emails": [{{"email_id": "...", "from": "..."}}]}}'
+# ERRADO 2: JSON literal direto
+expected_output: (incluir JSON literal com estrutura fixa)
 
-# ERRADO 3: Schema estruturado
-expected_output: |
-  {{
-    "type": "object",
-    "properties": {{"emails": {{...}}}}
-  }}
+# ERRADO 3: Schema JSON estruturado
+expected_output: (usar notação de schema type/properties)
 ```
+
+Exemplos concretos do formato ERRADO:
+- "List[Email]" com tipos Python/TypeScript
+- Estruturas JSON fixas ao invés de descrições textuais
+- Notação de schema com type/properties ao invés de linguagem natural
 
 🚨 SE O YAML JÁ USA FORMATO TEXTUAL DESCRITIVO: NÃO sugerir "correção" para formato estruturado!
 
