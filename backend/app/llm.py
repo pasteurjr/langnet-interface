@@ -54,6 +54,7 @@ class LLMClient:
         system: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 8192,  # Claude MAX output tokens
+        model_override: Optional[str] = None,
         **kwargs
     ) -> str:
         """
@@ -64,13 +65,14 @@ class LLMClient:
             system: System prompt (optional)
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
+            model_override: Override default model (optional)
             **kwargs: Additional provider-specific parameters
 
         Returns:
             Generated text
         """
         if self.provider in ["openai", "deepseek", "lmstudio", "claude_code"]:
-            return self._complete_openai(prompt, system, temperature, max_tokens, **kwargs)
+            return self._complete_openai(prompt, system, temperature, max_tokens, model_override, **kwargs)
         elif self.provider == "anthropic":
             return self._complete_anthropic(prompt, system, temperature, max_tokens, **kwargs)
 
@@ -80,6 +82,7 @@ class LLMClient:
         system: Optional[str] = None,
         temperature: float = 0.7,
         max_tokens: int = 8192,
+        model_override: Optional[str] = None,
         **kwargs
     ) -> str:
         """
@@ -91,6 +94,7 @@ class LLMClient:
             system: System prompt (optional)
             temperature: Sampling temperature
             max_tokens: Maximum tokens to generate
+            model_override: Override default model (optional)
             **kwargs: Additional provider-specific parameters
 
         Returns:
@@ -105,6 +109,7 @@ class LLMClient:
             system=system,
             temperature=temperature,
             max_tokens=max_tokens,
+            model_override=model_override,
             **kwargs
         )
 
@@ -114,6 +119,7 @@ class LLMClient:
         system: Optional[str],
         temperature: float,
         max_tokens: int,
+        model_override: Optional[str] = None,
         **kwargs
     ) -> str:
         """OpenAI completion"""
@@ -124,14 +130,20 @@ class LLMClient:
 
         messages.append({"role": "user", "content": prompt})
 
+        # Use model override if provided, otherwise use default
+        model_to_use = model_override if model_override else self.model
+
         # ETAPA 3: Garantir thinking mode ativo explicitamente para DeepSeek-Reasoner
         extra_params = {}
-        if self.provider == "deepseek" and "reasoner" in self.model.lower():
+        if self.provider == "deepseek" and "reasoner" in model_to_use.lower():
             extra_params["extra_body"] = {"thinking": {"type": "enabled"}}
-            print(f"[LLM] Thinking mode explicitamente ativado para {self.model}")
+            print(f"[LLM] Thinking mode explicitamente ativado para {model_to_use}")
+
+        if model_override:
+            print(f"[LLM] Using model override: {model_override} (default: {self.model})")
 
         response = self.client.chat.completions.create(
-            model=self.model,
+            model=model_to_use,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
@@ -141,14 +153,20 @@ class LLMClient:
 
         # ETAPA 4: Detectar truncamento
         finish_reason = response.choices[0].finish_reason
+        content = response.choices[0].message.content
+
+        print(f"[LLM] finish_reason: {finish_reason}, output_length: {len(content)} chars")
+
         if finish_reason == 'length':
-            print(f"⚠️ WARNING: LLM response was truncated due to max_tokens limit!")
-            print(f"⚠️ Model: {self.model}, max_tokens: {max_tokens}")
-            print(f"⚠️ Consider using a model with higher output capacity or reduce document size")
+            print(f"⚠️⚠️⚠️ WARNING: LLM RESPONSE WAS TRUNCATED! ⚠️⚠️⚠️")
+            print(f"⚠️ Model: {model_to_use}, max_tokens: {max_tokens}")
+            print(f"⚠️ Output length: {len(content)} characters")
+            print(f"⚠️ Last 200 chars: ...{content[-200:]}")
+            print(f"⚠️ SOLUÇÃO: Reduzir tamanho do input ou aumentar max_tokens")
         elif finish_reason != 'stop':
             print(f"⚠️ WARNING: Unexpected finish_reason: {finish_reason}")
 
-        return response.choices[0].message.content
+        return content
 
     def _complete_anthropic(
         self,
@@ -225,3 +243,35 @@ llm_client = LLMClient()
 def get_llm_client() -> LLMClient:
     """Get global LLM client instance"""
     return llm_client
+
+
+async def get_llm_response_async(
+    prompt: str,
+    system: Optional[str] = None,
+    temperature: float = 0.7,
+    max_tokens: int = 8192,
+    model_override: Optional[str] = None,
+    **kwargs
+) -> str:
+    """
+    Helper function to get LLM response asynchronously
+
+    Args:
+        prompt: User prompt
+        system: System prompt (optional)
+        temperature: Sampling temperature
+        max_tokens: Maximum tokens to generate
+        model_override: Override default model (optional)
+        **kwargs: Additional provider-specific parameters
+
+    Returns:
+        Generated text
+    """
+    return await llm_client.complete_async(
+        prompt=prompt,
+        system=system,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        model_override=model_override,
+        **kwargs
+    )

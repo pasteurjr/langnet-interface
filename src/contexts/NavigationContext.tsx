@@ -105,6 +105,24 @@ const PROJECT_MENU_ITEMS: MenuItem[] = [
     path: "/spec",
   },
   {
+    id: "agent-task",
+    label: "Agentes & Tarefas",
+    icon: "⚙️",
+    path: "/agent-task",
+  },
+  {
+    id: "yaml-generation",
+    label: "YAML de Agentes e Tarefas",
+    icon: "📦",
+    path: "/yaml-generation",
+  },
+  {
+    id: "generate-yaml",
+    label: "Gerar YAML",
+    icon: "🔧",
+    path: "/generate-yaml",
+  },
+  {
     id: "agents",
     label: "Agentes",
     icon: "🤖",

@@ -5,7 +5,7 @@ import AgentTaskSpecHistoryModal from '../../components/agent-task/AgentTaskSpec
 import AgentsYamlHistoryModal from '../../components/yaml/AgentsYamlHistoryModal';
 import ReviewSuggestionsModal from '../../components/agent-task/ReviewSuggestionsModal';
 import DocumentActionsCard from '../../components/documents/DocumentActionsCard';
-import MarkdownViewerModal from '../../components/documents/MarkdownViewerModal';
+import YamlViewerModal from '../../components/yaml/YamlViewerModal';
 import MarkdownEditorModal from '../../components/documents/MarkdownEditorModal';
 import DiffViewerModal from '../../components/documents/DiffViewerModal';
 import { toast } from 'react-toastify';
@@ -764,16 +764,12 @@ const AgentsYamlTab: React.FC<AgentsYamlTabProps> = ({ projectId }) => {
         onSelectVersion={handleHistoryVersionSelect}
       />
 
-      {/* Markdown Viewer Modal */}
-      <MarkdownViewerModal
+      {/* YAML Viewer Modal */}
+      <YamlViewerModal
         isOpen={isViewerOpen}
         content={generatedYaml}
         filename={yamlFilename}
         onClose={() => setIsViewerOpen(false)}
-        onDownload={async () => {
-          const { exportMarkdownToPDF } = await import('../../services/pdfExportService');
-          await exportMarkdownToPDF(generatedYaml, yamlFilename.replace('.yaml', '.pdf'));
-        }}
       />
 
       {/* Markdown Editor Modal */}

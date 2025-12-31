@@ -10,6 +10,8 @@ from app.routers.chat import router as chat_router
 from app.routers.specification import router as specification_router
 from app.routers.agent_task import router as agent_task_router
 from app.routers.agent_task_spec import router as agent_task_spec_router
+from app.routers.agents_yaml import router as agents_yaml_router
+from app.routers.tasks_yaml import router as tasks_yaml_router
 from api.langnetapi import router as langnet_router
 from api.langnetwebsocket import websocket_endpoint
 from app.utils import decode_access_token
@@ -42,6 +44,8 @@ app.include_router(chat_router, prefix="/api")  # Chat with agents (memory-enabl
 app.include_router(specification_router, prefix="/api")  # Functional specification generation
 app.include_router(agent_task_router, prefix="/api")  # Agent & Task generation from specifications
 app.include_router(agent_task_spec_router, prefix="/api")  # Agent & Task specification document generation
+app.include_router(agents_yaml_router, prefix="/api")  # agents.yaml generation from specification
+app.include_router(tasks_yaml_router, prefix="/api")  # tasks.yaml generation from specification
 app.include_router(langnet_router, prefix="/api")  # LangNet multi-agent system
 
 

@@ -12,6 +12,9 @@ import DocumentsPage from "./pages/DocumentsPage";
 import SpecificationPage from "./pages/SpecificationPage";
 import AgentsPage from "./pages/AgentsPage";
 import TasksPage from "./pages/TasksPage";
+import AgentTaskPage from "./pages/AgentTaskPage";
+import YamlGenerationPage from "./pages/YamlGenerationPage";
+import GenerateYamlPage from "./pages/GenerateYamlPage";
 import YamlPage from "./pages/YamlPage";
 import PetriNetPage from "./pages/PetriNetPage";
 import CodePage from "./pages/CodePage";
@@ -75,6 +78,7 @@ const App: React.FC = () => {
             <Route path="projects/:id" element={<ProjectDetail />} />
             <Route path="projects/:id/documents" element={<DocumentsPage />} />
             <Route path="projects/:id/spec" element={<SpecificationPage />} />
+            <Route path="projects/:id/agent-task" element={<AgentTaskPage />} />
             <Route path="projects/:id/agents" element={<AgentsPage />} />
             <Route path="projects/:id/tasks" element={<TasksPage />} />
             <Route path="projects/:id/yaml" element={<YamlPage />} />
@@ -113,6 +117,7 @@ const App: React.FC = () => {
             <Route path="settings" element={<SettingsPage />} />
             <Route path="help" element={<HelpPage />} />
             {/* Rotas standalone para acesso direto */}
+            <Route path="/generate-yaml" element={<GenerateYamlPage />} />
             <Route path="/yaml" element={<YamlPage />} />
             <Route path="/spec" element={<SpecificationPage />} />
             <Route path="/specification" element={<SpecificationPage />} />
@@ -135,6 +140,18 @@ const App: React.FC = () => {
             <Route
               path="/project/:projectId/specification"
               element={<SpecificationPage />}
+            />
+            <Route
+              path="/project/:projectId/agent-task"
+              element={<AgentTaskPage />}
+            />
+            <Route
+              path="/project/:projectId/yaml-generation"
+              element={<YamlGenerationPage />}
+            />
+            <Route
+              path="/project/:projectId/generate-yaml"
+              element={<GenerateYamlPage />}
             />
             <Route path="/project/:projectId/agents" element={<AgentsPage />} />
             <Route path="/project/:projectId/tasks" element={<TasksPage />} />

@@ -810,6 +810,312 @@ def get_previous_agent_task_spec_refinements(session_id: str, limit: int = 10) -
     return list(reversed(messages))  # Return in chronological order
 
 
+# ═══════════════════════════════════════════════════════════
+# AGENTS YAML FUNCTIONS
+# ═══════════════════════════════════════════════════════════
+
+def create_agents_yaml_session(session_data: dict) -> str:
+    """Create agents YAML generation session"""
+    import json
+
+    # Convert execution_metadata to JSON string if it's a dict
+    if 'execution_metadata' in session_data and isinstance(session_data['execution_metadata'], dict):
+        session_data['execution_metadata'] = json.dumps(session_data['execution_metadata'])
+
+    query = """
+        INSERT INTO agents_yaml_sessions (
+            id, project_id, user_id, agent_task_spec_session_id, agent_task_spec_version,
+            session_name, status, execution_metadata
+        ) VALUES (
+            %(id)s, %(project_id)s, %(user_id)s, %(agent_task_spec_session_id)s, %(agent_task_spec_version)s,
+            %(session_name)s, %(status)s, %(execution_metadata)s
+        )
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute(query, session_data)
+    return session_data["id"]
+
+
+def get_agents_yaml_session(session_id: str) -> dict:
+    """Get agents YAML session by ID"""
+    query = "SELECT * FROM agents_yaml_sessions WHERE id = %s"
+    return execute_query(query, (session_id,), fetch_one=True)
+
+
+def update_agents_yaml_session(session_id: str, updates: dict) -> int:
+    """Update agents YAML session"""
+    import json
+
+    # Convert execution_metadata to JSON string if it's a dict
+    if 'execution_metadata' in updates and isinstance(updates['execution_metadata'], dict):
+        updates['execution_metadata'] = json.dumps(updates['execution_metadata'])
+
+    set_clauses = [f"{key} = %s" for key in updates.keys()]
+    params = list(updates.values()) + [session_id]
+
+    query = f"UPDATE agents_yaml_sessions SET {', '.join(set_clauses)} WHERE id = %s"
+    with get_db_cursor() as cursor:
+        cursor.execute(query, tuple(params))
+        return cursor.rowcount
+
+
+def list_agents_yaml_sessions(project_id: str) -> list:
+    """List all agents YAML sessions for a project"""
+    query = "SELECT * FROM agents_yaml_sessions WHERE project_id = %s ORDER BY created_at DESC"
+    return execute_query(query, (project_id,), fetch_all=True)
+
+
+def create_agents_yaml_version(version_data: dict) -> None:
+    """Create a new version in agents YAML version history"""
+    query = """
+        INSERT INTO agents_yaml_version_history (
+            session_id, version, agents_yaml_content, created_by, change_type,
+            change_description, doc_size
+        ) VALUES (
+            %(session_id)s, %(version)s, %(agents_yaml_content)s, %(created_by)s,
+            %(change_type)s, %(change_description)s, %(doc_size)s
+        )
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute(query, version_data)
+
+
+def get_agents_yaml_versions(session_id: str) -> list:
+    """Get all versions for an agents YAML session"""
+    query = "SELECT * FROM agents_yaml_version_history WHERE session_id = %s ORDER BY version DESC"
+    return execute_query(query, (session_id,), fetch_all=True)
+
+
+def save_agents_yaml_chat_message(message_data: dict) -> str:
+    """Save a chat message for agents YAML session"""
+    import uuid
+    import json
+
+    message_id = message_data.get('id') or str(uuid.uuid4())
+
+    # Convert metadata to JSON string if it's a dict
+    if 'metadata' in message_data and isinstance(message_data['metadata'], dict):
+        message_data['metadata'] = json.dumps(message_data['metadata'])
+
+    query = """
+        INSERT INTO agents_yaml_chat_messages (
+            id, session_id, sender_type, sender_name, message_text,
+            message_type, parent_message_id, metadata
+        ) VALUES (
+            %(id)s, %(session_id)s, %(sender_type)s, %(sender_name)s, %(message_text)s,
+            %(message_type)s, %(parent_message_id)s, %(metadata)s
+        )
+    """
+
+    params = {**message_data, 'id': message_id}
+    params.setdefault('sender_name', None)
+    params.setdefault('parent_message_id', None)
+    params.setdefault('metadata', None)
+    params.setdefault('message_type', 'chat')
+
+    with get_db_cursor() as cursor:
+        cursor.execute(query, params)
+
+    return message_id
+
+
+def get_agents_yaml_chat_messages(session_id: str, limit: int = 50) -> list:
+    """Get chat messages for an agents YAML session"""
+    import json
+
+    query = """
+        SELECT * FROM agents_yaml_chat_messages
+        WHERE session_id = %s
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """
+
+    messages = execute_query(query, (session_id, limit), fetch_all=True)
+
+    # Parse metadata JSON and reverse to chronological order
+    for msg in messages:
+        if msg.get('metadata') and isinstance(msg['metadata'], str):
+            try:
+                msg['metadata'] = json.loads(msg['metadata'])
+            except:
+                msg['metadata'] = None
+
+    return list(reversed(messages))
+
+
+# ═══════════════════════════════════════════════════════════
+# TASKS YAML FUNCTIONS
+# ═══════════════════════════════════════════════════════════
+
+def create_tasks_yaml_session(session_data: dict) -> str:
+    """Create tasks YAML generation session"""
+    import json
+
+    # Convert execution_metadata to JSON string if it's a dict
+    if 'execution_metadata' in session_data and isinstance(session_data['execution_metadata'], dict):
+        session_data['execution_metadata'] = json.dumps(session_data['execution_metadata'])
+
+    query = """
+        INSERT INTO tasks_yaml_sessions (
+            id, project_id, user_id, agent_task_spec_session_id, agent_task_spec_version,
+            session_name, status, execution_metadata
+        ) VALUES (
+            %(id)s, %(project_id)s, %(user_id)s, %(agent_task_spec_session_id)s, %(agent_task_spec_version)s,
+            %(session_name)s, %(status)s, %(execution_metadata)s
+        )
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute(query, session_data)
+    return session_data["id"]
+
+
+def get_tasks_yaml_session(session_id: str) -> dict:
+    """Get tasks YAML session by ID"""
+    query = "SELECT * FROM tasks_yaml_sessions WHERE id = %s"
+    return execute_query(query, (session_id,), fetch_one=True)
+
+
+def update_tasks_yaml_session(session_id: str, updates: dict) -> int:
+    """Update tasks YAML session"""
+    import json
+
+    # Convert execution_metadata to JSON string if it's a dict
+    if 'execution_metadata' in updates and isinstance(updates['execution_metadata'], dict):
+        updates['execution_metadata'] = json.dumps(updates['execution_metadata'])
+
+    set_clauses = [f"{key} = %s" for key in updates.keys()]
+    params = list(updates.values()) + [session_id]
+
+    query = f"UPDATE tasks_yaml_sessions SET {', '.join(set_clauses)} WHERE id = %s"
+    with get_db_cursor() as cursor:
+        cursor.execute(query, tuple(params))
+        return cursor.rowcount
+
+
+def list_tasks_yaml_sessions(project_id: str) -> list:
+    """List all tasks YAML sessions for a project"""
+    query = "SELECT * FROM tasks_yaml_sessions WHERE project_id = %s ORDER BY created_at DESC"
+    return execute_query(query, (project_id,), fetch_all=True)
+
+
+def create_tasks_yaml_version(version_data: dict) -> None:
+    """Create a new version in tasks YAML version history"""
+    query = """
+        INSERT INTO tasks_yaml_version_history (
+            session_id, version, tasks_yaml_content, created_by, change_type,
+            change_description, doc_size
+        ) VALUES (
+            %(session_id)s, %(version)s, %(tasks_yaml_content)s, %(created_by)s,
+            %(change_type)s, %(change_description)s, %(doc_size)s
+        )
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute(query, version_data)
+
+
+def get_tasks_yaml_versions(session_id: str) -> list:
+    """Get all versions for a tasks YAML session"""
+    query = "SELECT * FROM tasks_yaml_version_history WHERE session_id = %s ORDER BY version DESC"
+    return execute_query(query, (session_id,), fetch_all=True)
+
+
+def save_tasks_yaml_chat_message(message_data: dict) -> str:
+    """Save a chat message for tasks YAML session"""
+    import uuid
+    import json
+
+    message_id = message_data.get('id') or str(uuid.uuid4())
+
+    # Convert metadata to JSON string if it's a dict
+    if 'metadata' in message_data and isinstance(message_data['metadata'], dict):
+        message_data['metadata'] = json.dumps(message_data['metadata'])
+
+    query = """
+        INSERT INTO tasks_yaml_chat_messages (
+            id, session_id, sender_type, sender_name, message_text,
+            message_type, parent_message_id, metadata
+        ) VALUES (
+            %(id)s, %(session_id)s, %(sender_type)s, %(sender_name)s, %(message_text)s,
+            %(message_type)s, %(parent_message_id)s, %(metadata)s
+        )
+    """
+
+    params = {**message_data, 'id': message_id}
+    params.setdefault('sender_name', None)
+    params.setdefault('parent_message_id', None)
+    params.setdefault('metadata', None)
+    params.setdefault('message_type', 'chat')
+
+    with get_db_cursor() as cursor:
+        cursor.execute(query, params)
+
+    return message_id
+
+
+def get_tasks_yaml_chat_messages(session_id: str, limit: int = 50) -> list:
+    """Get chat messages for a tasks YAML session"""
+    import json
+
+    query = """
+        SELECT * FROM tasks_yaml_chat_messages
+        WHERE session_id = %s
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """
+
+    messages = execute_query(query, (session_id, limit), fetch_all=True)
+
+    # Parse metadata JSON and reverse to chronological order
+    for msg in messages:
+        if msg.get('metadata') and isinstance(msg['metadata'], str):
+            try:
+                msg['metadata'] = json.loads(msg['metadata'])
+            except:
+                msg['metadata'] = None
+
+    return list(reversed(messages))
+
+
+def get_previous_agents_yaml_refinements(session_id: str, limit: int = 10) -> list:
+    """
+    Busca últimos N refinamentos de agents.yaml
+
+    Retorna mensagens de usuário do tipo 'chat' para incluir como contexto em refinamentos
+    """
+    query = """
+        SELECT message_text, timestamp, sender_type
+        FROM agents_yaml_chat_messages
+        WHERE session_id = %s
+          AND sender_type = 'user'
+          AND message_type = 'chat'
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """
+
+    messages = execute_query(query, (session_id, limit), fetch_all=True)
+    return list(reversed(messages))  # Return in chronological order
+
+
+def get_previous_tasks_yaml_refinements(session_id: str, limit: int = 10) -> list:
+    """
+    Busca últimos N refinamentos de tasks.yaml
+
+    Retorna mensagens de usuário do tipo 'chat' para incluir como contexto em refinamentos
+    """
+    query = """
+        SELECT message_text, timestamp, sender_type
+        FROM tasks_yaml_chat_messages
+        WHERE session_id = %s
+          AND sender_type = 'user'
+          AND message_type = 'chat'
+        ORDER BY timestamp DESC
+        LIMIT %s
+    """
+
+    messages = execute_query(query, (session_id, limit), fetch_all=True)
+    return list(reversed(messages))  # Return in chronological order
+
+
 # Initialize pool on module import
 try:
     init_db_pool()
