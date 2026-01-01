@@ -474,7 +474,10 @@ async def get_versions(session_id: str):
     Lista todas as versões de tasks.yaml
     """
     versions = get_tasks_yaml_versions(session_id)
-    return versions
+    return {
+        "versions": versions,
+        "total": len(versions)
+    }
 
 
 # ═══════════════════════════════════════════════════════════

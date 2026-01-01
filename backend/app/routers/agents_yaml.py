@@ -471,7 +471,10 @@ async def get_versions(session_id: str):
     Lista todas as versões de agents.yaml
     """
     versions = get_agents_yaml_versions(session_id)
-    return versions
+    return {
+        "versions": versions,
+        "total": len(versions)
+    }
 
 
 # ═══════════════════════════════════════════════════════════
