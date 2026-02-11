@@ -18,59 +18,28 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
   onClose
 }) => {
   const [editedContent, setEditedContent] = useState(content);
-  const [displayContent, setDisplayContent] = useState(content);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const [previewContent, setPreviewContent] = useState(content);
 
   // Sincronizar estado interno quando prop 'content' ou 'isOpen' mudar
   useEffect(() => {
     setEditedContent(content);
-    setDisplayContent(content);
+    setPreviewContent(content);
   }, [content, isOpen]);
 
-  // Cleanup do debounce timer ao desmontar
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
-
-  // Handler com debounce para onChange do editor
-  const handleEditorChange = useCallback((val: string | undefined) => {
-    const newValue = val || '';
-
-    // Atualiza o conteúdo editado imediatamente (para o textarea)
-    setEditedContent(newValue);
-
-    // Debounce para atualizar o preview (evita re-render pesado)
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-
-    debounceTimerRef.current = setTimeout(() => {
-      setDisplayContent(newValue);
-    }, 300); // 300ms de delay
-  }, []);
-
-  const handleSave = useCallback(() => {
-    // Limpa qualquer debounce pendente
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
+  const handleSave = () => {
     onSave(editedContent);
     onClose();
-  }, [editedContent, onSave, onClose]);
+  };
 
-  const handleCancel = useCallback(() => {
-    // Limpa qualquer debounce pendente
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
+  const handleCancel = () => {
     setEditedContent(content);
-    setDisplayContent(content);
+    setPreviewContent(content);
     onClose();
-  }, [content, onClose]);
+  };
+
+  const handleUpdatePreview = () => {
+    setPreviewContent(editedContent);
+  };
 
   if (!isOpen) return null;
 
@@ -85,21 +54,40 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
           </button>
         </div>
 
-        <div className="modal-body">
-          <MDEditor
-            value={editedContent}
-            onChange={handleEditorChange}
-            height={500}
-            preview="live"
-            hideToolbar={false}
-            enableScroll={true}
-            visibleDragbar={true}
-          />
+        <div className="modal-body editor-with-preview">
+          <div className="editor-panel">
+            <div className="panel-header">
+              <span>📝 Editor</span>
+            </div>
+            <MDEditor
+              value={editedContent}
+              onChange={(val) => setEditedContent(val || '')}
+              height={500}
+              preview="edit"
+              hideToolbar={false}
+              enableScroll={true}
+            />
+          </div>
+
+          <div className="preview-panel">
+            <div className="panel-header">
+              <span>👁️ Preview</span>
+              <button className="btn-update-preview" onClick={handleUpdatePreview} title="Atualizar preview">
+                🔄 Renderizar
+              </button>
+            </div>
+            <div className="preview-content">
+              <MDEditor.Markdown source={previewContent} />
+            </div>
+          </div>
         </div>
 
         <div className="modal-footer">
           <button className="btn-cancel" onClick={handleCancel}>
             ❌ Cancelar
+          </button>
+          <button className="btn-update-preview" onClick={handleUpdatePreview}>
+            🔄 Renderizar Preview
           </button>
           <button className="btn-save" onClick={handleSave}>
             💾 Salvar Alterações
