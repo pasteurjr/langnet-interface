@@ -86,7 +86,7 @@ const SpecificationGenerationModal: React.FC<SpecificationGenerationModalProps> 
   const loadRequirementsSessions = async () => {
     setLoadingSessions(true);
     try {
-      const response = await listSessions(50, 0);
+      const response = await listSessions(projectId, 50, 0);
       // Filter only completed sessions
       const completedSessions = response.sessions.filter(s => s.status === 'completed');
       setRequirementsSessions(completedSessions);

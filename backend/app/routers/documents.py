@@ -196,8 +196,8 @@ async def execute_analysis_in_background(
             # Metadados do projeto para contexto dos agentes
             project_name=f"Análise de Requisitos - Projeto {project_id}",
             project_description=instructions[:500] if instructions else "Análise de documentos para geração de requisitos",
-            project_domain=""  # Será identificado pelos agentes a partir dos documentos
-            # use_deepseek defaults to False = uses GPT-4o-mini (OpenAI)
+            project_domain="",  # Será identificado pelos agentes a partir dos documentos
+            use_deepseek=True  # Enable DeepSeek (will use reasoner if configured)
         )
 
         # Extract requirements document
@@ -551,6 +551,7 @@ async def list_documents(
 
 @router.get("/sessions")
 async def list_execution_sessions(
+    project_id: Optional[str] = None,
     limit: int = 50,
     offset: int = 0
 ):
@@ -558,6 +559,7 @@ async def list_execution_sessions(
     List all execution sessions that have generated requirements documents
 
     Args:
+        project_id: Filter by project ID (optional, but recommended)
         limit: Maximum number of sessions to return (default: 50)
         offset: Number of sessions to skip (default: 0)
 
@@ -567,8 +569,8 @@ async def list_execution_sessions(
     with get_db_connection() as conn:
         cursor = conn.cursor(dictionary=True)
 
-        # Get sessions with requirements documents
-        cursor.execute("""
+        # Build query with optional project filter
+        base_query = """
             SELECT
                 id,
                 session_name,
@@ -579,20 +581,35 @@ async def list_execution_sessions(
             FROM execution_sessions
             WHERE requirements_document IS NOT NULL
               AND requirements_document != ''
-            ORDER BY started_at DESC
-            LIMIT %s OFFSET %s
-        """, (limit, offset))
+        """
 
+        params = []
+
+        # Add project filter if provided
+        if project_id:
+            base_query += " AND project_id = %s"
+            params.append(project_id)
+
+        base_query += " ORDER BY started_at DESC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        cursor.execute(base_query, tuple(params))
         sessions = cursor.fetchall()
 
-        # Get total count
-        cursor.execute("""
+        # Get total count with same filter
+        count_query = """
             SELECT COUNT(*) as total
             FROM execution_sessions
             WHERE requirements_document IS NOT NULL
               AND requirements_document != ''
-        """)
+        """
 
+        count_params = []
+        if project_id:
+            count_query += " AND project_id = %s"
+            count_params.append(project_id)
+
+        cursor.execute(count_query, tuple(count_params))
         total_result = cursor.fetchone()
         total = total_result['total'] if total_result else 0
 
@@ -602,7 +619,8 @@ async def list_execution_sessions(
             "sessions": sessions,
             "total": total,
             "limit": limit,
-            "offset": offset
+            "offset": offset,
+            "project_id": project_id
         }
 
 

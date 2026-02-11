@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './RequirementsHistoryModal.css';
 import { getDocumentVersions } from '../../services/documentService';
 import { listSessions, SessionSummary } from '../../services/requirementsHistoryService';
+import { useNavigation } from '../../contexts/NavigationContext';
 
 interface DocumentVersion {
   version: number;
@@ -26,6 +27,7 @@ const RequirementsHistoryModal: React.FC<RequirementsHistoryModalProps> = ({
   onSelectSession,
   onSelectVersion
 }) => {
+  const { projectContext } = useNavigation();
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -56,7 +58,9 @@ const RequirementsHistoryModal: React.FC<RequirementsHistoryModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const response = await listSessions(50, 0);
+      // Pass projectId to filter sessions by current project
+      const projectId = projectContext.isInProject ? projectContext.projectId : undefined;
+      const response = await listSessions(projectId, 50, 0);
       setSessions(response.sessions);
     } catch (err) {
       console.error('Error loading sessions:', err);

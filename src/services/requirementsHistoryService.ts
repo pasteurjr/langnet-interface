@@ -28,12 +28,23 @@ export interface SessionsListResponse {
 
 /**
  * List all execution sessions that have generated requirements documents
+ *
+ * @param projectId - Filter by project ID (optional)
+ * @param limit - Maximum number of sessions
+ * @param offset - Pagination offset
  */
 export const listSessions = async (
+  projectId?: string,
   limit: number = 50,
   offset: number = 0
 ): Promise<SessionsListResponse> => {
-  const url = `${API_BASE}/documents/sessions?limit=${limit}&offset=${offset}`;
+  // Build URL with optional project filter
+  let url = `${API_BASE}/documents/sessions?limit=${limit}&offset=${offset}`;
+
+  if (projectId) {
+    url += `&project_id=${projectId}`;
+  }
+
   console.log('📜 API: GET', url);
 
   try {
@@ -45,7 +56,8 @@ export const listSessions = async (
     console.log('📜 API: Sessions list received', {
       status: response.status,
       total: response.data.total,
-      sessionCount: response.data.sessions.length
+      sessionCount: response.data.sessions.length,
+      projectId: projectId || 'all'
     });
 
     return response.data;

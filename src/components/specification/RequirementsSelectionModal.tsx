@@ -4,6 +4,7 @@ import '../documents/RequirementsHistoryModal.css';
 import './RequirementsSelectionModal.css';
 import { getDocumentVersions, getDocumentVersion } from '../../services/documentService';
 import { listSessions, SessionSummary } from '../../services/requirementsHistoryService';
+import { useNavigation } from '../../contexts/NavigationContext';
 
 interface DocumentVersion {
   version: number;
@@ -24,6 +25,7 @@ const RequirementsSelectionModal: React.FC<RequirementsSelectionModalProps> = ({
   onClose,
   onSelect
 }) => {
+  const { projectContext } = useNavigation();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -59,7 +61,9 @@ const RequirementsSelectionModal: React.FC<RequirementsSelectionModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const response = await listSessions(50, 0);
+      // Pass projectId to filter sessions by current project
+      const projectId = projectContext.isInProject ? projectContext.projectId : undefined;
+      const response = await listSessions(projectId, 50, 0);
       // Filtra apenas sessões completas
       const completedSessions = response.sessions.filter(s => s.status === 'completed');
       setSessions(completedSessions);
