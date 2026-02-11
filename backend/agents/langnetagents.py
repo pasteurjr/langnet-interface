@@ -121,12 +121,27 @@ def get_llm(use_deepseek: bool = False):
             if not deepseek_api_key:
                 raise ValueError("DEEPSEEK_API_KEY not found in environment variables")
 
+            # Read model from environment (same pattern as app/llm.py)
+            deepseek_model = os.getenv("DEEPSEEK_MODEL_NAME", "deepseek/deepseek-chat")
+
+            # Handle deepseek/ prefix (avoid deepseek/deepseek/...)
+            if deepseek_model.startswith("deepseek/"):
+                deepseek_model_clean = deepseek_model
+            else:
+                deepseek_model_clean = f"deepseek/{deepseek_model}"
+
+            # Adjust max_tokens based on model
+            if "reasoner" in deepseek_model.lower():
+                max_tokens_value = 65536  # 64K for deepseek-reasoner
+            else:
+                max_tokens_value = 8192   # 8K for deepseek-chat
+
             _llm_cache[cache_key] = ChatOpenAI(
-                model="deepseek/deepseek-chat",
+                model=deepseek_model_clean,
                 openai_api_key=deepseek_api_key,
                 openai_api_base="https://api.deepseek.com",
                 temperature=0.3,
-                max_tokens=16384
+                max_tokens=max_tokens_value
             )
         else:
             # Default OpenAI

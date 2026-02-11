@@ -10,6 +10,7 @@ import ProjectList from "./pages/ProjectList";
 import ProjectDetail from "./pages/ProjectDetail";
 import DocumentsPage from "./pages/DocumentsPage";
 import SpecificationPage from "./pages/SpecificationPage";
+import SequenciaTarefasPage from "./pages/SequenciaTarefasPage";
 import AgentsPage from "./pages/AgentsPage";
 import TasksPage from "./pages/TasksPage";
 import AgentTaskPage from "./pages/AgentTaskPage";
@@ -121,6 +122,7 @@ const App: React.FC = () => {
             <Route path="/yaml" element={<YamlPage />} />
             <Route path="/spec" element={<SpecificationPage />} />
             <Route path="/specification" element={<SpecificationPage />} />
+            <Route path="/task-execution-flow" element={<SequenciaTarefasPage />} />
             <Route path="/code" element={<CodePage />} />
             <Route path="/monitoring" element={<MonitoringPage />} />
             <Route path="/deployment" element={<DeploymentPage />} />
@@ -140,6 +142,10 @@ const App: React.FC = () => {
             <Route
               path="/project/:projectId/specification"
               element={<SpecificationPage />}
+            />
+            <Route
+              path="/project/:projectId/task-execution-flow"
+              element={<SequenciaTarefasPage />}
             />
             <Route
               path="/project/:projectId/agent-task"

@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import MDEditor from '@uiw/react-md-editor';
+import React, { useState, useEffect, useRef } from 'react';
+import Editor from '@monaco-editor/react';
+import ReactMarkdown from 'react-markdown';
 import './MarkdownEditorModal.css';
 
 interface MarkdownEditorModalProps {
@@ -19,12 +20,30 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
 }) => {
   const [editedContent, setEditedContent] = useState(content);
   const [previewContent, setPreviewContent] = useState(content);
+  const editorRef = useRef<any>(null);
 
-  // Sincronizar estado interno quando prop 'content' ou 'isOpen' mudar
+  // Sincronizar quando abrir modal
   useEffect(() => {
-    setEditedContent(content);
-    setPreviewContent(content);
-  }, [content, isOpen]);
+    if (isOpen) {
+      setEditedContent(content);
+      setPreviewContent(content);
+    }
+  }, [isOpen, content]);
+
+  if (!isOpen) return null;
+
+  const handleEditorDidMount = (editor: any) => {
+    editorRef.current = editor;
+    editor.focus();
+  };
+
+  const handleEditorChange = (value: string | undefined) => {
+    setEditedContent(value || '');
+  };
+
+  const handleUpdatePreview = () => {
+    setPreviewContent(editedContent);
+  };
 
   const handleSave = () => {
     onSave(editedContent);
@@ -37,12 +56,6 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
     onClose();
   };
 
-  const handleUpdatePreview = () => {
-    setPreviewContent(editedContent);
-  };
-
-  if (!isOpen) return null;
-
   return (
     <div className="modal-overlay" onClick={handleCancel}>
       <div className="modal-content editor-modal" onClick={(e) => e.stopPropagation()}>
@@ -54,21 +67,34 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
           </button>
         </div>
 
-        <div className="modal-body editor-with-preview">
+        <div className="modal-body monaco-editor-layout">
+          {/* Editor Monaco */}
           <div className="editor-panel">
             <div className="panel-header">
-              <span>📝 Editor</span>
+              <span>📝 Editor (Monaco)</span>
             </div>
-            <MDEditor
-              value={editedContent}
-              onChange={(val) => setEditedContent(val || '')}
-              height={500}
-              preview="edit"
-              hideToolbar={false}
-              enableScroll={true}
-            />
+            <div className="monaco-container">
+              <Editor
+                height="500px"
+                defaultLanguage="markdown"
+                value={editedContent}
+                onChange={handleEditorChange}
+                onMount={handleEditorDidMount}
+                theme="vs-dark"
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 14,
+                  lineNumbers: 'on',
+                  wordWrap: 'on',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  tabSize: 2,
+                }}
+              />
+            </div>
           </div>
 
+          {/* Preview Markdown */}
           <div className="preview-panel">
             <div className="panel-header">
               <span>👁️ Preview</span>
@@ -76,8 +102,8 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
                 🔄 Renderizar
               </button>
             </div>
-            <div className="preview-content">
-              <MDEditor.Markdown source={previewContent} />
+            <div className="preview-content markdown-body">
+              <ReactMarkdown>{previewContent}</ReactMarkdown>
             </div>
           </div>
         </div>

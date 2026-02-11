@@ -1116,6 +1116,129 @@ def get_previous_tasks_yaml_refinements(session_id: str, limit: int = 10) -> lis
     return list(reversed(messages))  # Return in chronological order
 
 
+# ═══════════════════════════════════════════════════════════
+# TASK EXECUTION FLOW SESSIONS
+# ═══════════════════════════════════════════════════════════
+
+def create_task_execution_flow_session(session_data: dict) -> str:
+    """Create task execution flow generation session"""
+    import json
+
+    # Convert execution_metadata to JSON string if it's a dict
+    if 'execution_metadata' in session_data and isinstance(session_data['execution_metadata'], dict):
+        session_data['execution_metadata'] = json.dumps(session_data['execution_metadata'])
+
+    query = """
+        INSERT INTO task_execution_flow_sessions (
+            id, project_id, user_id, agent_task_spec_session_id, agents_yaml_session_id,
+            tasks_yaml_session_id, session_name, status, execution_metadata
+        ) VALUES (
+            %(id)s, %(project_id)s, %(user_id)s, %(agent_task_spec_session_id)s, %(agents_yaml_session_id)s,
+            %(tasks_yaml_session_id)s, %(session_name)s, %(status)s, %(execution_metadata)s
+        )
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute(query, session_data)
+    return session_data["id"]
+
+
+def get_task_execution_flow_session(session_id: str) -> dict | None:
+    """Get task execution flow session by ID"""
+    import json
+
+    query = """
+        SELECT * FROM task_execution_flow_sessions
+        WHERE id = %s
+        LIMIT 1
+    """
+
+    session = execute_query(query, (session_id,), fetch_one=True)
+
+    if session and session.get('execution_metadata'):
+        if isinstance(session['execution_metadata'], str):
+            try:
+                session['execution_metadata'] = json.loads(session['execution_metadata'])
+            except:
+                session['execution_metadata'] = {}
+
+    return session
+
+
+def update_task_execution_flow_session(session_id: str, updates: dict):
+    """Update task execution flow session"""
+    import json
+
+    # Convert dicts to JSON strings
+    if 'execution_metadata' in updates and isinstance(updates['execution_metadata'], dict):
+        updates['execution_metadata'] = json.dumps(updates['execution_metadata'])
+
+    set_clause = ", ".join([f"{key} = %({key})s" for key in updates.keys()])
+    query = f"UPDATE task_execution_flow_sessions SET {set_clause} WHERE id = %(session_id)s"
+
+    params = {**updates, "session_id": session_id}
+
+    with get_db_cursor() as cursor:
+        cursor.execute(query, params)
+
+
+def list_task_execution_flow_sessions(project_id: str, limit: int = 50) -> list:
+    """List task execution flow sessions for a project"""
+    import json
+
+    query = """
+        SELECT * FROM task_execution_flow_sessions
+        WHERE project_id = %s
+        ORDER BY created_at DESC
+        LIMIT %s
+    """
+
+    sessions = execute_query(query, (project_id, limit), fetch_all=True)
+
+    # Parse execution_metadata
+    for session in sessions:
+        if session.get('execution_metadata') and isinstance(session['execution_metadata'], str):
+            try:
+                session['execution_metadata'] = json.loads(session['execution_metadata'])
+            except:
+                session['execution_metadata'] = {}
+
+    return sessions
+
+
+def get_specification_session(session_id: str) -> dict | None:
+    """Get specification session by ID"""
+    import json
+
+    query = """
+        SELECT * FROM execution_specification_sessions
+        WHERE id = %s
+        LIMIT 1
+    """
+
+    session = execute_query(query, (session_id,), fetch_one=True)
+
+    if session and session.get('execution_metadata'):
+        if isinstance(session['execution_metadata'], str):
+            try:
+                session['execution_metadata'] = json.loads(session['execution_metadata'])
+            except:
+                session['execution_metadata'] = {}
+
+    return session
+
+
+def get_document(document_id: str) -> dict | None:
+    """Get document by ID"""
+    query = """
+        SELECT * FROM documents
+        WHERE id = %s
+        LIMIT 1
+    """
+
+    document = execute_query(query, (document_id,), fetch_one=True)
+    return document
+
+
 # Initialize pool on module import
 try:
     init_db_pool()

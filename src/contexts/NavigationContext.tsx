@@ -123,6 +123,12 @@ const PROJECT_MENU_ITEMS: MenuItem[] = [
     path: "/generate-yaml",
   },
   {
+    id: "task-execution-flow",
+    label: "Sequência de Tarefas",
+    icon: "🔄",
+    path: "/task-execution-flow",
+  },
+  {
     id: "agents",
     label: "Agentes",
     icon: "🤖",

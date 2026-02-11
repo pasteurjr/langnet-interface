@@ -401,14 +401,14 @@ Maintain the structure and quality of the original document while incorporating 
 {refinement_instructions}
 
 CONTEXTO DOS DOCUMENTOS ORIGINAIS:
-{all_documents_content[:20000]}
+{all_documents_content[:50000]}
 
 TAREFA CRÍTICA:
 1. VOCÊ DEVE RETORNAR O DOCUMENTO COMPLETO refinado
 2. NÃO faça análise, NÃO comente sobre problemas
 3. Comece DIRETAMENTE com o markdown do documento
 4. COPIE todo conteúdo original + aplique as mudanças solicitadas
-5. Se output ficar grande, termine com '...' (sistema continuará automaticamente)
+5. Retorne o documento COMPLETO, sem truncamento
 6. CONSIDERE o histórico de refinamentos anteriores para manter coerência
 
 IMPORTANTE: Retorne SOMENTE o documento em markdown. Sem introduções, sem comentários.
@@ -418,10 +418,16 @@ IMPORTANTE: Retorne SOMENTE o documento em markdown. Sem introduções, sem come
         refined_requirements = llm_client.complete(
             prompt=refinement_prompt,
             temperature=0.7,
-            max_tokens=16000
+            max_tokens=65536  # ✅ 64K tokens (compatível com DeepSeek-Reasoner)
         )
 
         print(f"[REFINEMENT] LLM completed. Refined document length: {len(refined_requirements)} chars")
+
+        # ✅ Validação de completude
+        if refined_requirements.strip().endswith('...'):
+            print(f"⚠️ WARNING: Documento pode estar truncado (termina com '...')")
+            print(f"⚠️ Tamanho do documento refinado: {len(refined_requirements)} chars")
+            print(f"⚠️ Tamanho do documento original: {len(current_requirements)} chars")
 
         # Save progress message - Analysis completed
         save_chat_message(
