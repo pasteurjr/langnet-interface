@@ -87,7 +87,7 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
 
         <div className="modal-body">
           <MDEditor
-            value={displayContent}
+            value={editedContent}
             onChange={handleEditorChange}
             height={500}
             preview="live"
