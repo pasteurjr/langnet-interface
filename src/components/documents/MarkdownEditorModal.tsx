@@ -58,6 +58,7 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
   onClose
 }) => {
   const [editedContent, setEditedContent] = useState(content);
+  const [previewContent, setPreviewContent] = useState(content);
 
   // Sincronizar estado interno quando prop 'content' ou 'isOpen' mudar
   useEffect(() => {
@@ -66,6 +67,7 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
       isOpen
     });
     setEditedContent(content);
+    setPreviewContent(content);
   }, [content, isOpen]);
 
   if (!isOpen) return null;
@@ -79,7 +81,12 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
 
   const handleCancel = () => {
     setEditedContent(content); // Reset to original
+    setPreviewContent(content);
     onClose();
+  };
+
+  const handleUpdatePreview = () => {
+    setPreviewContent(editedContent);
   };
 
   return (
@@ -93,24 +100,43 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
           </button>
         </div>
 
-        <div className="modal-body">
-          <MDEditor
-            value={editedContent}
-            onChange={(val) => setEditedContent(val || '')}
-            height={500}
-            preview="live"
-            hideToolbar={false}
-            enableScroll={true}
-            visibleDragbar={true}
-            textareaProps={{
-              placeholder: 'Digite seu conteúdo em Markdown aqui...',
-            }}
-          />
+        <div className="modal-body editor-with-preview">
+          <div className="editor-panel">
+            <div className="panel-header">
+              <span>📝 Editor</span>
+            </div>
+            <MDEditor
+              value={editedContent}
+              onChange={(val) => setEditedContent(val || '')}
+              height={500}
+              preview="edit"
+              hideToolbar={false}
+              enableScroll={true}
+              textareaProps={{
+                placeholder: 'Digite seu conteúdo em Markdown aqui...',
+              }}
+            />
+          </div>
+
+          <div className="preview-panel">
+            <div className="panel-header">
+              <span>👁️ Preview</span>
+              <button className="btn-update-preview" onClick={handleUpdatePreview} title="Atualizar preview">
+                🔄 Atualizar
+              </button>
+            </div>
+            <div className="preview-content">
+              <MDEditor.Markdown source={previewContent} />
+            </div>
+          </div>
         </div>
 
         <div className="modal-footer">
           <button className="btn-cancel" onClick={handleCancel}>
             ❌ Cancelar
+          </button>
+          <button className="btn-update-preview" onClick={handleUpdatePreview}>
+            🔄 Atualizar Preview
           </button>
           <button className="btn-save" onClick={handleSave}>
             💾 Salvar Alterações
