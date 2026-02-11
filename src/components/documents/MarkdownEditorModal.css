@@ -87,20 +87,33 @@
 .modal-body .w-md-editor {
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  pointer-events: auto !important;
+  cursor: text !important;
 }
 
 .modal-body .w-md-editor-toolbar {
   background: #fff;
   border-bottom: 2px solid #e0e0e0;
   padding: 8px;
+  pointer-events: auto !important;
 }
 
 .modal-body .w-md-editor-content {
   background: #fff;
+  pointer-events: auto !important;
+}
+
+.modal-body .w-md-editor-text,
+.modal-body .w-md-editor-text-pre,
+.modal-body .w-md-editor-text-input,
+.modal-body textarea {
+  pointer-events: auto !important;
+  cursor: text !important;
 }
 
 .modal-body .w-md-editor-preview {
   background: #fafafa;
+  pointer-events: auto !important;
 }
 
 /* Markdown Viewer Styles */
