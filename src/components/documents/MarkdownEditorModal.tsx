@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import MDEditor from '@uiw/react-md-editor';
 import './MarkdownEditorModal.css';
 
@@ -10,46 +10,6 @@ interface MarkdownEditorModalProps {
   onClose: () => void;
 }
 
-/**
- * Atualiza a data no cabeçalho do documento markdown
- * Procura por linhas como "**Data:** ..." ou "Data: ..." e atualiza com a data atual
- */
-const updateDocumentDate = (content: string): string => {
-  const now = new Date();
-  const dateStr = now.toLocaleString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-
-  // Padrões de data para substituir
-  const patterns = [
-    /(\*\*Data:\*\*\s*)([^\n]+)/g,  // **Data:** ...
-    /(\*\*Data de Criação:\*\*\s*)([^\n]+)/g,  // **Data de Criação:** ...
-    /(\*\*Última Modificação:\*\*\s*)([^\n]+)/g,  // **Última Modificação:** ...
-    /(Data:\s*)([^\n]+)/g,  // Data: ...
-    /(Criado em:\s*)([^\n]+)/g,  // Criado em: ...
-    /(Modificado em:\s*)([^\n]+)/g,  // Modificado em: ...
-  ];
-
-  let updatedContent = content;
-
-  // Substituir todas as ocorrências de data encontradas
-  patterns.forEach(pattern => {
-    updatedContent = updatedContent.replace(pattern, `$1${dateStr}`);
-  });
-
-  // Se não encontrou nenhuma data, adiciona no início do documento
-  if (updatedContent === content && !content.includes('Data:') && !content.includes('**Data:**')) {
-    const header = `**Última Modificação:** ${dateStr}\n\n---\n\n`;
-    updatedContent = header + content;
-  }
-
-  return updatedContent;
-};
-
 const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
   isOpen,
   content,
@@ -58,36 +18,61 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
   onClose
 }) => {
   const [editedContent, setEditedContent] = useState(content);
-  const [previewContent, setPreviewContent] = useState(content);
+  const [displayContent, setDisplayContent] = useState(content);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Sincronizar estado interno quando prop 'content' ou 'isOpen' mudar
   useEffect(() => {
-    console.log('📝 MarkdownEditorModal: Sincronizando conteúdo', {
-      contentLength: content.length,
-      isOpen
-    });
     setEditedContent(content);
-    setPreviewContent(content);
+    setDisplayContent(content);
   }, [content, isOpen]);
 
+  // Cleanup do debounce timer ao desmontar
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Handler com debounce para onChange do editor
+  const handleEditorChange = useCallback((val: string | undefined) => {
+    const newValue = val || '';
+
+    // Atualiza o conteúdo editado imediatamente (para o textarea)
+    setEditedContent(newValue);
+
+    // Debounce para atualizar o preview (evita re-render pesado)
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    debounceTimerRef.current = setTimeout(() => {
+      setDisplayContent(newValue);
+    }, 300); // 300ms de delay
+  }, []);
+
+  const handleSave = useCallback(() => {
+    // Limpa qualquer debounce pendente
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    onSave(editedContent);
+    onClose();
+  }, [editedContent, onSave, onClose]);
+
+  const handleCancel = useCallback(() => {
+    // Limpa qualquer debounce pendente
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    setEditedContent(content);
+    setDisplayContent(content);
+    onClose();
+  }, [content, onClose]);
+
   if (!isOpen) return null;
-
-  const handleSave = () => {
-    // Atualiza a data no documento antes de salvar
-    const contentWithUpdatedDate = updateDocumentDate(editedContent);
-    onSave(contentWithUpdatedDate);
-    onClose();
-  };
-
-  const handleCancel = () => {
-    setEditedContent(content); // Reset to original
-    setPreviewContent(content);
-    onClose();
-  };
-
-  const handleUpdatePreview = () => {
-    setPreviewContent(editedContent);
-  };
 
   return (
     <div className="modal-overlay" onClick={handleCancel}>
@@ -100,43 +85,21 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
           </button>
         </div>
 
-        <div className="modal-body editor-with-preview">
-          <div className="editor-panel">
-            <div className="panel-header">
-              <span>📝 Editor</span>
-            </div>
-            <MDEditor
-              value={editedContent}
-              onChange={(val) => setEditedContent(val || '')}
-              height={500}
-              preview="edit"
-              hideToolbar={false}
-              enableScroll={true}
-              textareaProps={{
-                placeholder: 'Digite seu conteúdo em Markdown aqui...',
-              }}
-            />
-          </div>
-
-          <div className="preview-panel">
-            <div className="panel-header">
-              <span>👁️ Preview</span>
-              <button className="btn-update-preview" onClick={handleUpdatePreview} title="Atualizar preview">
-                🔄 Atualizar
-              </button>
-            </div>
-            <div className="preview-content">
-              <MDEditor.Markdown source={previewContent} />
-            </div>
-          </div>
+        <div className="modal-body">
+          <MDEditor
+            value={displayContent}
+            onChange={handleEditorChange}
+            height={500}
+            preview="live"
+            hideToolbar={false}
+            enableScroll={true}
+            visibleDragbar={true}
+          />
         </div>
 
         <div className="modal-footer">
           <button className="btn-cancel" onClick={handleCancel}>
             ❌ Cancelar
-          </button>
-          <button className="btn-update-preview" onClick={handleUpdatePreview}>
-            🔄 Atualizar Preview
           </button>
           <button className="btn-save" onClick={handleSave}>
             💾 Salvar Alterações
