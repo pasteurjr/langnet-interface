@@ -98,7 +98,7 @@ const MarkdownEditorModal: React.FC<MarkdownEditorModalProps> = ({
             value={editedContent}
             onChange={(val) => setEditedContent(val || '')}
             height={500}
-            preview="edit"
+            preview="live"
             hideToolbar={false}
             enableScroll={true}
             visibleDragbar={true}
