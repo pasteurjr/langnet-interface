@@ -1,5 +1,5 @@
-/* src/pages/SpecificationPage.tsx */
-/* CÓPIA do DocumentsPage com botão "Doctos Requisitos" adicionado */
+/* src/pages/SequenciaTarefasPage.tsx */
+/* Página para geração de Sequência de Tarefas (Task Execution Flow) */
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { Document, DocumentStatus } from '../types';
@@ -10,31 +10,28 @@ import ProgressBar from '../components/documents/ProgressBar';
 import DocumentActionsCard from '../components/documents/DocumentActionsCard';
 import MarkdownEditorModal from '../components/documents/MarkdownEditorModal';
 import MarkdownViewerModal from '../components/documents/MarkdownViewerModal';
-import SpecificationHistoryModal from '../components/specification/SpecificationHistoryModal';
+import TaskExecutionFlowHistoryModal from '../components/task-execution-flow/TaskExecutionFlowHistoryModal';
 import DiffViewerModal from '../components/documents/DiffViewerModal';
-import SpecificationGenerationModal from '../components/specification/SpecificationGenerationModal';
-import RequirementsSelectionModal from '../components/specification/RequirementsSelectionModal';
 import ReviewSuggestionsModal from '../components/specification/ReviewSuggestionsModal';
+import YamlSelectionModal from '../components/task-execution-flow/YamlSelectionModal';
 import * as documentService from '../services/documentService';
 import * as chatService from '../services/chatService';
 import {
-  createSpecificationSession,
-  getSpecification,
-  updateSpecification,
-  listSpecificationVersions,
-  getSpecificationVersion
-} from '../services/specificationService';
-import {
-  refineSpecification,
-  reviewSpecification,
-  getChatHistory,
-  getSessionStatus
-} from '../services/specificationChatService';
+  createTaskExecutionFlowSession,
+  getTaskExecutionFlow,
+  getSessionStatus,
+  updateTaskExecutionFlow,
+  listTaskExecutionFlowVersions,
+  getTaskExecutionFlowVersion,
+  refineTaskExecutionFlow,
+  reviewTaskExecutionFlow,
+  getChatHistory
+} from '../services/taskExecutionFlowService';
 import { useNavigation } from '../contexts/NavigationContext';
 import { toast } from 'react-toastify';
-import './DocumentsPage.css'; // USA O MESMO CSS
+import './SequenciaTarefasPage.css';
 
-const SpecificationPage: React.FC = () => {
+const SequenciaTarefasPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const { projectContext } = useNavigation();
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -45,14 +42,13 @@ const SpecificationPage: React.FC = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [analysisInstructions, setAnalysisInstructions] = useState('');
 
-  // NOVO: Estado para modal de seleção de requisitos
-  const [isRequirementsModalOpen, setIsRequirementsModalOpen] = useState(false);
-  const [selectedRequirementsSessionId, setSelectedRequirementsSessionId] = useState<string>('');
-  const [selectedRequirementsVersion, setSelectedRequirementsVersion] = useState<number>(1);
-  const [selectedRequirementsName, setSelectedRequirementsName] = useState<string>('');
-  const [selectedRequirementsContent, setSelectedRequirementsContent] = useState<string>('');
+  // Estado para modal de seleção de Specs & Docs (specification, agent_task_spec, tasks.yaml)
+  const [isYamlsModalOpen, setIsYamlsModalOpen] = useState(false);
+  const [selectedSpecificationSessionId, setSelectedSpecificationSessionId] = useState<string>('');
+  const [selectedAgentTaskSpecSessionId, setSelectedAgentTaskSpecSessionId] = useState<string>('');
+  const [selectedTasksYamlSessionId, setSelectedTasksYamlSessionId] = useState<string>('');
+  const [customInstructions, setCustomInstructions] = useState<string>('');
 
   // Chat states
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -70,7 +66,7 @@ const SpecificationPage: React.FC = () => {
 
   // Document states
   const [generatedDocument, setGeneratedDocument] = useState<string>('');
-  const [documentFilename, setDocumentFilename] = useState<string>('especificacao.md');
+  const [documentFilename, setDocumentFilename] = useState<string>('task_execution_flow.md');
   const [currentLoadedVersion, setCurrentLoadedVersion] = useState<number | null>(null);
 
   // Diff states
@@ -119,12 +115,12 @@ const SpecificationPage: React.FC = () => {
         const status = await getSessionStatus(currentSessionId);
         console.log('📊 Status atual:', status.status);
 
-        if (status.status === 'completed' && status.specification_document) {
+        if (status.status === 'completed' && status.flow_document) {
           console.log('✅ Sessão concluída, atualizando documento...');
-          setGeneratedDocument(status.specification_document);
+          setGeneratedDocument(status.flow_document);
           const version = status.current_version || 1;
           setCurrentLoadedVersion(version);
-          setDocumentFilename(`especificacao_v${version}.md`);
+          setDocumentFilename(`task_execution_flow_v${version}.md`);
           await loadChatHistory(currentSessionId);
           toast.success(`Geração/Refinamento concluído! (v${version})`);
           setIsChatProcessing(false);
@@ -216,7 +212,7 @@ const SpecificationPage: React.FC = () => {
 
     try {
       console.log('💾 Salvando documento editado...');
-      await updateSpecification(currentSessionId, { content: newContent });
+      await updateTaskExecutionFlow(currentSessionId, { content: newContent });
       setGeneratedDocument(newContent);
       toast.success('Documento salvo com sucesso!');
     } catch (error) {
@@ -329,10 +325,10 @@ const SpecificationPage: React.FC = () => {
     setChatMessages(prev => [...prev, message]);
   };
 
-  // GERAR ESPECIFICAÇÃO
+  // GERAR SEQUÊNCIA DE TAREFAS
   const startGeneration = async () => {
-    if (!selectedRequirementsSessionId) {
-      toast.error('Selecione um documento de requisitos primeiro (botão "📋 Doctos Requisitos")');
+    if (!selectedSpecificationSessionId || !selectedAgentTaskSpecSessionId || !selectedTasksYamlSessionId) {
+      toast.error('Selecione os 3 documentos obrigatórios primeiro! (botão "📋 Specs & Docs")');
       return;
     }
 
@@ -349,39 +345,33 @@ const SpecificationPage: React.FC = () => {
       // Coletar IDs dos documentos complementares (opcional)
       const complementaryDocIds = documents.map(doc => doc.id);
 
-      addChatMessage('system', `🚀 Iniciando geração de especificação funcional...`);
-      addChatMessage('system', `📋 Documento de requisitos base: ${selectedRequirementsName} (v${selectedRequirementsVersion})`);
-
+      addChatMessage('system', `🚀 Iniciando geração de fluxo de execução de tarefas...`);
+      addChatMessage('system', `📋 Especificação Funcional: ${selectedSpecificationSessionId}`);
+      addChatMessage('system', `🤖 Agent/Task Spec: ${selectedAgentTaskSpecSessionId}`);
+      addChatMessage('system', `📋 Tasks YAML: ${selectedTasksYamlSessionId}`);
       if (complementaryDocIds.length > 0) {
-        addChatMessage('system', `📎 ${complementaryDocIds.length} documento(s) complementar(es) incluído(s)`);
+        addChatMessage('system', `📄 + ${complementaryDocIds.length} documento(s) externo(s)`);
       }
 
-      // Chamar API de criação de especificação
-      const response = await createSpecificationSession({
-        project_id: currentProjectId,
-        requirements_session_id: selectedRequirementsSessionId,
-        requirements_version: selectedRequirementsVersion,
-        complementary_document_ids: complementaryDocIds,
-        session_name: `Especificação - ${new Date().toLocaleDateString('pt-BR')}`,
-        detail_level: 'detailed',
-        target_audience: 'mixed',
-        include_data_model: true,
-        include_use_cases: true,
-        include_business_rules: true,
-        include_glossary: true,
-        custom_instructions: analysisInstructions || undefined
+      // Chamar API de criação de task execution flow
+      const response = await createTaskExecutionFlowSession({
+        specification_session_id: selectedSpecificationSessionId,
+        agent_task_spec_session_id: selectedAgentTaskSpecSessionId,
+        tasks_yaml_session_id: selectedTasksYamlSessionId,
+        uploaded_document_ids: complementaryDocIds,
+        custom_instructions: customInstructions || undefined
       });
 
       setCurrentSessionId(response.session_id);
-      console.log('📊 Sessão de especificação criada:', response.session_id);
+      console.log('📊 Sessão de task execution flow criada:', response.session_id);
 
-      addChatMessage('agent', '✅ Sessão iniciada! Gerando especificação funcional. Isso pode levar alguns minutos...');
+      addChatMessage('agent', '✅ Sessão iniciada! Gerando fluxo de execução. Isso pode levar alguns minutos...');
 
       // Polling vai detectar quando terminar
-      toast.success('Geração de especificação iniciada!');
+      toast.success('Geração de fluxo de execução iniciada!');
     } catch (err) {
-      console.error('Failed to start specification generation:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Erro ao gerar especificação';
+      console.error('Failed to start task execution flow generation:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Erro ao gerar fluxo de execução';
       toast.error(errorMessage);
       addChatMessage('system', `❌ Erro: ${errorMessage}`, 'status');
       setIsChatProcessing(false);
@@ -393,7 +383,7 @@ const SpecificationPage: React.FC = () => {
   // Handle chat messages for conversational refinement
   const handleSendChatMessage = async (message: string, actionType: 'refine' | 'chat' = 'refine') => {
     if (!currentSessionId) {
-      toast.error('Gere uma especificação primeiro');
+      toast.error('Gere um fluxo de execução primeiro');
       return;
     }
 
@@ -413,7 +403,7 @@ const SpecificationPage: React.FC = () => {
       const actionLabel = actionType === 'chat' ? 'análise' : 'refinamento';
       console.log(`📤 Enviando mensagem de ${actionLabel}:`, message);
 
-      const response = await refineSpecification(currentSessionId, {
+      const response = await refineTaskExecutionFlow(currentSessionId, {
         message: message,
         action_type: actionType
       });
@@ -461,15 +451,15 @@ const SpecificationPage: React.FC = () => {
     setCurrentSessionId(sessionId);
 
     try {
-      const spec = await getSpecification(sessionId);
-      if (spec.specification_document) {
-        setGeneratedDocument(spec.specification_document);
-        const version = spec.current_version || 1;
+      const flow = await getTaskExecutionFlow(sessionId);
+      if (flow.flow_document) {
+        setGeneratedDocument(flow.flow_document);
+        const version = flow.current_version || 1;
         setCurrentLoadedVersion(version);
-        setDocumentFilename(`${sessionName || 'especificacao'}_v${version}.md`);
+        setDocumentFilename(`${sessionName || 'task_execution_flow'}_v${version}.md`);
       }
       await loadChatHistory(sessionId);
-      toast.info(`Carregando: ${sessionName} (v${spec.current_version || 1})`);
+      toast.info(`Carregando: ${sessionName}`);
     } catch (err) {
       console.error('Erro ao carregar sessão:', err);
       toast.error('Erro ao carregar sessão');
@@ -483,10 +473,10 @@ const SpecificationPage: React.FC = () => {
     }
 
     try {
-      const versionData = await getSpecificationVersion(currentSessionId, version);
-      if (versionData && versionData.specification_document) {
-        setGeneratedDocument(versionData.specification_document);
-        setDocumentFilename(`especificacao_v${version}.md`);
+      const versionData = await getTaskExecutionFlowVersion(currentSessionId, version);
+      if (versionData && versionData.flow_document) {
+        setGeneratedDocument(versionData.flow_document);
+        setDocumentFilename(`task_execution_flow_v${version}.md`);
         setCurrentLoadedVersion(version);
         toast.success(`Versão ${version} carregada`);
       }
@@ -499,20 +489,20 @@ const SpecificationPage: React.FC = () => {
   // Review: Analisa documento e mostra sugestões em modal
   const handleReview = async () => {
     if (!currentSessionId) {
-      toast.error('Gere uma especificação primeiro');
+      toast.error('Gere um fluxo de execução primeiro');
       return;
     }
 
     setIsReviewing(true);
     try {
-      console.log('🔍 Iniciando revisão da especificação...');
-      const result = await reviewSpecification(currentSessionId);
+      console.log('🔍 Iniciando revisão do fluxo de execução...');
+      const result = await reviewTaskExecutionFlow(currentSessionId);
       setReviewSuggestions(result.suggestions);
       setIsReviewModalOpen(true);
 
       // Add review message to chat
       const reviewMsg: ChatMessage = {
-        id: result.review_message_id,
+        id: result.review_message_id || `review-${Date.now()}`,
         sender: 'agent',
         text: result.suggestions,
         timestamp: new Date(),
@@ -522,8 +512,8 @@ const SpecificationPage: React.FC = () => {
 
       toast.success('Revisão concluída!');
     } catch (error) {
-      console.error('Erro ao revisar especificação:', error);
-      toast.error('Erro ao revisar especificação. Tente novamente.');
+      console.error('Erro ao revisar fluxo de execução:', error);
+      toast.error('Erro ao revisar fluxo de execução. Tente novamente.');
     } finally {
       setIsReviewing(false);
     }
@@ -549,7 +539,7 @@ const SpecificationPage: React.FC = () => {
       console.log('✏️ Aplicando sugestões de revisão...');
 
       // Send refinement request
-      await refineSpecification(currentSessionId, {
+      await refineTaskExecutionFlow(currentSessionId, {
         message: message,
         action_type: 'refine'
       });
@@ -569,8 +559,8 @@ const SpecificationPage: React.FC = () => {
     <div className="documents-page-chat">
       <div className="page-header">
         <div className="header-content">
-          <h1>📝 Especificação Funcional {projectContext.isInProject && `- ${projectContext.projectName}`}</h1>
-          <p>Gere especificações funcionais a partir de documentos de requisitos</p>
+          <h1>🔄 Sequência de Tarefas {projectContext.isInProject && `- ${projectContext.projectName}`}</h1>
+          <p>Gere o fluxo de execução de tarefas a partir de agents.yaml e tasks.yaml</p>
         </div>
       </div>
 
@@ -592,29 +582,34 @@ const SpecificationPage: React.FC = () => {
                 <button className="btn-upload-compact" onClick={() => setIsUploadModalOpen(true)}>
                   + Upload
                 </button>
-                <button className="btn-history-compact" onClick={() => setIsHistoryModalOpen(true)} title="Histórico de Especificações">
+                <button className="btn-history-compact" onClick={() => setIsHistoryModalOpen(true)} title="Histórico de Fluxos de Tarefas">
                   📜 Histórico
                 </button>
-                {/* NOVO BOTÃO: Doctos Requisitos */}
+                {/* BOTÃO: Specs & Docs */}
                 <button
-                  className={`btn-requirements-compact ${selectedRequirementsSessionId ? 'selected' : ''}`}
-                  onClick={() => setIsRequirementsModalOpen(true)}
-                  title="Selecionar Documento de Requisitos Base"
+                  className={`btn-yamls-compact ${(selectedSpecificationSessionId && selectedAgentTaskSpecSessionId && selectedTasksYamlSessionId) ? 'selected' : ''}`}
+                  onClick={() => setIsYamlsModalOpen(true)}
+                  title="Selecionar Documentos Base (Specification, Agent/Task Spec, Tasks YAML)"
                 >
-                  📋 {selectedRequirementsSessionId ? 'Requisitos ✓' : 'Requisitos'}
+                  📋 {(selectedSpecificationSessionId && selectedAgentTaskSpecSessionId && selectedTasksYamlSessionId) ? 'Specs ✓' : 'Specs & Docs'}
                 </button>
               </div>
             </div>
 
-            {/* Mostrar requisitos selecionados */}
-            {selectedRequirementsSessionId && (
+            {/* Mostrar Documentos selecionados */}
+            {(selectedSpecificationSessionId || selectedAgentTaskSpecSessionId || selectedTasksYamlSessionId) && (
               <div style={{
                 padding: '8px 12px',
                 backgroundColor: '#d4edda',
                 borderBottom: '1px solid #c3e6cb',
-                fontSize: '12px'
+                fontSize: '11px',
+                lineHeight: '1.6'
               }}>
-                <strong>📋 Base:</strong> {selectedRequirementsName} (v{selectedRequirementsVersion})
+                <strong>📋 Documentos Selecionados:</strong><br/>
+                {selectedSpecificationSessionId && '✓ Especificação Funcional'}<br/>
+                {selectedAgentTaskSpecSessionId && '✓ Especificação de Agentes/Tarefas'}<br/>
+                {selectedTasksYamlSessionId && '✓ Tasks YAML'}<br/>
+                {documents.length > 0 && `✓ + ${documents.length} documento(s) externo(s)`}
               </div>
             )}
 
@@ -650,25 +645,25 @@ const SpecificationPage: React.FC = () => {
             <div className="analysis-config">
               <h4>⚙️ Configuração</h4>
 
-              <label>Instruções Adicionais</label>
+              <label>Instruções Customizadas (Opcional)</label>
               <textarea
-                value={analysisInstructions}
-                onChange={(e) => setAnalysisInstructions(e.target.value)}
-                placeholder="Ex: Focar em requisitos de segurança, detalhar casos de uso..."
+                value={customInstructions}
+                onChange={(e) => setCustomInstructions(e.target.value)}
+                placeholder="Ex: Enfatizar dependências entre tasks, detalhar input/output formats, etc..."
                 rows={3}
               />
 
               <button
                 className="btn-start-analysis"
                 onClick={startGeneration}
-                disabled={isAnalyzing || !selectedRequirementsSessionId}
+                disabled={isAnalyzing || !selectedSpecificationSessionId || !selectedAgentTaskSpecSessionId || !selectedTasksYamlSessionId}
               >
-                {isAnalyzing ? '⏳ Gerando...' : '🚀 Gerar Especificação'}
+                {isAnalyzing ? '⏳ Gerando...' : '🚀 Gerar Sequência de Tarefas'}
               </button>
 
-              {!selectedRequirementsSessionId && (
+              {(!selectedSpecificationSessionId || !selectedAgentTaskSpecSessionId || !selectedTasksYamlSessionId) && (
                 <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
-                  ⚠️ Selecione um documento de requisitos primeiro
+                  ⚠️ Selecione os 3 documentos obrigatórios primeiro (📋 Specs & Docs)
                 </p>
               )}
 
@@ -676,14 +671,14 @@ const SpecificationPage: React.FC = () => {
                 className="btn-review"
                 onClick={handleReview}
                 disabled={isReviewing || !generatedDocument}
-                title="Revisar documento e obter sugestões de melhoria"
+                title="Revisar fluxo de execução e obter sugestões de melhoria"
               >
-                {isReviewing ? '⏳ Revisando...' : '🔍 Revisar Especificação'}
+                {isReviewing ? '⏳ Revisando...' : '🔍 Revisar Fluxo de Tarefas'}
               </button>
 
               {!generatedDocument && (
                 <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
-                  💡 Gere uma especificação primeiro para revisar
+                  💡 Gere um fluxo de execução primeiro para revisar
                 </p>
               )}
             </div>
@@ -697,7 +692,7 @@ const SpecificationPage: React.FC = () => {
                   {isInitialGeneration ? (
                     <>
                       <span className="spinner">⏳</span>
-                      <strong>🚀 GERANDO ESPECIFICAÇÃO INICIAL...</strong>
+                      <strong>🚀 GERANDO FLUXO DE TAREFAS INICIAL...</strong>
                       <span className="blink">Aguarde, isso pode levar 1-3 minutos</span>
                     </>
                   ) : (
@@ -751,11 +746,16 @@ const SpecificationPage: React.FC = () => {
               />
             ) : (
               <div className="no-document-placeholder">
-                <div className="placeholder-icon">📄</div>
-                <h3>Especificação não gerada</h3>
-                <p>1. Selecione um documento de requisitos (📋 Requisitos)<br/>
-                   2. Opcionalmente adicione docs complementares<br/>
-                   3. Clique em "Gerar Especificação"</p>
+                <div className="placeholder-icon">🔄</div>
+                <h3>Sequência de Tarefas não gerada</h3>
+                <p>
+                  1. Selecione YAMLs de configuração (⚙️ YAMLs Config):<br/>
+                  &nbsp;&nbsp;&nbsp;• Agent/Task Spec (especificação de agentes e tarefas)<br/>
+                  &nbsp;&nbsp;&nbsp;• Agents YAML (configuração de agentes)<br/>
+                  &nbsp;&nbsp;&nbsp;• Tasks YAML (configuração de tarefas)<br/>
+                  2. Opcionalmente adicione instruções customizadas<br/>
+                  3. Clique em "🚀 Gerar Sequência de Tarefas"
+                </p>
               </div>
             )}
           </div>
@@ -796,8 +796,8 @@ const SpecificationPage: React.FC = () => {
         }}
       />
 
-      {/* Modal de Histórico de Especificações */}
-      <SpecificationHistoryModal
+      {/* Modal de Histórico de Fluxos de Tarefas */}
+      <TaskExecutionFlowHistoryModal
         isOpen={isHistoryModalOpen}
         onClose={() => setIsHistoryModalOpen(false)}
         projectId={projectId}
@@ -812,16 +812,16 @@ const SpecificationPage: React.FC = () => {
         onClose={() => setIsDiffModalOpen(false)}
       />
 
-      {/* NOVO: Modal para selecionar documento de requisitos base */}
-      <RequirementsSelectionModal
-        isOpen={isRequirementsModalOpen}
-        onClose={() => setIsRequirementsModalOpen(false)}
-        onSelect={(sessionId, sessionName, version, content) => {
-          setSelectedRequirementsSessionId(sessionId);
-          setSelectedRequirementsName(sessionName);
-          setSelectedRequirementsVersion(version);
-          setSelectedRequirementsContent(content);
-          toast.success(`Requisitos selecionados: ${sessionName} v${version}`);
+      {/* Modal para selecionar Specs & Docs */}
+      <YamlSelectionModal
+        isOpen={isYamlsModalOpen}
+        onClose={() => setIsYamlsModalOpen(false)}
+        onSelect={(specificationId, agentTaskSpecId, tasksYamlId) => {
+          setSelectedSpecificationSessionId(specificationId);
+          setSelectedAgentTaskSpecSessionId(agentTaskSpecId);
+          setSelectedTasksYamlSessionId(tasksYamlId);
+          setIsYamlsModalOpen(false);
+          toast.success('3 documentos selecionados com sucesso! 🎉');
         }}
       />
 
@@ -837,4 +837,4 @@ const SpecificationPage: React.FC = () => {
   );
 };
 
-export default SpecificationPage;
+export default SequenciaTarefasPage;

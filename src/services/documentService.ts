@@ -92,11 +92,11 @@ export const uploadDocument = async (
  * List documents with optional filtering
  */
 export const listDocuments = async (
-  projectId?: number,
+  projectId?: string,
   status?: string
 ): Promise<Document[]> => {
   const params = new URLSearchParams();
-  if (projectId) params.append('project_id', projectId.toString());
+  if (projectId) params.append('project_id', projectId);
   if (status) params.append('status', status);
 
   const queryString = params.toString();
@@ -298,7 +298,7 @@ export const batchAnalyzeDocuments = async (
  * Get document statistics for a project
  */
 export const getDocumentStats = async (
-  projectId: number
+  projectId: string
 ): Promise<{
   total: number;
   by_status: Record<string, number>;

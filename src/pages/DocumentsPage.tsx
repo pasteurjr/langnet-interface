@@ -285,7 +285,7 @@ const DocumentsPage: React.FC = () => {
     try {
       setIsLoading(true);
       setError(null);
-      const docs = await documentService.listDocuments(parseInt(projectId));
+      const docs = await documentService.listDocuments(projectId);
 
       // Transform backend response to frontend format
       const transformedDocs: Document[] = docs.map((doc: any) => ({

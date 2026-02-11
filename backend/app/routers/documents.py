@@ -483,7 +483,7 @@ async def upload_document(
 
 @router.get("/")
 async def list_documents(
-    project_id: Optional[int] = None,
+    project_id: Optional[str] = None,
     status: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
@@ -491,7 +491,7 @@ async def list_documents(
     List documents with optional filtering
 
     Args:
-        project_id: Filter by project
+        project_id: Filter by project (UUID string)
         status: Filter by status (uploaded, analyzing, analyzed, error)
         current_user: Authenticated user
 
