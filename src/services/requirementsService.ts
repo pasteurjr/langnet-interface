@@ -79,12 +79,31 @@ export const updateRequirementsDocument = async (
   sessionId: string,
   content: string
 ): Promise<{ success: boolean; message: string }> => {
-  const response = await axios.put(
-    `${API_BASE}/documents/sessions/${sessionId}/requirements`,
-    { content },
-    { headers: getAuthHeaders() }
-  );
-  return response.data;
+  const url = `${API_BASE}/documents/sessions/${sessionId}/requirements`;
+  console.log('💾 API: PUT', url, {
+    contentLength: content.length,
+    headers: getAuthHeaders()
+  });
+
+  try {
+    const response = await axios.put(
+      url,
+      { content },
+      { headers: getAuthHeaders() }
+    );
+
+    console.log('✅ API: Documento salvo com sucesso', response.data);
+    return response.data;
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      console.error('❌ Token expirado! Fazendo logout...');
+      alert('⚠️ Sessão expirada. Faça login novamente.');
+      localStorage.removeItem('accessToken');
+      window.location.href = '/login';
+      throw new Error('Token expirado');
+    }
+    throw error;
+  }
 };
 
 export default {

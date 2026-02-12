@@ -1167,8 +1167,7 @@ async def get_requirements_document(
 @router.put("/sessions/{session_id}/requirements")
 async def update_requirements_document(
     session_id: str,
-    request: UpdateRequirementsRequest,
-    current_user: dict = Depends(get_current_user)
+    request: UpdateRequirementsRequest
 ):
     """
     Update requirements document (user edits)
@@ -1213,8 +1212,8 @@ async def update_requirements_document(
         cursor.execute("""
             INSERT INTO session_requirements_version
             (session_id, version, requirements_document, created_by, change_description, change_type, doc_size)
-            VALUES (%s, %s, %s, %s, 'Edição manual do documento', 'manual_edit', %s)
-        """, (session_id, new_version, request.content, current_user['id'], len(request.content)))
+            VALUES (%s, %s, %s, NULL, 'Edição manual do documento', 'manual_edit', %s)
+        """, (session_id, new_version, request.content, len(request.content)))
         conn.commit()
         print(f"[MANUAL EDIT] ✅ Versão {new_version} salva (tipo: manual_edit)")
         # ======================================
