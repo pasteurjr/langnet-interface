@@ -1175,11 +1175,13 @@ async def update_requirements_document(
     Args:
         session_id: Execution session ID
         request: Updated document content
-        current_user: Authenticated user
 
     Returns:
         Success message
     """
+    from datetime import datetime
+    import re
+
     with get_db_connection() as conn:
         cursor = conn.cursor()
 
@@ -1189,13 +1191,53 @@ async def update_requirements_document(
             cursor.close()
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # Update document
+        # ========== UPDATE DATE IN MARKDOWN ==========
+        # Auto-update date in the document to current date/time
+        current_datetime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        updated_content = request.content
+
+        # Update "**Data:** YYYY-MM-DD HH:MM:SS" pattern
+        updated_content = re.sub(
+            r'\*\*Data:\*\*\s+\d{4}-\d{2}-\d{2}(\s+\d{2}:\d{2}:\d{2})?',
+            f'**Data:** {current_datetime}',
+            updated_content
+        )
+
+        # Update "**Data da análise:** YYYY-MM-DD" pattern
+        updated_content = re.sub(
+            r'\*\*Data da análise:\*\*\s+\d{4}-\d{2}-\d{2}',
+            f'**Data da análise:** {current_date}',
+            updated_content
+        )
+
+        # Update version history table dates (| 1.0 | YYYY-MM-DD ... |)
+        updated_content = re.sub(
+            r'\|\s*1\.0\s*\|\s*\d{4}-\d{2}-\d{2}(\s+\d{2}:\d{2}:\d{2})?\s*\|',
+            f'| 1.0 | {current_datetime} |',
+            updated_content
+        )
+
+        print(f"[UPDATE] 📅 Data atualizada para: {current_datetime}")
+        # ============================================
+
+        # Update document with auto-updated dates
+        print(f"[UPDATE] 📝 Atualizando documento da sessão {session_id}")
+        print(f"[UPDATE] 📏 Tamanho do conteúdo: {len(updated_content)} caracteres")
         cursor.execute("""
             UPDATE execution_sessions
             SET requirements_document = %s
             WHERE id = %s
-        """, (request.content, session_id))
+        """, (updated_content, session_id))
+        rows_affected = cursor.rowcount
         conn.commit()
+        print(f"[UPDATE] ✅ UPDATE executado! Linhas afetadas: {rows_affected}")
+
+        # Verificar se realmente salvou
+        cursor.execute("SELECT LENGTH(requirements_document) FROM execution_sessions WHERE id = %s", (session_id,))
+        saved_size = cursor.fetchone()[0]
+        print(f"[UPDATE] 🔍 Tamanho salvo no banco: {saved_size} caracteres")
 
         # ========== SAVE NEW VERSION ==========
         # Get next version number
@@ -1208,12 +1250,12 @@ async def update_requirements_document(
         current_version = result[0] if result and result[0] else 0
         new_version = current_version + 1
 
-        # Insert new version (manual edit)
+        # Insert new version (manual edit) with updated content (includes new dates)
         cursor.execute("""
             INSERT INTO session_requirements_version
             (session_id, version, requirements_document, created_by, change_description, change_type, doc_size)
             VALUES (%s, %s, %s, NULL, 'Edição manual do documento', 'manual_edit', %s)
-        """, (session_id, new_version, request.content, len(request.content)))
+        """, (session_id, new_version, updated_content, len(updated_content)))
         conn.commit()
         print(f"[MANUAL EDIT] ✅ Versão {new_version} salva (tipo: manual_edit)")
         # ======================================
