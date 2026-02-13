@@ -1056,6 +1056,350 @@ def validate_requirements_output_func(state: LangNetFullState, result: Any) -> L
     return log_task_complete(updated_state, "validate_requirements")
 
 
+def enrich_requirements_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for enrich_requirements task"""
+    return {
+        "requirements_json": state.get("requirements_json", "{}"),
+        "research_findings_json": state.get("research_findings_json", "{}"),
+        "business_context": state.get("business_context", "{}"),
+        "project_name": state.get("project_name", "")
+    }
+
+
+def enrich_requirements_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with enrich_requirements results"""
+    # Extract output (same pattern as other output funcs)
+    if hasattr(result, 'raw'):
+        output_json = result.raw
+    elif hasattr(result, 'json_dict') and result.json_dict:
+        output_json = json.dumps(result.json_dict)
+    elif hasattr(result, 'model_dump'):
+        output_json = json.dumps(result.model_dump())
+    elif isinstance(result, dict):
+        output_json = json.dumps(result)
+    else:
+        output_json = str(result)
+
+    try:
+        parsed = json.loads(output_json)
+        # Handle nested team_result if present (Claude Code pattern)
+        if isinstance(parsed, dict) and "team_result" in parsed:
+            team_result_str = parsed["team_result"]
+            if isinstance(team_result_str, str):
+                # Remove markdown code blocks
+                team_result_str = team_result_str.strip()
+                if team_result_str.startswith("```json"):
+                    team_result_str = team_result_str[7:]
+                elif team_result_str.startswith("```"):
+                    team_result_str = team_result_str[3:]
+                if team_result_str.endswith("```"):
+                    team_result_str = team_result_str[:-3]
+                parsed = json.loads(team_result_str.strip())
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] enrich_requirements JSON parsing failed: {e}")
+        parsed = {}
+
+    updated_state = {
+        **state,
+        "enriched_requirements": parsed.get("enriched_requirements", {}),
+        "validation_status": parsed.get("validation_status", "UNKNOWN"),
+        "validation_message": parsed.get("validation_message", ""),
+        "completeness_flags": parsed.get("completeness_flags", {})
+    }
+
+    return log_task_complete(updated_state, "enrich_requirements")
+
+
+def validate_quality_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for validate_quality task"""
+    return {
+        "enriched_requirements": json.dumps(state.get("enriched_requirements", {})),
+        "business_context": state.get("business_context", "{}"),
+        "project_name": state.get("project_name", "")
+    }
+
+
+def validate_quality_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with validate_quality results"""
+    # Extract output (same pattern as other output funcs)
+    if hasattr(result, 'raw'):
+        output_json = result.raw
+    elif hasattr(result, 'json_dict') and result.json_dict:
+        output_json = json.dumps(result.json_dict)
+    elif hasattr(result, 'model_dump'):
+        output_json = json.dumps(result.model_dump())
+    elif isinstance(result, dict):
+        output_json = json.dumps(result)
+    else:
+        output_json = str(result)
+
+    try:
+        parsed = json.loads(output_json)
+        # Handle nested team_result if present (Claude Code pattern)
+        if isinstance(parsed, dict) and "team_result" in parsed:
+            team_result_str = parsed["team_result"]
+            if isinstance(team_result_str, str):
+                # Remove markdown code blocks
+                team_result_str = team_result_str.strip()
+                if team_result_str.startswith("```json"):
+                    team_result_str = team_result_str[7:]
+                elif team_result_str.startswith("```"):
+                    team_result_str = team_result_str[3:]
+                if team_result_str.endswith("```"):
+                    team_result_str = team_result_str[:-3]
+                parsed = json.loads(team_result_str.strip())
+    except json.JSONDecodeError as e:
+        print(f"[ERROR] validate_quality JSON parsing failed: {e}")
+        parsed = {}
+
+    updated_state = {
+        **state,
+        "quality_validation": parsed,
+        "quality_scores": parsed.get("quality_scores", {}),
+        "issues_found": parsed.get("issues_found", []),
+        "critical_gaps": parsed.get("critical_gaps", [])
+    }
+
+    return log_task_complete(updated_state, "validate_quality")
+
+
+def generate_document_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for generate_document task - includes template"""
+    from datetime import datetime
+
+    # Load the Requirements Document template
+    template = load_template("requirements_document_template.md")
+
+    # Provide ALL template variables with defaults
+    default_placeholder = "To be filled by analysis"
+    template_vars = {
+        # Project info
+        "project_name": state.get("project_name", ""),
+        "project_description": state.get("project_description", ""),
+        "project_objectives": state.get("additional_instructions", "")[:200] if state.get("additional_instructions") else default_placeholder,
+        "project_context": "See additional instructions for context",
+        "project_domain": state.get("project_domain", ""),
+        "scope_includes": default_placeholder,
+        "scope_excludes": default_placeholder,
+
+        # Document metadata
+        "document_id": state.get("document_id", ""),
+        "document_path": state.get("document_path", ""),
+        "generation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "document_status": "Draft",
+        "documents_table": default_placeholder,
+        "total_documents": "1",
+        "total_pages": "N/A",
+        "total_words": str(len(state.get("document_content", "").split())),
+        "analysis_date": datetime.now().strftime("%Y-%m-%d"),
+        "processing_time": "N/A",
+        "total_processing_time": "N/A",
+
+        # Requirements sections
+        "functional_requirements_by_category": default_placeholder,
+        "functional_requirements_list": default_placeholder,
+        "non_functional_requirements_list": default_placeholder,
+        "business_rules_by_domain": default_placeholder,
+        "business_rules_list": default_placeholder,
+        "actors_list": default_placeholder,
+        "entities_description": default_placeholder,
+        "workflows_overview": default_placeholder,
+        "workflows_detailed": default_placeholder,
+        "glossary_table": default_placeholder,
+        "glossary_entries": default_placeholder,
+
+        # NFR categories
+        "nfr_performance": default_placeholder,
+        "nfr_security": default_placeholder,
+        "nfr_usability": default_placeholder,
+        "nfr_reliability": default_placeholder,
+        "nfr_scalability": default_placeholder,
+        "nfr_maintainability": default_placeholder,
+
+        # Quality analysis
+        "consistency_analysis": default_placeholder,
+        "conflicts_table": default_placeholder,
+        "conflicts_entries": default_placeholder,
+        "ambiguities_analysis": default_placeholder,
+        "ambiguities_list": default_placeholder,
+        "ambiguous_text": default_placeholder,
+        "clarification_questions": default_placeholder,
+        "high_priority_questions": default_placeholder,
+        "medium_priority_questions": default_placeholder,
+        "low_priority_questions": default_placeholder,
+
+        # Completeness scores
+        "completeness_score": "N/A",
+        "fr_completeness": "N/A",
+        "nfr_completeness": "N/A",
+        "br_completeness": "N/A",
+        "actors_completeness": "N/A",
+        "entities_completeness": "N/A",
+        "workflows_completeness": "N/A",
+
+        # Quality scores
+        "clarity_score": "N/A",
+        "clarity_status": "N/A",
+        "clarity_notes": "N/A",
+        "consistency_score": "N/A",
+        "consistency_status": "N/A",
+        "consistency_notes": "N/A",
+        "testability_score": "N/A",
+        "testability_status": "N/A",
+        "testability_notes": "N/A",
+        "traceability_score": "N/A",
+        "traceability_status": "N/A",
+        "traceability_notes": "N/A",
+        "completeness_status": "N/A",
+        "completeness_notes": "N/A",
+
+        # Gaps and issues
+        "critical_gaps": default_placeholder,
+        "information_requests": default_placeholder,
+        "information_requests_list": default_placeholder,
+        "essential_coverage_analysis": default_placeholder,
+        "essential_coverage_table": default_placeholder,
+        "application_type": "Web Application",
+        "issues_summary": default_placeholder,
+        "issues_detailed_list": default_placeholder,
+        "critical_issues_count": "0",
+        "high_issues_count": "0",
+        "medium_issues_count": "0",
+        "low_issues_count": "0",
+        "severity": "N/A",
+
+        # Diagrams and visualizations
+        "entity_relationship_diagram": default_placeholder,
+        "entity_attributes_table": default_placeholder,
+        "workflow_sequence_diagram": default_placeholder,
+        "prioritization_chart_data": default_placeholder,
+        "dependencies_graph": default_placeholder,
+        "critical_path_analysis": default_placeholder,
+        "critical_requirements_list": default_placeholder,
+        "coverage_mindmap": default_placeholder,
+        "traceability_matrix": default_placeholder,
+
+        # Web research
+        "industry_best_practices": default_placeholder,
+        "recommended_standards": default_placeholder,
+        "suggested_technologies": default_placeholder,
+        "compliance_checklist": default_placeholder,
+        "compliance_entries": default_placeholder,
+        "missing_requirements_discovered": default_placeholder,
+
+        # Improvements
+        "general_recommendations": default_placeholder,
+        "fr_improvements": default_placeholder,
+        "nfr_improvements": default_placeholder,
+        "br_improvements": default_placeholder,
+        "documentation_improvements": default_placeholder,
+
+        # Next steps
+        "immediate_actions": default_placeholder,
+        "validations_needed": default_placeholder,
+        "spec_preparation": default_placeholder,
+
+        # System metadata
+        "framework_version": "LangNet v1.0",
+        "llm_provider": "DeepSeek",
+        "llm_model": "DeepSeek Reasoner",
+        "web_research_enabled": "Yes",
+        "has_additional_instructions": "Yes" if state.get("additional_instructions") else "No",
+        "version_history": "N/A",
+
+        # Other
+        "abbreviations_table": default_placeholder
+    }
+
+    # Format template with actual values BEFORE sending to LLM
+    try:
+        formatted_template = template.format(**template_vars)
+        print(f"[TEMPLATE] ✅ Template formatado com {len(template_vars)} variáveis")
+        print(f"[TEMPLATE] 📅 Data de geração: {template_vars['generation_date']}")
+    except KeyError as e:
+        print(f"[TEMPLATE] ⚠️ Erro ao formatar template: {e}")
+        formatted_template = template
+
+    return {
+        "enriched_requirements": json.dumps(state.get("enriched_requirements", {})),
+        "quality_validation": json.dumps(state.get("quality_validation", {})),
+        "research_findings_json": state.get("research_findings_json", "{}"),
+        "template": formatted_template,
+        "project_name": state.get("project_name", ""),
+        **template_vars
+    }
+
+
+def generate_document_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with generate_document results and extract requirements document"""
+    print(f"\n{'='*80}")
+    print(f"[DEBUG] generate_document_output_func - Processing result")
+    print(f"[DEBUG] Result type: {type(result)}")
+
+    # Extract output (same pattern as validate_requirements_output_func)
+    if hasattr(result, 'raw'):
+        output_json = result.raw
+    elif hasattr(result, 'json_dict') and result.json_dict:
+        output_json = json.dumps(result.json_dict)
+    elif hasattr(result, 'model_dump'):
+        output_json = json.dumps(result.model_dump())
+    elif isinstance(result, dict):
+        output_json = json.dumps(result)
+    else:
+        output_json = str(result)
+
+    print(f"[DEBUG] output_json length: {len(output_json)}")
+
+    try:
+        parsed = json.loads(output_json)
+        # Handle nested team_result if present
+        if isinstance(parsed, dict) and "team_result" in parsed:
+            team_result_str = parsed["team_result"]
+            if isinstance(team_result_str, str):
+                # Remove markdown code blocks
+                team_result_str = team_result_str.strip()
+                if team_result_str.startswith("```json"):
+                    team_result_str = team_result_str[7:]
+                elif team_result_str.startswith("```"):
+                    team_result_str = team_result_str[3:]
+                if team_result_str.endswith("```"):
+                    team_result_str = team_result_str[:-3]
+                
+                # Parse the nested JSON
+                try:
+                    parsed = json.loads(team_result_str.strip())
+                except json.JSONDecodeError:
+                    # Fallback to original if nested parsing fails
+                    pass
+    except json.JSONDecodeError as e:
+        print(f"[DEBUG] JSON parsing FAILED: {e}")
+        parsed = {}
+
+    # Extract the requirements document MD
+    requirements_doc_md = ""
+    if isinstance(parsed, dict):
+        requirements_doc_md = parsed.get("requirements_document_md", "")
+    
+    print(f"[DEBUG] FINAL requirements_doc_md length: {len(requirements_doc_md)}")
+    if requirements_doc_md:
+        print(f"[DEBUG] FINAL requirements_doc_md preview:\n{requirements_doc_md[:300]}")
+    else:
+        print(f"[DEBUG] ⚠️  WARNING: requirements_document_md is EMPTY!")
+    print(f"{'='*80}\n")
+
+    updated_state = {
+        **state,
+        "validation_json": output_json,
+        "validation_data": parsed,
+        "requirements_document_md": requirements_doc_md,
+        "document_metadata": parsed.get("document_metadata", {}),
+        "quality_summary": parsed.get("quality_summary", {}),
+        "source_distribution": parsed.get("source_distribution", {})
+    }
+
+    return log_task_complete(updated_state, "generate_document")
+
+
 def generate_specification_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
     """Update state with generate_specification results"""
     if isinstance(result, dict):
@@ -1436,11 +1780,29 @@ TASK_REGISTRY = {
         ],
         "phase": "requirements_extraction"
     },
-    "validate_requirements": {
-        "input_func": validate_requirements_input_func,
-        "output_func": validate_requirements_output_func,
-        "requires": ["requirements_json"],
-        "produces": ["validation_json", "validation_data"],
+    "enrich_requirements": {
+        "input_func": enrich_requirements_input_func,
+        "output_func": enrich_requirements_output_func,
+        "requires": ["requirements_json", "research_findings_json"],
+        "produces": ["enriched_requirements", "validation_status"],
+        "agent": AGENTS["requirements_validator"],
+        "tools": [],
+        "phase": "requirements_extraction"
+    },
+    "validate_quality": {
+        "input_func": validate_quality_input_func,
+        "output_func": validate_quality_output_func,
+        "requires": ["enriched_requirements"],
+        "produces": ["quality_validation", "quality_scores"],
+        "agent": AGENTS["requirements_validator"],
+        "tools": [],
+        "phase": "requirements_extraction"
+    },
+    "generate_document": {
+        "input_func": generate_document_input_func,
+        "output_func": generate_document_output_func,
+        "requires": ["enriched_requirements", "quality_validation"],
+        "produces": ["requirements_document_md", "validation_data"],
         "agent": AGENTS["requirements_validator"],
         "tools": [],
         "phase": "requirements_extraction"
@@ -1611,7 +1973,7 @@ def execute_task_with_context(
         task_input = task_config["input_func"](context_state)
 
         # VALIDAÇÃO: Verificar se inputs críticos não estão vazios
-        if task_name in ["analyze_document", "extract_requirements", "validate_requirements"]:
+        if task_name in ["analyze_document", "extract_requirements"]:
             doc_content = context_state.get("document_content", "")
             if not doc_content or len(doc_content) < 100:
                 error_msg = f"ERROR: Task '{task_name}' requires document_content but it's empty or too short ({len(doc_content)} chars)"
@@ -1639,7 +2001,9 @@ def execute_task_with_context(
                 "analyze_document": "document_analyst",
                 "extract_requirements": "requirements_engineer",
                 "research_additional_info": "web_researcher",
-                "validate_requirements": "requirements_validator",
+                "enrich_requirements": "requirements_validator",
+                "validate_quality": "requirements_validator",
+                "generate_document": "requirements_validator",
                 "generate_specification": "specification_generator",
                 "suggest_agents": "agent_specifier",
                 "decompose_tasks": "task_decomposer",
@@ -1811,12 +2175,14 @@ def execute_full_pipeline(
         additional_instructions=additional_instructions
     )
 
-    # Define execution order (NOW WITH 10 TASKS!)
+    # Define execution order (NOW WITH 12 TASKS!)
     pipeline_tasks = [
         "analyze_document",
         "extract_requirements",
-        "research_additional_info",  # NEW TASK - Web research
-        "validate_requirements",
+        "research_additional_info",  # Web research
+        "enrich_requirements",      # NEW: Validate completeness + AI suggestions (replaces validate_requirements)
+        "validate_quality",          # NEW: Quality validation + gap analysis
+        "generate_document",         # NEW: Generate final markdown document
         "generate_specification",
         "suggest_agents",
         "decompose_tasks",
@@ -1930,7 +2296,10 @@ def execute_document_analysis_workflow(
     else:
         print(f"\n⏭️  Web research DESABILITADA - Pulando pesquisa complementar...")
 
-    state = execute_task_with_context("validate_requirements", state)
+    # Dividido em 3 tasks para reduzir tamanho do prompt e evitar timeouts
+    state = execute_task_with_context("enrich_requirements", state)
+    state = execute_task_with_context("validate_quality", state)
+    state = execute_task_with_context("generate_document", state)
 
     return state
 

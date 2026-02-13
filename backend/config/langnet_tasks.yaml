@@ -581,145 +581,153 @@ research_additional_info:
       * justification: string like "Found in X similar systems"
       * source: string with URL
 
-validate_requirements:
+enrich_requirements:
   description: >
-    [Requirements Validation and Final Document Generation] Validate extracted requirements and generate professional requirements document.
+    [Requirements Enrichment] Validate completeness and add critical missing requirements.
 
     YOU WILL RECEIVE:
-    - requirements_json: {requirements_json} (all extracted requirements)
+    - requirements_json: {requirements_json} (extracted requirements from documents and instructions)
     - research_findings_json: {research_findings_json} (web research results)
-    - template: {template} (Markdown template for final document)
-    - Project: {project_name}
-
-    CRITICAL INSTRUCTIONS FOR DOCUMENT GENERATION:
-    You are generating the FINAL REQUIREMENTS DOCUMENT that will be presented to stakeholders.
-    This document MUST be:
-    - COMPLETE (all sections filled with real data)
-    - PROFESSIONAL (ready for stakeholder review)
-    - ACCURATE (based on actual extracted requirements)
-    - TRACEABLE (every requirement linked to source)
-
-    DO NOT USE PLACEHOLDER TEXT:
-    - NO "To be filled by analysis"
-    - NO "TBD" or "N/A" without explanation
-    - NO "Lorem ipsum" or generic examples
-    - If data is missing for a section, explicitly state what is missing and why
+    - business_context: {business_context} (domain, geography, industry info)
+    - project_name: {project_name}
 
     ═══════════════════════════════════════════════════════════
-    STEP 0 - VALIDATE COMPLETENESS FROM 4 SOURCES
+    STEP 1 - VALIDATE COMPLETENESS FROM 3 SOURCES
     ═══════════════════════════════════════════════════════════
 
-    Requirements should come from 4 SOURCES:
+    Requirements should come from 3 SOURCES:
 
-    SOURCE 1 - DOCUMENTS (from document_content):
+    SOURCE 1 - DOCUMENTS:
     ✅ Every major concept from documents has requirements
-    ✅ Quantitative data from documents is reflected
+    ✅ Quantitative data reflected
     ✅ Tools/systems mentioned have integration requirements
-    ✅ Pain points mentioned have solution requirements
-    ✅ Each has source citation with verbatim quote
+    ✅ Pain points have solution requirements
+    ✅ Each has source citation
 
-    SOURCE 2 - INSTRUCTIONS (from additional_instructions):
+    SOURCE 2 - INSTRUCTIONS:
     ✅ All requested features have FRs
     ✅ All modules described have FRs
-    ✅ All goals are addressable by requirements
-    ✅ Each cites the instruction text
+    ✅ All goals addressable by requirements
+    ✅ Each cites instruction text
 
     SOURCE 3 - INFERENCE + WEB RESEARCH:
     ✅ Technical infrastructure requirements present
-    ✅ Security/authentication if user data mentioned
-    ✅ Industry standards from web research referenced
-    ✅ Missing requirements from analogous systems addressed
-    ✅ Each has rationale explaining why it's necessary
+    ✅ Security/auth if user data mentioned
+    ✅ Industry standards referenced
+    ✅ Missing requirements from analogous systems
+    ✅ Each has rationale
 
-    SOURCE 4 - AI SUGGESTIONS:
-    ✅ Critical missing requirements suggested (5-10 requirements)
-    ✅ Each with source "suggested_by_ai"
-    ✅ Each with rationale explaining importance
-    ✅ Tailored to specific domain and scale
-    ✅ Focus on compliance, security, scalability, operational excellence
-
-    RED FLAGS (incomplete - reject and request fixes):
-    ❌ No mention of stakeholders/actors from documents
-    ❌ No requirements for volumes/metrics mentioned in documents
+    RED FLAGS (incomplete):
+    ❌ No stakeholders/actors from documents
+    ❌ No requirements for volumes/metrics mentioned
     ❌ Features from instructions ignored
-    ❌ Missing technical infrastructure (database, API, hosting)
-    ❌ No security requirements when sensitive data mentioned
-    ❌ Industry standards from research not incorporated
+    ❌ Missing technical infrastructure
+    ❌ No security when sensitive data mentioned
+    ❌ Industry standards not incorporated
 
     ═══════════════════════════════════════════════════════════
-    STEP 0.5 - VERIFY INPUTS WERE ACTUALLY USED
+    STEP 2 - VERIFY INPUTS WERE USED
     ═══════════════════════════════════════════════════════════
-
-    Before proceeding to quality validation, answer these critical questions:
 
     QUESTION 1: Does requirements_json mention SPECIFIC entities/data from documents?
-    - Example: If documents mention "Company X", "10,000 items", "CEO Name", are they referenced?
-    - Check: Are there concrete numbers, names, roles from the actual documents?
-    - ✓ YES → Proceed to STEP 1
-    - ✗ NO → REJECT with reason: "Requirements are too generic, not based on actual document content"
+    - Check: Concrete numbers, names, roles?
+    - ✓ YES → Continue
+    - ✗ NO → REJECT: "Requirements too generic"
 
-    QUESTION 2: Does requirements_json address ALL features from additional_instructions?
-    - Example: If instructions list 4 modules, are there FRs for all 4?
-    - Check: Every requested module/feature has corresponding requirements?
-    - ✓ YES → Proceed to STEP 1
-    - ✗ NO → REJECT with reason: "Requirements incomplete, missing features from instructions"
+    QUESTION 2: Does requirements_json address ALL features from instructions?
+    - Check: Every requested module/feature has requirements?
+    - ✓ YES → Continue
+    - ✗ NO → REJECT: "Requirements incomplete"
 
     QUESTION 3: Are there inferred technical requirements?
-    - Must include: Database/Storage, API/Backend, Security/Auth, Infrastructure/Hosting
-    - Check: At least 4-5 NFRs covering technical infrastructure
-    - ✓ YES → Proceed to STEP 1
-    - ✗ NO → REJECT with reason: "No technical requirements inferred, missing infrastructure planning"
+    - Must include: Database, API, Security, Infrastructure
+    - Check: At least 4-5 NFRs covering infrastructure
+    - ✓ YES → Continue
+    - ✗ NO → REJECT: "Missing infrastructure planning"
 
-    If ANY question answered NO:
-    - Set validation_status: "REJECTED"
-    - Return detailed explanation of what's missing
-    - Do NOT proceed to generate final document
-
-    STEP 1 - ADD CRITICAL MISSING REQUIREMENTS (AI SUGGESTIONS):
+    ═══════════════════════════════════════════════════════════
+    STEP 3 - ADD CRITICAL MISSING REQUIREMENTS (AI SUGGESTIONS)
+    ═══════════════════════════════════════════════════════════
 
     Based on requirements_json and business_context, ADD 5-10 production-critical requirements that are MISSING.
 
-    Analyze what's already there, then ADD requirements for:
+    ADD requirements for:
 
     1. LEGAL COMPLIANCE (if missing):
-       - IF Brazil context → LGPD compliance for data privacy
-       - IF EU context → GDPR compliance
-       - IF healthcare → regulatory compliance (ANVISA, HIPAA, etc.)
-       - Audit trail and compliance reporting
+       - IF Brazil → LGPD compliance
+       - IF EU → GDPR compliance
+       - IF healthcare → ANVISA, HIPAA
+       - Audit trail and reporting
 
     2. OPERATIONAL EXCELLENCE (if missing):
-       - Automated backup and disaster recovery with RTO/RPO
-       - System monitoring, alerting, and health checks
-       - Comprehensive logging for critical operations
-       - Error handling and recovery procedures
+       - Automated backup with RTO/RPO
+       - Monitoring, alerting, health checks
+       - Comprehensive logging
+       - Error handling and recovery
 
     3. SECURITY (if missing):
-       - Multi-factor authentication for admin access
+       - MFA for admin access
        - Rate limiting and DDoS protection
-       - Data encryption (at rest and in transit)
-       - Access control and authorization
+       - Data encryption (rest and transit)
+       - Access control
 
     4. PERFORMANCE & SCALABILITY (if missing):
-       - Caching strategy for frequently accessed data
-       - Database optimization and indexing
-       - Load balancing and horizontal scaling
-       - Performance benchmarks and SLAs
+       - Caching strategy
+       - Database optimization
+       - Load balancing
+       - Performance benchmarks
 
     5. USER EXPERIENCE (if missing):
-       - Mobile responsiveness or PWA support
-       - Accessibility compliance (WCAG)
+       - Mobile responsiveness
+       - Accessibility (WCAG)
        - Internationalization if multi-region
 
-    For EACH suggested requirement you ADD:
-    - Assign new ID: continue numbering from last requirement (e.g., if last FR is FR-008, start at FR-009)
+    For EACH suggested requirement:
+    - Assign new ID: continue numbering (e.g., FR-009, NFR-011)
     - Set source: "suggested_by_ai"
-    - Provide rationale: explain WHY this is critical for THIS specific domain and scale
-    - Set priority: "high" or "medium" based on domain criticality
-    - Reference standards: cite LGPD, ANVISA, industry standards when applicable
+    - Provide rationale: WHY critical for THIS domain
+    - Set priority: "high" or "medium"
+    - Reference standards: LGPD, ANVISA, etc.
 
-    IMPORTANT: Only ADD requirements that are ACTUALLY MISSING. Don't duplicate what's already in requirements_json.
+    IMPORTANT: Only ADD what's MISSING. Don't duplicate.
 
-    STEP 2 - QUALITY VALIDATION:
+  expected_output: >
+    JSON object with:
+    {
+      "validation_status": "APPROVED" or "REJECTED",
+      "validation_message": "explanation if rejected",
+      "enriched_requirements": {
+        "functional_requirements": [...all FRs including AI-suggested],
+        "non_functional_requirements": [...all NFRs including AI-suggested],
+        "business_rules": [...all BRs including AI-suggested]
+      },
+      "ai_suggested_count": {
+        "functional": number,
+        "non_functional": number,
+        "business_rules": number
+      },
+      "completeness_flags": {
+        "has_document_requirements": true/false,
+        "has_instruction_requirements": true/false,
+        "has_infrastructure_requirements": true/false,
+        "has_security_requirements": true/false,
+        "has_compliance_requirements": true/false
+      }
+    }
+
+validate_quality:
+  description: >
+    [Quality Validation] Review requirements quality, identify gaps, and assign severity.
+
+    YOU WILL RECEIVE:
+    - enriched_requirements: {enriched_requirements} (all requirements including AI suggestions)
+    - business_context: {business_context}
+    - project_name: {project_name}
+
+    ═══════════════════════════════════════════════════════════
+    STEP 1 - QUALITY VALIDATION
+    ═══════════════════════════════════════════════════════════
+
     Review all requirements (original + suggested) for quality issues:
 
     (a) AMBIGUOUS LANGUAGE:
@@ -748,7 +756,9 @@ validate_requirements:
         - Check priority is assigned
         - Ensure dependencies are mapped
 
-    STEP 3 - COMPLETENESS EVALUATION:
+    ═══════════════════════════════════════════════════════════
+    STEP 2 - COMPLETENESS EVALUATION
+    ═══════════════════════════════════════════════════════════
 
     (a) INFORMATION SUFFICIENCY:
         Assess if extracted information is sufficient for development to begin.
@@ -774,31 +784,110 @@ validate_requirements:
         - Mobile: offline mode, push notifications, app permissions, device compatibility
         - Data platform: data pipeline, ETL, data quality, backup/recovery
 
-    STEP 4 - ASSIGN SEVERITY TO ISSUES:
+    ═══════════════════════════════════════════════════════════
+    STEP 3 - ASSIGN SEVERITY TO ISSUES
+    ═══════════════════════════════════════════════════════════
+
     For each issue found, assign severity:
     - CRITICAL: Blocks development, security risk, regulatory violation
     - HIGH: Significant impact on functionality or quality
     - MEDIUM: Affects user experience or development efficiency
     - LOW: Minor issue, cosmetic, or nice-to-have improvement
 
-    STEP 5 - GENERATE FINAL MARKDOWN DOCUMENT:
-    Use the provided template and fill ALL sections with REAL DATA from requirements_json and research_findings_json.
+  expected_output: >
+    JSON object with:
+    {
+      "valid_requirements": [...requirements with quality scores],
+      "issues_found": [
+        {
+          "type": "ambiguous|conflict|testability|completeness|traceability",
+          "severity": "critical|high|medium|low",
+          "description": "detailed description",
+          "affected_requirement_id": "FR-001",
+          "recommended_fix": "suggestion",
+          "example_correction": "example"
+        }
+      ],
+      "quality_scores": {
+        "completeness_score": 0-100,
+        "clarity_score": 0-100,
+        "consistency_score": 0-100,
+        "testability_score": 0-100,
+        "traceability_score": 0-100
+      },
+      "completeness_breakdown": {
+        "functional_requirements": 0-100,
+        "non_functional_requirements": 0-100,
+        "business_rules": 0-100,
+        "actors": 0-100,
+        "entities": 0-100,
+        "workflows": 0-100
+      },
+      "coverage_analysis": {
+        "covered_areas": [...],
+        "missing_areas": [...]
+      },
+      "critical_gaps": [
+        {
+          "gap_type": "missing_functional_area|missing_nfr|undefined_actor",
+          "severity": "critical|high",
+          "description": "what's missing",
+          "impact": "impact on development",
+          "justification": "why critical"
+        }
+      ],
+      "information_requests": [
+        {
+          "question": "specific question",
+          "priority": "high|medium|low",
+          "affected_requirements": ["FR-001"],
+          "why_critical": "explanation"
+        }
+      ],
+      "application_type_checklist": {
+        "identified_type": "web|api|mobile|data_platform",
+        "required_items": [...],
+        "covered_items": [...],
+        "missing_items": [...]
+      }
+    }
 
-    INDICADORES DE ORIGEM (CRITICAL - MUST IMPLEMENT):
+generate_document:
+  description: >
+    [Document Generation] Generate final professional requirements document with validation results.
 
-    Adicione coluna "Origem" em TODAS as tabelas de requisitos mostrando de onde veio cada requisito.
+    YOU WILL RECEIVE:
+    - enriched_requirements: {enriched_requirements} (all requirements)
+    - quality_validation: {quality_validation} (quality scores, issues, gaps)
+    - research_findings_json: {research_findings_json} (web research)
+    - template: {template} (Markdown template)
+    - project_name: {project_name}
 
-    MAPEAMENTO DE INDICADORES:
+    CRITICAL INSTRUCTIONS:
+    This is the FINAL REQUIREMENTS DOCUMENT for stakeholders.
+    Must be COMPLETE, PROFESSIONAL, ACCURATE, and TRACEABLE.
+
+    DO NOT USE PLACEHOLDER TEXT:
+    - NO "To be filled by analysis"
+    - NO "TBD" or "N/A" without explanation
+    - If data is missing, state what's missing and why
+
+    ═══════════════════════════════════════════════════════════
+    INDICADORES DE ORIGEM (CRITICAL - MUST IMPLEMENT)
+    ═══════════════════════════════════════════════════════════
+
+    Add "Origem" column to ALL requirement tables:
+
+    MAPPING:
     - source "from_document" → 🔴 RED (Requisito Extraído do Documento)
     - source "from_instructions" → 📘 REI (Requisito Extraído das Instruções)
     - source "inferred" → 🔧 RI (Requisito Inferido pelo LLM)
     - source "from_web_research" → 🌐 RW (Requisito da Web Research)
     - source "suggested_by_ai" → 🤖 RIA (Requisito sugerido pela IA)
 
-    FORMATO: emoji + espaço + sigla (exemplo: "🔴 RED", "📘 REI", "🤖 RIA")
+    FORMAT: emoji + space + abbreviation (e.g., "🔴 RED", "📘 REI")
 
-    LEGENDA OBRIGATÓRIA:
-    Adicione ANTES da Seção 3.1 (primeira tabela de requisitos):
+    LEGEND (add BEFORE Section 3.1):
 
     ### Legenda de Indicadores de Origem
 
@@ -812,9 +901,9 @@ validate_requirements:
 
     ---
 
-    ESTRUTURA DAS SEÇÕES DE REQUISITOS (CRITICAL - ORGANIZE BY SOURCE):
-
-    ORGANIZE CADA TIPO DE REQUISITO EM SUBSEÇÕES POR ORIGEM:
+    ═══════════════════════════════════════════════════════════
+    STRUCTURE - ORGANIZE BY SOURCE
+    ═══════════════════════════════════════════════════════════
 
     ## 3. Requisitos Funcionais (FR)
 
@@ -847,14 +936,14 @@ validate_requirements:
 
     ### 3.4 Requisitos da Pesquisa Web (🌐 RW)
 
-    SE HOUVER requisitos com source="from_web_research":
+    IF requirements with source="from_web_research":
     | ID | Origem | Nome | Descrição | Prioridade | Atores | Dependências | Critérios |
     |----|--------|------|-----------|------------|--------|--------------|-----------|
     | FR-015 | 🌐 RW | ... | ... | ... | ... | ... | ... |
 
     **Total: W requisitos da web**
 
-    SE NÃO HOUVER requisitos com source="from_web_research":
+    IF NO requirements with source="from_web_research":
     ⚠️ **A pesquisa web foi realizada, mas não identificou requisitos funcionais adicionais relevantes para este domínio específico. A análise web focou em melhores práticas e padrões (ver Seção 13).**
 
     ---
@@ -869,47 +958,47 @@ validate_requirements:
     ---
 
     ### 3.6 CONSOLIDADO - Todos os Requisitos Funcionais
-    (Tabela única com TODOS os FRs ordenados por ID, incluindo coluna Origem)
+    (Single table with ALL FRs ordered by ID, including Origem column)
 
     **Total Geral: XX requisitos funcionais**
 
-    APLIQUE A MESMA ESTRUTURA PARA:
-    - Seção 4 (Requisitos Não-Funcionais): 4.1=RED, 4.2=REI, 4.3=RI, 4.4=RW, 4.5=RIA, 4.6=Consolidado
-    - Seção 5 (Regras de Negócio): 5.1=RED, 5.2=REI, 5.3=RI, 5.4=RW, 5.5=RIA, 5.6=Consolidado
+    APPLY SAME STRUCTURE FOR:
+    - Section 4 (Non-Functional Requirements): 4.1=RED, 4.2=REI, 4.3=RI, 4.4=RW, 4.5=RIA, 4.6=Consolidado
+    - Section 5 (Business Rules): 5.1=RED, 5.2=REI, 5.3=RI, 5.4=RW, 5.5=RIA, 5.6=Consolidado
 
-    TEMPLATE FILLING RULES:
-    - Replace placeholder PROJECT_NAME with actual project name from requirements
-    - Fill placeholder PROJECT_DOMAIN with domain identified from requirements
-    - Populate all requirement lists with actual requirements from requirements_json
-    - Add ORIGEM column with indicators based on source field (🔴 RED, 📘 REI, 🔧 RI, 🌐 RW, 🤖 RIA)
-    - Generate mermaid diagrams based on actual data (entity relationships, workflows, dependencies)
-    - Use research findings to populate "Best Practices" and "Standards" sections
-    - Fill compliance checklist with actual compliance needs from research
-    - Add actual glossary terms found in documents
-    - Populate metadata sections with real processing statistics
+    ═══════════════════════════════════════════════════════════
+    TEMPLATE FILLING RULES
+    ═══════════════════════════════════════════════════════════
 
-    CONTEXT AND JUSTIFICATION SECTION (Section 1.2):
-    Use business_context from requirements_json to create a RICH, DETAILED context section:
+    - Replace PROJECT_NAME with actual project name
+    - Fill PROJECT_DOMAIN with identified domain
+    - Populate all requirement lists with actual requirements
+    - Add ORIGEM column with indicators (🔴 RED, 📘 REI, 🔧 RI, 🌐 RW, 🤖 RIA)
+    - Generate mermaid diagrams with actual data (entities, workflows, dependencies)
+    - Use research findings for "Best Practices" and "Standards" sections
+    - Fill compliance checklist with actual compliance needs
+    - Add actual glossary terms from documents
+    - Populate metadata sections with real statistics
 
-    - Geographic Scope: List all countries, states, regions, cities from geographic_scope
-      Example: "The system will operate primarily in Bahia, Sergipe, and Alagoas states in Brazil, with potential expansion to other Brazilian states."
+    ═══════════════════════════════════════════════════════════
+    CONTEXT AND JUSTIFICATION SECTION (Section 1.2)
+    ═══════════════════════════════════════════════════════════
 
-    - Industry Context: Use industry, company_type, products_services, target_market
-      Example: "Farmac is a distributor of laboratory reagents and clinical analysis equipment, operating in the healthcare sector with focus on B2G (business-to-government) procurement."
+    Use business_context to create RICH, DETAILED context:
 
-    - Regulatory Environment: List regulatory_bodies and related compliance needs
-      Example: "All products must comply with ANVISA (Agência Nacional de Vigilância Sanitária) regulations, requiring management of approximately 10,000 product registrations."
+    - Geographic Scope: All countries, states, regions, cities from geographic_scope
+    - Industry Context: industry, company_type, products_services, target_market
+    - Regulatory Environment: regulatory_bodies and compliance needs
+    - Domain Specifics: domain_terminology with definitions
+    - Business Scale: quantitative_data
 
-    - Domain Specifics: Include domain_terminology with definitions
-      Example: "The system operates in the public procurement domain, handling processes such as 'licitações' (public tenders), 'comodato' (equipment loan contracts combined with consumables), and 'editais' (procurement notices)."
+    If business_context missing: "Context information is limited. Additional stakeholder interviews recommended."
 
-    - Business Scale: Use quantitative_data
-      Example: "Current operation involves a team of 2-3 people managing procurement processes, with a product portfolio of approximately 10,000 ANVISA-registered items."
+    ═══════════════════════════════════════════════════════════
+    QUALITY CHECKS
+    ═══════════════════════════════════════════════════════════
 
-    If business_context is missing or incomplete, state: "Context information is limited. Additional stakeholder interviews recommended to understand full business scope."
-
-    QUALITY CHECKS FOR GENERATED DOCUMENT:
-    - Minimum 20 requirements total (unless source documents were very small)
+    - Minimum 20 requirements total (unless documents very small)
     - Every requirement has source citation
     - Every technical term in glossary
     - All mermaid diagrams use real entity/requirement names
@@ -917,33 +1006,35 @@ validate_requirements:
     - No placeholder text remaining
 
   expected_output: >
-    RETURN ONLY VALID JSON. Do NOT add markdown code blocks (```json). Do NOT add explanatory text after the JSON.
+    RETURN ONLY VALID JSON. Do NOT add markdown code blocks. Do NOT add explanatory text after JSON.
 
-    JSON validation report structure:
     {
-      "valid_requirements": [...],
-      "issues_found": [...],
-      "quality_scores": {...},
-      "completeness_breakdown": {...},
-      "coverage_analysis": {...},
-      "critical_gaps": [...],
-      "information_requests": [...],
-      "application_type_checklist": {...},
-      "requirements_document_md": "# COMPLETE Markdown document here..."
+      "requirements_document_md": "# COMPLETE Markdown document here...",
+      "document_metadata": {
+        "total_requirements": number,
+        "functional_count": number,
+        "non_functional_count": number,
+        "business_rules_count": number,
+        "pages_estimated": number,
+        "completeness_score": 0-100
+      },
+      "quality_summary": {
+        "overall_quality_score": 0-100,
+        "critical_issues_count": number,
+        "high_issues_count": number,
+        "medium_issues_count": number,
+        "low_issues_count": number
+      },
+      "source_distribution": {
+        "from_documents": number,
+        "from_instructions": number,
+        "inferred": number,
+        "from_web_research": number,
+        "suggested_by_ai": number
+      }
     }
 
-    Fields specification:
-    (1) 'valid_requirements': array of approved requirements with quality scores
-    (2) 'issues_found': array with type, severity (critical/high/medium/low), description, affected_requirement_id, recommended_fix, example_correction
-    (3) 'quality_scores': completeness_score (0-100), clarity_score (0-100), consistency_score (0-100), testability_score (0-100), traceability_score (0-100)
-    (4) 'completeness_breakdown': scores for functional_requirements, non_functional_requirements, business_rules, actors, entities, workflows separately
-    (5) 'coverage_analysis': which functional areas are covered, which are missing
-    (6) 'critical_gaps': array of missing critical requirements/information with severity, impact, justification
-    (7) 'information_requests': array of specific questions to stakeholders with priority, affected_requirements, why_critical
-    (8) 'application_type_checklist': coverage of standard requirements for the identified application type
-    (9) 'requirements_document_md': COMPLETE Markdown document following template, all sections filled with real data, no placeholders, ready for stakeholder review
-
-    CRITICAL: The requirements_document_md field MUST contain the complete document. Do NOT return empty string or placeholders.
+    CRITICAL: requirements_document_md field MUST contain complete document. NO empty strings or placeholders.
 
 generate_specification:
   description: >
