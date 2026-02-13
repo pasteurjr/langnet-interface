@@ -699,12 +699,23 @@ def validate_requirements_input_func(state: LangNetFullState) -> Dict[str, Any]:
         "abbreviations_table": default_placeholder
     }
 
+    # ========== FIX: Format template with actual values BEFORE sending to LLM ==========
+    # This ensures dates are correct and not invented by the LLM
+    try:
+        formatted_template = template.format(**template_vars)
+        print(f"[TEMPLATE] ✅ Template formatado com {len(template_vars)} variáveis")
+        print(f"[TEMPLATE] 📅 Data de geração: {template_vars['generation_date']}")
+        print(f"[TEMPLATE] 📅 Data da análise: {template_vars['analysis_date']}")
+    except KeyError as e:
+        print(f"[TEMPLATE] ⚠️ Erro ao formatar template: {e}")
+        formatted_template = template  # Fallback to unformatted
+
     return {
         "requirements_json": state.get("requirements_json", "{}"),
         "research_findings_json": state.get("research_findings_json", "{}"),
         "document_content": state.get("document_content", ""),  # BUG FIX: Add document content for LLM context
         "additional_instructions": state.get("additional_instructions", ""),  # BUG FIX: Add instructions for LLM context
-        "template": template,
+        "template": formatted_template,  # ← Template já formatado com datas corretas
         **template_vars  # Spread all template variables
     }
 
