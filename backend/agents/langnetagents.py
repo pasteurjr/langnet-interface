@@ -1349,9 +1349,18 @@ def generate_document_output_func(state: LangNetFullState, result: Any) -> LangN
         output_json = str(result)
 
     print(f"[DEBUG] output_json length: {len(output_json)}")
+    print(f"[DEBUG] output_json preview (first 500 chars): {output_json[:500]}")
 
     try:
         parsed = json.loads(output_json)
+        print(f"[DEBUG] Parsed type: {type(parsed)}")
+        if isinstance(parsed, dict):
+            print(f"[DEBUG] Parsed keys: {list(parsed.keys())}")
+            print(f"[DEBUG] Has 'requirements_document_md' key: {'requirements_document_md' in parsed}")
+            if 'requirements_document_md' in parsed:
+                print(f"[DEBUG] requirements_document_md type: {type(parsed['requirements_document_md'])}")
+                print(f"[DEBUG] requirements_document_md length: {len(str(parsed['requirements_document_md']))}")
+
         # Handle nested team_result if present
         if isinstance(parsed, dict) and "team_result" in parsed:
             team_result_str = parsed["team_result"]
