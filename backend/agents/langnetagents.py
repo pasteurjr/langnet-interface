@@ -1388,13 +1388,80 @@ def generate_document_output_func(state: LangNetFullState, result: Any) -> LangN
     requirements_doc_md = ""
     if isinstance(parsed, dict):
         requirements_doc_md = parsed.get("requirements_document_md", "")
-    
+
     print(f"[DEBUG] FINAL requirements_doc_md length: {len(requirements_doc_md)}")
     if requirements_doc_md:
         print(f"[DEBUG] FINAL requirements_doc_md preview:\n{requirements_doc_md[:300]}")
     else:
         print(f"[DEBUG] ⚠️  WARNING: requirements_document_md is EMPTY!")
     print(f"{'='*80}\n")
+
+    # ─── BUILD REFERENCES SECTION (100% Python, zero LLM cost) ─────────────────
+    if requirements_doc_md:
+        from datetime import datetime
+
+        ref_lines = [
+            "\n\n---\n",
+            "## 📚 Referências\n"
+        ]
+
+        # 16.1 — Source documents
+        doc_path = state.get("document_path", "")
+        doc_names = []
+        if doc_path.startswith("Multiple documents: "):
+            raw = doc_path.replace("Multiple documents: ", "")
+            doc_names = [d.strip() for d in raw.split(",") if d.strip()]
+        elif doc_path:
+            doc_names = [doc_path.strip()]
+
+        if doc_names:
+            ref_lines.append("\n### 16.1 Documentos Analisados\n")
+            ref_lines.append("| # | Documento |")
+            ref_lines.append("|---|-----------|")
+            for i, name in enumerate(doc_names, 1):
+                ref_lines.append(f"| {i} | {name} |")
+            ref_lines.append(f"\n*Analisados em: {datetime.now().strftime('%d/%m/%Y %H:%M')}*")
+
+        # 16.2 — Web sources
+        research_json = state.get("research_findings_json", "{}")
+        try:
+            research = json.loads(research_json) if isinstance(research_json, str) else research_json
+        except (json.JSONDecodeError, TypeError):
+            research = {}
+
+        web_sources = []
+        seen_urls = set()
+
+        def add_source(name, url):
+            if url and url not in seen_urls and url.startswith("http"):
+                seen_urls.add(url)
+                web_sources.append((name, url))
+
+        for sys_item in research.get("analogous_systems", []):
+            add_source(sys_item.get("name", "Sistema"), sys_item.get("source_url", ""))
+
+        for bp in research.get("best_practices", []):
+            add_source(bp.get("title", bp.get("source", "Referência")), bp.get("url", bp.get("source_url", "")))
+
+        for comp in research.get("compliance_requirements", []):
+            add_source(comp.get("standard", comp.get("name", "Norma")), comp.get("source_url", comp.get("url", "")))
+
+        for tech in research.get("recommended_technologies", []):
+            add_source(tech.get("name", "Tecnologia"), tech.get("source_url", tech.get("url", "")))
+
+        if web_sources:
+            ref_lines.append("\n### 16.2 Fontes Web Consultadas\n")
+            ref_lines.append("| # | Fonte | URL |")
+            ref_lines.append("|---|-------|-----|")
+            for i, (name, url) in enumerate(web_sources, 1):
+                ref_lines.append(f"| {i} | {name} | [{url}]({url}) |")
+        elif research:
+            ref_lines.append("\n### 16.2 Pesquisa Web\n")
+            ref_lines.append("*Pesquisa web realizada sem URLs externas rastreáveis nos resultados.*")
+
+        requirements_doc_md += "\n".join(ref_lines)
+        print(f"[REFS] ✅ Seção de referências adicionada: {len(doc_names)} documentos, {len(web_sources)} fontes web")
+    # ────────────────────────────────────────────────────────────────────────────
 
     updated_state = {
         **state,
