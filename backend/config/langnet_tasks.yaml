@@ -1321,111 +1321,26 @@ research_specification_context:
     - serpapi_search_tool
     - serper_search_tool
 
-compose_specification_sections:
+
+compose_spec_use_cases:
   description: >
-    [Specification Composition] Generate ALL 14 sections of functional specification document.
+    [Spec Use Cases] Generate detailed Use Cases - section 5 of functional specification.
 
     YOU RECEIVE:
-    - entities_json: {entities_json} (extracted entities with context_ids)
-    - research_context_json: {research_context_json} (web research findings: standards, compliance, best practices)
+    - entities_json: {entities_json} (extracted entities with functional requirements, business rules, actors)
     - requirements_document: {requirements_document}
     - project_name: {project_name}
-    - requirements_version: {requirements_version}
-    - requirements_created_at: {requirements_created_at}
-    - detail_level: {detail_level}
-    - target_audience: {target_audience}
 
-    IMPORTANT: Use research_context_json to enrich the specification with:
-    - References to applicable technical standards in section 2 (Scope)
-    - Compliance requirements in sections 6 (Security) and 10 (Constraints)
-    - Industry best practices throughout the document
-    - Reference architectures when describing system components
+    YOUR TASK: Generate ONLY Section 5 - Casos de Uso (Use Cases).
 
     ═══════════════════════════════════════════════════════════
-    DOCUMENT STRUCTURE - ALL 14 SECTIONS MANDATORY
+    USE CASES - SECTION 5 REQUIREMENTS
     ═══════════════════════════════════════════════════════════
 
-    Generate each section in Markdown format following this structure:
+    Analyze entities_json to identify actors and main functional requirements.
+    Generate a MINIMUM of 10 detailed Use Cases.
 
-    # Especificação Funcional - {project_name}
-
-    **Versão:** 1.0
-    **Data:** {requirements_created_at}
-    **Baseado em:** Requisitos v{requirements_version}
-
-    ---
-
-    ## 1. Introdução
-
-    ### 1.1 Objetivo do Documento
-    Descrever o propósito desta especificação funcional.
-
-    ### 1.2 Escopo do Sistema
-    Definir claramente o que está dentro e fora do escopo.
-
-    ### 1.3 Definições, Acrônimos e Abreviações
-    Listar termos importantes para entendimento do documento.
-
-    ### 1.4 Referências
-    - Documento de Requisitos v{requirements_version}
-
-    ---
-
-    ## 2. Visão Geral do Sistema
-
-    ### 2.1 Perspectiva do Sistema
-    ### 2.2 Principais Funcionalidades
-    ### 2.3 Usuários e Características
-    ### 2.4 Restrições Gerais
-    ### 2.5 Premissas e Dependências
-
-    ---
-
-    ## 3. Requisitos Funcionais Detalhados
-
-    Para CADA RF do entities_json, gerar:
-
-    **RF-XXX: [Nome do Requisito]**
-    - **Descrição:** [Descrição completa]
-    - **Prioridade:** [Alta/Média/Baixa]
-    - **Origem:** [context_id - Rastreamento para documento de requisitos]
-    - **Critérios de Aceitação:**
-      1. [Critério mensurável 1]
-      2. [Critério mensurável 2]
-    - **Regras de Negócio Associadas:** [RN-XXX, RN-YYY]
-    - **Dependências:** [FR-AAA, FR-BBB]
-
-    ---
-
-    ## 4. Requisitos Não-Funcionais
-
-    ### 4.1 Requisitos de Performance
-    ### 4.2 Requisitos de Segurança
-    ### 4.3 Requisitos de Usabilidade
-    ### 4.4 Requisitos de Confiabilidade
-    ### 4.5 Requisitos de Manutenibilidade
-
-    ---
-
-    ## 5. Casos de Uso
-
-    ⚠️ INSTRUÇÕES CRÍTICAS PARA CASOS DE USO:
-    1. Criar UC para CADA requisito funcional principal (MÍNIMO 10 UCs)
-    2. CADA UC DEVE ter:
-       - 5-10 passos detalhados no fluxo principal
-       - 2-3 fluxos alternativos completos
-       - 2-3 fluxos de exceção com tratamento
-       - Pré-condições e pós-condições específicas
-    3. NÃO resumir - detalhar CADA passo com ações concretas
-    4. Incluir interações de UI quando aplicável
-    5. Referenciar TODOS os RFs relacionados
-
-    ### 5.1 Diagrama de Casos de Uso
-    [Lista de todos os atores e casos de uso]
-
-    ### 5.2 Especificação Detalhada de Casos de Uso
-
-    Para CADA caso de uso (MÍNIMO 10):
+    For EACH use case:
 
     **UC-XXX: [Nome do Caso de Uso]**
     - **Ator Principal:** [Nome do perfil de usuário]
@@ -1442,8 +1357,8 @@ compose_specification_sections:
       5. [Ator] [Confirmação ou próxima interação]
       6. ...
     - **Fluxos Alternativos:** (MÍNIMO 2)
-      - A1. [Condição]: [Descrição do fluxo alternativo completo]
-      - A2. [Condição]: [Descrição do fluxo alternativo completo]
+      - A1. [Condição]: [Descrição completa do fluxo alternativo]
+      - A2. [Condição]: [Descrição completa do fluxo alternativo]
     - **Fluxos de Exceção:** (MÍNIMO 2)
       - E1. [Erro/Problema]: [Como o sistema trata, mensagem exibida]
       - E2. [Erro/Problema]: [Tratamento e recuperação]
@@ -1454,10 +1369,103 @@ compose_specification_sections:
     - **Requisitos Relacionados:** [RF-XXX, RF-YYY, RNF-ZZZ]
     - **Origem:** [context_id]
 
+    ═══════════════════════════════════════════════════════════
+    CRITICAL RULES
+    ═══════════════════════════════════════════════════════════
+
+    - MINIMUM 10 detailed use cases with MINIMUM 5-10 steps each
+    - EVERY UC must have context_id for traceability
+    - NEVER invent actors not present in entities_json
+    - All flows must be concrete and specific, not generic
+    - Use pt-BR language, no first person
+
+    SCHEMA OUTPUT REQUIRED - Return ONLY valid JSON.
+
+  expected_output: >
+    Return a JSON object with these fields:
+
+    use_cases: array of UC objects, each with fields id (string UC-XXX), title, actor_main,
+    actors_secondary (array), objective, preconditions (array), main_flow (array of step objects
+    with step_number and description), alternative_flows (array with condition and flow),
+    exception_flows (array with error and handling), postconditions (array),
+    business_rules (array of RN-XXX strings), related_requirements (array of RF-XXX strings),
+    context_id (string)
+
+    use_cases_count: total number of use cases generated
+
+    use_cases_with_min_steps: number of use cases with at least 5 main flow steps
+
+    actors_identified: array of actor names
+
+    gaps: array of objects with fields uc_id, description, question
+
+  tools: []
+
+
+compose_spec_document:
+  description: >
+    [Spec Document] Generate functional specification sections 1-4 and 6-14.
+
+    YOU RECEIVE:
+    - entities_json: {entities_json} (extracted entities with context_ids)
+    - research_context_json: {research_context_json} (web research: standards, compliance, best practices)
+    - use_cases_json: {use_cases_json} (pre-generated use cases from compose_spec_use_cases)
+    - project_name: {project_name}
+    - requirements_version: {requirements_version}
+    - requirements_created_at: {requirements_created_at}
+    - detail_level: {detail_level}
+    - target_audience: {target_audience}
+
+    YOUR TASK: Generate sections 1-4 and 6-14. Section 5 (Use Cases) is already in use_cases_json.
+
+    IMPORTANT: Use research_context_json to enrich specification with standards and best practices.
+
+    ═══════════════════════════════════════════════════════════
+    DOCUMENT STRUCTURE - SECTIONS 1-4 AND 6-14
+    ═══════════════════════════════════════════════════════════
+
+    # Especificação Funcional - {project_name}
+
+    **Versão:** 1.0
+    **Data:** {requirements_created_at}
+    **Baseado em:** Requisitos v{requirements_version}
+
+    ---
+
+    ## 1. Introdução
+    ### 1.1 Objetivo do Documento
+    ### 1.2 Escopo do Sistema
+    ### 1.3 Definições, Acrônimos e Abreviações
+    ### 1.4 Referências (include Requisitos v{requirements_version})
+
+    ---
+
+    ## 2. Visão Geral do Sistema
+    ### 2.1 Perspectiva do Sistema
+    ### 2.2 Principais Funcionalidades
+    ### 2.3 Usuários e Características
+    ### 2.4 Restrições Gerais
+    ### 2.5 Premissas e Dependências
+
+    ---
+
+    ## 3. Requisitos Funcionais Detalhados
+    Para CADA RF do entities_json:
+    **RF-XXX: [Nome]** - Descrição, Prioridade, Origem (context_id),
+    Critérios de Aceitação, Regras de Negócio Associadas, Dependências
+
+    ---
+
+    ## 4. Requisitos Não-Funcionais
+    ### 4.1 Requisitos de Performance
+    ### 4.2 Requisitos de Segurança
+    ### 4.3 Requisitos de Usabilidade
+    ### 4.4 Requisitos de Confiabilidade
+    ### 4.5 Requisitos de Manutenibilidade
+
     ---
 
     ## 6. Modelo de Dados Conceitual
-
     ### 6.1 Entidades Principais
     ### 6.2 Relacionamentos
     ### 6.3 Atributos Principais
@@ -1466,7 +1474,6 @@ compose_specification_sections:
     ---
 
     ## 7. Interfaces do Sistema
-
     ### 7.1 Interfaces de Usuário
     ### 7.2 Interfaces de Hardware
     ### 7.3 Interfaces de Software (APIs)
@@ -1475,21 +1482,13 @@ compose_specification_sections:
     ---
 
     ## 8. Regras de Negócio
-
     Para CADA RN do entities_json:
-
-    **RN-XXX: [Nome da Regra]**
-    - **Descrição:** [Regra detalhada]
-    - **Condições:** [Quando se aplica]
-    - **Ações:** [O que deve acontecer]
-    - **Validações:** [Verificações necessárias]
-    - **Requisitos Relacionados:** [RF-XXX]
-    - **Origem:** [context_id]
+    **RN-XXX: [Nome]** - Descrição, Condições, Ações, Validações,
+    Requisitos Relacionados (RF-XXX), Origem (context_id)
 
     ---
 
     ## 9. Fluxos de Trabalho
-
     ### 9.1 Processos Principais
     ### 9.2 Interações entre Componentes
     ### 9.3 Sequências Críticas
@@ -1497,19 +1496,17 @@ compose_specification_sections:
     ---
 
     ## 10. Análise de Arquitetura Preliminar
-
     ### 10.1 Componentes e Serviços Necessários
     ### 10.2 Padrões de Interação
     ### 10.3 Integrações Externas
     ### 10.4 Considerações de Performance
     ### 10.5 Considerações de Segurança
     ### 10.6 Considerações de Escalabilidade
-    ### 10.7 Tecnologias Recomendadas
+    ### 10.7 Tecnologias Recomendadas (from research_context_json)
 
     ---
 
     ## 11. Controle de Qualidade
-
     ### 11.1 Critérios de Aceitação Gerais
     ### 11.2 Estratégia de Testes
     ### 11.3 Riscos Identificados
@@ -1518,14 +1515,11 @@ compose_specification_sections:
     ---
 
     ## 12. Glossário
-
-    Lista alfabética de termos técnicos e de domínio:
-    **[Termo]:** [Definição clara e concisa]
+    Lista alfabética de termos técnicos: **[Termo]:** [Definição]
 
     ---
 
     ## 13. Rastreabilidade
-
     ### 13.1 Matriz de Rastreabilidade
     | Requisito Original | Seção | RF | UC | RN |
     |--------------------|-------|----|----|-----|
@@ -1534,23 +1528,21 @@ compose_specification_sections:
     ---
 
     ## 14. Apêndices
-
     ### 14.1 Histórico de Versões
     | Versão | Data | Descrição | Autor |
     |--------|------|-----------|-------|
     | 1.0 | {requirements_created_at} | Versão inicial | Sistema |
-
     ### 14.2 Aprovações
 
     ═══════════════════════════════════════════════════════════
     CRITICAL RULES
     ═══════════════════════════════════════════════════════════
 
-    - ALL 14 sections are MANDATORY
+    - ALL sections 1-4 and 6-14 are MANDATORY
     - EVERY item must have context_id for traceability
-    - MINIMUM 10 detailed use cases with 5-10 steps each
     - NEVER invent information not in entities_json
     - If information missing, mark as GAP with question
+    - Include use_cases_json reference in section 5 position
     - Use pt-BR language, no first person
 
     SCHEMA OUTPUT REQUIRED - Return ONLY valid JSON.
@@ -1558,21 +1550,22 @@ compose_specification_sections:
   expected_output: >
     Return a JSON object with these fields:
 
-    sections: array of 14 section objects, each with fields number, title, content (Markdown text), subsections array, context_ids array, status (complete or partial or gap)
+    sections: array of 14 section objects, each with fields number, title, content (Markdown text),
+    subsections array, context_ids array, status (complete or partial or gap)
 
-    document_md: the complete Markdown document as a single string
+    document_md: the complete Markdown document as a single string with all 14 sections
+    (section 5 content from use_cases_json inserted in correct position)
 
-    use_cases_count: total number of use cases generated
-
-    use_cases_with_min_steps: number of use cases with at least 5 steps
-
-    business_rules_count: total number of business rules
+    business_rules_count: total business rules documented
 
     traceability_entries: number of entries in traceability matrix
 
     gaps: array of gap objects with fields section (number), description, question
 
-    generation_summary: object with fields total_sections (14), complete_sections, partial_sections, gap_sections, total_words (all numbers)
+    generation_summary: object with fields total_sections (14), complete_sections,
+    partial_sections, gap_sections, total_words (all numbers)
+
+  tools: []
 
 verify_specification_grounding:
   description: >
@@ -1744,103 +1737,109 @@ validate_specification_compliance:
 
     minimum_requirements_check: object with fields use_cases_count, use_cases_with_min_steps, use_cases_with_alt_flows, use_cases_with_exc_flows (all numbers), and traceability_complete (boolean)
 
-format_final_specification:
+
+apply_spec_corrections:
   description: >
-    [Final Formatting] Generate final Markdown document with fallback.
+    [Spec Corrections] Apply verification and compliance corrections to specification sections.
 
     YOU RECEIVE:
     - draft_sections_json: {draft_sections_json}
     - verification_results_json: {verification_results_json}
     - compliance_results_json: {compliance_results_json}
-    - project_name: {project_name}
-    - requirements_version: {requirements_version}
-    - requirements_created_at: {requirements_created_at}
 
-    YOUR TASK: Produce the final formatted specification document.
+    YOUR TASK: Apply ALL corrections identified during verification and compliance checks.
 
     ═══════════════════════════════════════════════════════════
-    FORMATTING TASKS
+    CORRECTION TASKS
     ═══════════════════════════════════════════════════════════
 
-    1. APPLY CORRECTIONS:
-       - Fix all compliance violations from compliance_results_json
-       - Remove or mark unsupported items from verification_results_json
-       - Move extrapolations to gaps section
-       - Fix broken references
+    1. APPLY VERIFICATION CORRECTIONS from verification_results_json:
+       - Remove or mark unsupported items (extrapolations)
+       - Move ungrounded claims to gaps section
+       - Fix broken cross-references between sections
 
-    2. NORMALIZE STRUCTURE:
+    2. APPLY COMPLIANCE CORRECTIONS from compliance_results_json:
+       - Fix all compliance violations
+       - Ensure all use cases meet minimums (5+ steps, 2+ alternatives, 2+ exceptions)
+       - Verify all RFs have acceptance criteria and context_id traceability
+
+    3. NORMALIZE STRUCTURE:
        - Consistent heading levels (## for sections, ### for subsections)
        - Sequential numbering (1., 2., 3., ...)
        - Tables properly aligned
        - Lists properly formatted
-       - Code blocks for technical content
 
-    3. ADD METADATA:
-       - Document version
-       - Generation date
-       - Requirements reference
-       - trace_id for audit trail
+    ═══════════════════════════════════════════════════════════
+    CRITICAL RULES
+    ═══════════════════════════════════════════════════════════
 
-    4. GENERATE FINAL DOCUMENT:
-       Start with header:
-       ```markdown
+    - NEVER invent content to fill gaps - use explicit GAP markers
+    - Preserve all valid content from draft_sections_json
+    - Document every correction made with location, original, corrected
+
+    SCHEMA OUTPUT REQUIRED - Return ONLY valid JSON.
+
+  expected_output: >
+    Return a JSON object with these fields:
+
+    corrected_sections: array of section objects with fields number, title, content (Markdown),
+    status (complete or partial or gap), corrections_applied (array of strings)
+
+    corrections_applied: array of objects with fields location, original, corrected, reason
+
+    grounding_score: number 0-100 from verification_results_json
+
+    compliance_score: number 0-100 from compliance_results_json
+
+    remaining_gaps: array of objects with fields section, description, question
+
+  tools: []
+
+
+render_final_specification:
+  description: >
+    [Spec Render] Render final Markdown specification document with metadata and gap handling.
+
+    YOU RECEIVE:
+    - corrected_sections_json: {corrected_sections_json}
+    - project_name: {project_name}
+    - requirements_version: {requirements_version}
+    - requirements_created_at: {requirements_created_at}
+
+    YOUR TASK: Render the final formatted specification document from corrected sections.
+
+    ═══════════════════════════════════════════════════════════
+    DOCUMENT RENDERING RULES
+    ═══════════════════════════════════════════════════════════
+
+    1. ADD DOCUMENT HEADER:
+       ```
        # Especificação Funcional - {project_name}
 
        **Versão:** 1.0
        **Data:** {requirements_created_at}
        **Baseado em:** Requisitos v{requirements_version}
-       **Status:** [DETERMINAR: "complete" se grounding_score >= 70 e todas seções preenchidas, senão "partial"]
-       **trace_id:** [GERAR: UUID v4 único, ex: "550e8400-e29b-41d4-a716-446655440000"]
+       **Status:** [DETERMINAR: "complete" se grounding_score >= 70, senão "partial"]
+       **trace_id:** [GERAR: UUID v4 único]
 
        ---
        ```
 
-       Then include ALL 14 sections with content.
+    2. INCLUDE ALL 14 SECTIONS from corrected_sections_json in order (1 through 14)
 
-    ═══════════════════════════════════════════════════════════
-    FALLBACK HANDLING
-    ═══════════════════════════════════════════════════════════
+    3. IF grounding_score < 70: add warning banner at top of document
 
-    IF grounding_score < 70:
-    - Set status = "partial"
-    - Add warning banner at top
-    - List all unsupported items in gaps
+    4. IF compliance_score < 80: add compliance warning section before section 1
 
-    IF compliance_score < 80:
-    - Add compliance warning section
-    - List all violations
+    5. FOR incomplete sections (status = gap or partial), add placeholder:
+       ⚠️ **SEÇÃO INCOMPLETA** - [Motivo] - **Perguntas para Completar:** [Lista]
 
-    IF sections are incomplete:
-    - Generate placeholder with explicit warning:
-      ```markdown
-      ### X.Y [Section Name]
-
-      ⚠️ **SEÇÃO INCOMPLETA**
-
-      Esta seção não pôde ser completamente gerada devido a:
-      - [Motivo 1]
-      - [Motivo 2]
-
-      **Perguntas para Completar:**
-      1. [Pergunta específica 1]
-      2. [Pergunta específica 2]
-      ```
-
-    ALWAYS add section at end if there are gaps:
-    ```markdown
-    ## 15. Limitações e Próximos Passos
-
-    ### 15.1 Gaps Identificados
-    | # | Seção | Descrição | Pergunta |
-    |---|-------|-----------|----------|
-    | 1 | X | ... | ... |
-
-    ### 15.2 Informações Necessárias
-    [List of information needed to complete]
-
-    ### 15.3 Recomendações
-    [Next steps to complete specification]
-    ```
+    6. ADD section 15 if there are remaining_gaps:
+       ## 15. Limitações e Próximos Passos
+       ### 15.1 Gaps Identificados
+       | # | Seção | Descrição | Pergunta |
+       ### 15.2 Informações Necessárias
+       ### 15.3 Recomendações
 
     ═══════════════════════════════════════════════════════════
     CRITICAL RULES
@@ -1848,7 +1847,6 @@ format_final_specification:
 
     - NEVER invent content - prefer partial with gaps
     - ALWAYS include all 14 base sections (even if incomplete)
-    - ALWAYS generate traceability matrix
     - Document MUST be in pt-BR
     - NO first person language
 
@@ -1867,4 +1865,9 @@ format_final_specification:
 
     corrections_applied: array of objects with fields location, original, corrected
 
-    metadata: object with fields trace_id (string), generation_timestamp (string), requirements_version (number), grounding_score (number), compliance_score (number), total_sections (number), complete_sections (number), partial_sections (number), total_frs (number), total_ucs (number), total_rns (number), total_words (number)
+    metadata: object with fields trace_id (string), generation_timestamp (string),
+    requirements_version (number), grounding_score (number), compliance_score (number),
+    total_sections (number), complete_sections (number), partial_sections (number),
+    total_frs (number), total_ucs (number), total_rns (number), total_words (number)
+
+  tools: []

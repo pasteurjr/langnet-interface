@@ -764,7 +764,9 @@ def generate_yaml_input_func(state: LangNetFullState) -> Dict[str, Any]:
 def generate_code_input_func(state: LangNetFullState) -> Dict[str, Any]:
     """Extract input for generate_python_code task"""
     return {
-        "framework_choice": state.get("framework_choice", "crewai")
+        "framework_choice": state.get("framework_choice", "crewai"),
+        "agents_yaml": state.get("agents_yaml", ""),
+        "tasks_yaml": state.get("tasks_yaml", "")
     }
 
 
@@ -792,12 +794,21 @@ def extract_specification_entities_input_func(state: LangNetFullState) -> Dict[s
     }
 
 
-def compose_specification_sections_input_func(state: LangNetFullState) -> Dict[str, Any]:
-    """Extract input for compose_specification_sections task (Composer)"""
+def compose_spec_use_cases_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for compose_spec_use_cases task - generates only section 5 (Use Cases)"""
+    return {
+        "entities_json": state.get("spec_entities_json", "{}"),
+        "requirements_document": state.get("requirements_document", ""),
+        "project_name": state.get("project_name", "Sistema"),
+    }
+
+
+def compose_spec_document_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for compose_spec_document task - generates sections 1-4 and 6-14"""
     return {
         "entities_json": state.get("spec_entities_json", "{}"),
         "research_context_json": state.get("spec_research_context_json", "{}"),
-        "requirements_document": state.get("requirements_document", ""),
+        "use_cases_json": state.get("spec_use_cases_json", "{}"),
         "project_name": state.get("project_name", "Sistema"),
         "requirements_version": state.get("requirements_version", 1),
         "requirements_created_at": state.get("requirements_created_at", datetime.now().strftime("%Y-%m-%d")),
@@ -824,12 +835,19 @@ def validate_specification_compliance_input_func(state: LangNetFullState) -> Dic
     }
 
 
-def format_final_specification_input_func(state: LangNetFullState) -> Dict[str, Any]:
-    """Extract input for format_final_specification task (Formatter)"""
+def apply_spec_corrections_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for apply_spec_corrections task - applies verification and compliance corrections"""
     return {
         "draft_sections_json": state.get("spec_draft_sections_json", "{}"),
         "verification_results_json": state.get("spec_verification_json", "{}"),
-        "compliance_results_json": state.get("spec_compliance_json", "{}"),
+        "compliance_results_json": state.get("spec_compliance_json", "{}")
+    }
+
+
+def render_final_specification_input_func(state: LangNetFullState) -> Dict[str, Any]:
+    """Extract input for render_final_specification task - renders final Markdown document"""
+    return {
+        "corrected_sections_json": state.get("spec_corrected_sections_json", "{}"),
         "project_name": state.get("project_name", "Sistema"),
         "requirements_version": state.get("requirements_version", 1),
         "requirements_created_at": state.get("requirements_created_at", datetime.now().strftime("%Y-%m-%d"))
@@ -1716,8 +1734,8 @@ def research_specification_context_output_func(state: LangNetFullState, result: 
     return log_task_complete(updated_state, "research_specification_context", output_json[:200])
 
 
-def compose_specification_sections_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
-    """Update state with compose_specification_sections results (Composer)"""
+def compose_spec_use_cases_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with compose_spec_use_cases results - use cases for section 5"""
     output_json = _extract_crewai_result(result)
 
     try:
@@ -1725,7 +1743,28 @@ def compose_specification_sections_output_func(state: LangNetFullState, result: 
     except json.JSONDecodeError:
         parsed = {}
 
-    # Extract the document_md from the response
+    updated_state = {
+        **state,
+        "spec_use_cases_json": output_json,
+        "spec_use_cases": parsed.get("use_cases", []),
+        "spec_use_cases_count": parsed.get("use_cases_count", 0),
+        "spec_use_cases_with_min_steps": parsed.get("use_cases_with_min_steps", 0),
+        "spec_actors_identified": parsed.get("actors_identified", []),
+        "spec_uc_gaps": parsed.get("gaps", [])
+    }
+
+    return log_task_complete(updated_state, "compose_spec_use_cases", output_json[:200])
+
+
+def compose_spec_document_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with compose_spec_document results - sections 1-4 and 6-14"""
+    output_json = _extract_crewai_result(result)
+
+    try:
+        parsed = json.loads(output_json)
+    except json.JSONDecodeError:
+        parsed = {}
+
     document_md = parsed.get("document_md", "")
 
     updated_state = {
@@ -1733,13 +1772,12 @@ def compose_specification_sections_output_func(state: LangNetFullState, result: 
         "spec_draft_sections_json": output_json,
         "spec_draft_document_md": document_md,
         "spec_sections": parsed.get("sections", []),
-        "spec_use_cases_count": parsed.get("use_cases_count", 0),
         "spec_business_rules_count": parsed.get("business_rules_count", 0),
         "spec_generation_gaps": parsed.get("gaps", []),
         "spec_generation_summary": parsed.get("generation_summary", {})
     }
 
-    return log_task_complete(updated_state, "compose_specification_sections", output_json[:200])
+    return log_task_complete(updated_state, "compose_spec_document", output_json[:200])
 
 
 def verify_specification_grounding_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
@@ -1789,8 +1827,8 @@ def validate_specification_compliance_output_func(state: LangNetFullState, resul
     return log_task_complete(updated_state, "validate_specification_compliance", output_json[:200])
 
 
-def format_final_specification_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
-    """Update state with format_final_specification results (Formatter)"""
+def apply_spec_corrections_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with apply_spec_corrections results - corrected sections"""
     output_json = _extract_crewai_result(result)
 
     try:
@@ -1798,7 +1836,28 @@ def format_final_specification_output_func(state: LangNetFullState, result: Any)
     except json.JSONDecodeError:
         parsed = {}
 
-    # Extract the final document
+    updated_state = {
+        **state,
+        "spec_corrected_sections_json": output_json,
+        "spec_corrected_sections": parsed.get("corrected_sections", []),
+        "spec_corrections_applied": parsed.get("corrections_applied", []),
+        "spec_grounding_score": parsed.get("grounding_score", 0),
+        "spec_compliance_score": parsed.get("compliance_score", 0),
+        "spec_remaining_gaps": parsed.get("remaining_gaps", [])
+    }
+
+    return log_task_complete(updated_state, "apply_spec_corrections", output_json[:200])
+
+
+def render_final_specification_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with render_final_specification results - final document"""
+    output_json = _extract_crewai_result(result)
+
+    try:
+        parsed = json.loads(output_json)
+    except json.JSONDecodeError:
+        parsed = {}
+
     document_md = parsed.get("document_md", "")
     metadata = parsed.get("metadata", {})
 
@@ -1809,7 +1868,6 @@ def format_final_specification_output_func(state: LangNetFullState, result: Any)
         "spec_document_md": document_md,
         "spec_final_gaps": parsed.get("gaps", []),
         "spec_warnings": parsed.get("warnings", []),
-        "spec_corrections_applied": parsed.get("corrections_applied", []),
         "spec_metadata": metadata,
         "spec_grounding_score_final": metadata.get("grounding_score", 0),
         "spec_compliance_score_final": metadata.get("compliance_score", 0),
@@ -1817,7 +1875,7 @@ def format_final_specification_output_func(state: LangNetFullState, result: Any)
         "spec_complete_sections": metadata.get("complete_sections", 0)
     }
 
-    return log_task_complete(updated_state, "format_final_specification", output_json[:200])
+    return log_task_complete(updated_state, "render_final_specification", output_json[:200])
 
 
 # ============================================================================
@@ -1973,10 +2031,19 @@ TASK_REGISTRY = {
         ],
         "phase": "specification_generation"
     },
-    "compose_specification_sections": {
-        "input_func": compose_specification_sections_input_func,
-        "output_func": compose_specification_sections_output_func,
-        "requires": ["spec_entities_json", "spec_research_context_json", "requirements_document"],
+    "compose_spec_use_cases": {
+        "input_func": compose_spec_use_cases_input_func,
+        "output_func": compose_spec_use_cases_output_func,
+        "requires": ["spec_entities_json", "requirements_document"],
+        "produces": ["spec_use_cases_json", "spec_use_cases", "spec_use_cases_count"],
+        "agent": AGENTS["specification_composer"],
+        "tools": [],
+        "phase": "specification_generation"
+    },
+    "compose_spec_document": {
+        "input_func": compose_spec_document_input_func,
+        "output_func": compose_spec_document_output_func,
+        "requires": ["spec_entities_json", "spec_research_context_json", "spec_use_cases_json"],
         "produces": ["spec_draft_sections_json", "spec_draft_document_md", "spec_sections"],
         "agent": AGENTS["specification_composer"],
         "tools": [],
@@ -2000,10 +2067,19 @@ TASK_REGISTRY = {
         "tools": [],
         "phase": "specification_generation"
     },
-    "format_final_specification": {
-        "input_func": format_final_specification_input_func,
-        "output_func": format_final_specification_output_func,
+    "apply_spec_corrections": {
+        "input_func": apply_spec_corrections_input_func,
+        "output_func": apply_spec_corrections_output_func,
         "requires": ["spec_draft_sections_json", "spec_verification_json", "spec_compliance_json"],
+        "produces": ["spec_corrected_sections_json", "spec_corrections_applied", "spec_grounding_score"],
+        "agent": AGENTS["specification_formatter"],
+        "tools": [],
+        "phase": "specification_generation"
+    },
+    "render_final_specification": {
+        "input_func": render_final_specification_input_func,
+        "output_func": render_final_specification_output_func,
+        "requires": ["spec_corrected_sections_json"],
         "produces": ["spec_final_json", "spec_status", "spec_document_md", "spec_metadata"],
         "agent": AGENTS["specification_formatter"],
         "tools": [],
@@ -2090,10 +2166,12 @@ def execute_task_with_context(
                 "classify_specification_intent": "specification_router",
                 "extract_specification_entities": "specification_entity_extractor",
                 "research_specification_context": "specification_web_researcher",
-                "compose_specification_sections": "specification_composer",
+                "compose_spec_use_cases": "specification_composer",
+                "compose_spec_document": "specification_composer",
                 "verify_specification_grounding": "specification_verifier",
                 "validate_specification_compliance": "specification_compliance",
-                "format_final_specification": "specification_formatter"
+                "apply_spec_corrections": "specification_formatter",
+                "render_final_specification": "specification_formatter"
             }
 
             agent_name = agent_name_map.get(task_name)
@@ -2413,10 +2491,12 @@ def execute_specification_workflow(
     1. classify_specification_intent (RouterAgent) - Classify intent and scope
     2. extract_specification_entities (EntityExtractorAgent) - Extract all entities with context_ids
     3. research_specification_context (WebResearcherAgent) - Research standards and best practices
-    4. compose_specification_sections (ComposerAgent) - Generate 14 sections with grounding
-    5. verify_specification_grounding (VerifierAgent) - Validate all items have context support
-    6. validate_specification_compliance (ComplianceAgent) - Check language, structure, policies
-    7. format_final_specification (FormatterAgent) - Apply corrections, fallback for gaps
+    4. compose_spec_use_cases (ComposerAgent) - Generate detailed Use Cases (section 5 only)
+    5. compose_spec_document (ComposerAgent) - Generate sections 1-4 and 6-14
+    6. verify_specification_grounding (VerifierAgent) - Validate all items have context support
+    7. validate_specification_compliance (ComplianceAgent) - Check language, structure, policies
+    8. apply_spec_corrections (FormatterAgent) - Apply verification and compliance corrections
+    9. render_final_specification (FormatterAgent) - Render final Markdown document
 
     Args:
         project_id: Project UUID
@@ -2434,7 +2514,7 @@ def execute_specification_workflow(
     """
     print(f"\n{'='*80}")
     print(f"[SPECIFICATION] Starting multi-step specification generation workflow")
-    print(f"[SPECIFICATION] Pipeline: Router → EntityExtractor → WebResearcher → Composer → Verifier → Compliance → Formatter")
+    print(f"[SPECIFICATION] Pipeline: Router → EntityExtractor → WebResearcher → UseCases → Document → Verifier → Compliance → Corrections → Renderer")
     print(f"[SPECIFICATION] Requirements document length: {len(requirements_document)} chars")
     print(f"[SPECIFICATION] Project: {project_name}, Version: {requirements_version}")
     print(f"{'='*80}\n")
@@ -2455,24 +2535,26 @@ def execute_specification_workflow(
     state["spec_target_audience"] = target_audience
     state["use_deepseek"] = use_deepseek
 
-    # Define specification pipeline tasks (7 steps following Generative Computing)
+    # Define specification pipeline tasks (9 steps following Generative Computing)
     spec_pipeline_tasks = [
         "classify_specification_intent",      # Step 1: Router - classify intent
         "extract_specification_entities",     # Step 2: EntityExtractor - extract entities with context_ids
         "research_specification_context",     # Step 3: WebResearcher - research standards and best practices
-        "compose_specification_sections",     # Step 4: Composer - generate 14 sections
-        "verify_specification_grounding",     # Step 5: Verifier - validate grounding
-        "validate_specification_compliance",  # Step 6: Compliance - check language/structure
-        "format_final_specification"          # Step 7: Formatter - final document + fallback
+        "compose_spec_use_cases",             # Step 4: Composer - generate Use Cases (section 5)
+        "compose_spec_document",              # Step 5: Composer - generate sections 1-4 and 6-14
+        "verify_specification_grounding",     # Step 6: Verifier - validate grounding
+        "validate_specification_compliance",  # Step 7: Compliance - check language/structure
+        "apply_spec_corrections",             # Step 8: Formatter - apply corrections
+        "render_final_specification"          # Step 9: Formatter - render final document
     ]
 
     # Execute each task sequentially
     for i, task_name in enumerate(spec_pipeline_tasks, 1):
         if verbose_callback:
-            verbose_callback(f"\n[Step {i}/7] Executing: {task_name}")
+            verbose_callback(f"\n[Step {i}/9] Executing: {task_name}")
 
         print(f"\n{'='*80}")
-        print(f"[SPECIFICATION] Step {i}/7: {task_name}")
+        print(f"[SPECIFICATION] Step {i}/9: {task_name}")
         print(f"{'='*80}\n")
 
         state = execute_task_with_context(task_name, state, verbose_callback)
@@ -2493,13 +2575,17 @@ def execute_specification_workflow(
             elif task_name == "research_specification_context":
                 summary = state.get('spec_research_summary', {})
                 verbose_callback(f"   Researched: {summary.get('total_standards', 0)} standards, {summary.get('total_compliance', 0)} compliance, {summary.get('total_practices', 0)} practices")
-            elif task_name == "compose_specification_sections":
+            elif task_name == "compose_spec_use_cases":
+                verbose_callback(f"   Use cases generated: {state.get('spec_use_cases_count', 0)}")
+            elif task_name == "compose_spec_document":
                 verbose_callback(f"   Generated: {len(state.get('spec_sections', []))} sections")
             elif task_name == "verify_specification_grounding":
                 verbose_callback(f"   Grounding score: {state.get('spec_grounding_score', 'N/A')}%")
             elif task_name == "validate_specification_compliance":
                 verbose_callback(f"   Compliance: {'OK' if state.get('spec_compliance_ok') else 'Issues found'}")
-            elif task_name == "format_final_specification":
+            elif task_name == "apply_spec_corrections":
+                verbose_callback(f"   Corrections applied: {len(state.get('spec_corrections_applied', []))}")
+            elif task_name == "render_final_specification":
                 verbose_callback(f"   Final status: {state.get('spec_status', 'N/A')}")
 
     # Mark completion
