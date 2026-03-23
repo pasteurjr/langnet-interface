@@ -243,13 +243,25 @@ Para CADA requisito funcional identificado no documento de requisitos:
 
 ## 5. Casos de Uso
 {f'''
-### ⚠️ REGRAS CRÍTICAS PARA CASOS DE USO:
-1. Criar um UC para CADA requisito funcional principal (MÍNIMO 10 UCs)
-2. USAR EXCLUSIVAMENTE nomes reais de atores, telas, campos e ações do documento de requisitos
-3. PROIBIDO usar texto genérico entre colchetes como saída — escrever os nomes/ações REAIS
-4. A coluna "Resposta do Sistema" DEVE descrever elementos concretos da UI (nome do card, campos listados, mensagens exatas)
+### 🚨 REGRAS ABSOLUTAS — VIOLAÇÃO INVALIDA O DOCUMENTO:
+
+**PROIBIÇÕES ABSOLUTAS — NUNCA ESCREVA:**
+- "Por questões de espaço..."
+- "seguem a mesma estrutura..."
+- "serão resumidos abaixo..."
+- "UC-XXX a UC-YYY seguem o padrão..."
+- "ver UC-001 para referência..."
+- Qualquer forma de abreviação, resumo ou referência cruzada entre UCs
+- Colchetes com texto genérico como `[Nome do Ator]` ou `[ação do sistema]`
+
+**OBRIGAÇÕES:**
+1. CADA UC deve ser COMPLETAMENTE especificado — tabela de cabeçalho, fluxo principal completo, fluxos alternativos, exceções e wireframe
+2. MÍNIMO 10 UCs totalmente detalhados, independente do tamanho do documento
+3. USAR EXCLUSIVAMENTE nomes reais do documento de requisitos — atores, telas, campos, botões, mensagens
+4. A coluna "Resposta do Sistema" DEVE descrever elementos concretos da UI (nome exato da tela, campos listados, texto das mensagens)
 5. Sub-passos opcionais são numerados como 2.1, 2.2, etc.
 6. Cada UC DEVE ter wireframe da(s) tela(s) principal(is)
+7. O documento pode ser LONGO — isso é ESPERADO e OBRIGATÓRIO. Não comprima.
 
 ### 5.1 Atores do Sistema
 [Listar TODOS os atores identificados no documento de requisitos com nome real e papel]
@@ -332,7 +344,7 @@ Para CADA caso de uso (MÍNIMO 10):
 ```
 ''') + '''
 
-[REPETIR PARA TODOS OS CASOS DE USO — MÍNIMO 10]
+[CONTINUAR COM TODOS OS CASOS DE USO — MÍNIMO 10 — CADA UM COMPLETAMENTE DETALHADO — SEM RESUMOS — SEM ABREVIAÇÕES]
 ''' if include_use_cases else ''}
 
 ---
@@ -506,7 +518,7 @@ O documento DEVE conter EXATAMENTE estas 14 seções numeradas:
 
 4. **COMPLETUDE TOTAL:**
    - TODOS os requisitos funcionais documentados
-   - MÍNIMO 10 casos de uso detalhados
+   - MÍNIMO 10 casos de uso COMPLETAMENTE detalhados — tabela, fluxo principal COMPLETO, alternativos, exceções e wireframe
    - TODAS as regras de negócio identificadas
    - Matriz de rastreabilidade COMPLETA
 
@@ -516,14 +528,16 @@ O documento DEVE conter EXATAMENTE estas 14 seções numeradas:
 
 7. **FORMATO:** Retorne SOMENTE o documento em Markdown. Não inclua comentários, análises ou introduções fora do documento.
 
-8. **EXTENSÃO:** Gere o documento COMPLETO. NÃO truncar, NÃO resumir, NÃO pular seções.
+8. **EXTENSÃO:** Gere o documento COMPLETO. NÃO truncar, NÃO resumir, NÃO pular seções. Documentos longos são ESPERADOS e CORRETOS.
+
+9. **CASOS DE USO — REGRA DE OURO:** NUNCA escreva frases como "UC-003 a UC-010 seguem a mesma estrutura", "Por questões de espaço", "serão resumidos", "seguem o padrão do UC anterior". CADA UC deve ser 100% escrito do zero com todos os detalhes. Se o documento ficar com 20, 30 ou 50 páginas, isso é CORRETO.
 
 ## CHECKLIST FINAL - VERIFIQUE ANTES DE RETORNAR:
 ☐ Seção 1 (Introdução) presente?
 ☐ Seção 2 (Visão Geral) presente?
 ☐ Seção 3 (RFs) presente e TODOS os RFs documentados?
 ☐ Seção 4 (RNFs) presente?
-☐ Seção 5 (Casos de Uso) presente com MÍNIMO 10 UCs?
+☐ Seção 5 (Casos de Uso) presente com MÍNIMO 10 UCs COMPLETAMENTE DETALHADOS (sem resumos)?
 ☐ Seção 6 (Modelo de Dados) presente?
 ☐ Seção 7 (Interfaces) presente?
 ☐ Seção 8 (Regras de Negócio RN-XXX) presente?
