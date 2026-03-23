@@ -39,6 +39,7 @@ export interface CreateSpecificationRequest {
   include_business_rules?: boolean;
   include_glossary?: boolean;
   custom_instructions?: string;
+  wireframe_format?: 'ascii' | 'plantuml';
 }
 
 export interface SpecificationSession {

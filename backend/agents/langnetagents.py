@@ -800,6 +800,7 @@ def compose_spec_use_cases_input_func(state: LangNetFullState) -> Dict[str, Any]
         "entities_json": state.get("spec_entities_json", "{}"),
         "requirements_document": state.get("requirements_document", ""),
         "project_name": state.get("project_name", "Sistema"),
+        "wireframe_format": state.get("wireframe_format", "ascii"),
     }
 
 
@@ -2482,6 +2483,7 @@ def execute_specification_workflow(
     detail_level: str = "detailed",
     target_audience: str = "mixed",
     use_deepseek: bool = False,
+    wireframe_format: str = 'ascii',
     verbose_callback: Optional[Callable[[str], None]] = None
 ) -> LangNetFullState:
     """
@@ -2534,6 +2536,7 @@ def execute_specification_workflow(
     state["spec_detail_level"] = detail_level
     state["spec_target_audience"] = target_audience
     state["use_deepseek"] = use_deepseek
+    state["wireframe_format"] = wireframe_format
 
     # Define specification pipeline tasks (9 steps following Generative Computing)
     spec_pipeline_tasks = [

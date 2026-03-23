@@ -1330,6 +1330,7 @@ compose_spec_use_cases:
     - entities_json: {entities_json} (extracted entities with functional requirements, business rules, actors)
     - requirements_document: {requirements_document}
     - project_name: {project_name}
+    - wireframe_format: {wireframe_format} (ascii or plantuml)
 
     YOUR TASK: Generate ONLY Section 5 - Casos de Uso (Use Cases).
 

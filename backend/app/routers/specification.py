@@ -88,6 +88,7 @@ class GenerateSpecificationRequest(BaseModel):
     include_business_rules: bool = True
     include_glossary: bool = True
     custom_instructions: Optional[str] = None
+    wireframe_format: str = 'ascii'  # 'ascii' | 'plantuml'
 
 
 class RefineSpecificationRequest(BaseModel):
@@ -483,6 +484,7 @@ async def execute_specification_generation(
             include_business_rules=request.include_business_rules,
             include_glossary=request.include_glossary,
             custom_instructions=request.custom_instructions,
+            wireframe_format=request.wireframe_format,
             project_name=request.project_id  # TODO: Get actual project name
         )
 

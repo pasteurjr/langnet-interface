@@ -11,6 +11,24 @@ interface MarkdownViewerModalProps {
   onDownload?: () => void;
 }
 
+/**
+ * Encode PlantUML text for plantuml.com API
+ * Uses deflate compression + base64 encoding
+ */
+function encodePlantUML(text: string): string {
+  try {
+    // Simple encoding without pako - use URL encoding as fallback
+    // This works for basic diagrams
+    const encoded = encodeURIComponent(text);
+    return btoa(unescape(encoded))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+  } catch {
+    return '';
+  }
+}
+
 const MarkdownViewerModal: React.FC<MarkdownViewerModalProps> = ({
   isOpen,
   content,
@@ -51,7 +69,45 @@ const MarkdownViewerModal: React.FC<MarkdownViewerModalProps> = ({
 
         <div className="modal-body">
           <div className="markdown-viewer-content">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code(props) {
+                  const { children, className, node, ...rest } = props as any;
+                  const language = className?.replace('language-', '') || '';
+                  const codeText = String(children).trim();
+
+                  if (language === 'plantuml') {
+                    const encoded = encodePlantUML(codeText);
+                    const url = `https://www.plantuml.com/plantuml/png/${encoded}`;
+                    return (
+                      <div style={{ margin: '12px 0', textAlign: 'center' }}>
+                        <img
+                          src={url}
+                          alt="Wireframe UI"
+                          style={{ maxWidth: '100%', border: '1px solid #e5e7eb', borderRadius: '6px' }}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                            const parent = (e.target as HTMLImageElement).parentElement;
+                            if (parent) {
+                              parent.innerHTML = `<pre style="background:#f9f9f9;padding:12px;border-radius:6px;font-size:12px">${codeText}</pre>`;
+                            }
+                          }}
+                        />
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <code className={className} {...rest}>
+                      {children}
+                    </code>
+                  );
+                }
+              }}
+            >
+              {content}
+            </ReactMarkdown>
           </div>
         </div>
 

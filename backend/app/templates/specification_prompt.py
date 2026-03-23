@@ -17,7 +17,8 @@ def build_specification_prompt(
     include_business_rules: bool = True,
     include_glossary: bool = True,
     custom_instructions: str = None,
-    project_name: str = "Sistema"
+    project_name: str = "Sistema",
+    wireframe_format: str = 'ascii'  # 'ascii' | 'plantuml'
 ) -> str:
     """
     Build LLM prompt for functional specification generation
@@ -242,51 +243,96 @@ Para CADA requisito funcional identificado no documento de requisitos:
 
 ## 5. Casos de Uso
 {f'''
-### ⚠️ INSTRUÇÕES CRÍTICAS PARA CASOS DE USO:
-1. Criar um UC para CADA requisito funcional principal (mínimo 10 UCs)
-2. CADA UC DEVE ter NO MÍNIMO:
-   - 5-10 passos detalhados no fluxo principal
-   - 2-3 fluxos alternativos completos
-   - 2-3 fluxos de exceção com tratamento
-   - Pré-condições e pós-condições específicas
-3. NÃO resumir - detalhar CADA passo com ações concretas
-4. Incluir interações de UI quando aplicável
-5. Referenciar TODOS os RFs relacionados
+### ⚠️ REGRAS CRÍTICAS PARA CASOS DE USO:
+1. Criar um UC para CADA requisito funcional principal (MÍNIMO 10 UCs)
+2. USAR EXCLUSIVAMENTE nomes reais de atores, telas, campos e ações do documento de requisitos
+3. PROIBIDO usar texto genérico entre colchetes como saída — escrever os nomes/ações REAIS
+4. A coluna "Resposta do Sistema" DEVE descrever elementos concretos da UI (nome do card, campos listados, mensagens exatas)
+5. Sub-passos opcionais são numerados como 2.1, 2.2, etc.
+6. Cada UC DEVE ter wireframe da(s) tela(s) principal(is)
 
-### 5.1 Diagrama de Casos de Uso
-[Descrição textual do diagrama - listar TODOS os atores e casos de uso identificados]
+### 5.1 Atores do Sistema
+[Listar TODOS os atores identificados no documento de requisitos com nome real e papel]
 
 ### 5.2 Especificação Detalhada de Casos de Uso
 
-Para CADA caso de uso (mínimo 10):
+Para CADA caso de uso (MÍNIMO 10):
 
-**UC-XXX: [Nome do Caso de Uso]**
-- **Ator Principal:** [Quem executa - nome do perfil de usuário]
-- **Atores Secundários:** [Outros envolvidos, se houver]
-- **Objetivo:** [O que o ator deseja alcançar]
-- **Pré-condições:**
-  1. [Condição específica 1]
-  2. [Condição específica 2]
-- **Fluxo Principal:** (MÍNIMO 5 PASSOS DETALHADOS)
-  1. [Ator/Sistema] [Ação detalhada com contexto]
-  2. [Ator/Sistema] [Próxima ação específica]
-  3. [Sistema] [Validação ou processamento]
-  4. [Sistema] [Exibição de resultado ou feedback]
-  5. [Ator] [Confirmação ou próxima interação]
-  6. [...]
-- **Fluxos Alternativos:** (MÍNIMO 2)
-  - A1. [Condição]: [Descrição do fluxo alternativo completo]
-  - A2. [Condição]: [Descrição do fluxo alternativo completo]
-- **Fluxos de Exceção:** (MÍNIMO 2)
-  - E1. [Erro/Problema]: [Como o sistema trata, mensagem exibida]
-  - E2. [Erro/Problema]: [Tratamento e recuperação]
-- **Pós-condições:**
-  1. [Estado do sistema após execução bem-sucedida]
-  2. [Dados alterados ou criados]
-- **Regras de Negócio Aplicáveis:** [RN-XXX, RN-YYY]
-- **Requisitos Relacionados:** [RF-XXX, RF-YYY, RNF-ZZZ]
+---
 
-[REPETIR PARA TODOS OS CASOS DE USO - MÍNIMO 10]
+**UC-XXX: [título real do caso de uso]**
+
+| Campo | Detalhe |
+|-------|---------|
+| **Ator Principal** | [nome real do perfil de usuário] |
+| **Atores Secundários** | [outros envolvidos ou "Nenhum"] |
+| **Objetivo** | [objetivo real baseado no requisito funcional] |
+| **Pré-condições** | [condições reais necessárias] |
+| **Pós-condições** | [estado real do sistema após execução bem-sucedida] |
+| **RFs Relacionados** | RF-XXX, RF-YYY |
+| **RNs Aplicáveis** | RN-XXX ou "Nenhum" |
+
+#### Fluxo Principal
+
+| # | Ação do Ator | Resposta do Sistema |
+|---|--------------|---------------------|
+| 1 | [ação concreta e real do ator — usar nome real do elemento UI clicado/preenchido] | [o sistema exibe/faz: descrever elementos UI visíveis — nome da tela, campos, botões, mensagens com texto exato] |
+| 2 | [próxima ação — pode ser "O usuário pode opcionalmente:"] | [resposta do sistema ou deixar em branco se for cabeçalho de sub-ações] |
+| 2.1 | [sub-ação opcional A — ex: "Clica em 'Cancelar'"] | [resposta específica — ex: "Sistema fecha o modal e retorna à tela anterior sem salvar dados"] |
+| 2.2 | [sub-ação opcional B] | [resposta específica com elementos UI] |
+| 3 | [próxima ação principal] | [resposta detalhada] |
+
+#### Fluxos Alternativos
+
+| ID | Condição | Ação do Ator | Resposta do Sistema |
+|----|----------|--------------|---------------------|
+| A1 | [condição real que desvia o fluxo] | [o que o ator faz nessa condição] | [como o sistema responde, mensagem exibida, próxima tela] |
+| A2 | [outra condição alternativa] | [ação do ator] | [resposta do sistema] |
+
+#### Fluxos de Exceção
+
+| ID | Erro/Problema | Resposta do Sistema |
+|----|--------------|---------------------|
+| E1 | [erro real que pode ocorrer] | [mensagem exata exibida ao usuário + ação disponível ex: botão "Tentar novamente"] |
+| E2 | [outro erro possível] | [tratamento e recuperação] |
+
+#### Wireframe da Interface
+
+''' + ('''
+**Tela:** [nome real da tela]
+
+```
+┌─────────────────────────────────────────────┐
+│  [Título real da tela]                      │
+├─────────────────────────────────────────────┤
+│                                             │
+│  [Campo 1]: [____________________________] │
+│  [Campo 2]: [____________________________] │
+│                                             │
+│  ┌──────────────────┐  ┌─────────────────┐ │
+│  │  Botão Principal │  │    Cancelar     │ │
+│  └──────────────────┘  └─────────────────┘ │
+│                                             │
+└─────────────────────────────────────────────┘
+```
+''' if wireframe_format == 'ascii' else '''
+**Tela:** [nome real da tela]
+
+```plantuml
+@startsalt
+{
+  "[Título real da tela]"
+  ---
+  "[Campo 1]: " | "                              "
+  "[Campo 2]: " | "                              "
+  ---
+  [Botão Principal] | [Cancelar]
+}
+@endsalt
+```
+''') + '''
+
+[REPETIR PARA TODOS OS CASOS DE USO — MÍNIMO 10]
 ''' if include_use_cases else ''}
 
 ---

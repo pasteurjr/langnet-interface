@@ -46,6 +46,7 @@ const SpecificationPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [analysisInstructions, setAnalysisInstructions] = useState('');
+  const [wireframeFormat, setWireframeFormat] = useState<'ascii' | 'plantuml'>('ascii');
 
   // NOVO: Estado para modal de seleção de requisitos
   const [isRequirementsModalOpen, setIsRequirementsModalOpen] = useState(false);
@@ -369,7 +370,8 @@ const SpecificationPage: React.FC = () => {
         include_use_cases: true,
         include_business_rules: true,
         include_glossary: true,
-        custom_instructions: analysisInstructions || undefined
+        custom_instructions: analysisInstructions || undefined,
+        wireframe_format: wireframeFormat,
       });
 
       setCurrentSessionId(response.session_id);
@@ -658,6 +660,44 @@ const SpecificationPage: React.FC = () => {
                 rows={3}
               />
 
+              {/* Formato de Wireframe dos Casos de Uso */}
+              <div style={{ marginBottom: '12px' }}>
+                <label style={{ display: 'block', fontWeight: '600', fontSize: '12px', marginBottom: '6px', color: '#374151' }}>
+                  🖼️ Wireframe dos Casos de Uso
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '12px' }}>
+                    <input
+                      type="radio"
+                      name="wireframeFormat"
+                      value="ascii"
+                      checked={wireframeFormat === 'ascii'}
+                      onChange={() => setWireframeFormat('ascii')}
+                      style={{ marginTop: '2px' }}
+                    />
+                    <span>
+                      <strong>ASCII Art</strong>
+                      <br />
+                      <span style={{ color: '#6b7280', fontSize: '11px' }}>Compatível com qualquer visualizador Markdown</span>
+                    </span>
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', cursor: 'pointer', fontSize: '12px' }}>
+                    <input
+                      type="radio"
+                      name="wireframeFormat"
+                      value="plantuml"
+                      checked={wireframeFormat === 'plantuml'}
+                      onChange={() => setWireframeFormat('plantuml')}
+                      style={{ marginTop: '2px' }}
+                    />
+                    <span>
+                      <strong>PlantUML Salt</strong>
+                      <br />
+                      <span style={{ color: '#6b7280', fontSize: '11px' }}>Wireframes visuais renderizados no viewer</span>
+                    </span>
+                  </label>
+                </div>
+              </div>
               <button
                 className="btn-start-analysis"
                 onClick={startGeneration}
