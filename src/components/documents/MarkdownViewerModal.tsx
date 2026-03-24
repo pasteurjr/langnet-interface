@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import pako from 'pako';
 import './MarkdownEditorModal.css';
 
 interface MarkdownViewerModalProps {
@@ -13,17 +14,20 @@ interface MarkdownViewerModalProps {
 
 /**
  * Encode PlantUML text for plantuml.com API
- * Uses deflate compression + base64 encoding
+ * Uses DEFLATE compression (pako) + base64 encoding
+ * plantuml.com expects deflate-compressed data prefixed with ~1
  */
 function encodePlantUML(text: string): string {
   try {
-    // Simple encoding without pako - use URL encoding as fallback
-    // This works for basic diagrams
-    const encoded = encodeURIComponent(text);
-    return btoa(unescape(encoded))
+    const data = new TextEncoder().encode(text);
+    const compressed = pako.deflate(data, { level: 9 });
+    let b64 = '';
+    compressed.forEach((byte) => { b64 += String.fromCharCode(byte); });
+    const encoded = btoa(b64)
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '');
+    return `~1${encoded}`;
   } catch {
     return '';
   }
