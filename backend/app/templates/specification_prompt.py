@@ -332,16 +332,27 @@ Para CADA caso de uso (MÍNIMO 10):
 
 ```plantuml
 @startsalt
-{
-  "[Título real da tela]"
-  ---
-  "[Campo 1]: " | "                              "
-  "[Campo 2]: " | "                              "
-  ---
-  [Botão Principal] | [Cancelar]
+{+
+  Titulo da Tela
+  ==
+  Nome Completo    | "                    "
+  Email            | "                    "
+  Senha            | "                    "
+  ==
+  [   Confirmar   ] | [  Cancelar  ]
 }
 @endsalt
 ```
+
+**REGRAS OBRIGATÓRIAS para blocos plantuml Salt (violação causa crash no servidor):**
+- NUNCA use strings vazias `""` ou com 1 único caractere `"x"`
+- NUNCA use `()` radio buttons nem `[]` checkboxes dentro de Salt
+- NUNCA use `^dropdown^` — use apenas labels de texto simples
+- NUNCA coloque `|` ou `{` dentro de strings entre aspas
+- Strings de input DEVEM ter mínimo 10 espaços: `"          "`
+- Use `{+` para borda visível, `==` para separador horizontal
+- Botões: `[  Label  ]` com pelo menos 2 espaços de cada lado
+- Labels de campo: texto simples SEM aspas, seguido de `|` e o campo
 ''') + '''
 
 [CONTINUAR COM TODOS OS CASOS DE USO — MÍNIMO 10 — CADA UM COMPLETAMENTE DETALHADO — SEM RESUMOS — SEM ABREVIAÇÕES]
