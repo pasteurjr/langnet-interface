@@ -1124,21 +1124,31 @@ def create_task_execution_flow_session(session_data: dict) -> str:
     """Create task execution flow generation session"""
     import json
 
-    # Convert execution_metadata to JSON string if it's a dict
     if 'execution_metadata' in session_data and isinstance(session_data['execution_metadata'], dict):
         session_data['execution_metadata'] = json.dumps(session_data['execution_metadata'])
 
     query = """
         INSERT INTO task_execution_flow_sessions (
-            id, project_id, user_id, agent_task_spec_session_id, agents_yaml_session_id,
+            id, project_id, user_id, specification_session_id, agent_task_spec_session_id,
             tasks_yaml_session_id, session_name, status, execution_metadata
         ) VALUES (
-            %(id)s, %(project_id)s, %(user_id)s, %(agent_task_spec_session_id)s, %(agents_yaml_session_id)s,
+            %(id)s, %(project_id)s, %(user_id)s, %(specification_session_id)s, %(agent_task_spec_session_id)s,
             %(tasks_yaml_session_id)s, %(session_name)s, %(status)s, %(execution_metadata)s
         )
     """
+    params = {
+        'id': session_data['id'],
+        'project_id': session_data['project_id'],
+        'user_id': session_data['user_id'],
+        'specification_session_id': session_data.get('specification_session_id'),
+        'agent_task_spec_session_id': session_data.get('agent_task_spec_session_id'),
+        'tasks_yaml_session_id': session_data.get('tasks_yaml_session_id'),
+        'session_name': session_data.get('session_name'),
+        'status': session_data.get('status', 'generating'),
+        'execution_metadata': session_data.get('execution_metadata'),
+    }
     with get_db_cursor() as cursor:
-        cursor.execute(query, session_data)
+        cursor.execute(query, params)
     return session_data["id"]
 
 

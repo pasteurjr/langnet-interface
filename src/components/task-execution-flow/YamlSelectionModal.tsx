@@ -56,6 +56,13 @@ const YamlSelectionModal: React.FC<YamlSelectionModalProps> = ({
     setError(null);
   };
 
+  const getAuthHeaders = (): Record<string, string> => {
+    const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    return headers;
+  };
+
   const loadAllSessions = async () => {
     setLoading(true);
     setError(null);
@@ -63,13 +70,12 @@ const YamlSelectionModal: React.FC<YamlSelectionModalProps> = ({
     try {
       const projectId = projectContext.projectId || 'project1';
       const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+      const authHeaders = getAuthHeaders();
 
       // Buscar Specification sessions
       const specificationResponse = await fetch(`${API_BASE_URL}/specifications?project_id=${projectId}`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: authHeaders
       });
 
       if (specificationResponse.ok) {
@@ -81,23 +87,24 @@ const YamlSelectionModal: React.FC<YamlSelectionModalProps> = ({
       // Buscar Agent Task Spec sessions
       const agentTaskSpecResponse = await fetch(`${API_BASE_URL}/agent-task-spec/sessions?project_id=${projectId}`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: authHeaders
       });
 
       if (agentTaskSpecResponse.ok) {
         const agentTaskSpecData = await agentTaskSpecResponse.json();
-        const completed = (agentTaskSpecData.sessions || []).filter((s: Session) => s.status === 'completed');
+        // backend retorna session_id, normalizar para id
+        const sessions = (agentTaskSpecData.sessions || []).map((s: any) => ({
+          ...s,
+          id: s.id || s.session_id
+        }));
+        const completed = sessions.filter((s: Session) => s.status === 'completed');
         setAgentTaskSpecSessions(completed);
       }
 
       // Buscar Tasks YAML sessions
       const tasksYamlResponse = await fetch(`${API_BASE_URL}/tasks-yaml?project_id=${projectId}`, {
         method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        }
+        headers: authHeaders
       });
 
       if (tasksYamlResponse.ok) {
