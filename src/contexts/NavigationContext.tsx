@@ -153,10 +153,10 @@ const PROJECT_MENU_ITEMS: MenuItem[] = [
     path: "/petri-net",
   },
   {
-    id: "code",
-    label: "Código",
+    id: "code-generation",
+    label: "Geração de Código",
     icon: "💻",
-    path: "/code",
+    path: "/code-generation",
   },
   {
     id: "mcp-project",

@@ -14,6 +14,7 @@ from app.routers.agents_yaml import router as agents_yaml_router
 from app.routers.tasks_yaml import router as tasks_yaml_router
 from app.routers.task_execution_flow import router as task_execution_flow_router
 from app.routers.petri_net import router as petri_net_router
+from app.routers.code_generation import router as code_generation_router
 from api.langnetapi import router as langnet_router
 from api.langnetwebsocket import websocket_endpoint
 from app.utils import decode_access_token
@@ -50,6 +51,7 @@ app.include_router(agents_yaml_router, prefix="/api")  # agents.yaml generation 
 app.include_router(tasks_yaml_router, prefix="/api")  # tasks.yaml generation from specification
 app.include_router(task_execution_flow_router, prefix="/api")  # Task execution flow document generation
 app.include_router(petri_net_router, prefix="/api")  # Petri Net generation/get/update (project_data)
+app.include_router(code_generation_router, prefix="/api")  # Code generation: Python multi-file
 app.include_router(langnet_router, prefix="/api")  # LangNet multi-agent system
 
 

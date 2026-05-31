@@ -1250,6 +1250,170 @@ def get_document(document_id: str) -> dict | None:
     return document
 
 
+# ═══════════════════════════════════════════════════════════
+# CODE GENERATION SESSIONS
+# ═══════════════════════════════════════════════════════════
+
+def create_code_generation_session(session_data: dict) -> str:
+    """Create a new code_generation_sessions row. Returns the id."""
+    params = {
+        "id": session_data["id"],
+        "project_id": session_data["project_id"],
+        "user_id": session_data["user_id"],
+        "agents_yaml_session_id": session_data.get("agents_yaml_session_id"),
+        "tasks_yaml_session_id": session_data.get("tasks_yaml_session_id"),
+        "task_execution_flow_session_id": session_data.get("task_execution_flow_session_id"),
+        "websocket_port": int(session_data.get("websocket_port", 5002)),
+        "session_name": session_data.get("session_name"),
+        "status": session_data.get("status", "generating"),
+        "execution_metadata": json.dumps(session_data.get("execution_metadata", {})),
+    }
+    query = """
+        INSERT INTO code_generation_sessions (
+            id, project_id, user_id,
+            agents_yaml_session_id, tasks_yaml_session_id, task_execution_flow_session_id,
+            websocket_port, session_name, status, execution_metadata
+        ) VALUES (
+            %(id)s, %(project_id)s, %(user_id)s,
+            %(agents_yaml_session_id)s, %(tasks_yaml_session_id)s, %(task_execution_flow_session_id)s,
+            %(websocket_port)s, %(session_name)s, %(status)s, %(execution_metadata)s
+        )
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute(query, params)
+    return params["id"]
+
+
+def get_code_generation_session(session_id: str) -> dict | None:
+    session = execute_query(
+        "SELECT * FROM code_generation_sessions WHERE id = %s LIMIT 1",
+        (session_id,),
+        fetch_one=True,
+    )
+    if not session:
+        return None
+    for f in ("generated_files", "execution_metadata"):
+        raw = session.get(f)
+        if isinstance(raw, str) and raw:
+            try:
+                session[f] = json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+    return session
+
+
+def update_code_generation_session(session_id: str, updates: dict) -> int:
+    if "generated_files" in updates and not isinstance(updates["generated_files"], str):
+        updates["generated_files"] = json.dumps(updates["generated_files"], ensure_ascii=False)
+    if "execution_metadata" in updates and isinstance(updates["execution_metadata"], dict):
+        updates["execution_metadata"] = json.dumps(updates["execution_metadata"])
+    set_clauses = [f"{k} = %s" for k in updates]
+    params = list(updates.values()) + [session_id]
+    query = f"UPDATE code_generation_sessions SET {', '.join(set_clauses)} WHERE id = %s"
+    with get_db_cursor() as cursor:
+        cursor.execute(query, tuple(params))
+        return cursor.rowcount
+
+
+def list_code_generation_sessions(project_id: str) -> list:
+    return execute_query(
+        "SELECT id, project_id, user_id, session_name, status, current_version, total_files, "
+        "websocket_port, created_at, updated_at "
+        "FROM code_generation_sessions WHERE project_id = %s ORDER BY created_at DESC",
+        (project_id,),
+        fetch_all=True,
+    ) or []
+
+
+def create_code_generation_version(version_data: dict) -> None:
+    params = {
+        "id": version_data["id"],
+        "session_id": version_data["session_id"],
+        "version": int(version_data["version"]),
+        "generated_files": json.dumps(version_data.get("generated_files", []), ensure_ascii=False),
+        "created_by": version_data.get("created_by"),
+        "change_type": version_data.get("change_type", "initial"),
+        "change_description": version_data.get("change_description"),
+        "total_files": int(version_data.get("total_files", 0)),
+    }
+    query = """
+        INSERT INTO code_generation_version_history (
+            id, session_id, version, generated_files, created_by,
+            change_type, change_description, total_files
+        ) VALUES (
+            %(id)s, %(session_id)s, %(version)s, %(generated_files)s, %(created_by)s,
+            %(change_type)s, %(change_description)s, %(total_files)s
+        )
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute(query, params)
+
+
+def get_code_generation_versions(session_id: str) -> list:
+    rows = execute_query(
+        "SELECT id, version, change_type, change_description, total_files, created_at "
+        "FROM code_generation_version_history WHERE session_id = %s ORDER BY version DESC",
+        (session_id,),
+        fetch_all=True,
+    ) or []
+    return rows
+
+
+def get_code_generation_version(session_id: str, version: int) -> dict | None:
+    row = execute_query(
+        "SELECT * FROM code_generation_version_history WHERE session_id = %s AND version = %s LIMIT 1",
+        (session_id, version),
+        fetch_one=True,
+    )
+    if not row:
+        return None
+    if isinstance(row.get("generated_files"), str):
+        try:
+            row["generated_files"] = json.loads(row["generated_files"])
+        except json.JSONDecodeError:
+            row["generated_files"] = []
+    return row
+
+
+def save_code_generation_chat_message(message_data: dict) -> str:
+    params = {
+        "id": message_data["id"],
+        "session_id": message_data["session_id"],
+        "sender_type": message_data["sender_type"],
+        "message_text": message_data.get("message_text"),
+        "message_data": json.dumps(message_data.get("message_data", {}), ensure_ascii=False),
+        "message_type": message_data.get("message_type", "chat"),
+    }
+    query = """
+        INSERT INTO code_generation_chat_messages (
+            id, session_id, sender_type, message_text, message_data, message_type
+        ) VALUES (
+            %(id)s, %(session_id)s, %(sender_type)s, %(message_text)s, %(message_data)s, %(message_type)s
+        )
+    """
+    with get_db_cursor() as cursor:
+        cursor.execute(query, params)
+    return params["id"]
+
+
+def get_code_generation_chat_messages(session_id: str, limit: int = 100) -> list:
+    rows = execute_query(
+        "SELECT id, sender_type, message_text, message_data, message_type, timestamp "
+        "FROM code_generation_chat_messages WHERE session_id = %s "
+        "ORDER BY timestamp ASC LIMIT %s",
+        (session_id, limit),
+        fetch_all=True,
+    ) or []
+    for r in rows:
+        raw = r.get("message_data")
+        if isinstance(raw, str) and raw:
+            try:
+                r["message_data"] = json.loads(raw)
+            except json.JSONDecodeError:
+                pass
+    return rows
+
+
 def get_project_data(project_id: str) -> dict | None:
     """Get projects.project_data (Petri Net JSON) for a project. Returns dict or None."""
     row = execute_query(

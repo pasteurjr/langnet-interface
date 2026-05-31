@@ -1094,9 +1094,32 @@ generate_yaml_files:
 
 generate_python_code:
   description: >
-    Generate production-ready Python code implementing multi-agent system using framework: {framework_choice}. Include: (1) Imports and dependencies; (2) Agent initialization from YAML; (3) Tool creation and registration; (4) Task definitions with input/output functions; (5) Task Registry; (6) Workflow executor; (7) Main orchestration logic; (8) Error handling and logging; (9) Type hints and docstrings; (10) Entry point with CLI. Follow PEP 8, include comments, make code modular and testable.
+    Gere os arquivos Python que exigem inteligência específica do projeto (tools customizadas + adapters input/output por task) para um sistema multi-agente CrewAI orquestrado por Rede de Petri.
+
+    Os YAMLs e templates fixos (main.py, websocket_server.py, requirements.txt, .env.example, docker-compose, Dockerfile, README, petri_net.json) serão gerados por templates no backend Python — você NÃO deve gerá-los aqui.
+
+    INPUTS:
+    - agents_yaml: {agents_yaml}
+    - tasks_yaml: {tasks_yaml}
+    - petri_net_json: {petri_net_json}
+
+    REGRAS:
+    1. Em "tools_py" gere o conteúdo de tools.py com tools customizadas CrewAI que apareçam nos backstories/descriptions (ex: EmailFetchTool, MindsDbQuery, FileReader). Use BaseTool do crewai_tools quando possível; senão crie classe que herde de crewai.tools.BaseTool. Para cada tool: nome, descrição, args (Pydantic) e método _run.
+    2. Em "adapters_py" gere o conteúdo de adapters.py com input_func e output_func para CADA task em tasks_yaml. Padrão para cada task_id:
+       def TASK_input_func(state: dict) -> dict — extrai dados de state['previous_outputs'] do place anterior e retorna kwargs para a task (substitua TASK pelo task_id).
+       def TASK_output_func(state: dict, result: Any) -> dict — parseia o resultado do CrewAI e atualiza state['outputs'][TASK].
+    3. Mantenha imports no topo de cada arquivo. PEP 8. Docstrings curtas. Sem código duplicado.
+    4. Cada tool deve ter docstring explicando uso e parâmetros.
+
   expected_output: >
-    JSON object with: (1) 'main_file': complete Python code as string; (2) 'additional_files': dict of filename to content for supporting files (utils, config, etc); (3) 'requirements_txt': Python dependencies; (4) 'readme_md': usage documentation; (5) 'test_file': basic test suite.
+    JSON com EXATAMENTE estas chaves:
+    {
+      "tools_py": "<conteúdo completo de tools.py>",
+      "adapters_py": "<conteúdo completo de adapters.py>",
+      "detected_tools": ["<nome>", ...],
+      "warnings": ["<msg>", ...]
+    }
+    Apenas o JSON, sem texto adicional. Não escape barras invertidas das strings de código.
 
 # =============================================================================
 # SPECIFICATION GENERATION TASKS (Multi-Step Pipeline)

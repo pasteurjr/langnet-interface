@@ -762,11 +762,18 @@ def generate_yaml_input_func(state: LangNetFullState) -> Dict[str, Any]:
 
 
 def generate_code_input_func(state: LangNetFullState) -> Dict[str, Any]:
-    """Extract input for generate_python_code task"""
+    """Extract input for generate_python_code task.
+
+    The task now produces only tools.py + adapters.py (LLM-heavy parts).
+    The rest of the project (main.py, websocket_server.py, requirements, docker,
+    petri_net.json with real logica) is built deterministically in the
+    output_func by ``_build_project_templates``.
+    """
+    petri = state.get("petri_net_data") or {}
     return {
-        "framework_choice": state.get("framework_choice", "crewai"),
         "agents_yaml": state.get("agents_yaml", ""),
-        "tasks_yaml": state.get("tasks_yaml", "")
+        "tasks_yaml": state.get("tasks_yaml", ""),
+        "petri_net_json": json.dumps(petri, ensure_ascii=False) if petri else "{}",
     }
 
 
@@ -1756,27 +1763,546 @@ def generate_yaml_output_func(state: LangNetFullState, result: Any) -> LangNetFu
     return log_task_complete(updated_state, "generate_yaml_files")
 
 
-def generate_code_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
-    """Update state with generate_python_code results"""
-    if isinstance(result, dict):
-        output_json = result.get("raw_output", json.dumps(result))
-    else:
-        output_json = str(result)
+_PLACE_LOGICA_TEMPLATE = """// place.logica para task '{task_name}' — gerado pelo LangNet
+const PORT = {ws_port};
+const TASK_NAME = '{task_name}';
+const PREV_PLACE_IDS = {prev_places_json};
+const TIMEOUT_MS = {timeout_ms};
+
+const output = utils.clone(input);
+try {{
+  // Aguarda dados do(s) place(s) anterior(es), com deadline.
+  if (PREV_PLACE_IDS.length > 0) {{
+    const deadline = Date.now() + 20000;
+    for (const pid of PREV_PLACE_IDS) {{
+      let prev = utils.getPlaceOutput(pid);
+      while (!prev || prev.status === 'pending') {{
+        if (Date.now() > deadline) break;
+        await new Promise(r => setTimeout(r, 200));
+        prev = utils.getPlaceOutput(pid);
+      }}
+      if (prev && typeof prev === 'object') Object.assign(output, prev);
+    }}
+  }}
+
+  const ws = new WebSocket(`ws://localhost:${{PORT}}`);
+  const result = await new Promise((resolve, reject) => {{
+    const t = setTimeout(() => {{ ws.close(); reject(new Error('timeout')); }}, TIMEOUT_MS);
+    ws.onopen = () => ws.send(JSON.stringify({{
+      type: 'execute_task',
+      data: {{ task_name: TASK_NAME, input_data: output }}
+    }}));
+    ws.onmessage = (e) => {{
+      const r = JSON.parse(e.data);
+      if (r.type === 'task_completed' || r.type === 'task_result') {{
+        clearTimeout(t); ws.close();
+        resolve((r.data && r.data.result) || r.data || {{}});
+      }} else if (r.type === 'error') {{
+        clearTimeout(t); ws.close();
+        reject(new Error((r.data && r.data.error) || 'task error'));
+      }}
+    }};
+    ws.onerror = () => {{ clearTimeout(t); reject(new Error('WebSocket error')); }};
+  }});
+
+  if (result && typeof result === 'object') {{
+    Object.assign(output, result);
+  }} else {{
+    output.result = result;
+  }}
+  output.status = 'completed';
+  output.timestamp = utils.now();
+}} catch (err) {{
+  output.status = 'error';
+  output.error = err.message;
+}}
+return output;
+"""
+
+
+def _build_petri_net_with_real_logica(
+    petri_net: Dict[str, Any],
+    websocket_port: int,
+) -> Dict[str, Any]:
+    """Substitui o placeholder em ``place.logica`` por código WebSocket real.
+
+    Mantém intactos os demais campos (lugares/transicoes/arcos/agentes/coordenadas).
+    Resolve dependências de cada place lendo ``arcos`` (lugar→transição→lugar próximo).
+    """
+    if not isinstance(petri_net, dict):
+        return petri_net
+    arcs = petri_net.get("arcos", []) or []
+    transitions = {t.get("id"): t for t in petri_net.get("transicoes", []) if isinstance(t, dict)}
+
+    # Predecessores: para cada lugar, encontra os lugares que alimentam suas transições de entrada.
+    # transitions_into_place = { lugar_id: [trans_id] }
+    trans_into_place: Dict[str, List[str]] = {}
+    places_into_trans: Dict[str, List[str]] = {}
+    for a in arcs:
+        if not isinstance(a, dict):
+            continue
+        origin, dest = a.get("origem"), a.get("destino")
+        if origin in transitions and dest:
+            trans_into_place.setdefault(dest, []).append(origin)
+        if dest in transitions and origin:
+            places_into_trans.setdefault(dest, []).append(origin)
+
+    out = {**petri_net, "lugares": []}
+    for lugar in petri_net.get("lugares", []) or []:
+        if not isinstance(lugar, dict):
+            out["lugares"].append(lugar)
+            continue
+        lid = lugar.get("id", "")
+        prev_places: List[str] = []
+        for trans_id in trans_into_place.get(lid, []):
+            prev_places.extend(places_into_trans.get(trans_id, []))
+        prev_places = sorted(set(p for p in prev_places if p and p != lid))
+
+        task_name = (lugar.get("nome") or lid).split(":")[-1].strip().replace(" ", "_").lower()
+        # Timeout adaptativo: tasks com 'classify' ou 'analyze' levam mais tempo
+        timeout_ms = 180000 if any(k in task_name for k in ("classif", "analy", "search", "extrac")) else 60000
+
+        new_lugar = {**lugar}
+        new_lugar["logica"] = _PLACE_LOGICA_TEMPLATE.format(
+            task_name=task_name,
+            ws_port=websocket_port,
+            prev_places_json=json.dumps(prev_places),
+            timeout_ms=timeout_ms,
+        )
+        out["lugares"].append(new_lugar)
+    return out
+
+
+def _parse_yaml_keys(yaml_text: str) -> List[str]:
+    """Extract top-level keys from a YAML string (e.g. agent ids, task ids)."""
+    try:
+        parsed = yaml.safe_load(yaml_text) or {}
+    except yaml.YAMLError:
+        return []
+    return list(parsed.keys()) if isinstance(parsed, dict) else []
+
+
+def _template_main_py(project_name: str, ws_port: int) -> str:
+    return f'''"""
+{project_name} — entrypoint
+Sobe o servidor WebSocket na porta {ws_port} que recebe execute_task
+e dispara a task CrewAI correspondente.
+"""
+import asyncio
+import os
+from dotenv import load_dotenv
+
+from websocket_server import run_websocket_server
+
+load_dotenv()
+
+
+def main():
+    port = int(os.getenv("WEBSOCKET_PORT", "{ws_port}"))
+    host = os.getenv("WEBSOCKET_HOST", "localhost")
+    print(f"🚀 {{project_name}} — WebSocket server em ws://{{host}}:{{port}}")
+    asyncio.run(run_websocket_server(host=host, port=port))
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+
+def _template_websocket_server_py(ws_port: int) -> str:
+    return f'''"""
+WebSocket server compatível com o padrão visualtasksexec.
+Recebe {{"type":"execute_task", "data":{{"task_name", "input_data"}}}}
+e emite task_start / verbose / task_completed / error.
+"""
+import asyncio
+import json
+import traceback
+from datetime import datetime
+from typing import Any, Dict
+
+import websockets
+import yaml
+from crewai import Agent, Task, Crew, Process
+
+import tools as tools_module
+import adapters as adapters_module
+
+
+def _load_yaml(path: str) -> Dict[str, Any]:
+    with open(path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {{}}
+
+
+AGENTS_CONFIG = _load_yaml("agents.yaml")
+TASKS_CONFIG = _load_yaml("tasks.yaml")
+
+
+def _build_agent(agent_id: str) -> Agent:
+    cfg = AGENTS_CONFIG.get(agent_id, {{}})
+    return Agent(
+        role=cfg.get("role", agent_id),
+        goal=cfg.get("goal", ""),
+        backstory=cfg.get("backstory", ""),
+        verbose=cfg.get("verbose", True),
+        allow_delegation=cfg.get("allow_delegation", False),
+    )
+
+
+def _build_task(task_id: str, agent: Agent, description: str) -> Task:
+    cfg = TASKS_CONFIG.get(task_id, {{}})
+    return Task(
+        description=description or cfg.get("description", ""),
+        expected_output=cfg.get("expected_output", ""),
+        agent=agent,
+    )
+
+
+async def _send(ws, msg_type: str, data: Any) -> None:
+    await ws.send(json.dumps({{
+        "type": msg_type,
+        "timestamp": datetime.utcnow().isoformat(),
+        "data": data,
+    }}))
+
+
+async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
+    await _send(ws, "task_start", {{"task_name": task_name, "input_data": input_data}})
+
+    task_cfg = TASKS_CONFIG.get(task_name)
+    if not task_cfg:
+        await _send(ws, "error", {{"task_name": task_name, "error": f"task '{{task_name}}' não definida em tasks.yaml"}})
+        return
+
+    agent_id = task_cfg.get("agent") or task_cfg.get("agent_id")
+    if not agent_id:
+        await _send(ws, "error", {{"task_name": task_name, "error": "task sem agente vinculado"}})
+        return
 
     try:
-        parsed = json.loads(output_json)
-    except json.JSONDecodeError:
-        parsed = {}
+        agent = _build_agent(agent_id)
+
+        # Aplica input_func (extrai dados de input_data → kwargs)
+        input_fn = getattr(adapters_module, f"{{task_name}}_input_func", None)
+        prepared = input_fn(input_data) if callable(input_fn) else input_data
+
+        # Formata a descrição da task com inputs
+        description = task_cfg.get("description", "")
+        try:
+            description = description.format(**prepared) if prepared else description
+        except Exception:
+            pass  # placeholders ausentes não impedem a execução
+
+        task = _build_task(task_name, agent, description)
+        crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
+
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(None, crew.kickoff)
+
+        raw = getattr(result, "raw", None) or str(result)
+
+        output_fn = getattr(adapters_module, f"{{task_name}}_output_func", None)
+        if callable(output_fn):
+            try:
+                parsed = output_fn(input_data, raw)
+            except Exception:
+                parsed = {{"raw": raw}}
+        else:
+            parsed = {{"raw": raw}}
+
+        await _send(ws, "task_completed", {{"task_name": task_name, "result": parsed}})
+    except Exception as exc:
+        await _send(ws, "error", {{"task_name": task_name, "error": str(exc), "traceback": traceback.format_exc()}})
+
+
+async def _handle_client(ws):
+    await _send(ws, "connected", {{"available_tasks": list(TASKS_CONFIG.keys())}})
+    async for message in ws:
+        try:
+            payload = json.loads(message)
+        except json.JSONDecodeError:
+            await _send(ws, "error", {{"error": "invalid JSON"}})
+            continue
+
+        msg_type = payload.get("type")
+        data = payload.get("data") or {{}}
+
+        if msg_type == "execute_task":
+            await _execute_task(ws, data.get("task_name"), data.get("input_data") or {{}})
+        elif msg_type == "ping":
+            await _send(ws, "pong", {{"timestamp": datetime.utcnow().isoformat()}})
+        elif msg_type == "get_task_info":
+            await _send(ws, "task_info", {{"tasks": list(TASKS_CONFIG.keys())}})
+        else:
+            await _send(ws, "error", {{"error": f"unknown message type: {{msg_type}}"}})
+
+
+async def run_websocket_server(host: str = "localhost", port: int = {ws_port}):
+    async with websockets.serve(_handle_client, host, port, ping_interval=30, ping_timeout=10):
+        print(f"🌐 WebSocket aceitando conexões em ws://{{host}}:{{port}}")
+        await asyncio.Future()  # run forever
+'''
+
+
+def _template_requirements_txt(_extra_pkgs: List[str] = None) -> str:
+    base = [
+        "crewai>=0.30.0",
+        "crewai-tools>=0.1.0",
+        "langchain>=0.1.0",
+        "langchain-openai>=0.1.0",
+        "websockets>=11.0.3",
+        "pydantic>=2.0.0",
+        "python-dotenv>=1.0.0",
+        "pyyaml>=6.0",
+    ]
+    if _extra_pkgs:
+        for p in _extra_pkgs:
+            if p not in base:
+                base.append(p)
+    return "\n".join(base) + "\n"
+
+
+def _template_env_example(detected_tools: List[str]) -> str:
+    lines = [
+        "# Configurações do servidor WebSocket",
+        "WEBSOCKET_HOST=localhost",
+        "WEBSOCKET_PORT=5002",
+        "",
+        "# LLM (CrewAI default)",
+        "OPENAI_API_KEY=sk-...",
+        "",
+    ]
+    tools_lower = " ".join(detected_tools).lower()
+    if "email" in tools_lower or "imap" in tools_lower or "smtp" in tools_lower:
+        lines.extend([
+            "# Email",
+            "SMTP_HOST=smtp.gmail.com",
+            "SMTP_PORT=465",
+            "IMAP_HOST=imap.gmail.com",
+            "IMAP_PORT=993",
+            "EMAIL_USERNAME=",
+            "EMAIL_PASSWORD=",
+            "",
+        ])
+    if "mindsdb" in tools_lower:
+        lines.extend([
+            "# MindsDB",
+            "MINDSDB_HOST=localhost",
+            "MINDSDB_PORT=47334",
+            "MINDSDB_USER=admin",
+            "MINDSDB_PASSWORD=password123",
+            "",
+        ])
+    return "\n".join(lines)
+
+
+def _template_docker_compose(project_name: str, ws_port: int) -> str:
+    slug = project_name.lower().replace(" ", "_").replace("-", "_") or "agentic_app"
+    return f'''version: "3.9"
+
+services:
+  {slug}:
+    build: .
+    container_name: {slug}_ws
+    environment:
+      - WEBSOCKET_HOST=0.0.0.0
+      - WEBSOCKET_PORT={ws_port}
+    env_file:
+      - .env
+    ports:
+      - "{ws_port}:{ws_port}"
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+'''
+
+
+def _template_dockerfile() -> str:
+    return '''FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+CMD ["python", "main.py"]
+'''
+
+
+def _template_readme(project_name: str, ws_port: int, file_list: List[str]) -> str:
+    files_md = "\n".join(f"- `{p}`" for p in file_list)
+    return f'''# {project_name}
+
+Sistema multi-agente CrewAI orquestrado por Rede de Petri, gerado pelo LangNet Interface.
+
+## Arquitetura
+
+- `main.py` sobe o servidor WebSocket na porta `{ws_port}`.
+- `websocket_server.py` recebe `execute_task` e dispara CrewAI com `Agent`/`Task` de `agents.yaml`/`tasks.yaml`.
+- `adapters.py` contém `input_func`/`output_func` por task.
+- `tools.py` contém tools customizadas.
+- `petri_net.json` é a Rede de Petri, com `place.logica` JavaScript que abre WebSocket para esse servidor.
+
+A Rede de Petri é executada pelo `petri-net-editor` (frontend) ou pelo runner Node.js do `experimental_petri`.
+
+## Como rodar
+
+```bash
+cp .env.example .env
+# preencha as variáveis em .env
+
+pip install -r requirements.txt
+python main.py
+```
+
+Ou com Docker:
+
+```bash
+docker-compose up --build
+```
+
+## Estrutura
+
+{files_md}
+'''
+
+
+def _detect_extra_packages(tools_py: str) -> List[str]:
+    """Detecta pacotes Python a adicionar ao requirements baseado em imports do tools.py."""
+    extras: List[str] = []
+    txt = (tools_py or "").lower()
+    if "imap_tools" in txt or "from imaplib" in txt:
+        extras.append("imap-tools>=1.0.0")
+    if "mindsdb" in txt:
+        extras.append("mindsdb-sdk>=1.7.0")
+    if "pandas" in txt:
+        extras.append("pandas>=2.0.0")
+    if "requests" in txt:
+        extras.append("requests>=2.31.0")
+    return extras
+
+
+def _empty_tools_py(detected: List[str]) -> str:
+    return f'''"""Tools customizadas detectadas: {", ".join(detected) or "nenhuma"}.
+
+Esqueleto: adicione classes que herdem de crewai.tools.BaseTool conforme necessário.
+"""
+from typing import Any
+from crewai.tools import BaseTool
+
+
+# (Sem tools customizadas detectadas — adicione conforme necessário.)
+'''
+
+
+def _empty_adapters_py() -> str:
+    return '''"""Adapters de input/output por task.
+
+Padrão:
+def <task_id>_input_func(input_data: dict) -> dict:
+    # extrai kwargs para a task
+    return input_data
+
+def <task_id>_output_func(input_data: dict, result: str) -> dict:
+    # parseia o resultado retornado pelo CrewAI
+    return {"raw": result}
+"""
+from typing import Any, Dict
+'''
+
+
+def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any]) -> List[Dict[str, str]]:
+    """Monta a árvore completa de arquivos do projeto agêntico.
+
+    - tools.py / adapters.py vêm do LLM (se ausentes, gera esqueletos).
+    - main.py, websocket_server.py, requirements.txt, .env.example, docker-compose.yml,
+      Dockerfile, README.md, agents.yaml, tasks.yaml, petri_net.json são templates.
+    """
+    project_name = state.get("project_name") or "Sistema Agêntico"
+    ws_port = int(state.get("websocket_port") or 5002)
+    agents_yaml = state.get("agents_yaml", "") or ""
+    tasks_yaml = state.get("tasks_yaml", "") or ""
+    petri_net = state.get("petri_net_data") or {}
+    detected_tools: List[str] = llm_files.get("detected_tools", []) or []
+
+    tools_py = (llm_files.get("tools_py") or "").strip() or _empty_tools_py(detected_tools)
+    adapters_py = (llm_files.get("adapters_py") or "").strip() or _empty_adapters_py()
+
+    petri_with_logica = _build_petri_net_with_real_logica(petri_net, ws_port) if petri_net else {}
+
+    files: List[Dict[str, str]] = []
+
+    def add(path: str, content: str, language: str = "python"):
+        files.append({"path": path, "content": content, "language": language})
+
+    add("main.py", _template_main_py(project_name, ws_port))
+    add("websocket_server.py", _template_websocket_server_py(ws_port))
+    add("tools.py", tools_py if tools_py.endswith("\n") else tools_py + "\n")
+    add("adapters.py", adapters_py if adapters_py.endswith("\n") else adapters_py + "\n")
+    if agents_yaml:
+        add("agents.yaml", agents_yaml if agents_yaml.endswith("\n") else agents_yaml + "\n", "yaml")
+    if tasks_yaml:
+        add("tasks.yaml", tasks_yaml if tasks_yaml.endswith("\n") else tasks_yaml + "\n", "yaml")
+    if petri_with_logica:
+        add("petri_net.json", json.dumps(petri_with_logica, ensure_ascii=False, indent=2), "json")
+    add("requirements.txt", _template_requirements_txt(_detect_extra_packages(tools_py)), "text")
+    add(".env.example", _template_env_example(detected_tools), "text")
+    add("docker-compose.yml", _template_docker_compose(project_name, ws_port), "yaml")
+    add("Dockerfile", _template_dockerfile(), "dockerfile")
+    add("README.md", _template_readme(project_name, ws_port, [f["path"] for f in files]), "markdown")
+    return files
+
+
+def generate_code_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Adapter que extrai tools.py/adapters.py do LLM e monta a árvore completa
+    do projeto Python agêntico via templates."""
+    import re as _re
+
+    def _extract(obj: Any) -> str:
+        if isinstance(obj, str):
+            return obj
+        if isinstance(obj, dict):
+            for k in ("team_result", "raw_output", "raw", "output", "final_output", "result"):
+                if k in obj:
+                    return _extract(obj[k])
+            return json.dumps(obj)
+        return getattr(obj, "raw", None) or str(obj)
+
+    output_json = _extract(result)
+
+    def _parse(s: str) -> Dict[str, Any]:
+        try:
+            return json.loads(s)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        fence = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", s, _re.DOTALL)
+        if fence:
+            try:
+                return json.loads(fence.group(1))
+            except json.JSONDecodeError:
+                pass
+        outer = _re.search(r"\{.*\}", s, _re.DOTALL)
+        if outer:
+            try:
+                return json.loads(outer.group(0))
+            except json.JSONDecodeError:
+                return {}
+        return {}
+
+    llm_files = _parse(output_json) if isinstance(output_json, str) else (output_json or {})
+    if not isinstance(llm_files, dict):
+        llm_files = {}
+
+    files = _build_project_templates(state, llm_files)
+    print(f"[CODE GEN] generated {len(files)} files: {[f['path'] for f in files]}")
 
     updated_state = {
         **state,
-        "code_generation_json": output_json,
-        "generated_code": parsed.get("main_file", ""),
-        "generated_files": parsed.get("additional_files", {}),
-        "requirements_txt": parsed.get("requirements_txt", ""),
-        "readme_md": parsed.get("readme_md", "")
+        "code_generation_json": json.dumps({"files": files}, ensure_ascii=False),
+        "generated_files_list": files,
     }
-
     return log_task_complete(updated_state, "generate_python_code")
 
 
