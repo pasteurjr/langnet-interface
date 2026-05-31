@@ -14,6 +14,8 @@ import {
   CodeChatMessage,
 } from '../services/codeGenerationService';
 import GenerateCodeModal from '../components/code-generation/GenerateCodeModal';
+import RunConsole from '../components/code-generation/RunConsole';
+import { useCodeRun } from '../components/code-generation/useCodeRun';
 
 const headerStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -71,7 +73,10 @@ const CodeGenerationPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editorBuffer, setEditorBuffer] = useState<string>('');
   const [dirty, setDirty] = useState(false);
+  const [consoleOpen, setConsoleOpen] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const codeRun = useCodeRun(currentSession?.id);
 
   // Load sessions list when project changes
   useEffect(() => {
@@ -219,6 +224,20 @@ const CodeGenerationPage: React.FC = () => {
           <button onClick={handleDownload} disabled={!currentSession} style={btn('#ff9800')}>
             📦 Baixar ZIP
           </button>
+          <button
+            onClick={() => {
+              setConsoleOpen(true);
+              codeRun.start();
+            }}
+            disabled={!currentSession || codeRun.isStarting || codeRun.run?.status === 'running' || codeRun.run?.status === 'installing'}
+            style={btn(codeRun.run?.status === 'running' ? '#888' : '#7b1fa2')}
+            title="Cria venv, instala deps e sobe python main.py em /tmp/langnet-runs"
+          >
+            {codeRun.isStarting ? '⏳ Iniciando...' :
+             codeRun.run?.status === 'running' ? '▶ Executando' :
+             codeRun.run?.status === 'installing' ? '📦 Instalando' :
+             '▶ Executar'}
+          </button>
         </div>
       </div>
 
@@ -347,6 +366,17 @@ const CodeGenerationPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <RunConsole
+        visible={consoleOpen}
+        run={codeRun.run}
+        lines={codeRun.lines}
+        isStarting={codeRun.isStarting}
+        error={codeRun.error}
+        onStop={codeRun.stop}
+        onClose={() => setConsoleOpen(false)}
+        onClear={codeRun.clear}
+      />
 
       <GenerateCodeModal
         isOpen={isModalOpen}

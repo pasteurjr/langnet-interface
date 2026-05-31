@@ -5,6 +5,7 @@ CrewAI compatível com o framework visualtasksexec, a partir dos artefatos
 prévios (agents.yaml + tasks.yaml + petri_net em projects.project_data).
 """
 
+import asyncio
 import io
 import json
 import re
@@ -13,9 +14,11 @@ import zipfile
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+
+from app import code_runner
 
 from app.database import (
     create_code_generation_session,
@@ -427,6 +430,87 @@ def get_version(session_id: str, version: int, current_user: dict = Depends(get_
 def chat_history(session_id: str, current_user: dict = Depends(get_current_user)):
     msgs = get_code_generation_chat_messages(session_id)
     return {"messages": msgs}
+
+
+# ════════════════════════════════════════════════════════════
+# EXECUÇÃO LOCAL DO CÓDIGO GERADO (subprocess + venv)
+# ════════════════════════════════════════════════════════════
+
+@router.post("/{session_id}/run")
+def start_run_endpoint(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Cria /tmp/langnet-runs/<session_id>/<run_id>/, instala deps em venv
+    isolado e sobe `python main.py`. Retorna run_id imediatamente — o status
+    e o stdout devem ser consumidos por GET /run/{run_id}/status ou
+    WS /ws/code-generation/run/{run_id}."""
+    session = get_code_generation_session(session_id)
+    if not session:
+        raise HTTPException(404, "Sessão não encontrada")
+    files = session.get("generated_files") or []
+    if not files:
+        raise HTTPException(400, "Sessão sem arquivos")
+    run = code_runner.start_run(session_id, files)
+    return run.to_public()
+
+
+@router.get("/run/{run_id}/status")
+def run_status(run_id: str, current_user: dict = Depends(get_current_user)):
+    run = code_runner.get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Run não encontrado")
+    return {**run.to_public(), "stdout_tail": run.stdout_lines[-300:]}
+
+
+@router.post("/run/{run_id}/stop")
+def run_stop(run_id: str, current_user: dict = Depends(get_current_user)):
+    run = code_runner.stop_run(run_id)
+    if not run:
+        raise HTTPException(404, "Run não encontrado")
+    return run.to_public()
+
+
+@router.get("/{session_id}/runs")
+def list_runs(session_id: str, current_user: dict = Depends(get_current_user)):
+    runs = code_runner.list_runs_for_session(session_id)
+    return {"runs": [r.to_public() for r in runs]}
+
+
+@router.websocket("/run/{run_id}/ws")
+async def run_ws(websocket: WebSocket, run_id: str, token: str = ""):
+    """Stream em tempo real do stdout do run.
+    Auth via query param ?token=... (não dá pra mandar header em WS browser)."""
+    # Auth via query token
+    try:
+        from app.utils import decode_access_token
+        payload = decode_access_token(token)
+        if not payload:
+            await websocket.close(code=1008)
+            return
+    except Exception:
+        await websocket.close(code=1008)
+        return
+
+    run = code_runner.get_run(run_id)
+    if not run:
+        await websocket.close(code=1003)
+        return
+
+    await websocket.accept()
+    # Envia status atual + tail recente
+    await websocket.send_json({"type": "status", "data": run.to_public()})
+    for line in run.stdout_lines[-500:]:
+        await websocket.send_json({"type": "line", "data": line})
+
+    q = code_runner.subscribe(run)
+    try:
+        while True:
+            msg = await q.get()
+            await websocket.send_json(msg)
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        code_runner.unsubscribe(run, q)
 
 
 @router.get("/{session_id}/download")
