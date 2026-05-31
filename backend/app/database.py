@@ -2,6 +2,7 @@
 Database connection management using MySQL Connector/Python
 """
 import os
+import json
 from contextlib import contextmanager
 from typing import Generator
 import mysql.connector
@@ -1247,6 +1248,33 @@ def get_document(document_id: str) -> dict | None:
 
     document = execute_query(query, (document_id,), fetch_one=True)
     return document
+
+
+def get_project_data(project_id: str) -> dict | None:
+    """Get projects.project_data (Petri Net JSON) for a project. Returns dict or None."""
+    row = execute_query(
+        "SELECT project_data FROM projects WHERE id = %s LIMIT 1",
+        (project_id,),
+        fetch_one=True,
+    )
+    if not row or not row.get("project_data"):
+        return None
+    raw = row["project_data"]
+    if isinstance(raw, (dict, list)):
+        return raw
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        return None
+
+
+def update_project_data(project_id: str, data: dict) -> int:
+    """Persist Petri Net JSON to projects.project_data. Returns affected rows."""
+    payload = json.dumps(data, ensure_ascii=False)
+    return execute_update(
+        "UPDATE projects SET project_data = %s, updated_at = NOW() WHERE id = %s",
+        (payload, project_id),
+    )
 
 
 # Initialize pool on module import

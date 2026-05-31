@@ -1,13 +1,24 @@
 import React from 'react';
+import { useParams } from 'react-router-dom';
+import PetriNetEditor from '../components/petri-net/PetriNetEditor';
 
 const PetriNetPage: React.FC = () => {
-  return (
-    <div className="page-container">
-      <h1>Editor de Redes de Petri</h1>
-      <p>Esta página permitirá a criação e edição de Redes de Petri para modelar fluxos de agentes.</p>
-      <div className="placeholder-message">
-        <p>Esta é uma página placeholder. A implementação completa será desenvolvida nas próximas iterações.</p>
+  // Routes registradas: "projects/:id/petri" e "/project/:projectId/petri-net"
+  const params = useParams<{ projectId?: string; id?: string }>();
+  const projectId = params.projectId || params.id || '';
+
+  if (!projectId) {
+    return (
+      <div className="page-container">
+        <h1>🔗 Rede de Petri</h1>
+        <p style={{ color: '#c00' }}>Selecione um projeto para acessar a Rede de Petri.</p>
       </div>
+    );
+  }
+
+  return (
+    <div className="page-container" style={{ padding: 0, height: '100%' }}>
+      <PetriNetEditor projectId={projectId} />
     </div>
   );
 };

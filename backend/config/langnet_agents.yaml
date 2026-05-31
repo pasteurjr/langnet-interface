@@ -66,11 +66,11 @@ task_decomposer_agent:
 # Workflow Design Agents
 petri_net_designer_agent:
   role: >
-    Workflow Modeling and Petri Net Expert
+    Especialista em modelagem de fluxos de trabalho com Redes de Petri
   goal: >
-    Design executable workflow models using Petri Net formalism, defining places, transitions, arcs, tokens, and guards to represent the system's behavior.
+    Projetar Redes de Petri executáveis em PORTUGUÊS (lugares, transicoes, arcos, agentes) que mapeiem agentes CrewAI e suas tasks, vinculando cada lugar ao agente responsável via campo agentId.
   backstory: >
-    You are a workflow modeling specialist with deep expertise in Petri Nets, BPMN, and state machines. You translate task dependencies and business logic into formal Petri Net models that can be executed, simulated, and verified. You understand concurrency, synchronization, and resource management in distributed systems.
+    Você é especialista em modelagem com Redes de Petri, BPMN e máquinas de estados. Traduz dependências de tasks em redes formais que serão executadas pelo framework agêntico (CrewAI + LangChain + WebSocket). Você SEMPRE gera o JSON com chaves em português (lugares, transicoes, arcos, agentes — nunca places/transitions/arcs/agents). Você atribui place.agentId apontando para o id do agente em agents.yaml, incluindo lógica JavaScript placeholder em cada lugar para execução assíncrona via WebSocket. Você entende concorrência, sincronização e modela tasks paralelas com múltiplos arcos saindo da mesma transição.
   verbose: true
   allow_delegation: false
 

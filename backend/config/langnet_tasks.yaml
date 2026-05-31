@@ -1058,9 +1058,32 @@ decompose_tasks:
 # Workflow Design Tasks
 design_petri_net:
   description: >
-    Design Petri Net workflow from tasks: {tasks_json}, dependencies: {dependencies}, and agents: {agents_json}. Define: (1) Places (workflow states) with initial token distribution; (2) Transitions (task executions) with guard conditions; (3) Arcs connecting places to transitions with weights; (4) Agent assignments to places; (5) Input/output data flow; (6) Error handling paths; (7) Synchronization points for parallel tasks. Ensure workflow is sound (no deadlocks, livelocks).
+    Modele a Rede de Petri (em PORTUGUÊS) que orquestra o sistema agêntico, a partir de:
+    - tasks: {tasks_json}
+    - dependencies: {dependencies}
+    - agents: {agents_json}
+
+    REGRAS OBRIGATÓRIAS (siga TODAS):
+    1. Use chaves SEMPRE em PORTUGUÊS: "lugares", "transicoes", "arcos", "agentes". NUNCA escreva "places", "transitions", "arcs", "agents".
+    2. Para cada task em tasks_json gere UM lugar (id P1, P2, ...) e UMA transição (id T1, T2, ...). O lugar representa o estado "task pronta para executar"; a transição representa o disparo da execução pelo agente CrewAI.
+    3. Cada lugar associado a uma task DEVE ter "agentId" preenchido com o id do agente responsável (o mesmo id presente em agents_json/agents.yaml). Lugares de início/fim podem ter agentId=null.
+    4. O PRIMEIRO lugar (entrada do fluxo) recebe tokens=1. Demais lugares iniciam com tokens=0.
+    5. Modele as dependencies como arcos: lugar_pronta → transição_disparo → lugar_pronta_próxima. Para tasks paralelas, conecte uma transição a múltiplos lugares de saída.
+    6. Cada lugar associado a uma task DEVE incluir o campo "logica" com placeholder JavaScript de execução assíncrona, no padrão:
+       "logica": "const output = utils.clone(input); output.task_name = '<nome_task>'; await new Promise(r => setTimeout(r, 100)); return output;"
+    7. Para transições com condição (ex: branching baseado em dado), preencha "guard" com expressão JS (ex: "tokens.P1 > 0"). Se não há condição, deixe guard = "".
+    8. Cada agente em "agentes" deve ter id idêntico ao agent_id usado em agents_json.
+
   expected_output: >
-    JSON Petri Net model with: 'places' array (id, name, tokens, agent_id, input_data, output_data, logic), 'transitions' array (id, name, guard), 'arcs' array (source, target, weight), 'agents' array (id, name, coordinates), workflow_properties (is_sound, has_deadlocks, estimated_cycles).
+    JSON em PORTUGUÊS com EXATAMENTE esta estrutura:
+    {
+      "nome": "<nome descritivo da rede>",
+      "lugares": [{"id": "P1", "nome": "<label legível>", "tokens": <int>, "input_data": {}, "agentId": "<agent_id|null>", "logica": "<string JS>"}],
+      "transicoes": [{"id": "T1", "nome": "<label>", "guard": "<expr JS ou ''>", "prioridade": 1}],
+      "arcos": [{"origem": "<id>", "destino": "<id>", "peso": 1}],
+      "agentes": [{"id": "<agent_id>", "nome": "<label>"}]
+    }
+    Apenas o JSON, sem texto adicional. Campos visuais (coordenadas, delay, etc.) serão preenchidos pelo backend.
 
 # Code Generation Tasks
 generate_yaml_files:

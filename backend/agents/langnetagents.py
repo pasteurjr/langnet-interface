@@ -1556,22 +1556,179 @@ def decompose_tasks_output_func(state: LangNetFullState, result: Any) -> LangNet
     return log_task_complete(updated_state, "decompose_tasks")
 
 
-def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
-    """Update state with design_petri_net results"""
-    if isinstance(result, dict):
-        output_json = result.get("raw_output", json.dumps(result))
-    else:
-        output_json = str(result)
+def _adapt_petri_net(parsed: Dict[str, Any]) -> Dict[str, Any]:
+    """Adapter that normalizes LLM output to the petri-net-editor schema (PT-BR).
 
-    try:
-        parsed = json.loads(output_json)
-    except json.JSONDecodeError:
-        parsed = {}
+    Tolerates EN keys, fills defaults, computes layout via topological BFS,
+    and ensures place.agentId references exist in agentes[].
+    """
+    key_map = {
+        "places": "lugares", "transitions": "transicoes",
+        "arcs": "arcos", "agents": "agentes",
+        "name": "nome", "source": "origem", "target": "destino",
+        "weight": "peso", "agent_id": "agentId", "logic": "logica",
+        "coordinates": "coordenadas",
+    }
+    root = {key_map.get(k, k): v for k, v in parsed.items()}
+    root.setdefault("nome", "Rede de Petri")
+    root.setdefault("lugares", [])
+    root.setdefault("transicoes", [])
+    root.setdefault("arcos", [])
+    root.setdefault("agentes", [])
+
+    def remap(item: Dict[str, Any]) -> Dict[str, Any]:
+        return {key_map.get(k, k): v for k, v in item.items()}
+
+    lugares = [remap(p) for p in root["lugares"]]
+    transicoes = [remap(t) for t in root["transicoes"]]
+    arcos = [remap(a) for a in root["arcos"]]
+    agentes = [remap(a) for a in root["agentes"]]
+
+    agent_ids = {a.get("id") for a in agentes}
+    for p in lugares:
+        p.setdefault("id", "")
+        p.setdefault("nome", p["id"])
+        p.setdefault("tokens", 0)
+        p.setdefault("delay", 0)
+        p.setdefault("input_data", {})
+        p.setdefault("output_data", {})
+        p.setdefault("logica", "")
+        p.setdefault("subnet", {})
+        aid = p.get("agentId")
+        p["agentId"] = aid if aid in agent_ids else None
+
+    for t in transicoes:
+        t.setdefault("id", "")
+        t.setdefault("nome", t["id"])
+        t.setdefault("orientacao", "vert")
+        t.setdefault("prioridade", 1)
+        t.setdefault("probabilidade", 0)
+        t.setdefault("tempo", 0)
+        t.setdefault("guard", "")
+
+    for a in arcos:
+        a.setdefault("peso", 1)
+
+    for ag in agentes:
+        ag.setdefault("id", "")
+        ag.setdefault("nome", ag["id"])
+        ag.setdefault("width", 300)
+        ag.setdefault("height", 200)
+
+    # Layout: BFS por níveis a partir dos lugares com tokens>0
+    place_ids = {p["id"] for p in lugares}
+    trans_ids = {t["id"] for t in transicoes}
+    out_edges: Dict[str, List[str]] = {}
+    for a in arcos:
+        out_edges.setdefault(a.get("origem", ""), []).append(a.get("destino", ""))
+
+    level: Dict[str, int] = {}
+    queue: List[str] = [p["id"] for p in lugares if p.get("tokens", 0) > 0]
+    if not queue and lugares:
+        queue = [lugares[0]["id"]]
+    for nid in queue:
+        level[nid] = 0
+    head = 0
+    while head < len(queue):
+        nid = queue[head]
+        head += 1
+        for nxt in out_edges.get(nid, []):
+            if nxt not in level and nxt in (place_ids | trans_ids):
+                level[nxt] = level[nid] + 1
+                queue.append(nxt)
+    # Nós não alcançados ficam no nível máximo + 1
+    fallback_level = (max(level.values()) + 1) if level else 0
+    for p in lugares:
+        level.setdefault(p["id"], fallback_level)
+    for t in transicoes:
+        level.setdefault(t["id"], fallback_level)
+
+    # Posiciona por nível
+    by_level: Dict[int, List[str]] = {}
+    for nid, lv in level.items():
+        by_level.setdefault(lv, []).append(nid)
+    pos: Dict[str, Dict[str, int]] = {}
+    for lv, ids in by_level.items():
+        for i, nid in enumerate(sorted(ids)):
+            pos[nid] = {"x": 100 + lv * 150, "y": 100 + i * 120}
+
+    for p in lugares:
+        if not p.get("coordenadas"):
+            p["coordenadas"] = pos.get(p["id"], {"x": 100, "y": 100})
+    for t in transicoes:
+        if not t.get("coordenadas"):
+            t["coordenadas"] = pos.get(t["id"], {"x": 200, "y": 100})
+    for ag in agentes:
+        ag.setdefault("coordenadas", {"x": 50, "y": 50})
+
+    root["lugares"] = lugares
+    root["transicoes"] = transicoes
+    root["arcos"] = arcos
+    root["agentes"] = agentes
+    return root
+
+
+def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
+    """Update state with design_petri_net results, adapted to petri-net-editor schema."""
+    import re as _re
+
+    def _extract_json_string(obj: Any) -> str:
+        """Unwrap CrewAI result variants down to the raw JSON string."""
+        if isinstance(obj, str):
+            return obj
+        if isinstance(obj, dict):
+            for key in ("team_result", "raw_output", "raw", "output", "final_output", "result"):
+                if key in obj:
+                    return _extract_json_string(obj[key])
+            return json.dumps(obj)
+        return getattr(obj, "raw", None) or str(obj)
+
+    output_json = _extract_json_string(result)
+
+    def _try_parse(s: str) -> Dict[str, Any]:
+        try:
+            return json.loads(s)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Strip ```json fences and try again
+        fence = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", s, _re.DOTALL)
+        if fence:
+            try:
+                return json.loads(fence.group(1))
+            except json.JSONDecodeError:
+                pass
+        # Last resort: take the outermost {...}
+        outer = _re.search(r"\{.*\}", s, _re.DOTALL)
+        if outer:
+            try:
+                return json.loads(outer.group(0))
+            except json.JSONDecodeError:
+                return {}
+        return {}
+
+    parsed = _try_parse(output_json)
+    # Unwrap once more if the LLM nested the net under a single key (e.g. {"petri_net": {...}})
+    if isinstance(parsed, dict) and not any(
+        k in parsed for k in ("lugares", "places", "transicoes", "transitions")
+    ):
+        for v in parsed.values():
+            if isinstance(v, dict) and any(
+                k in v for k in ("lugares", "places", "transicoes", "transitions")
+            ):
+                parsed = v
+                break
+
+    adapted = _adapt_petri_net(parsed if isinstance(parsed, dict) else {})
+    print(
+        f"[PETRI OUT] adapted: lugares={len(adapted.get('lugares', []))} "
+        f"transicoes={len(adapted.get('transicoes', []))} "
+        f"arcos={len(adapted.get('arcos', []))}"
+    )
 
     updated_state = {
         **state,
-        "petri_net_json": output_json,
-        "petri_net_data": parsed
+        "petri_net_json": json.dumps(adapted, ensure_ascii=False),
+        "petri_net_data": adapted
     }
 
     return log_task_complete(updated_state, "design_petri_net")

@@ -53,6 +53,8 @@ export interface TaskStep {
 }
 
 // Tipos para Redes de Petri
+// @deprecated: schema mínimo em inglês — mantido para componentes legados.
+// Para a integração com o petri-net-editor (JointJS), use PetriNetCompleta abaixo.
 export interface PetriNet {
   id: string;
   name: string;
@@ -87,6 +89,74 @@ export interface PetriArc {
 export interface Position {
   x: number;
   y: number;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Schema PT-BR do petri-net-editor (canônico)
+// Referência: petri-net-editor/DETALHAMENTO PARA CLAUDE.md §5
+// Persistido em projects.project_data
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface Coordenadas {
+  x: number;
+  y: number;
+}
+
+export interface Lugar {
+  id: string;
+  nome: string;
+  tokens: number;
+  coordenadas: Coordenadas;
+  delay: number;
+  input_data: Record<string, unknown>;
+  output_data: Record<string, unknown>;
+  logica: string;
+  subnet: PetriNetCompleta | Record<string, never>;
+  agentId: string | null;
+}
+
+export interface Transicao {
+  id: string;
+  nome: string;
+  coordenadas: Coordenadas;
+  orientacao: 'vert' | 'hor';
+  prioridade: number;
+  probabilidade: number;
+  tempo: number;
+  guard: string;
+  // Campos só presentes em transições de interface de sub-rede:
+  isInterface?: boolean;
+  originTransitionId?: string;
+  interfaceType?: 'entrada' | 'saida' | 'bidirecional';
+  peso_in?: number;
+  peso_out?: number;
+  peso_in_restante?: number;
+  peso_out_restante?: number;
+}
+
+export interface Arco {
+  origem: string;
+  destino: string;
+  peso: number; // 0 = arco inibidor
+}
+
+export interface Agente {
+  id: string;
+  nome: string;
+  coordenadas: Coordenadas;
+  width: number;
+  height: number;
+}
+
+export interface PetriNetCompleta {
+  nome: string;
+  lugares: Lugar[];
+  transicoes: Transicao[];
+  arcos: Arco[];
+  agentes: Agente[];
+  // Só em sub-redes:
+  entradas?: string[];
+  saidas?: string[];
 }
 
 // Tipos para UI
