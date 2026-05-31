@@ -3,6 +3,7 @@ import * as joint from "jointjs";
 import PetriNetSimulator from "./PetriNetSimulator";
 import SimulationPanel from "./SimulationPanel";
 import GeneratePetriNetModal from "./GeneratePetriNetModal";
+import ExecutionPanel from "./ExecutionPanel";
 import * as petriNetService from "../../services/petriNetService";
 
 // =========== UTILITY FUNCTIONS ===========
@@ -584,6 +585,7 @@ const PetriNetEditor = ({ projectId }) => {
   // LangNet integration state
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
   const [isLoadingNet, setIsLoadingNet] = useState(false);
+  const [executionPanelOpen, setExecutionPanelOpen] = useState(false);
   const initialLoadDoneRef = useRef(false);
 
   // Petri net state
@@ -8933,6 +8935,21 @@ const PetriNetEditor = ({ projectId }) => {
             style={{
               marginRight: "10px",
               padding: "5px 10px",
+              backgroundColor: executionPanelOpen ? "#7b1fa2" : "#1976d2",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+            }}
+            onClick={() => setExecutionPanelOpen((v) => !v)}
+            title="Conecta no servidor agêntico gerado (websocket_server.py) e abre as 5 abas"
+          >
+            ▶ Execução Real
+          </button>
+          <button
+            style={{
+              marginRight: "10px",
+              padding: "5px 10px",
               backgroundColor: "#FF9800",
               color: "white",
               border: "none",
@@ -9032,6 +9049,10 @@ const PetriNetEditor = ({ projectId }) => {
           projectId={projectId || ""}
           onClose={() => setGenerateModalOpen(false)}
           onConfirm={handleGenerateConfirm}
+        />
+        <ExecutionPanel
+          isOpen={executionPanelOpen}
+          onClose={() => setExecutionPanelOpen(false)}
         />
         <SimulationPanel
           simulator={simulator}
