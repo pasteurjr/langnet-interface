@@ -1,13 +1,16 @@
 """
-Subprocess runner para o sistema agêntico gerado.
+Subprocess runner para o sistema agêntico gerado, usando o ambiente conda
+``langnet`` (compartilhado entre runs).
 
 Pipeline ao iniciar um run:
 1. Cria /tmp/langnet-runs/<session_id>/<run_id>/
 2. Escreve arquivos da sessão lá dentro
-3. Cria venv local
-4. pip install -r requirements.txt (com timeout)
-5. Sobe `python main.py` em background
+3. Valida que o env conda ``langnet`` existe
+4. Checa deps faltantes (pip dry-run) e instala APENAS o que falta NO env langnet
+5. Sobe ``conda env python main.py`` em background
 6. Stream stdout/stderr para buffer em memória + asyncio.Queue (consumido pelo WS)
+
+Não cria venv local — usa /home/pasteurjr/miniconda3/envs/langnet/bin/python.
 
 Cada run mantém: status (preparing|installing|running|stopped|crashed),
 exit_code, stdout (lista de linhas), processo Popen, queue de novas linhas
@@ -31,8 +34,25 @@ from typing import Any, Dict, List, Optional
 
 
 RUNS_ROOT = Path(os.environ.get("LANGNET_RUNS_ROOT", "/tmp/langnet-runs"))
-PIP_TIMEOUT_SECONDS = 600  # 10 min para instalar deps
+PIP_TIMEOUT_SECONDS = 600  # 10 min para instalar deps faltantes
 MAX_STDOUT_LINES = 5000     # buffer cap (linhas anteriores ficam — só limita memória)
+
+# Localiza o conda env "langnet". Se LANGNET_CONDA_ENV apontar para outro path, respeita.
+CONDA_ENV_PATH = Path(os.environ.get(
+    "LANGNET_CONDA_ENV",
+    "/home/pasteurjr/miniconda3/envs/langnet",
+))
+
+
+def _conda_bin(name: str) -> Path:
+    """Retorna o caminho de um binário dentro do env conda (python, pip)."""
+    sub = "Scripts" if os.name == "nt" else "bin"
+    suffix = ".exe" if os.name == "nt" else ""
+    return CONDA_ENV_PATH / sub / f"{name}{suffix}"
+
+
+def env_exists() -> bool:
+    return _conda_bin("python").exists()
 
 
 @dataclass
@@ -139,60 +159,100 @@ def _stream_pipe(run: CodeRun, pipe, prefix: str = "") -> None:
             pass
 
 
-def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
-    """Thread worker: cria venv, instala deps, sobe main.py, faz tail."""
+def _check_missing_deps(req_file: Path, run: CodeRun) -> List[str]:
+    """Roda `pip install --dry-run -r requirements.txt` no env langnet e
+    retorna a lista de pacotes que SERIAM instalados (vazio = todos OK)."""
+    if not req_file.exists():
+        return []
+    pip = _conda_bin("pip")
     try:
+        # --dry-run + --quiet imprime "Would install pkg-x.y.z" para cada faltante
+        proc = subprocess.run(
+            [str(pip), "install", "--dry-run", "--no-deps", "-r", str(req_file)],
+            cwd=str(run.work_dir),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        output = (proc.stdout or "") + (proc.stderr or "")
+        missing: List[str] = []
+        for line in output.splitlines():
+            line = line.strip()
+            if line.startswith("Would install"):
+                # "Would install pkg-1.2 pkg-3.4 ..."
+                tokens = line.removeprefix("Would install").strip().split()
+                missing.extend(tokens)
+        return missing
+    except Exception as exc:  # noqa: BLE001
+        run.append_line(f"[runner] WARN: pip dry-run falhou ({exc}); assumindo deps OK")
+        return []
+
+
+def _install_missing(req_file: Path, run: CodeRun) -> bool:
+    """Instala deps faltantes NO env langnet (não cria venv local)."""
+    pip = _conda_bin("pip")
+    run.append_line(f"[runner] pip install --upgrade -r requirements.txt (env=langnet)")
+    try:
+        proc = subprocess.Popen(
+            [str(pip), "install", "--no-cache-dir", "-r", str(req_file)],
+            cwd=str(run.work_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+        )
+        for raw in iter(proc.stdout.readline, b""):
+            line = raw.decode("utf-8", errors="replace").rstrip("\n")
+            run.append_line(f"[pip] {line}")
+        proc.wait(timeout=PIP_TIMEOUT_SECONDS)
+        if proc.returncode != 0:
+            run.append_line(f"[runner] pip install FAILED (exit {proc.returncode})")
+            return False
+        return True
+    except subprocess.TimeoutExpired:
+        run.append_line("[runner] pip install TIMEOUT")
+        return False
+
+
+def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
+    """Thread worker: usa env conda langnet, instala apenas o que falta, sobe main.py."""
+    try:
+        # 0) Verifica env conda
+        if not env_exists():
+            run.status = "crashed"
+            run.append_line(
+                f"[runner] env conda 'langnet' NÃO encontrado em {CONDA_ENV_PATH}. "
+                f"Crie com: conda create -n langnet python=3.11 && conda activate langnet && "
+                f"pip install crewai langchain websockets pyyaml python-dotenv"
+            )
+            run.broadcast_status()
+            return
+
         # 1) Escreve arquivos
         run.append_line(f"[runner] writing {len(files)} file(s) to {run.work_dir}")
         _safe_write_files(run.work_dir, files)
 
-        # 2) Cria venv
-        venv_dir = run.work_dir / ".venv"
-        if not venv_dir.exists():
-            run.status = "installing"
-            run.broadcast_status()
-            run.append_line(f"[runner] creating venv at {venv_dir}")
-            subprocess.run(
-                [sys.executable, "-m", "venv", str(venv_dir)],
-                cwd=str(run.work_dir),
-                check=True,
-                capture_output=True,
-            )
+        env_python = _conda_bin("python")
+        run.append_line(f"[runner] interpreter: {env_python}")
 
-        venv_python = venv_dir / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
-        venv_pip = venv_dir / ("Scripts" if os.name == "nt" else "bin") / ("pip.exe" if os.name == "nt" else "pip")
-
-        # 3) pip install -r requirements.txt
+        # 2) Checa deps faltantes (sem instalar nada ainda)
         req_file = run.work_dir / "requirements.txt"
         if req_file.exists():
-            run.append_line(f"[runner] pip install -r requirements.txt (timeout {PIP_TIMEOUT_SECONDS}s)")
-            try:
-                proc = subprocess.Popen(
-                    [str(venv_pip), "install", "--no-cache-dir", "-r", "requirements.txt"],
-                    cwd=str(run.work_dir),
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    bufsize=1,
-                )
-                # Lê output linha-a-linha
-                for raw in iter(proc.stdout.readline, b""):
-                    line = raw.decode("utf-8", errors="replace").rstrip("\n")
-                    run.append_line(f"[pip] {line}")
-                proc.wait(timeout=PIP_TIMEOUT_SECONDS)
-                if proc.returncode != 0:
+            run.status = "installing"
+            run.broadcast_status()
+            missing = _check_missing_deps(req_file, run)
+            if missing:
+                run.append_line(f"[runner] {len(missing)} dep(s) faltando: {', '.join(missing[:10])}{'...' if len(missing) > 10 else ''}")
+                ok = _install_missing(req_file, run)
+                if not ok:
                     run.status = "crashed"
-                    run.exit_code = proc.returncode
+                    run.exit_code = 1
                     run.finished_at = datetime.utcnow().isoformat()
-                    run.append_line(f"[runner] pip install FAILED (exit {proc.returncode})")
                     run.broadcast_status()
                     return
-            except subprocess.TimeoutExpired:
-                run.status = "crashed"
-                run.append_line("[runner] pip install TIMEOUT")
-                run.broadcast_status()
-                return
+            else:
+                run.append_line("[runner] todas as deps já estão no env langnet ✓")
 
-        # 4) Sobe python main.py
+        # 3) Sobe python main.py
         main_py = run.work_dir / "main.py"
         if not main_py.exists():
             run.status = "crashed"
@@ -200,12 +260,12 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
             run.broadcast_status()
             return
 
-        run.append_line(f"[runner] starting: {venv_python} main.py")
+        run.append_line(f"[runner] starting: {env_python} main.py")
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
         # Carrega .env do projeto se existir
         run.process = subprocess.Popen(
-            [str(venv_python), "main.py"],
+            [str(env_python), "main.py"],
             cwd=str(run.work_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

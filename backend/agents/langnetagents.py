@@ -1883,6 +1883,7 @@ def _parse_yaml_keys(yaml_text: str) -> List[str]:
 
 
 def _template_main_py(project_name: str, ws_port: int) -> str:
+    safe_name = (project_name or "Sistema Agêntico").replace('"', '\\"')
     return f'''"""
 {project_name} — entrypoint
 Sobe o servidor WebSocket na porta {ws_port} que recebe execute_task
@@ -1896,11 +1897,13 @@ from websocket_server import run_websocket_server
 
 load_dotenv()
 
+PROJECT_NAME = "{safe_name}"
+
 
 def main():
     port = int(os.getenv("WEBSOCKET_PORT", "{ws_port}"))
     host = os.getenv("WEBSOCKET_HOST", "localhost")
-    print(f"🚀 {{project_name}} — WebSocket server em ws://{{host}}:{{port}}")
+    print(f"🚀 {{PROJECT_NAME}} — WebSocket server em ws://{{host}}:{{port}}")
     asyncio.run(run_websocket_server(host=host, port=port))
 
 
