@@ -1,11 +1,14 @@
 import React from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import PetriNetEditor from '../components/petri-net/PetriNetEditor';
 
 const PetriNetPage: React.FC = () => {
-  // Routes registradas: "projects/:id/petri" e "/project/:projectId/petri-net"
   const params = useParams<{ projectId?: string; id?: string }>();
+  const [searchParams] = useSearchParams();
   const projectId = params.projectId || params.id || '';
+  // ?autoconnect=ws://localhost:5002 — usado quando o usuário acabou de subir o
+  // servidor agêntico via "▶ Executar" no CodeGenerationPage.
+  const autoconnectUrl = searchParams.get('autoconnect') || undefined;
 
   if (!projectId) {
     return (
@@ -18,7 +21,7 @@ const PetriNetPage: React.FC = () => {
 
   return (
     <div className="page-container" style={{ padding: 0, height: '100%' }}>
-      <PetriNetEditor projectId={projectId} />
+      <PetriNetEditor projectId={projectId} autoconnectUrl={autoconnectUrl} />
     </div>
   );
 };

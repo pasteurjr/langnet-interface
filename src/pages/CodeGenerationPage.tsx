@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import Editor from '@monaco-editor/react';
 import {
   CodeFile,
@@ -60,6 +61,7 @@ const langOf = (path: string): string => {
 
 const CodeGenerationPage: React.FC = () => {
   const params = useParams<{ projectId?: string; id?: string }>();
+  const navigate = useNavigate();
   const projectId = params.projectId || params.id || '';
 
   const [sessions, setSessions] = useState<CodeGenerationSession[]>([]);
@@ -77,6 +79,37 @@ const CodeGenerationPage: React.FC = () => {
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const codeRun = useCodeRun(currentSession?.id);
+  const lastToastedRunRef = useRef<string | null>(null);
+
+  // Quando o servidor agêntico fica running, oferece ir para Petri Net + autoconnect
+  useEffect(() => {
+    if (
+      codeRun.run?.status === 'running' &&
+      codeRun.run?.run_id !== lastToastedRunRef.current &&
+      projectId
+    ) {
+      lastToastedRunRef.current = codeRun.run.run_id;
+      const port = currentSession?.websocket_port ?? 5002;
+      const wsUrl = `ws://localhost:${port}`;
+      toast.success(
+        <div>
+          <div style={{ marginBottom: 6 }}>
+            🌐 Servidor agêntico ativo em <code>{wsUrl}</code>
+          </div>
+          <button
+            onClick={() => navigate(`/project/${projectId}/petri-net?autoconnect=${encodeURIComponent(wsUrl)}`)}
+            style={{
+              padding: '6px 14px', background: '#1976d2', color: '#fff',
+              border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13,
+            }}
+          >
+            Ir para Petri Net e conectar →
+          </button>
+        </div>,
+        { autoClose: 12000, position: 'top-right' },
+      );
+    }
+  }, [codeRun.run?.status, codeRun.run?.run_id, currentSession?.websocket_port, projectId, navigate]);
 
   // Load sessions list when project changes
   useEffect(() => {

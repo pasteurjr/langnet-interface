@@ -576,7 +576,7 @@ const ContextMenu = ({
 };
 // =========== MAIN COMPONENT ===========
 
-const PetriNetEditor = ({ projectId }) => {
+const PetriNetEditor = ({ projectId, autoconnectUrl }) => {
   // Refs
   const graphRef = useRef(null);
   const paperRef = useRef(null);
@@ -585,8 +585,13 @@ const PetriNetEditor = ({ projectId }) => {
   // LangNet integration state
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
   const [isLoadingNet, setIsLoadingNet] = useState(false);
-  const [executionPanelOpen, setExecutionPanelOpen] = useState(false);
+  const [executionPanelOpen, setExecutionPanelOpen] = useState(Boolean(autoconnectUrl));
   const initialLoadDoneRef = useRef(false);
+
+  // Se chegou via ?autoconnect=... abre o painel automaticamente
+  useEffect(() => {
+    if (autoconnectUrl) setExecutionPanelOpen(true);
+  }, [autoconnectUrl]);
 
   // Petri net state
   const [petriNet, setPetriNet] = useState({
@@ -9052,6 +9057,7 @@ const PetriNetEditor = ({ projectId }) => {
         />
         <ExecutionPanel
           isOpen={executionPanelOpen}
+          autoconnectUrl={autoconnectUrl}
           onClose={() => setExecutionPanelOpen(false)}
         />
         <SimulationPanel

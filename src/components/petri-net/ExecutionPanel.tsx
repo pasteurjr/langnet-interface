@@ -14,6 +14,9 @@ type TabId = 'operacao' | 'execucao' | 'inputs' | 'outputs' | 'logs';
 interface ExecutionPanelProps {
   isOpen: boolean;
   defaultUrl?: string;
+  /** Se definido, conecta automaticamente ao abrir (uso típico: chegou via
+   *  /project/X/petri-net?autoconnect=ws://localhost:5002 depois de Executar). */
+  autoconnectUrl?: string;
   onClose: () => void;
 }
 
@@ -103,13 +106,23 @@ const EventRow: React.FC<EventRowProps> = ({ e }) => {
   );
 };
 
-const ExecutionPanel: React.FC<ExecutionPanelProps> = ({ isOpen, defaultUrl, onClose }) => {
-  const ws = useWebSocketExecution(defaultUrl);
+const ExecutionPanel: React.FC<ExecutionPanelProps> = ({ isOpen, defaultUrl, autoconnectUrl, onClose }) => {
+  const ws = useWebSocketExecution(autoconnectUrl || defaultUrl);
   const [activeTab, setActiveTab] = useState<TabId>('execucao');
   const [taskName, setTaskName] = useState('');
   const [inputJson, setInputJson] = useState('{}');
   const [parseErr, setParseErr] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const autoConnectedRef = useRef(false);
+
+  // Autoconnect quando isOpen + autoconnectUrl, uma única vez
+  useEffect(() => {
+    if (isOpen && autoconnectUrl && !autoConnectedRef.current && ws.status === 'disconnected') {
+      autoConnectedRef.current = true;
+      ws.connect(autoconnectUrl);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, autoconnectUrl]);
 
   // Auto-scroll
   useEffect(() => {
