@@ -2386,6 +2386,144 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     return files
 
 
+def _validate_generated_project(files: List[Dict[str, str]], state: LangNetFullState) -> List[str]:
+    """Verifica coerência interna da árvore gerada e retorna list de warnings.
+
+    Não bloqueia — só sinaliza. Cada warning é uma string curta no formato
+    "<categoria>: <detalhe>" para exibir num banner na UI.
+
+    Verificações:
+    1. tools em TASK_TOOLS/AGENT_TOOLS existem em TOOL_REGISTRY?
+    2. tasks em TASK_TOOLS existem em tasks.yaml?
+    3. agentes em AGENT_TOOLS existem em agents.yaml?
+    4. cada task de tasks.yaml tem <task>_input_func e <task>_output_func em adapters.py?
+    5. place.agentId da Petri Net existe em agents.yaml?
+    6. place.nome (após "Pronto para: X") referencia task que existe em tasks.yaml?
+    """
+    import re as _re
+    warnings: List[str] = []
+
+    by_path = {f["path"]: f.get("content", "") for f in files}
+    tools_py = by_path.get("tools.py", "")
+    adapters_py = by_path.get("adapters.py", "")
+    agents_yaml = by_path.get("agents.yaml", "")
+    tasks_yaml = by_path.get("tasks.yaml", "")
+    petri_json = by_path.get("petri_net.json", "")
+
+    # Parse top-level keys dos YAMLs (deterministic)
+    def _yaml_top_keys(text: str) -> List[str]:
+        try:
+            data = yaml.safe_load(text) or {}
+        except yaml.YAMLError:
+            return []
+        return list(data.keys()) if isinstance(data, dict) else []
+
+    agent_ids = set(_yaml_top_keys(agents_yaml))
+    task_ids = set(_yaml_top_keys(tasks_yaml))
+
+    # Extrai TOOL_REGISTRY keys do tools.py
+    tool_keys: set = set()
+    reg_match = _re.search(r"TOOL_REGISTRY\s*=\s*\{([^}]+)\}", tools_py, _re.DOTALL)
+    if reg_match:
+        for m in _re.finditer(r"['\"]([a-zA-Z0-9_]+)['\"]\s*:", reg_match.group(1)):
+            tool_keys.add(m.group(1))
+
+    # Extrai TASK_TOOLS / AGENT_TOOLS keys do adapters.py
+    def _parse_str_list_dict(src: str, dict_name: str) -> Dict[str, List[str]]:
+        m = _re.search(rf"{dict_name}\s*=\s*\{{([^}}]+)\}}", src, _re.DOTALL)
+        if not m:
+            return {}
+        out: Dict[str, List[str]] = {}
+        for entry in _re.finditer(r"['\"]([a-zA-Z0-9_]+)['\"]\s*:\s*\[(.*?)\]", m.group(1), _re.DOTALL):
+            key = entry.group(1)
+            items = _re.findall(r"['\"]([a-zA-Z0-9_]+)['\"]", entry.group(2))
+            out[key] = items
+        return out
+
+    task_tools_map = _parse_str_list_dict(adapters_py, "TASK_TOOLS")
+    agent_tools_map = _parse_str_list_dict(adapters_py, "AGENT_TOOLS")
+
+    # 1. tools órfãs (em bindings mas não em TOOL_REGISTRY)
+    referenced_tools: set = set()
+    for tools in list(task_tools_map.values()) + list(agent_tools_map.values()):
+        referenced_tools.update(tools)
+    orphan_tools = sorted(referenced_tools - tool_keys)
+    if orphan_tools:
+        sample = ", ".join(orphan_tools[:6]) + (f" (+{len(orphan_tools) - 6} mais)" if len(orphan_tools) > 6 else "")
+        warnings.append(
+            f"tools_orphan: {len(orphan_tools)} tool(s) referenciada(s) em adapters.py mas ausente(s) em tools.TOOL_REGISTRY — {sample}"
+        )
+
+    # 2. tasks em TASK_TOOLS que não estão em tasks.yaml
+    if task_ids:
+        unknown_tasks = sorted(set(task_tools_map.keys()) - task_ids)
+        if unknown_tasks:
+            warnings.append(
+                f"unknown_task_in_bindings: {len(unknown_tasks)} task_id em TASK_TOOLS sem definição em tasks.yaml — "
+                + ", ".join(unknown_tasks[:6])
+            )
+
+    # 3. agentes em AGENT_TOOLS que não estão em agents.yaml
+    if agent_ids:
+        unknown_agents = sorted(set(agent_tools_map.keys()) - agent_ids)
+        if unknown_agents:
+            warnings.append(
+                f"unknown_agent_in_bindings: {len(unknown_agents)} agent_id em AGENT_TOOLS sem definição em agents.yaml — "
+                + ", ".join(unknown_agents[:6])
+            )
+
+    # 4. adapter functions ausentes
+    if task_ids:
+        missing_adapters: List[str] = []
+        for tid in sorted(task_ids):
+            if f"def {tid}_input_func" not in adapters_py:
+                missing_adapters.append(f"{tid}_input_func")
+            if f"def {tid}_output_func" not in adapters_py:
+                missing_adapters.append(f"{tid}_output_func")
+        if missing_adapters:
+            sample = ", ".join(missing_adapters[:6]) + (f" (+{len(missing_adapters) - 6} mais)" if len(missing_adapters) > 6 else "")
+            warnings.append(
+                f"missing_adapters: {len(missing_adapters)} função(ões) ausente(s) em adapters.py — {sample}"
+            )
+
+    # 5 & 6. Petri Net coherence
+    if petri_json:
+        try:
+            petri = json.loads(petri_json)
+        except json.JSONDecodeError:
+            petri = {}
+        if isinstance(petri, dict):
+            # 5. place.agentId existe?
+            if agent_ids:
+                bad_agent_refs: List[str] = []
+                for lugar in petri.get("lugares", []) or []:
+                    aid = lugar.get("agentId") if isinstance(lugar, dict) else None
+                    if aid and aid not in agent_ids:
+                        bad_agent_refs.append(f"{lugar.get('id')}→{aid}")
+                if bad_agent_refs:
+                    warnings.append(
+                        f"petri_unknown_agent: {len(bad_agent_refs)} place(s) apontam para agentId fora de agents.yaml — "
+                        + ", ".join(bad_agent_refs[:6])
+                    )
+            # 6. place.nome após "Pronto para: X" → X em tasks.yaml?
+            if task_ids:
+                bad_task_refs: List[str] = []
+                for lugar in petri.get("lugares", []) or []:
+                    if not isinstance(lugar, dict):
+                        continue
+                    nome = (lugar.get("nome") or "").strip()
+                    m = _re.match(r"(?:pronto para|aguardando)\s*[:\-]\s*([a-zA-Z0-9_]+)", nome, _re.IGNORECASE)
+                    if m and m.group(1) not in task_ids:
+                        bad_task_refs.append(f"{lugar.get('id')}→{m.group(1)}")
+                if bad_task_refs:
+                    warnings.append(
+                        f"petri_unknown_task: {len(bad_task_refs)} place(s) referenciam task fora de tasks.yaml — "
+                        + ", ".join(bad_task_refs[:6])
+                    )
+
+    return warnings
+
+
 def generate_code_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
     """Adapter que extrai tools.py/adapters.py do LLM e monta a árvore completa
     do projeto Python agêntico via templates."""
@@ -2429,10 +2567,17 @@ def generate_code_output_func(state: LangNetFullState, result: Any) -> LangNetFu
     files = _build_project_templates(state, llm_files)
     print(f"[CODE GEN] generated {len(files)} files: {[f['path'] for f in files]}")
 
+    warnings = _validate_generated_project(files, state)
+    if warnings:
+        print(f"[CODE GEN] {len(warnings)} validation warning(s):")
+        for w in warnings:
+            print(f"  ⚠ {w}")
+
     updated_state = {
         **state,
         "code_generation_json": json.dumps({"files": files}, ensure_ascii=False),
         "generated_files_list": files,
+        "validation_warnings": warnings,
     }
     return log_task_complete(updated_state, "generate_python_code")
 

@@ -45,6 +45,7 @@ export interface CodeGenerationSession {
   generated_files?: CodeFile[];
   total_files?: number;
   current_version?: number;
+  execution_metadata?: { validation_warnings?: string[]; [k: string]: any };
   created_at: string;
   updated_at: string;
 }
@@ -75,7 +76,7 @@ async function parseError(res: Response): Promise<string> {
 export async function generateCode(
   projectId: string,
   payload: GenerateCodePayload,
-): Promise<{ session_id: string; status: string; files: CodeFile[]; total_files: number; websocket_port: number }> {
+): Promise<{ session_id: string; status: string; files: CodeFile[]; total_files: number; websocket_port: number; validation_warnings?: string[] }> {
   const res = await fetch(`${API_BASE}/code-generation/${projectId}/generate`, {
     method: 'POST',
     headers: getAuthHeaders(),

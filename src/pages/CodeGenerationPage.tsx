@@ -76,6 +76,8 @@ const CodeGenerationPage: React.FC = () => {
   const [editorBuffer, setEditorBuffer] = useState<string>('');
   const [dirty, setDirty] = useState(false);
   const [consoleOpen, setConsoleOpen] = useState(false);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [warningsCollapsed, setWarningsCollapsed] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const codeRun = useCodeRun(currentSession?.id);
@@ -125,6 +127,8 @@ const CodeGenerationPage: React.FC = () => {
       const sessionFiles = (s.generated_files as CodeFile[]) || [];
       setFiles(sessionFiles);
       setSelectedPath(sessionFiles[0]?.path || '');
+      setWarnings(s.execution_metadata?.validation_warnings || []);
+      setWarningsCollapsed(false);
       const msgs = await getChatHistory(sessionId);
       setChat(msgs);
     } catch (err: any) {
@@ -157,6 +161,8 @@ const CodeGenerationPage: React.FC = () => {
       const sessionFiles = (res.files as CodeFile[]) || [];
       setFiles(sessionFiles);
       setSelectedPath(sessionFiles[0]?.path || '');
+      setWarnings(res.validation_warnings || []);
+      setWarningsCollapsed(false);
       const refreshed = await listCodeSessions(projectId);
       setSessions(refreshed);
       const found = refreshed.find((s) => s.id === res.session_id);
@@ -273,6 +279,47 @@ const CodeGenerationPage: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {warnings.length > 0 && (
+        <div
+          style={{
+            background: '#fff8e1', borderBottom: '1px solid #ffc107',
+            padding: warningsCollapsed ? '8px 16px' : '12px 16px',
+            display: 'flex', alignItems: 'flex-start', gap: 12,
+          }}
+        >
+          <span style={{ fontSize: 18, marginTop: 2 }}>⚠️</span>
+          <div style={{ flex: 1, fontSize: 12 }}>
+            <div style={{ fontWeight: 700, marginBottom: warningsCollapsed ? 0 : 6 }}>
+              {warnings.length} validation warning(s)
+              <button
+                onClick={() => setWarningsCollapsed(v => !v)}
+                style={{ marginLeft: 8, background: 'none', border: 'none', color: '#1976d2', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}
+              >
+                {warningsCollapsed ? 'expandir' : 'recolher'}
+              </button>
+            </div>
+            {!warningsCollapsed && (
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {warnings.map((w, i) => {
+                  const [category, ...rest] = w.split(': ');
+                  return (
+                    <li key={i} style={{ marginBottom: 4 }}>
+                      <code style={{ background: '#fff', padding: '1px 6px', borderRadius: 3, fontSize: 11 }}>{category}</code>
+                      <span style={{ marginLeft: 6 }}>{rest.join(': ')}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+            {!warningsCollapsed && (
+              <div style={{ marginTop: 6, fontSize: 11, color: '#666' }}>
+                💡 Use o chat à direita para pedir refinamento (ex: "implemente as tools órfãs no tools.py").
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div style={layoutStyle}>
         {/* LEFT — sessions + file tree */}

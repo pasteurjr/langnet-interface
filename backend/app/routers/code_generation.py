@@ -222,6 +222,8 @@ async def generate_code(
         )
         raise HTTPException(502, "Gerador não retornou arquivos")
 
+    warnings = result_state.get("validation_warnings") or []
+
     update_code_generation_session(
         session_id,
         {
@@ -230,6 +232,7 @@ async def generate_code(
             "total_files": len(files),
             "current_version": 1,
             "finished_at": datetime.utcnow(),
+            "execution_metadata": {"validation_warnings": warnings},
         },
     )
     create_code_generation_version(
@@ -250,6 +253,7 @@ async def generate_code(
         "files": files,
         "total_files": len(files),
         "websocket_port": request.websocket_port,
+        "validation_warnings": warnings,
     }
 
 
