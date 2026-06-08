@@ -48,6 +48,9 @@ class GenerateCodeRequest(BaseModel):
     agents_yaml_session_id: str
     tasks_yaml_session_id: str
     task_execution_flow_session_id: Optional[str] = None
+    # Recomendado: fornece o agent_task_spec para parser deterministic
+    # extrair a coluna `| Tools |` e amarrar tools por agent/task.
+    agent_task_spec_session_id: Optional[str] = None
     websocket_port: int = 5002
     session_name: Optional[str] = None
 
@@ -175,6 +178,14 @@ async def generate_code(
     state["websocket_port"] = int(request.websocket_port)
     state["project_name"] = state.get("project_name") or "Sistema Agêntico"
     state["use_deepseek"] = True
+
+    # Carrega agent_task_spec_document (markdown) se foi informado — permite o
+    # adapter Python parsear a coluna `| Tools |` e amarrar tools por task/agente.
+    if request.agent_task_spec_session_id:
+        from app.database import get_agent_task_spec_session
+        ats_session = get_agent_task_spec_session(request.agent_task_spec_session_id)
+        if ats_session and ats_session.get("agent_task_spec_document"):
+            state["agent_task_spec_document"] = ats_session["agent_task_spec_document"]
 
     session_id = str(uuid.uuid4())
     session_name = request.session_name or f"code_gen_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"

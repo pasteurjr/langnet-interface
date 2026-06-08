@@ -1105,11 +1105,14 @@ generate_python_code:
 
     REGRAS:
     1. Em "tools_py" gere o conteúdo de tools.py com tools customizadas CrewAI que apareçam nos backstories/descriptions (ex: EmailFetchTool, MindsDbQuery, FileReader). Use BaseTool do crewai_tools quando possível; senão crie classe que herde de crewai.tools.BaseTool. Para cada tool: nome, descrição, args (Pydantic) e método _run.
-    2. Em "adapters_py" gere o conteúdo de adapters.py com input_func e output_func para CADA task em tasks_yaml. Padrão para cada task_id:
+    2. Ao FIM de tools.py emita um dict TOOL_REGISTRY mapeando o nome snake_case da tool (igual ao que aparece em backstories e tasks.yaml — ex: pdf_reader, vector_search_tool) para uma INSTÂNCIA da classe correspondente. Exemplo de formato:
+       TOOL_REGISTRY = dict de strings-snake_case para instâncias de classe (ex: pdf_reader → PdfReader(), vector_search_tool → VectorSearchTool()).
+       Esse dict é consultado pelo websocket_server para amarrar tools por nome às tasks/agentes.
+    3. Em "adapters_py" gere o conteúdo de adapters.py com input_func e output_func para CADA task em tasks_yaml. Padrão para cada task_id:
        def TASK_input_func(state: dict) -> dict — extrai dados de state['previous_outputs'] do place anterior e retorna kwargs para a task (substitua TASK pelo task_id).
        def TASK_output_func(state: dict, result: Any) -> dict — parseia o resultado do CrewAI e atualiza state['outputs'][TASK].
-    3. Mantenha imports no topo de cada arquivo. PEP 8. Docstrings curtas. Sem código duplicado.
-    4. Cada tool deve ter docstring explicando uso e parâmetros.
+    4. Mantenha imports no topo de cada arquivo. PEP 8. Docstrings curtas. Sem código duplicado.
+    5. Cada tool deve ter docstring explicando uso e parâmetros.
 
   expected_output: >
     JSON com EXATAMENTE estas chaves:

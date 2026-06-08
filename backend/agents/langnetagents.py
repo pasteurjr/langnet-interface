@@ -1882,6 +1882,51 @@ def _parse_yaml_keys(yaml_text: str) -> List[str]:
     return list(parsed.keys()) if isinstance(parsed, dict) else []
 
 
+def _parse_tools_from_spec(md: str) -> Dict[str, Dict[str, List[str]]]:
+    """Extrai mapping de tools a partir do agent_task_spec_document (markdown).
+
+    Procura as duas seções canônicas (`## 2. ESPECIFICAÇÃO ... AGENTES` e
+    `## 3. ... TAREFAS`), em cada bloco `###`/`####` lê as linhas
+    `| **Nome** | xxx |` e `| **Tools** | a, b, c |` e devolve:
+    ``{"agents": {agent_id: [tool, ...]}, "tasks": {task_id: [tool, ...]}}``.
+    """
+    import re as _re
+
+    def _extract_blocks(section_text: str) -> Dict[str, List[str]]:
+        result: Dict[str, List[str]] = {}
+        if not section_text:
+            return result
+        for block in _re.split(r"\n(?=#{3,4}\s)", section_text):
+            nome = _re.search(r"\|\s*\*\*\s*Nome\s*\*\*\s*\|\s*([^|]+?)\s*\|", block)
+            tools = _re.search(r"\|\s*\*\*\s*Tools\s*\*\*\s*\|\s*([^|]+?)\s*\|", block)
+            if not (nome and tools):
+                continue
+            name = nome.group(1).strip()
+            tools_list = [
+                _re.sub(r"\s*\(.*?\)\s*", "", t).strip()
+                for t in tools.group(1).split(",")
+            ]
+            tools_list = [t for t in tools_list if t]
+            if name:
+                result[name] = tools_list
+        return result
+
+    if not md:
+        return {"agents": {}, "tasks": {}}
+    agents_match = _re.search(
+        r"##\s*2\.\s*ESPECIFICA[ÇC][ÃA]O DETALHADA DOS AGENTES.*?(?=##\s*[3-9])",
+        md, _re.DOTALL | _re.IGNORECASE,
+    )
+    tasks_match = _re.search(
+        r"##\s*3\.\s*ESPECIFICA[ÇC][ÃA]O DETALHADA DAS TAREFAS.*?(?=##\s*[4-9])",
+        md, _re.DOTALL | _re.IGNORECASE,
+    )
+    return {
+        "agents": _extract_blocks(agents_match.group() if agents_match else ""),
+        "tasks": _extract_blocks(tasks_match.group() if tasks_match else ""),
+    }
+
+
 def _template_main_py(project_name: str, ws_port: int) -> str:
     safe_name = (project_name or "Sistema Agêntico").replace('"', '\\"')
     return f'''"""
@@ -1941,23 +1986,42 @@ AGENTS_CONFIG = _load_yaml("agents.yaml")
 TASKS_CONFIG = _load_yaml("tasks.yaml")
 
 
+TOOL_REGISTRY = getattr(tools_module, "TOOL_REGISTRY", {{}})
+TASK_TOOLS = getattr(adapters_module, "TASK_TOOLS", {{}})
+AGENT_TOOLS = getattr(adapters_module, "AGENT_TOOLS", {{}})
+
+
+def _resolve_tools(names):
+    """Converte lista de nomes em instâncias de tool via TOOL_REGISTRY."""
+    out = []
+    for name in names or []:
+        inst = TOOL_REGISTRY.get(name)
+        if inst is not None:
+            out.append(inst)
+    return out
+
+
 def _build_agent(agent_id: str) -> Agent:
     cfg = AGENTS_CONFIG.get(agent_id, {{}})
+    tool_names = AGENT_TOOLS.get(agent_id, [])
     return Agent(
         role=cfg.get("role", agent_id),
         goal=cfg.get("goal", ""),
         backstory=cfg.get("backstory", ""),
         verbose=cfg.get("verbose", True),
         allow_delegation=cfg.get("allow_delegation", False),
+        tools=_resolve_tools(tool_names),
     )
 
 
 def _build_task(task_id: str, agent: Agent, description: str) -> Task:
     cfg = TASKS_CONFIG.get(task_id, {{}})
+    tool_names = TASK_TOOLS.get(task_id, [])
     return Task(
         description=description or cfg.get("description", ""),
         expected_output=cfg.get("expected_output", ""),
         agent=agent,
+        tools=_resolve_tools(tool_names),
     )
 
 
@@ -2216,12 +2280,61 @@ from typing import Any, Dict
 '''
 
 
+def _inject_task_tools_into_adapters(adapters_py: str, agents_map: Dict[str, List[str]], tasks_map: Dict[str, List[str]]) -> str:
+    """Anexa AGENT_TOOLS e TASK_TOOLS dicts no fim do adapters.py.
+
+    O websocket_server.py importa adapters_module.TASK_TOOLS / AGENT_TOOLS
+    para amarrar tools por nome via tools_module.TOOL_REGISTRY.
+    """
+    block_lines = ["", "", "# ─── Bindings de tools (deterministic, extraído do agent_task_spec) ───"]
+    block_lines.append("AGENT_TOOLS = {")
+    for agent_id, tools in sorted(agents_map.items()):
+        block_lines.append(f"    {agent_id!r}: {tools!r},")
+    block_lines.append("}")
+    block_lines.append("")
+    block_lines.append("TASK_TOOLS = {")
+    for task_id, tools in sorted(tasks_map.items()):
+        block_lines.append(f"    {task_id!r}: {tools!r},")
+    block_lines.append("}")
+    block_lines.append("")
+    return adapters_py.rstrip() + "\n" + "\n".join(block_lines) + "\n"
+
+
+def _inject_tool_registry_stub(tools_py: str, all_tool_names: List[str]) -> str:
+    """Garante que tools.py exporte TOOL_REGISTRY no final.
+
+    Se o LLM já incluiu o dict, não duplica. Caso contrário, gera um stub que
+    instancia (best-effort) classes detectadas no tools.py via heurística snake→Pascal,
+    ou deixa registry vazio com aviso. O websocket_server faz getattr() com default {}.
+    """
+    if "TOOL_REGISTRY" in tools_py:
+        return tools_py
+    if not all_tool_names:
+        return tools_py
+    snake_to_pascal = lambda s: "".join(p.capitalize() for p in s.split("_"))
+    entries = []
+    for name in sorted(set(all_tool_names)):
+        cls = snake_to_pascal(name)
+        # Só inclui se a classe parece estar no tools_py (best-effort)
+        if cls in tools_py:
+            entries.append(f"        {name!r}: {cls}(),")
+        else:
+            # Fallback: registra None — websocket_server descarta None silenciosamente
+            entries.append(f"        {name!r}: None,  # TODO: classe {cls} não detectada no tools.py")
+    stub = "\n\n# ─── Registro automático de tools (best-effort) ───\ntry:\n    TOOL_REGISTRY = {\n"
+    stub += "\n".join(entries)
+    stub += "\n    }\n    TOOL_REGISTRY = {k: v for k, v in TOOL_REGISTRY.items() if v is not None}\nexcept Exception as _e:\n    TOOL_REGISTRY = {}\n    print(f'[tools] WARN: TOOL_REGISTRY skeleton falhou: {_e}')\n"
+    return tools_py.rstrip() + "\n" + stub
+
+
 def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any]) -> List[Dict[str, str]]:
     """Monta a árvore completa de arquivos do projeto agêntico.
 
     - tools.py / adapters.py vêm do LLM (se ausentes, gera esqueletos).
     - main.py, websocket_server.py, requirements.txt, .env.example, docker-compose.yml,
       Dockerfile, README.md, agents.yaml, tasks.yaml, petri_net.json são templates.
+    - AGENT_TOOLS / TASK_TOOLS são injetados deterministicamente parseando o
+      agent_task_spec_document do state (coluna `| Tools |` em cada tabela).
     """
     project_name = state.get("project_name") or "Sistema Agêntico"
     ws_port = int(state.get("websocket_port") or 5002)
@@ -2229,9 +2342,24 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     tasks_yaml = state.get("tasks_yaml", "") or ""
     petri_net = state.get("petri_net_data") or {}
     detected_tools: List[str] = llm_files.get("detected_tools", []) or []
+    spec_md: str = state.get("agent_task_spec_document", "") or ""
+
+    # Parse deterministic do agent_task_spec → bindings de tools
+    binding = _parse_tools_from_spec(spec_md)
+    agents_map = binding.get("agents", {})
+    tasks_map = binding.get("tasks", {})
+    all_tool_names: List[str] = sorted({
+        t for tools in list(agents_map.values()) + list(tasks_map.values()) for t in tools
+    })
+    if all_tool_names:
+        detected_tools = sorted(set(detected_tools) | set(all_tool_names))
 
     tools_py = (llm_files.get("tools_py") or "").strip() or _empty_tools_py(detected_tools)
     adapters_py = (llm_files.get("adapters_py") or "").strip() or _empty_adapters_py()
+
+    # Injeta TOOL_REGISTRY no tools.py (se LLM não incluiu) e AGENT_TOOLS/TASK_TOOLS no adapters.py
+    tools_py = _inject_tool_registry_stub(tools_py, all_tool_names)
+    adapters_py = _inject_task_tools_into_adapters(adapters_py, agents_map, tasks_map)
 
     petri_with_logica = _build_petri_net_with_real_logica(petri_net, ws_port) if petri_net else {}
 

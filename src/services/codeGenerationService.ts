@@ -21,6 +21,7 @@ export interface GenerateCodePayload {
   agentsYamlSessionId: string;
   tasksYamlSessionId: string;
   taskExecutionFlowSessionId?: string;
+  agentTaskSpecSessionId?: string;
   websocketPort?: number;
   sessionName?: string;
 }
@@ -82,6 +83,7 @@ export async function generateCode(
       agents_yaml_session_id: payload.agentsYamlSessionId,
       tasks_yaml_session_id: payload.tasksYamlSessionId,
       task_execution_flow_session_id: payload.taskExecutionFlowSessionId,
+      agent_task_spec_session_id: payload.agentTaskSpecSessionId,
       websocket_port: payload.websocketPort ?? 5002,
       session_name: payload.sessionName,
     }),

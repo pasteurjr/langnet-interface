@@ -15,6 +15,7 @@ interface GenerateCodeModalProps {
     agentsYamlSessionId: string;
     tasksYamlSessionId: string;
     taskExecutionFlowSessionId?: string;
+    agentTaskSpecSessionId?: string;
     websocketPort: number;
   }) => void;
 }
@@ -50,32 +51,41 @@ const GenerateCodeModal: React.FC<GenerateCodeModalProps> = ({
   const [agentsSessions, setAgentsSessions] = useState<Session[]>([]);
   const [tasksSessions, setTasksSessions] = useState<Session[]>([]);
   const [tefSessions, setTefSessions] = useState<Session[]>([]);
+  const [atsSessions, setAtsSessions] = useState<Session[]>([]);
   const [selAgents, setSelAgents] = useState('');
   const [selTasks, setSelTasks] = useState('');
   const [selTef, setSelTef] = useState('');
+  const [selAts, setSelAts] = useState('');
   const [wsPort, setWsPort] = useState(5002);
 
   useEffect(() => {
     if (!isOpen || !projectId) return;
     setLoading(true); setError(null);
-    setSelAgents(''); setSelTasks(''); setSelTef('');
+    setSelAgents(''); setSelTasks(''); setSelTef(''); setSelAts('');
 
     const headers = getAuthHeaders();
     const fetchSessions = (path: string) =>
       fetch(`${API_BASE}/${path}/?project_id=${projectId}`, { headers })
         .then(r => (r.ok ? r.json() : { sessions: [] }))
-        .then(body => (body.sessions || []) as Session[])
+        .then(body => (body.sessions || []) as any[])
+        .then(list => list.map((s: any) => ({ ...s, id: s.id || s.session_id })))
         .catch(() => []);
 
     Promise.all([
       fetchSessions('agents-yaml'),
       fetchSessions('tasks-yaml'),
       fetchSessions('task-execution-flow'),
+      fetch(`${API_BASE}/agent-task-spec/sessions?project_id=${projectId}`, { headers })
+        .then(r => (r.ok ? r.json() : { sessions: [] }))
+        .then(body => (body.sessions || []) as any[])
+        .then(list => list.map((s: any) => ({ ...s, id: s.id || s.session_id })))
+        .catch(() => []),
     ])
-      .then(([a, t, tef]) => {
+      .then(([a, t, tef, ats]) => {
         setAgentsSessions(a.filter(s => s.status === 'completed'));
         setTasksSessions(t.filter(s => s.status === 'completed'));
         setTefSessions(tef.filter(s => s.status === 'completed'));
+        setAtsSessions(ats.filter(s => s.status === 'completed'));
       })
       .catch(() => setError('Erro ao carregar sessões'))
       .finally(() => setLoading(false));
@@ -132,6 +142,19 @@ const GenerateCodeModal: React.FC<GenerateCodeModalProps> = ({
             </label>
 
             <label style={labelStyle}>
+              Especificação de Agentes & Tarefas (recomendado — extrai tools)
+              <select style={selectStyle} value={selAts} onChange={(e) => setSelAts(e.target.value)}>
+                <option value="">— nenhum —</option>
+                {atsSessions.map(s => (
+                  <option key={s.id} value={s.id}>{s.session_name} ({fmt(s.created_at)})</option>
+                ))}
+              </select>
+              <small style={{ color: '#888' }}>
+                Sem isso, <code>websocket_server.py</code> não amarra tools às tasks (Agent/Task ficam <code>tools=[]</code>).
+              </small>
+            </label>
+
+            <label style={labelStyle}>
               Porta do WebSocket (servidor do sistema gerado)
               <input
                 type="number"
@@ -155,6 +178,7 @@ const GenerateCodeModal: React.FC<GenerateCodeModalProps> = ({
               agentsYamlSessionId: selAgents,
               tasksYamlSessionId: selTasks,
               taskExecutionFlowSessionId: selTef || undefined,
+              agentTaskSpecSessionId: selAts || undefined,
               websocketPort: wsPort,
             })}
             disabled={!canConfirm}
