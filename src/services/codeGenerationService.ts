@@ -176,3 +176,17 @@ export async function downloadZip(sessionId: string): Promise<Blob> {
   if (!res.ok) throw new Error(await parseError(res));
   return res.blob();
 }
+
+export interface DownloadCheck {
+  warnings_count: number;
+  warnings_categories: string[];
+  warnings: string[];
+}
+
+export async function downloadCheck(sessionId: string): Promise<DownloadCheck> {
+  const res = await fetch(`${API_BASE}/code-generation/${sessionId}/download-check`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json();
+}

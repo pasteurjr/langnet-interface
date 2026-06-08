@@ -557,8 +557,41 @@ def download_zip(session_id: str, current_user: dict = Depends(get_current_user)
         raise HTTPException(400, "Sessão sem arquivos")
     zip_bytes = _zip_files(files)
     name = (session.get("session_name") or session_id).replace(" ", "_")
+    warnings = (session.get("execution_metadata") or {}).get("validation_warnings") or []
+    # Categorias únicas para o frontend decidir avisar
+    categories: List[str] = []
+    for w in warnings:
+        cat = w.split(":", 1)[0].strip()
+        if cat and cat not in categories:
+            categories.append(cat)
     return StreamingResponse(
         io.BytesIO(zip_bytes),
         media_type="application/zip",
-        headers={"Content-Disposition": f'attachment; filename="{name}.zip"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{name}.zip"',
+            "X-Validation-Warnings-Count": str(len(warnings)),
+            "X-Validation-Warnings-Categories": ",".join(categories),
+            # Expor headers customizados via CORS para o browser poder lê-los
+            "Access-Control-Expose-Headers": "X-Validation-Warnings-Count, X-Validation-Warnings-Categories, Content-Disposition",
+        },
     )
+
+
+@router.get("/{session_id}/download-check")
+def download_check(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Endpoint leve para o frontend decidir se mostra confirm antes de baixar.
+    Não retorna o ZIP, só metadados das warnings."""
+    session = get_code_generation_session(session_id)
+    if not session:
+        raise HTTPException(404, "Sessão não encontrada")
+    warnings = (session.get("execution_metadata") or {}).get("validation_warnings") or []
+    categories: List[str] = []
+    for w in warnings:
+        cat = w.split(":", 1)[0].strip()
+        if cat and cat not in categories:
+            categories.append(cat)
+    return {
+        "warnings_count": len(warnings),
+        "warnings_categories": categories,
+        "warnings": warnings,
+    }

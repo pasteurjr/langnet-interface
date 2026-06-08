@@ -12,6 +12,7 @@ import {
   refineCode,
   updateCodeFiles,
   downloadZip,
+  downloadCheck,
   CodeChatMessage,
 } from '../services/codeGenerationService';
 import GenerateCodeModal from '../components/code-generation/GenerateCodeModal';
@@ -265,6 +266,17 @@ const CodeGenerationPage: React.FC = () => {
   const handleDownload = useCallback(async () => {
     if (!currentSession) return;
     try {
+      // Verifica warnings antes de baixar
+      const check = await downloadCheck(currentSession.id);
+      if (check.warnings_count > 0) {
+        const proceed = window.confirm(
+          `⚠️ Esta sessão tem ${check.warnings_count} validation warning(s) ativa(s):\n\n` +
+          check.warnings_categories.map(c => `  • ${c}`).join('\n') +
+          `\n\nO ZIP vai incluir o código atual mesmo com gaps detectados.\n\n` +
+          `Deseja baixar mesmo assim?`
+        );
+        if (!proceed) return;
+      }
       const blob = await downloadZip(currentSession.id);
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
