@@ -208,6 +208,10 @@ const CodeGenerationPage: React.FC = () => {
         setFiles(res.files);
         if (res.affected_paths?.[0]) setSelectedPath(res.affected_paths[0]);
       }
+      // Atualiza warnings se o backend re-validou (fecha o loop SDD)
+      if (res.validation_warnings !== undefined) {
+        setWarnings(res.validation_warnings);
+      }
       const msgs = await getChatHistory(currentSession.id);
       setChat(msgs);
       const s = await getCodeSession(currentSession.id);
@@ -218,6 +222,45 @@ const CodeGenerationPage: React.FC = () => {
       setIsRefining(false);
     }
   }, [currentSession, chatInput]);
+
+  // Gera prompt de refinamento por categoria de warning (SDD fix loop)
+  const buildFixPrompt = useCallback((warning: string): string => {
+    const colonIdx = warning.indexOf(':');
+    const category = colonIdx > 0 ? warning.slice(0, colonIdx).trim() : warning;
+    const detail = colonIdx > 0 ? warning.slice(colonIdx + 1).trim() : '';
+    // Extrai lista de itens (depois do " — " ou parecidos)
+    const dashIdx = detail.indexOf('—');
+    const items = dashIdx > 0 ? detail.slice(dashIdx + 1).trim() : detail;
+
+    switch (category) {
+      case 'tools_orphan':
+        return [
+          `Em tools.py, crie as tools faltantes listadas abaixo, todas herdando de crewai.tools.BaseTool com docstring, args Pydantic e método _run, e adicione cada uma ao dict TOOL_REGISTRY no fim do arquivo:`,
+          ``,
+          items,
+        ].join('\n');
+      case 'missing_adapters':
+        return [
+          `Em adapters.py, adicione as funções input_func/output_func ausentes listadas abaixo. Use a assinatura padrão: def <task>_input_func(input_data: dict) -> dict e def <task>_output_func(input_data: dict, result: str) -> dict.`,
+          ``,
+          items,
+        ].join('\n');
+      case 'unknown_task_in_bindings':
+        return `Em adapters.py, o dict TASK_TOOLS referencia tasks que não existem em tasks.yaml: ${items}. Remova essas entradas órfãs de TASK_TOOLS.`;
+      case 'unknown_agent_in_bindings':
+        return `Em adapters.py, o dict AGENT_TOOLS referencia agentes que não existem em agents.yaml: ${items}. Remova essas entradas órfãs de AGENT_TOOLS.`;
+      case 'petri_unknown_agent':
+        return `Em petri_net.json, os places listados referenciam agentId que não existe em agents.yaml: ${items}. Para cada um, ajuste o agentId para um agente válido (consulte agents.yaml) ou set null se o lugar não exigir agente.`;
+      case 'petri_unknown_task':
+        return `Em petri_net.json, os places referenciam tasks que não existem em tasks.yaml: ${items}. Renomeie cada place para apontar para uma task válida.`;
+      default:
+        return `Corrija o warning: ${warning}`;
+    }
+  }, []);
+
+  const handleFixWarning = useCallback((warning: string) => {
+    setChatInput(buildFixPrompt(warning));
+  }, [buildFixPrompt]);
 
   const handleDownload = useCallback(async () => {
     if (!currentSession) return;
@@ -304,9 +347,20 @@ const CodeGenerationPage: React.FC = () => {
                 {warnings.map((w, i) => {
                   const [category, ...rest] = w.split(': ');
                   return (
-                    <li key={i} style={{ marginBottom: 4 }}>
+                    <li key={i} style={{ marginBottom: 6 }}>
                       <code style={{ background: '#fff', padding: '1px 6px', borderRadius: 3, fontSize: 11 }}>{category}</code>
                       <span style={{ marginLeft: 6 }}>{rest.join(': ')}</span>
+                      <button
+                        onClick={() => handleFixWarning(w)}
+                        title="Pré-preenche o chat com instrução para corrigir este warning"
+                        style={{
+                          marginLeft: 8, padding: '1px 8px', fontSize: 10,
+                          background: '#1976d2', color: '#fff',
+                          border: 'none', borderRadius: 3, cursor: 'pointer',
+                        }}
+                      >
+                        🔧 Corrigir
+                      </button>
                     </li>
                   );
                 })}
@@ -314,7 +368,7 @@ const CodeGenerationPage: React.FC = () => {
             )}
             {!warningsCollapsed && (
               <div style={{ marginTop: 6, fontSize: 11, color: '#666' }}>
-                💡 Use o chat à direita para pedir refinamento (ex: "implemente as tools órfãs no tools.py").
+                💡 Clique em <strong>🔧 Corrigir</strong> para preencher o chat com a instrução adequada — revise e envie. O loop spec → código → validate → fix → revalidate fecha automaticamente.
               </div>
             )}
           </div>

@@ -130,6 +130,7 @@ export interface RefineResponse {
   affected_paths?: string[];
   files?: CodeFile[];
   message?: string;
+  validation_warnings?: string[];
 }
 
 export async function refineCode(sessionId: string, message: string): Promise<RefineResponse> {

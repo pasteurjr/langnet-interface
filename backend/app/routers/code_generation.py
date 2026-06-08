@@ -383,12 +383,21 @@ REGRAS:
     new_files = list(by_path.values())
 
     new_version = int(session.get("current_version", 1)) + 1
+
+    # Re-validar a árvore atualizada para que o banner de warnings reflita
+    # o estado atual depois do refinamento (fecha o loop SDD).
+    from agents.langnetagents import _validate_generated_project
+    warnings = _validate_generated_project(new_files, {
+        "agent_task_spec_document": session.get("agent_task_spec_document", ""),
+    })
+
     update_code_generation_session(
         session_id,
         {
             "generated_files": new_files,
             "total_files": len(new_files),
             "current_version": new_version,
+            "execution_metadata": {"validation_warnings": warnings},
         },
     )
     create_code_generation_version(
@@ -424,6 +433,7 @@ REGRAS:
         "version": new_version,
         "affected_paths": affected_paths,
         "files": new_files,
+        "validation_warnings": warnings,
     }
 
 
