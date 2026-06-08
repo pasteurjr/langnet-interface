@@ -198,6 +198,7 @@ async def generate_code(
             "agents_yaml_session_id": request.agents_yaml_session_id,
             "tasks_yaml_session_id": request.tasks_yaml_session_id,
             "task_execution_flow_session_id": request.task_execution_flow_session_id,
+            "agent_task_spec_session_id": request.agent_task_spec_session_id,
             "websocket_port": request.websocket_port,
             "session_name": session_name,
             "status": "generating",
@@ -386,9 +387,17 @@ REGRAS:
 
     # Re-validar a árvore atualizada para que o banner de warnings reflita
     # o estado atual depois do refinamento (fecha o loop SDD).
+    # Carrega o agent_task_spec da sessão original (persistido no create)
+    ats_md = ""
+    ats_sid = session.get("agent_task_spec_session_id")
+    if ats_sid:
+        from app.database import get_agent_task_spec_session
+        ats = get_agent_task_spec_session(ats_sid)
+        if ats:
+            ats_md = ats.get("agent_task_spec_document") or ""
     from agents.langnetagents import _validate_generated_project
     warnings = _validate_generated_project(new_files, {
-        "agent_task_spec_document": session.get("agent_task_spec_document", ""),
+        "agent_task_spec_document": ats_md,
     })
 
     update_code_generation_session(

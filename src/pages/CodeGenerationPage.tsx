@@ -385,11 +385,12 @@ const CodeGenerationPage: React.FC = () => {
                 key={s.id}
                 style={itemStyle(currentSession?.id === s.id)}
                 onClick={() => loadSession(s.id)}
-                title={s.id}
+                title={`session ${s.id}\nagents.yaml: ${s.agents_yaml_session_id || '—'}\ntasks.yaml: ${s.tasks_yaml_session_id || '—'}\nagent_task_spec: ${s.agent_task_spec_session_id || '—'}\ntask_execution_flow: ${s.task_execution_flow_session_id || '—'}`}
               >
                 <div style={{ fontWeight: 600 }}>{s.session_name}</div>
                 <div style={{ fontSize: 11, color: '#666' }}>
                   v{s.current_version} · {s.total_files} arquivos · {s.status}
+                  {s.agent_task_spec_session_id && <span title="agent_task_spec usado (bindings de tools deterministic)" style={{ marginLeft: 4, color: '#1976d2' }}>🔗</span>}
                 </div>
               </div>
             ))}

@@ -1263,6 +1263,7 @@ def create_code_generation_session(session_data: dict) -> str:
         "agents_yaml_session_id": session_data.get("agents_yaml_session_id"),
         "tasks_yaml_session_id": session_data.get("tasks_yaml_session_id"),
         "task_execution_flow_session_id": session_data.get("task_execution_flow_session_id"),
+        "agent_task_spec_session_id": session_data.get("agent_task_spec_session_id"),
         "websocket_port": int(session_data.get("websocket_port", 5002)),
         "session_name": session_data.get("session_name"),
         "status": session_data.get("status", "generating"),
@@ -1272,10 +1273,12 @@ def create_code_generation_session(session_data: dict) -> str:
         INSERT INTO code_generation_sessions (
             id, project_id, user_id,
             agents_yaml_session_id, tasks_yaml_session_id, task_execution_flow_session_id,
+            agent_task_spec_session_id,
             websocket_port, session_name, status, execution_metadata
         ) VALUES (
             %(id)s, %(project_id)s, %(user_id)s,
             %(agents_yaml_session_id)s, %(tasks_yaml_session_id)s, %(task_execution_flow_session_id)s,
+            %(agent_task_spec_session_id)s,
             %(websocket_port)s, %(session_name)s, %(status)s, %(execution_metadata)s
         )
     """

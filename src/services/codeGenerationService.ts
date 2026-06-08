@@ -39,6 +39,7 @@ export interface CodeGenerationSession {
   agents_yaml_session_id?: string;
   tasks_yaml_session_id?: string;
   task_execution_flow_session_id?: string;
+  agent_task_spec_session_id?: string;
   websocket_port: number;
   session_name: string;
   status: 'generating' | 'completed' | 'failed';
