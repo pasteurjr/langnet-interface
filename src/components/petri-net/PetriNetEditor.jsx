@@ -586,7 +586,38 @@ const PetriNetEditor = ({ projectId, autoconnectUrl }) => {
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
   const [isLoadingNet, setIsLoadingNet] = useState(false);
   const [executionPanelOpen, setExecutionPanelOpen] = useState(Boolean(autoconnectUrl));
+  const executionPanelRef = useRef(null);
   const initialLoadDoneRef = useRef(false);
+
+  // Extrai task_name de um place (do label "Pronto para: X" ou nome direto)
+  const extractTaskNameFromPlace = (placeNome) => {
+    if (!placeNome) return null;
+    const m = placeNome.trim().match(/^(?:pronto para|aguardando)\s*[:\-]\s*(.+)$/i);
+    return (m ? m[1] : placeNome).trim();
+  };
+
+  // Detecta a task selecionada (apenas se 1 place selecionado e tem task_name razoável)
+  const getSelectedTask = () => {
+    if (!selectedElements || selectedElements.size !== 1) return null;
+    const id = Array.from(selectedElements)[0];
+    const place = (petriNet.lugares || []).find((p) => p.id === id);
+    if (!place) return null;
+    const taskName = extractTaskNameFromPlace(place.nome);
+    if (!taskName || taskName.length < 2) return null;
+    return { placeId: id, taskName, agentId: place.agentId, inputData: place.input_data || {} };
+  };
+
+  const handleDispatchSelectedTask = async () => {
+    const sel = getSelectedTask();
+    if (!sel) return;
+    if (executionPanelRef.current?.triggerTask) {
+      try {
+        await executionPanelRef.current.triggerTask(sel.taskName, sel.inputData);
+      } catch (err) {
+        console.error("Erro ao disparar task:", err);
+      }
+    }
+  };
 
   // Se chegou via ?autoconnect=... abre o painel automaticamente
   useEffect(() => {
@@ -8951,6 +8982,31 @@ const PetriNetEditor = ({ projectId, autoconnectUrl }) => {
           >
             ▶ Execução Real
           </button>
+          {(() => {
+            const sel = getSelectedTask();
+            return (
+              <button
+                style={{
+                  marginRight: "10px",
+                  padding: "5px 10px",
+                  backgroundColor: sel ? "#ff5722" : "#cccccc",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "4px",
+                  cursor: sel ? "pointer" : "not-allowed",
+                }}
+                onClick={handleDispatchSelectedTask}
+                disabled={!sel}
+                title={
+                  sel
+                    ? `Dispara execute_task '${sel.taskName}' no servidor agêntico`
+                    : "Selecione um único place com nome de task para habilitar"
+                }
+              >
+                🎯 Disparar {sel ? `'${sel.taskName.substring(0, 20)}${sel.taskName.length > 20 ? '…' : ''}'` : 'task'}
+              </button>
+            );
+          })()}
           <button
             style={{
               marginRight: "10px",
@@ -9056,9 +9112,11 @@ const PetriNetEditor = ({ projectId, autoconnectUrl }) => {
           onConfirm={handleGenerateConfirm}
         />
         <ExecutionPanel
+          ref={executionPanelRef}
           isOpen={executionPanelOpen}
           autoconnectUrl={autoconnectUrl}
           onClose={() => setExecutionPanelOpen(false)}
+          onRequestOpen={() => setExecutionPanelOpen(true)}
         />
         <SimulationPanel
           simulator={simulator}

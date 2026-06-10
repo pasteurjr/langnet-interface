@@ -2,12 +2,18 @@
  * Painel de execução real conectando ao framework agêntico gerado (websocket_server.py).
  * 5 abas no padrão TropicalSales: Operação · Execução · Inputs · Outputs · Logs.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import {
   ConnectionStatus,
   ExecutionEvent,
   useWebSocketExecution,
 } from './useWebSocketExecution';
+
+export interface ExecutionPanelHandle {
+  /** Conecta (se ainda não estiver) e dispara execute_task. Retorna true se enviou. */
+  triggerTask: (taskName: string, inputData?: any) => Promise<boolean>;
+  open: () => void;
+}
 
 type TabId = 'operacao' | 'execucao' | 'inputs' | 'outputs' | 'logs';
 
@@ -18,6 +24,7 @@ interface ExecutionPanelProps {
    *  /project/X/petri-net?autoconnect=ws://localhost:5002 depois de Executar). */
   autoconnectUrl?: string;
   onClose: () => void;
+  onRequestOpen?: () => void;
 }
 
 const panelStyle: React.CSSProperties = {
@@ -106,7 +113,7 @@ const EventRow: React.FC<EventRowProps> = ({ e }) => {
   );
 };
 
-const ExecutionPanel: React.FC<ExecutionPanelProps> = ({ isOpen, defaultUrl, autoconnectUrl, onClose }) => {
+const ExecutionPanel = forwardRef<ExecutionPanelHandle, ExecutionPanelProps>(({ isOpen, defaultUrl, autoconnectUrl, onClose, onRequestOpen }, ref) => {
   const ws = useWebSocketExecution(autoconnectUrl || defaultUrl);
   const [activeTab, setActiveTab] = useState<TabId>('execucao');
   const [taskName, setTaskName] = useState('');
@@ -123,6 +130,29 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({ isOpen, defaultUrl, aut
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, autoconnectUrl]);
+
+  // Expõe API imperativa para PetriNetEditor.jsx disparar tasks pelo canvas
+  useImperativeHandle(ref, () => ({
+    triggerTask: async (name: string, inputData: any = {}) => {
+      onRequestOpen?.();
+      // Conecta se ainda não está conectado e aguarda brevemente
+      const needsConnect = ws.status !== 'connected';
+      if (needsConnect) {
+        ws.connect();
+      }
+      // Espera defensiva — o status muda assincronamente.
+      await new Promise(r => setTimeout(r, needsConnect ? 1500 : 300));
+      const ok = ws.executeTask(name, inputData);
+      if (ok) {
+        setTaskName(name);
+        setInputJson(JSON.stringify(inputData, null, 2));
+        setActiveTab('execucao');
+      }
+      return ok;
+    },
+    open: () => { onRequestOpen?.(); },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [ws.status, ws.executeTask, onRequestOpen]);
 
   // Auto-scroll
   useEffect(() => {
@@ -257,6 +287,8 @@ const ExecutionPanel: React.FC<ExecutionPanelProps> = ({ isOpen, defaultUrl, aut
       </div>
     </div>
   );
-};
+});
+
+ExecutionPanel.displayName = 'ExecutionPanel';
 
 export default ExecutionPanel;

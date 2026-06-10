@@ -263,6 +263,40 @@ const CodeGenerationPage: React.FC = () => {
     setChatInput(buildFixPrompt(warning));
   }, [buildFixPrompt]);
 
+  // Auto-fix 1-clique: preenche o prompt E envia imediatamente.
+  // Usado pelo botão "🚀 Corrigir e enviar" — sem revisão.
+  const handleAutoFixWarning = useCallback(async (warning: string) => {
+    if (!currentSession || isRefining) return;
+    const message = buildFixPrompt(warning);
+    setIsRefining(true);
+    const localUserMsg: CodeChatMessage = {
+      id: `tmp-${Date.now()}`,
+      sender_type: 'user',
+      message_text: message,
+      message_type: 'chat',
+      timestamp: new Date().toISOString(),
+    };
+    setChat((c) => [...c, localUserMsg]);
+    try {
+      const res = await refineCode(currentSession.id, message);
+      if (res.has_diff && res.files) {
+        setFiles(res.files);
+        if (res.affected_paths?.[0]) setSelectedPath(res.affected_paths[0]);
+      }
+      if (res.validation_warnings !== undefined) {
+        setWarnings(res.validation_warnings);
+      }
+      const msgs = await getChatHistory(currentSession.id);
+      setChat(msgs);
+      const s = await getCodeSession(currentSession.id);
+      setCurrentSession(s);
+    } catch (err: any) {
+      alert(`Erro no auto-fix: ${err.message || err}`);
+    } finally {
+      setIsRefining(false);
+    }
+  }, [currentSession, isRefining, buildFixPrompt]);
+
   const handleDownload = useCallback(async () => {
     if (!currentSession) return;
     try {
@@ -364,7 +398,7 @@ const CodeGenerationPage: React.FC = () => {
                       <span style={{ marginLeft: 6 }}>{rest.join(': ')}</span>
                       <button
                         onClick={() => handleFixWarning(w)}
-                        title="Pré-preenche o chat com instrução para corrigir este warning"
+                        title="Pré-preenche o chat com instrução — revise antes de enviar"
                         style={{
                           marginLeft: 8, padding: '1px 8px', fontSize: 10,
                           background: '#1976d2', color: '#fff',
@@ -372,6 +406,18 @@ const CodeGenerationPage: React.FC = () => {
                         }}
                       >
                         🔧 Corrigir
+                      </button>
+                      <button
+                        onClick={() => handleAutoFixWarning(w)}
+                        disabled={isRefining}
+                        title="Envia o refinamento imediatamente — sem revisão"
+                        style={{
+                          marginLeft: 4, padding: '1px 8px', fontSize: 10,
+                          background: isRefining ? '#888' : '#2e7d32', color: '#fff',
+                          border: 'none', borderRadius: 3, cursor: isRefining ? 'not-allowed' : 'pointer',
+                        }}
+                      >
+                        🚀 Corrigir e enviar
                       </button>
                     </li>
                   );
