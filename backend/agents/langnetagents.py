@@ -2521,6 +2521,96 @@ def _validate_generated_project(files: List[Dict[str, str]], state: LangNetFullS
                         + ", ".join(bad_task_refs[:6])
                     )
 
+    # 7. missing_runtime_dep: imports do tools.py que não estão em
+    # requirements.txt E não estão disponíveis no env conda langnet.
+    # (descoberto empiricamente no SPRINT4: import PyPDF2 sem entrada no req)
+    if tools_py:
+        # Stdlib do Python 3.11 — não precisa estar em requirements
+        STDLIB = {
+            "abc", "argparse", "array", "ast", "asyncio", "base64", "binascii",
+            "builtins", "calendar", "collections", "concurrent", "configparser",
+            "contextlib", "copy", "csv", "ctypes", "dataclasses", "datetime",
+            "decimal", "difflib", "email", "enum", "errno", "fnmatch", "functools",
+            "gc", "glob", "gzip", "hashlib", "heapq", "hmac", "html", "http",
+            "imaplib", "importlib", "inspect", "io", "ipaddress", "itertools",
+            "json", "logging", "math", "mimetypes", "multiprocessing", "operator",
+            "os", "pathlib", "pickle", "pkgutil", "platform", "pprint", "queue",
+            "random", "re", "secrets", "shutil", "signal", "smtplib", "socket",
+            "socketserver", "sqlite3", "ssl", "stat", "string", "struct",
+            "subprocess", "sys", "sysconfig", "tarfile", "tempfile", "textwrap",
+            "threading", "time", "timeit", "token", "tokenize", "traceback",
+            "types", "typing", "unittest", "urllib", "uuid", "warnings",
+            "weakref", "xml", "xmlrpc", "zipfile", "zipimport", "zlib",
+        }
+
+        # Extrai top-level imports do tools.py (1ª palavra após import/from)
+        import_lines = _re.findall(
+            r"(?:^|\n)\s*(?:from\s+([a-zA-Z0-9_]+)|import\s+([a-zA-Z0-9_]+))",
+            tools_py,
+        )
+        imports: List[str] = sorted({(a or b) for a, b in import_lines if (a or b)})
+
+        # Parse requirements.txt: extrai nome do pacote antes de qualquer comparador
+        req_txt = by_path.get("requirements.txt", "") or ""
+        req_names = set()
+        for line in req_txt.splitlines():
+            line = line.split("#", 1)[0].strip()
+            if not line:
+                continue
+            # pacote pode ser "X>=1", "X==1", "X[extras]", "X<2,>=1"
+            m = _re.match(r"([A-Za-z0-9_.\-]+)", line)
+            if m:
+                req_names.add(m.group(1).lower().replace("_", "-"))
+
+        # Mapeamento conhecido: nome do import → nome do pacote pip
+        # (preferimos detectar overrides comuns; senão usamos o próprio nome)
+        IMPORT_TO_PKG = {
+            "PIL": "pillow", "cv2": "opencv-python", "yaml": "pyyaml",
+            "dotenv": "python-dotenv", "jose": "python-jose", "docx": "python-docx",
+            "googleapiclient": "google-api-python-client", "telegram": "python-telegram-bot",
+            "magic": "python-magic", "sklearn": "scikit-learn", "skimage": "scikit-image",
+            "bs4": "beautifulsoup4", "Crypto": "pycryptodome", "MySQLdb": "mysqlclient",
+            "pymongo": "pymongo", "redis": "redis", "psycopg2": "psycopg2-binary",
+            "win32com": "pywin32",
+        }
+
+        # Verifica disponibilidade no env conda langnet (importlib.util.find_spec
+        # rodando em subprocess para usar O python do env, não o do backend)
+        env_python = "/home/pasteurjr/miniconda3/envs/langnet/bin/python"
+        missing_from_req: List[str] = []
+        missing_from_env: List[str] = []
+        for imp in imports:
+            if imp in STDLIB or imp.lower() in STDLIB:
+                continue
+            pkg = IMPORT_TO_PKG.get(imp, imp).lower().replace("_", "-")
+            # check requirements.txt
+            in_req = pkg in req_names or imp.lower().replace("_", "-") in req_names
+            if not in_req:
+                missing_from_req.append(imp)
+            # check env (best-effort, só se backend tem acesso ao env)
+            try:
+                import subprocess as _sp
+                if Path(env_python).exists():
+                    r = _sp.run(
+                        [env_python, "-c", f"import importlib.util; print(1 if importlib.util.find_spec({imp!r}) else 0)"],
+                        capture_output=True, text=True, timeout=5,
+                    )
+                    if r.returncode == 0 and r.stdout.strip() == "0":
+                        missing_from_env.append(imp)
+            except Exception:
+                pass  # silencioso — env check é opcional
+
+        if missing_from_req:
+            sample = ", ".join(missing_from_req[:6]) + (f" (+{len(missing_from_req) - 6})" if len(missing_from_req) > 6 else "")
+            warnings.append(
+                f"missing_runtime_dep: {len(missing_from_req)} import(s) em tools.py sem entrada em requirements.txt — {sample}"
+            )
+        if missing_from_env:
+            sample = ", ".join(missing_from_env[:6]) + (f" (+{len(missing_from_env) - 6})" if len(missing_from_env) > 6 else "")
+            warnings.append(
+                f"missing_runtime_env: {len(missing_from_env)} import(s) em tools.py ausente(s) no env conda langnet — {sample}"
+            )
+
     return warnings
 
 

@@ -281,11 +281,25 @@ def update_files(
     request: UpdateFilesRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """Persiste edição inline. Cria nova versão (change_type='manual_edit')."""
+    """Persiste edição inline. Cria nova versão (change_type='manual_edit').
+    Re-roda validation pass para que warnings reflitam o estado atual."""
     session = get_code_generation_session(session_id)
     if not session:
         raise HTTPException(404, "Sessão não encontrada")
     new_version = int(session.get("current_version", 1)) + 1
+
+    # Re-validar com agent_task_spec original (se houver)
+    ats_md = ""
+    ats_sid = session.get("agent_task_spec_session_id")
+    if ats_sid:
+        from app.database import get_agent_task_spec_session
+        ats = get_agent_task_spec_session(ats_sid)
+        if ats:
+            ats_md = ats.get("agent_task_spec_document") or ""
+    from agents.langnetagents import _validate_generated_project
+    warnings = _validate_generated_project(request.files, {
+        "agent_task_spec_document": ats_md,
+    })
 
     update_code_generation_session(
         session_id,
@@ -293,6 +307,7 @@ def update_files(
             "generated_files": request.files,
             "total_files": len(request.files),
             "current_version": new_version,
+            "execution_metadata": {"validation_warnings": warnings},
         },
     )
     create_code_generation_version(
@@ -307,7 +322,7 @@ def update_files(
             "total_files": len(request.files),
         }
     )
-    return {"status": "ok", "version": new_version}
+    return {"status": "ok", "version": new_version, "validation_warnings": warnings}
 
 
 @router.post("/{session_id}/refine")

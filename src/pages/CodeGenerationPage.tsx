@@ -254,6 +254,26 @@ const CodeGenerationPage: React.FC = () => {
         return `Em petri_net.json, os places listados referenciam agentId que não existe em agents.yaml: ${items}. Para cada um, ajuste o agentId para um agente válido (consulte agents.yaml) ou set null se o lugar não exigir agente.`;
       case 'petri_unknown_task':
         return `Em petri_net.json, os places referenciam tasks que não existem em tasks.yaml: ${items}. Renomeie cada place para apontar para uma task válida.`;
+      case 'missing_runtime_dep':
+        return [
+          `Em tools.py há imports que não estão em requirements.txt — adicione-os ao requirements.txt OU troque por equivalente já presente.`,
+          ``,
+          `Imports faltando: ${items}`,
+          ``,
+          `Recomendações comuns:`,
+          `  - PyPDF2 → trocar por "pypdf" (já no env) ou adicionar "pypdf2" no requirements.txt`,
+          `  - python-docx → adicionar "python-docx"`,
+          `  - sklearn → adicionar "scikit-learn"`,
+          `Quando possível, prefira pacotes já em uso no projeto antes de adicionar novas dependências.`,
+        ].join('\n');
+      case 'missing_runtime_env':
+        return [
+          `Em tools.py há imports que não estão instalados no env conda langnet — o "▶ Executar" vai falhar com ModuleNotFoundError.`,
+          ``,
+          `Imports faltando: ${items}`,
+          ``,
+          `Sugestão: troque-os por equivalente já instalado (ex: PyPDF2 → pypdf, BeautifulSoup → bs4). Não adicione módulos exóticos a menos que sejam realmente necessários para a função da tool.`,
+        ].join('\n');
       default:
         return `Corrija o warning: ${warning}`;
     }
