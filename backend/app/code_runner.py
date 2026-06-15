@@ -26,6 +26,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -356,6 +357,67 @@ def stop_run(run_id: str) -> Optional[CodeRun]:
     run.append_line("[runner] stopped by user")
     run.broadcast_status()
     return run
+
+
+def cleanup_old_run_dirs(max_age_hours: int = 24, keep_running: bool = True) -> Dict[str, Any]:
+    """Remove diretórios de runs em ``/tmp/langnet-runs/`` mais antigos que
+    ``max_age_hours``, preservando os que correspondem a runs ativos no
+    registry em memória (se ``keep_running``).
+
+    Retorna ``{removed: [paths], kept: int, freed_bytes: int}``.
+    """
+    if not RUNS_ROOT.exists():
+        return {"removed": [], "kept": 0, "freed_bytes": 0}
+
+    threshold = time.time() - max_age_hours * 3600
+    active_run_ids: set = set()
+    if keep_running:
+        with _RUNS_LOCK:
+            for run_id, run in _RUNS.items():
+                if run.status in ("preparing", "installing", "running"):
+                    active_run_ids.add(run_id)
+
+    removed: List[str] = []
+    kept = 0
+    freed = 0
+
+    # Estrutura: /tmp/langnet-runs/<session_id>/<run_id>/
+    for session_dir in RUNS_ROOT.iterdir():
+        if not session_dir.is_dir():
+            continue
+        for run_dir in session_dir.iterdir():
+            if not run_dir.is_dir():
+                continue
+            if run_dir.name in active_run_ids:
+                kept += 1
+                continue
+            try:
+                mtime = run_dir.stat().st_mtime
+            except OSError:
+                continue
+            if mtime > threshold:
+                kept += 1
+                continue
+            # Tamanho antes de remover (best-effort)
+            try:
+                size = sum(p.stat().st_size for p in run_dir.rglob("*") if p.is_file())
+            except OSError:
+                size = 0
+            try:
+                shutil.rmtree(run_dir, ignore_errors=True)
+                removed.append(str(run_dir))
+                freed += size
+            except Exception:
+                pass
+
+        # Remove session_dir se vazia depois do cleanup
+        try:
+            if not any(session_dir.iterdir()):
+                session_dir.rmdir()
+        except OSError:
+            pass
+
+    return {"removed": removed, "kept": kept, "freed_bytes": freed}
 
 
 def cleanup_run(run_id: str, remove_files: bool = False) -> None:

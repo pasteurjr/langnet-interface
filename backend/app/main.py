@@ -131,6 +131,22 @@ def health_check():
     }
 
 
+@app.on_event("startup")
+async def cleanup_old_runs_on_startup():
+    """Limpa diretórios de runs antigos (>24h) ao subir o backend.
+    Não bloqueia startup — silencioso em caso de erro."""
+    try:
+        from app import code_runner
+        res = code_runner.cleanup_old_run_dirs(max_age_hours=24, keep_running=True)
+        removed = len(res.get("removed", []))
+        kept = res.get("kept", 0)
+        freed_mb = round(res.get("freed_bytes", 0) / (1024 * 1024), 2)
+        if removed > 0 or kept > 0:
+            print(f"🧹 Cleanup /tmp/langnet-runs/: removed {removed}, kept {kept}, freed {freed_mb} MB")
+    except Exception as exc:
+        print(f"⚠️  Cleanup startup falhou (não-fatal): {exc}")
+
+
 if __name__ == "__main__":
     import uvicorn
 

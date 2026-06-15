@@ -523,6 +523,21 @@ def list_runs(session_id: str, current_user: dict = Depends(get_current_user)):
     return {"runs": [r.to_public() for r in runs]}
 
 
+@router.post("/runs/cleanup")
+def cleanup_runs_endpoint(
+    max_age_hours: int = 24,
+    current_user: dict = Depends(get_current_user),
+):
+    """Remove diretórios de runs antigos em /tmp/langnet-runs/. Preserva
+    runs ativos do registry em memória. Usar para limpar disco manualmente."""
+    res = code_runner.cleanup_old_run_dirs(max_age_hours=max_age_hours, keep_running=True)
+    return {
+        "removed_count": len(res.get("removed", [])),
+        "kept_count": res.get("kept", 0),
+        "freed_mb": round(res.get("freed_bytes", 0) / (1024 * 1024), 2),
+    }
+
+
 @router.websocket("/run/{run_id}/ws")
 async def run_ws(websocket: WebSocket, run_id: str, token: str = ""):
     """Stream em tempo real do stdout do run.
