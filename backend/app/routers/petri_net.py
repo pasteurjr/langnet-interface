@@ -39,10 +39,30 @@ class UpdatePetriNetRequest(BaseModel):
 # HELPERS
 # ═══════════════════════════════════════════════════════════
 
+def _strip_md_fences(content: str) -> str:
+    """Remove cercas ```yaml ... ``` que o LLM frequentemente coloca em volta.
+    Mantém o conteúdo intacto se não houver fences."""
+    if not content:
+        return content
+    import re as _re
+    # Caso típico: linha inicial '```yaml' (ou apenas '```') e fechamento '```' no fim
+    m = _re.search(r"^```(?:ya?ml|yaml)?\s*\n(.*?)\n?```\s*$", content.strip(), _re.DOTALL | _re.IGNORECASE)
+    if m:
+        return m.group(1)
+    # Caso mais relaxado: só remove as primeiras/últimas linhas se forem cercas
+    lines = content.strip().splitlines()
+    if lines and lines[0].strip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines)
+
+
 def _parse_agents_yaml(content: str) -> list:
     """Parse agents.yaml content into a list of agent dicts with id/name/role/goal/backstory."""
     if not content:
         return []
+    content = _strip_md_fences(content)
     try:
         parsed = yaml.safe_load(content) or {}
     except yaml.YAMLError:
@@ -65,6 +85,7 @@ def _parse_tasks_yaml(content: str) -> list:
     """Parse tasks.yaml content into a list of task dicts with id/description/expected_output/agent."""
     if not content:
         return []
+    content = _strip_md_fences(content)
     try:
         parsed = yaml.safe_load(content) or {}
     except yaml.YAMLError:

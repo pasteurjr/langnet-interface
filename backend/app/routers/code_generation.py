@@ -125,18 +125,30 @@ def _guess_language(path: str) -> str:
     return "text"
 
 
+def _strip_md_fences(content: str) -> str:
+    """Remove cercas ```yaml ... ``` que o LLM frequentemente coloca em volta."""
+    if not content:
+        return content
+    lines = content.strip().splitlines()
+    if lines and lines[0].strip().startswith("```"):
+        lines = lines[1:]
+    if lines and lines[-1].strip() == "```":
+        lines = lines[:-1]
+    return "\n".join(lines)
+
+
 def _load_agents_and_tasks_yaml(req: GenerateCodeRequest):
     agents_session = get_agents_yaml_session(req.agents_yaml_session_id)
     if not agents_session:
         raise HTTPException(404, "agents.yaml session não encontrada")
-    agents_yaml = agents_session.get("agents_yaml_content", "")
+    agents_yaml = _strip_md_fences(agents_session.get("agents_yaml_content", "") or "")
     if not agents_yaml:
         raise HTTPException(400, "agents.yaml vazio")
 
     tasks_session = get_tasks_yaml_session(req.tasks_yaml_session_id)
     if not tasks_session:
         raise HTTPException(404, "tasks.yaml session não encontrada")
-    tasks_yaml = tasks_session.get("tasks_yaml_content", "")
+    tasks_yaml = _strip_md_fences(tasks_session.get("tasks_yaml_content", "") or "")
     if not tasks_yaml:
         raise HTTPException(400, "tasks.yaml vazio")
 
