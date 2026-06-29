@@ -1401,11 +1401,23 @@ def generate_document_output_func(state: LangNetFullState, result: Any) -> LangN
                     team_result_str = team_result_str[:-3]
                 
                 # Parse the nested JSON
+                nested_parse_failed = False
                 try:
                     parsed = json.loads(team_result_str.strip())
-                except json.JSONDecodeError:
-                    # Fallback to original if nested parsing fails
-                    pass
+                except json.JSONDecodeError as nested_err:
+                    print(f"[DEBUG] Nested team_result JSON parse FAILED: {nested_err}")
+                    nested_parse_failed = True
+                # Regex fallback — string-level extraction directly from team_result_str
+                if nested_parse_failed and isinstance(team_result_str, str):
+                    import re as _re
+                    m = _re.search(r'"requirements_document_md"\s*:\s*"((?:[^"\\]|\\.)*)"', team_result_str, _re.DOTALL)
+                    if m:
+                        try:
+                            extracted = json.loads('"' + m.group(1) + '"')
+                            parsed = {"requirements_document_md": extracted}
+                            print(f"[DEBUG] Regex fallback OK — extracted {len(extracted)} chars")
+                        except Exception as exc:
+                            print(f"[DEBUG] Regex fallback decode failed: {exc}")
     except json.JSONDecodeError as e:
         print(f"[DEBUG] JSON parsing FAILED: {e}")
         parsed = {}
@@ -1414,6 +1426,17 @@ def generate_document_output_func(state: LangNetFullState, result: Any) -> LangN
     requirements_doc_md = ""
     if isinstance(parsed, dict):
         requirements_doc_md = parsed.get("requirements_document_md", "")
+
+    # Last-resort: regex direct na string output_json se ainda vazio
+    if not requirements_doc_md and output_json:
+        import re as _re
+        m = _re.search(r'"requirements_document_md"\s*:\s*"((?:[^"\\]|\\.)*)"', output_json, _re.DOTALL)
+        if m:
+            try:
+                requirements_doc_md = json.loads('"' + m.group(1) + '"')
+                print(f"[DEBUG] Last-resort regex on output_json OK — {len(requirements_doc_md)} chars")
+            except Exception as exc:
+                print(f"[DEBUG] Last-resort regex decode failed: {exc}")
 
     print(f"[DEBUG] FINAL requirements_doc_md length: {len(requirements_doc_md)}")
     if requirements_doc_md:
@@ -1732,13 +1755,107 @@ def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNe
         f"arcos={len(adapted.get('arcos', []))}"
     )
 
+    # Validação estrutural — emite warnings se detectarmos antipatterns
+    petri_warnings = _validate_petri_net_topology(adapted)
+    if petri_warnings:
+        print(f"[PETRI WARN] {len(petri_warnings)} aviso(s) de topologia:")
+        for w in petri_warnings:
+            print(f"  ⚠ {w}")
+
     updated_state = {
         **state,
         "petri_net_json": json.dumps(adapted, ensure_ascii=False),
-        "petri_net_data": adapted
+        "petri_net_data": adapted,
+        "petri_net_warnings": petri_warnings,
     }
 
     return log_task_complete(updated_state, "design_petri_net")
+
+
+def _validate_petri_net_topology(net: Dict[str, Any]) -> List[str]:
+    """Detecta antipatterns na Petri Net gerada pelo LLM.
+
+    Retorna lista de warnings (strings). Cada warning começa com uma categoria:
+      - dead_transition: transição sem entrada ou sem saída
+      - massive_fanout: transição com >3 saídas paralelas
+      - branch_no_guards: transição com múltiplas saídas mas guards vazios em todas
+      - orphan_place: lugar sem nenhum arco entrando E sem nenhum arco saindo
+      - no_start_token: nenhum lugar com tokens=1
+      - missing_dependency: lugar B referencia output de A mas não há arco A→T→B
+    """
+    if not isinstance(net, dict):
+        return ["invalid_structure: petri_net não é um dict"]
+
+    places = net.get("lugares", []) or []
+    transitions = net.get("transicoes", []) or []
+    arcs = net.get("arcos", []) or []
+    warnings: List[str] = []
+
+    place_ids = {p.get("id") for p in places if isinstance(p, dict)}
+    trans_ids = {t.get("id") for t in transitions if isinstance(t, dict)}
+
+    # 1) Dead transitions (sem entrada OU sem saída)
+    for t in transitions:
+        if not isinstance(t, dict):
+            continue
+        tid = t.get("id")
+        ins = [a for a in arcs if a.get("destino") == tid]
+        outs = [a for a in arcs if a.get("origem") == tid]
+        if not ins and not outs:
+            warnings.append(f"dead_transition: {tid} sem nenhum arco (entrada nem saída)")
+        elif not ins:
+            warnings.append(f"dead_transition: {tid} sem arco de entrada (fonte). Aceitável só se for T_start saindo de P0.")
+        elif not outs:
+            warnings.append(f"dead_transition: {tid} sem arco de saída (sumidouro)")
+
+    # 2) Massive fan-out: transição com >3 saídas paralelas
+    for t in transitions:
+        tid = t.get("id") if isinstance(t, dict) else None
+        if not tid:
+            continue
+        outs = [a for a in arcs if a.get("origem") == tid]
+        if len(outs) > 3:
+            dest_names = [str(a.get("destino")) for a in outs[:6]]
+            warnings.append(
+                f"massive_fanout: {tid} dispara {len(outs)} places em paralelo — provavelmente "
+                f"esconde dependências sequenciais. Destinos: {', '.join(dest_names)}"
+            )
+
+    # 3) Branching sem guards: transição com múltiplas saídas (de mesma origem) sem guards
+    # Detecta: 1 place A → várias transições T_x, T_y — se todas guards vazias é fan-out
+    # (não branching real)
+    for p in places:
+        pid = p.get("id") if isinstance(p, dict) else None
+        if not pid:
+            continue
+        # Transições alimentadas só por esse lugar
+        feeding = [a.get("destino") for a in arcs if a.get("origem") == pid and a.get("destino") in trans_ids]
+        if len(feeding) >= 2:
+            # Verifica se TODAS têm guard vazio
+            empty_guards = 0
+            for tid in feeding:
+                t = next((x for x in transitions if isinstance(x, dict) and x.get("id") == tid), None)
+                if t and not (t.get("guard") or "").strip():
+                    empty_guards += 1
+            if empty_guards == len(feeding):
+                warnings.append(
+                    f"branch_no_guards: {pid} alimenta {len(feeding)} transições "
+                    f"({', '.join(feeding)}) e nenhuma tem guard — vai disparar todas (concorrência)"
+                )
+
+    # 4) Orphan places
+    referenced_in_arcs = {a.get("origem") for a in arcs} | {a.get("destino") for a in arcs}
+    for p in places:
+        pid = p.get("id") if isinstance(p, dict) else None
+        if pid and pid not in referenced_in_arcs:
+            warnings.append(f"orphan_place: {pid} não tem nenhum arco — não pode receber nem ceder tokens")
+
+    # 5) No start token
+    has_start = any((p.get("tokens") or 0) > 0 for p in places if isinstance(p, dict))
+    if not has_start:
+        warnings.append("no_start_token: nenhum lugar inicia com tokens>0 — a Petri Net é inerte")
+
+    return warnings
 
 
 def generate_yaml_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
@@ -1823,11 +1940,17 @@ return output;
 def _build_petri_net_with_real_logica(
     petri_net: Dict[str, Any],
     websocket_port: int,
+    known_task_names: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """Substitui o placeholder em ``place.logica`` por código WebSocket real.
 
     Mantém intactos os demais campos (lugares/transicoes/arcos/agentes/coordenadas).
     Resolve dependências de cada place lendo ``arcos`` (lugar→transição→lugar próximo).
+
+    Se ``known_task_names`` for fornecido, faz match do task_name extraído contra
+    a lista — limpa sufixos comuns (_pronta/_ready/_in) e fuzzy match. Places cuja
+    task derivada NÃO está em known_task_names recebem template intermediário
+    (apenas propagam input).
     """
     if not isinstance(petri_net, dict):
         return petri_net
@@ -1847,18 +1970,99 @@ def _build_petri_net_with_real_logica(
         if dest in transitions and origin:
             places_into_trans.setdefault(dest, []).append(origin)
 
+    # Set de task names válidos (do tasks.yaml)
+    valid_tasks = set(known_task_names or [])
+
+    _INTERMEDIATE_LOGICA = (
+        "// place intermediário — propaga input adiante (sem chamar WS)\n"
+        "const output = utils.clone(input);\n"
+        "output.status = 'completed';\n"
+        "output.timestamp = utils.now();\n"
+        "return output;"
+    )
+
+    def _resolve_task_name(candidate: str) -> Optional[str]:
+        """Tenta casar candidate com algum task_name conhecido (limpando sufixos)."""
+        if not candidate:
+            return None
+        if not valid_tasks:
+            return candidate  # sem lista, aceita qualquer
+        if candidate in valid_tasks:
+            return candidate
+        # Limpa sufixos comuns adicionados pelo LLM
+        for suf in ("_pronta", "_pronto", "_ready", "_in", "_out", "_start", "_finished"):
+            if candidate.endswith(suf):
+                trimmed = candidate[: -len(suf)]
+                if trimmed in valid_tasks:
+                    return trimmed
+        # Fuzzy: substring de algum task name
+        for t in valid_tasks:
+            if t in candidate or candidate in t:
+                return t
+        return None
+
     out = {**petri_net, "lugares": []}
     for lugar in petri_net.get("lugares", []) or []:
         if not isinstance(lugar, dict):
             out["lugares"].append(lugar)
             continue
         lid = lugar.get("id", "")
+
+        # Places SEM agentId não chamam WS (são intermediários: _out, _in,
+        # ready, fim do fluxo). JS minimal que apenas propaga input → output
+        # para que sucessores leiam via getPlaceOutput.
+        if not lugar.get("agentId"):
+            new_lugar = {**lugar}
+            new_lugar["logica"] = _INTERMEDIATE_LOGICA
+            out["lugares"].append(new_lugar)
+            continue
+
         prev_places: List[str] = []
         for trans_id in trans_into_place.get(lid, []):
             prev_places.extend(places_into_trans.get(trans_id, []))
         prev_places = sorted(set(p for p in prev_places if p and p != lid))
 
-        task_name = (lugar.get("nome") or lid).split(":")[-1].strip().replace(" ", "_").lower()
+        # Extrai task_name nessa ordem:
+        #   1. task_name explícito no campo (se houver)
+        #   2. regex no stub original da logica  (output.task_name = 'X')
+        #   3. QUALQUER substring snake_case do nome do place que case com valid_tasks
+        #   4. dentro de parênteses no nome do place  (ex: "(suggest_weekly_themes)")
+        #   5. fallback: slug do nome do place
+        task_name = (lugar.get("task_name") or "").strip()
+        if not task_name:
+            import re as _re_tn
+            orig_logica = str(lugar.get("logica") or "")
+            m = _re_tn.search(r"task_name\s*[:=]\s*['\"]([A-Za-z0-9_]+)['\"]", orig_logica)
+            if m:
+                task_name = m.group(1)
+        # NOVA estratégia: tenta achar QUALQUER nome de task válido no nome do place
+        if not task_name and valid_tasks:
+            place_name_low = (lugar.get("nome") or "").lower()
+            # match exato com tasks.yaml (prioriza nome mais longo pra evitar partial match errado)
+            for vt in sorted(valid_tasks, key=len, reverse=True):
+                if vt in place_name_low:
+                    task_name = vt
+                    break
+        if not task_name:
+            import re as _re_tn2
+            # Pega TODOS os parênteses, prefere o que tem mais chars (geralmente o task name real)
+            all_parens = _re_tn2.findall(r"\(([A-Za-z0-9_]+)\)", str(lugar.get("nome") or ""))
+            if all_parens:
+                task_name = max(all_parens, key=len)
+        if not task_name:
+            task_name = (lugar.get("nome") or lid).split(":")[-1].strip().replace(" ", "_").lower()
+
+        # Resolve contra tasks.yaml — se não casa, vira intermediário
+        resolved = _resolve_task_name(task_name)
+        if not resolved:
+            # Place com agentId mas task name não bate com tasks.yaml — virou intermediário
+            new_lugar = {**lugar}
+            new_lugar["logica"] = _INTERMEDIATE_LOGICA
+            new_lugar["_unresolved_task"] = task_name  # debug hint
+            out["lugares"].append(new_lugar)
+            continue
+        task_name = resolved
+
         # Timeout adaptativo: tasks com 'classify' ou 'analyze' levam mais tempo
         timeout_ms = 180000 if any(k in task_name for k in ("classif", "analy", "search", "extrac")) else 60000
 
@@ -1965,16 +2169,41 @@ e emite task_start / verbose / task_completed / error.
 """
 import asyncio
 import json
+import os
 import traceback
 from datetime import datetime
 from typing import Any, Dict
 
 import websockets
 import yaml
-from crewai import Agent, Task, Crew, Process
+from crewai import Agent, Task, Crew, Process, LLM
+from dotenv import load_dotenv
+
+load_dotenv()
 
 import tools as tools_module
 import adapters as adapters_module
+
+
+# ─── LLM (DeepSeek por padrão, com fallback OpenAI) ───────────────────────────
+def _build_llm() -> LLM:
+    provider = (os.getenv("LLM_PROVIDER") or "deepseek").lower()
+    if provider == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
+        return LLM(
+            model=os.getenv("DEEPSEEK_MODEL_NAME", "deepseek/deepseek-chat"),
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
+            temperature=0.7,
+        )
+    # Fallback: OpenAI (crewai default)
+    return LLM(
+        model=os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"),
+        api_key=os.getenv("OPENAI_API_KEY"),
+        temperature=0.7,
+    )
+
+
+SHARED_LLM = _build_llm()
 
 
 def _load_yaml(path: str) -> Dict[str, Any]:
@@ -2001,6 +2230,19 @@ def _resolve_tools(names):
     return out
 
 
+def _agent_for_task(task_id: str) -> str:
+    """Resolve o agente da task — preferindo task.agent, com fallback
+    para o primeiro agente em AGENT_TOOLS que mencione essa task."""
+    cfg = TASKS_CONFIG.get(task_id, {{}}) or {{}}
+    agent_id = cfg.get("agent") or cfg.get("agent_id")
+    if agent_id:
+        return agent_id
+    # Fallback: primeiro agente da lista (degradação graceful)
+    if AGENTS_CONFIG:
+        return next(iter(AGENTS_CONFIG.keys()))
+    return ""
+
+
 def _build_agent(agent_id: str) -> Agent:
     cfg = AGENTS_CONFIG.get(agent_id, {{}})
     tool_names = AGENT_TOOLS.get(agent_id, [])
@@ -2011,6 +2253,7 @@ def _build_agent(agent_id: str) -> Agent:
         verbose=cfg.get("verbose", True),
         allow_delegation=cfg.get("allow_delegation", False),
         tools=_resolve_tools(tool_names),
+        llm=SHARED_LLM,
     )
 
 
@@ -2117,6 +2360,7 @@ def _template_requirements_txt(_extra_pkgs: List[str] = None) -> str:
         "crewai-tools>=0.1.0",
         "langchain>=0.1.0",
         "langchain-openai>=0.1.0",
+        "openai>=1.0.0",
         "websockets>=11.0.3",
         "pydantic>=2.0.0",
         "python-dotenv>=1.0.0",
@@ -2135,8 +2379,19 @@ def _template_env_example(detected_tools: List[str]) -> str:
         "WEBSOCKET_HOST=localhost",
         "WEBSOCKET_PORT=5002",
         "",
-        "# LLM (CrewAI default)",
+        "# LLM — escolha um (DeepSeek é o padrão; deixe vazio para usar OpenAI)",
+        "LLM_PROVIDER=deepseek",
+        "DEEPSEEK_API_KEY=sk-...",
+        "DEEPSEEK_API_BASE=https://api.deepseek.com",
+        "DEEPSEEK_MODEL_NAME=deepseek/deepseek-chat",
+        "",
+        "# Alternativa OpenAI",
         "OPENAI_API_KEY=sk-...",
+        "OPENAI_MODEL_NAME=gpt-4o-mini",
+        "",
+        "# Desabilita telemetria/banner interativo do CrewAI (essencial em background)",
+        "CREWAI_TESTING=true",
+        "OTEL_SDK_DISABLED=true",
         "",
     ]
     tools_lower = " ".join(detected_tools).lower()
@@ -2327,6 +2582,194 @@ def _inject_tool_registry_stub(tools_py: str, all_tool_names: List[str]) -> str:
     return tools_py.rstrip() + "\n" + stub
 
 
+def _autofill_tasks_yaml_agents(
+    tasks_yaml: str,
+    agents_yaml: str,
+    agents_map: Dict[str, List[str]],
+    tasks_map: Dict[str, List[str]],
+) -> str:
+    """Preenche o campo `agent:` em tasks que vieram sem ele.
+
+    Estratégia (ordem):
+      1. Mantém `agent:` se já existir e for válido.
+      2. Tenta inferir pelo cruzamento de tools: agente cujo set de tools
+         contém todas as tools da task.
+      3. Heurística por nome: substring do task_id no agent_id.
+      4. Fallback: primeiro agente listado em agents.yaml.
+    Não bloqueia se o tasks.yaml for inválido — retorna o original.
+    """
+    if not tasks_yaml:
+        return tasks_yaml
+    try:
+        tasks = yaml.safe_load(tasks_yaml) or {}
+        agents = yaml.safe_load(agents_yaml) or {} if agents_yaml else {}
+    except yaml.YAMLError:
+        return tasks_yaml
+    if not isinstance(tasks, dict):
+        return tasks_yaml
+
+    agent_ids = list(agents.keys()) if isinstance(agents, dict) else list(agents_map.keys())
+    if not agent_ids:
+        return tasks_yaml
+    default_agent = agent_ids[0]
+
+    def _pick_agent(task_id: str, task_tools: List[str]) -> str:
+        task_tool_set = set(task_tools or [])
+        # 2. melhor match por tools
+        if task_tool_set:
+            best, best_score = None, 0
+            for aid in agent_ids:
+                atools = set(agents_map.get(aid, []))
+                score = len(task_tool_set & atools)
+                if score > best_score:
+                    best_score = score
+                    best = aid
+            if best:
+                return best
+        # 3. substring do task_id no agent_id (sem sufixo _agent)
+        tid_low = task_id.lower()
+        for aid in agent_ids:
+            tag = aid.lower().replace("_agent", "")
+            if tag and tag in tid_low:
+                return aid
+        # 4. fallback
+        return default_agent
+
+    changed = False
+    for tid, cfg in tasks.items():
+        if not isinstance(cfg, dict):
+            continue
+        existing = cfg.get("agent") or cfg.get("agent_id")
+        if existing and existing in agent_ids:
+            continue
+        cfg["agent"] = _pick_agent(tid, tasks_map.get(tid, []))
+        changed = True
+
+    if not changed:
+        return tasks_yaml
+    return yaml.dump(tasks, sort_keys=False, allow_unicode=True)
+
+
+def _slugify_project(name: str) -> str:
+    """Slug ascii-safe: 'Quântica Comercial' → 'quantica-comercial'."""
+    import re as _re_sl
+    import unicodedata
+    s = unicodedata.normalize("NFKD", name or "").encode("ascii", "ignore").decode("ascii")
+    s = s.lower()
+    s = _re_sl.sub(r"[^a-z0-9]+", "-", s).strip("-")
+    return s or "projeto"
+
+
+# Diretório dos templates visualtasksexec — frontend React + backend FastAPI + ws-server
+_VTE_TEMPLATES_DIR = Path(__file__).parent / "templates" / "visualtasksexec"
+
+
+def _render_visualtasksexec_templates(
+    project_name: str,
+    project_id: str,
+    petri_net: Dict[str, Any],
+    agents_yaml: str,
+    tasks_yaml: str,
+    *,
+    ws_port: int = 5002,
+    backend_port: int = 8001,
+    frontend_port: int = 3001,
+) -> List[Dict[str, str]]:
+    """Lê o diretório de templates e devolve arquivos do pacote completo
+    (frontend React + backend FastAPI + docker-compose + README).
+
+    O ws-server fica num subdiretório, montado depois com os arquivos LLM
+    (agents.yaml, tasks.yaml, tools.py, adapters.py, websocket_server.py).
+
+    Cada arquivo .tpl tem extensão removida no destino. Placeholders:
+      {{PROJECT_NAME}}, {{PROJECT_SLUG}}, {{PROJECT_ID}}
+      {{WS_PORT}}, {{BACKEND_PORT}}, {{FRONTEND_PORT}}
+    """
+    if not _VTE_TEMPLATES_DIR.exists():
+        return []
+
+    project_slug = _slugify_project(project_name)
+
+    # Builds the project.json that the backend serves
+    import yaml as _yaml_for_render
+    try:
+        agents_list = list((_yaml_for_render.safe_load(agents_yaml) or {}).items())
+    except Exception:
+        agents_list = []
+    try:
+        tasks_list = list((_yaml_for_render.safe_load(tasks_yaml) or {}).items())
+    except Exception:
+        tasks_list = []
+
+    project_json = {
+        "id": project_id,
+        "name": project_name,
+        "description": f"Sistema agêntico gerado pelo LangNet — {project_name}",
+        "petriNet": petri_net or {},
+        "agents": [
+            {"id": aid, "role": (cfg or {}).get("role", aid), "goal": (cfg or {}).get("goal", "")}
+            for aid, cfg in agents_list
+            if isinstance(cfg, dict) or cfg is None
+        ],
+        "tasks": [
+            {
+                "id": tid,
+                "name": tid,
+                "description": (cfg or {}).get("description", "")[:200] if isinstance(cfg, dict) else "",
+                "agent": (cfg or {}).get("agent") if isinstance(cfg, dict) else None,
+            }
+            for tid, cfg in tasks_list
+        ],
+    }
+
+    placeholders = {
+        "{{PROJECT_NAME}}": project_name,
+        "{{PROJECT_SLUG}}": project_slug,
+        "{{PROJECT_ID}}": project_id,
+        "{{WS_PORT}}": str(ws_port),
+        "{{BACKEND_PORT}}": str(backend_port),
+        "{{FRONTEND_PORT}}": str(frontend_port),
+    }
+
+    def _render(text: str) -> str:
+        for k, v in placeholders.items():
+            text = text.replace(k, v)
+        return text
+
+    out: List[Dict[str, str]] = []
+    for path in sorted(_VTE_TEMPLATES_DIR.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(_VTE_TEMPLATES_DIR).as_posix()
+        # arquivos .tpl perdem o sufixo no destino
+        if rel.endswith(".tpl"):
+            rel = rel[:-4]
+        try:
+            content = path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+        content = _render(content)
+        # detect language por extensão
+        ext = rel.rsplit(".", 1)[-1].lower()
+        lang = {
+            "py": "python", "js": "javascript", "jsx": "jsx", "json": "json",
+            "yml": "yaml", "yaml": "yaml", "html": "html", "md": "markdown",
+            "txt": "text", "dockerfile": "dockerfile",
+        }.get(ext, "text")
+        if rel.endswith("Dockerfile") or rel.endswith("/Dockerfile"):
+            lang = "dockerfile"
+        out.append({"path": rel, "content": content, "language": lang})
+
+    # Adiciona o project.json (lido pelo backend FastAPI)
+    out.append({
+        "path": "backend/project.json",
+        "content": json.dumps(project_json, ensure_ascii=False, indent=2),
+        "language": "json",
+    })
+
+    return out
+
+
 def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any]) -> List[Dict[str, str]]:
     """Monta a árvore completa de arquivos do projeto agêntico.
 
@@ -2361,28 +2804,55 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     tools_py = _inject_tool_registry_stub(tools_py, all_tool_names)
     adapters_py = _inject_task_tools_into_adapters(adapters_py, agents_map, tasks_map)
 
-    petri_with_logica = _build_petri_net_with_real_logica(petri_net, ws_port) if petri_net else {}
+    # Autofill 'agent:' nas tasks do tasks.yaml — sem isso o websocket_server
+    # rejeita execute_task com "task sem agente vinculado"
+    tasks_yaml = _autofill_tasks_yaml_agents(tasks_yaml, agents_yaml, agents_map, tasks_map)
+
+    # Extrai task names do tasks.yaml para validar contra os place.task_name do LLM
+    try:
+        _tasks_parsed = yaml.safe_load(tasks_yaml) if tasks_yaml else {}
+        known_task_names = list(_tasks_parsed.keys()) if isinstance(_tasks_parsed, dict) else []
+    except Exception:
+        known_task_names = []
+    petri_with_logica = _build_petri_net_with_real_logica(petri_net, ws_port, known_task_names) if petri_net else {}
 
     files: List[Dict[str, str]] = []
 
     def add(path: str, content: str, language: str = "python"):
         files.append({"path": path, "content": content, "language": language})
 
-    add("main.py", _template_main_py(project_name, ws_port))
-    add("websocket_server.py", _template_websocket_server_py(ws_port))
-    add("tools.py", tools_py if tools_py.endswith("\n") else tools_py + "\n")
-    add("adapters.py", adapters_py if adapters_py.endswith("\n") else adapters_py + "\n")
+    # ws-server: o componente Python+CrewAI+WebSocket (antes era a raiz do ZIP).
+    # Agora vai como subdir 'ws-server/' do pacote visualtasksexec.
+    add("ws-server/main.py", _template_main_py(project_name, ws_port))
+    add("ws-server/websocket_server.py", _template_websocket_server_py(ws_port))
+    add("ws-server/tools.py", tools_py if tools_py.endswith("\n") else tools_py + "\n")
+    add("ws-server/adapters.py", adapters_py if adapters_py.endswith("\n") else adapters_py + "\n")
     if agents_yaml:
-        add("agents.yaml", agents_yaml if agents_yaml.endswith("\n") else agents_yaml + "\n", "yaml")
+        add("ws-server/agents.yaml", agents_yaml if agents_yaml.endswith("\n") else agents_yaml + "\n", "yaml")
     if tasks_yaml:
-        add("tasks.yaml", tasks_yaml if tasks_yaml.endswith("\n") else tasks_yaml + "\n", "yaml")
+        add("ws-server/tasks.yaml", tasks_yaml if tasks_yaml.endswith("\n") else tasks_yaml + "\n", "yaml")
     if petri_with_logica:
-        add("petri_net.json", json.dumps(petri_with_logica, ensure_ascii=False, indent=2), "json")
-    add("requirements.txt", _template_requirements_txt(_detect_extra_packages(tools_py)), "text")
-    add(".env.example", _template_env_example(detected_tools), "text")
-    add("docker-compose.yml", _template_docker_compose(project_name, ws_port), "yaml")
-    add("Dockerfile", _template_dockerfile(), "dockerfile")
-    add("README.md", _template_readme(project_name, ws_port, [f["path"] for f in files]), "markdown")
+        add("ws-server/petri_net.json", json.dumps(petri_with_logica, ensure_ascii=False, indent=2), "json")
+    add("ws-server/requirements.txt", _template_requirements_txt(_detect_extra_packages(tools_py)), "text")
+    add("ws-server/.env.example", _template_env_example(detected_tools), "text")
+    add("ws-server/Dockerfile", _template_dockerfile(), "dockerfile")
+
+    # === Pacote visualtasksexec: frontend React + backend FastAPI + docker-compose ===
+    project_id = state.get("project_id") or "default"
+    vte_files = _render_visualtasksexec_templates(
+        project_name=project_name,
+        project_id=str(project_id),
+        petri_net=petri_with_logica or petri_net or {},
+        agents_yaml=agents_yaml or "",
+        tasks_yaml=tasks_yaml or "",
+        ws_port=ws_port,
+        backend_port=8001,
+        frontend_port=3001,
+    )
+    for f in vte_files:
+        # README.md.tpl e docker-compose.yml.tpl vão pra raiz
+        files.append(f)
+
     return files
 
 
@@ -2422,11 +2892,15 @@ def _validate_generated_project(files: List[Dict[str, str]], state: LangNetFullS
     task_ids = set(_yaml_top_keys(tasks_yaml))
 
     # Extrai TOOL_REGISTRY keys do tools.py
+    # Suporta:  TOOL_REGISTRY = {...}  e  TOOL_REGISTRY: Dict[...] = {...}
     tool_keys: set = set()
-    reg_match = _re.search(r"TOOL_REGISTRY\s*=\s*\{([^}]+)\}", tools_py, _re.DOTALL)
+    reg_match = _re.search(r"TOOL_REGISTRY(?:\s*:\s*[^=]+)?\s*=\s*\{(.*?)\n\}", tools_py, _re.DOTALL)
     if reg_match:
         for m in _re.finditer(r"['\"]([a-zA-Z0-9_]+)['\"]\s*:", reg_match.group(1)):
             tool_keys.add(m.group(1))
+    # Também captura linhas TOOL_REGISTRY["xxx"] = Yyy() fora do dict literal
+    for m in _re.finditer(r"TOOL_REGISTRY\s*\[\s*['\"]([a-zA-Z0-9_]+)['\"]\s*\]\s*=", tools_py):
+        tool_keys.add(m.group(1))
 
     # Extrai TASK_TOOLS / AGENT_TOOLS keys do adapters.py
     def _parse_str_list_dict(src: str, dict_name: str) -> Dict[str, List[str]]:
@@ -2470,6 +2944,31 @@ def _validate_generated_project(files: List[Dict[str, str]], state: LangNetFullS
             warnings.append(
                 f"unknown_agent_in_bindings: {len(unknown_agents)} agent_id em AGENT_TOOLS sem definição em agents.yaml — "
                 + ", ".join(unknown_agents[:6])
+            )
+
+    # 3.1. tasks.yaml: cada task tem `agent:` apontando para agent existente
+    if task_ids and agent_ids:
+        try:
+            tasks_data = yaml.safe_load(tasks_yaml) or {}
+        except yaml.YAMLError:
+            tasks_data = {}
+        tasks_without_agent: List[str] = []
+        tasks_bad_agent: List[str] = []
+        for tid, cfg in tasks_data.items() if isinstance(tasks_data, dict) else []:
+            agent_ref = (cfg.get("agent") or cfg.get("agent_id")) if isinstance(cfg, dict) else None
+            if not agent_ref:
+                tasks_without_agent.append(tid)
+            elif agent_ref not in agent_ids:
+                tasks_bad_agent.append(f"{tid}→{agent_ref}")
+        if tasks_without_agent:
+            sample = ", ".join(tasks_without_agent[:6]) + (f" (+{len(tasks_without_agent) - 6} mais)" if len(tasks_without_agent) > 6 else "")
+            warnings.append(
+                f"task_missing_agent: {len(tasks_without_agent)} task(s) em tasks.yaml sem campo 'agent:' — {sample}"
+            )
+        if tasks_bad_agent:
+            sample = ", ".join(tasks_bad_agent[:6])
+            warnings.append(
+                f"task_unknown_agent: {len(tasks_bad_agent)} task(s) referenciam agente ausente em agents.yaml — {sample}"
             )
 
     # 4. adapter functions ausentes

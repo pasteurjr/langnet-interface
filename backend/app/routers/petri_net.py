@@ -41,21 +41,21 @@ class UpdatePetriNetRequest(BaseModel):
 
 def _strip_md_fences(content: str) -> str:
     """Remove cercas ```yaml ... ``` que o LLM frequentemente coloca em volta.
-    Mantém o conteúdo intacto se não houver fences."""
+    Mantém o conteúdo intacto se não houver fences.
+
+    Lida com casos onde o LLM coloca um prefixo (ex: 'tasks.yaml:') antes da fence.
+    """
     if not content:
         return content
     import re as _re
-    # Caso típico: linha inicial '```yaml' (ou apenas '```') e fechamento '```' no fim
-    m = _re.search(r"^```(?:ya?ml|yaml)?\s*\n(.*?)\n?```\s*$", content.strip(), _re.DOTALL | _re.IGNORECASE)
+    # Extrai o primeiro bloco entre cercas em qualquer parte do texto
+    m = _re.search(r"```(?:ya?ml|yaml)?\s*\n(.*?)\n```", content, _re.DOTALL | _re.IGNORECASE)
     if m:
         return m.group(1)
-    # Caso mais relaxado: só remove as primeiras/últimas linhas se forem cercas
+    # Fallback: remove apenas linhas que sejam cercas (filtra ```... e ```)
     lines = content.strip().splitlines()
-    if lines and lines[0].strip().startswith("```"):
-        lines = lines[1:]
-    if lines and lines[-1].strip() == "```":
-        lines = lines[:-1]
-    return "\n".join(lines)
+    cleaned = [ln for ln in lines if not ln.strip().startswith("```")]
+    return "\n".join(cleaned)
 
 
 def _parse_agents_yaml(content: str) -> list:
@@ -178,6 +178,16 @@ async def generate_petri_net(
             status_code=502,
             detail="LLM não retornou rede de Petri válida (lugares vazio)",
         )
+
+    # Substitui placeholder em place.logica pelo JS real (WebSocket call)
+    # — mesmo padrão usado quando empacotamos o ZIP de código.
+    from agents.langnetagents import _build_petri_net_with_real_logica
+    ws_port = int(state.get("websocket_port") or 5002)
+    # known_task_names: extrai do tasks.yaml para validar place.task_name e
+    # transformar places "intermediários" disfarçados (ex: P_T003_in "join")
+    # em propagadores sem chamada WS.
+    known_task_names = [t.get("id") for t in tasks_list if isinstance(t, dict) and t.get("id")]
+    petri_net = _build_petri_net_with_real_logica(petri_net, ws_port, known_task_names)
 
     # Persistir em projects.project_data
     affected = update_project_data(project_id, petri_net)

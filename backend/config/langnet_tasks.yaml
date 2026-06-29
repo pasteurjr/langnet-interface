@@ -1063,16 +1063,87 @@ design_petri_net:
     - dependencies: {dependencies}
     - agents: {agents_json}
 
+    CONCEITO-CHAVE: cada ARCO de Petri P_A → T → P_B representa uma DEPENDÊNCIA DE DADOS.
+    Significa: a task em P_B vai EXECUTAR DEPOIS de P_A E vai RECEBER o output de P_A como input.
+    Quando você modela P_A e P_B paralelos (ambos saindo da mesma transição) você está
+    declarando que NÃO há dependência de dados entre eles. NÃO faça isso quando há dependência.
+
     REGRAS OBRIGATÓRIAS (siga TODAS):
     1. Use chaves SEMPRE em PORTUGUÊS: "lugares", "transicoes", "arcos", "agentes". NUNCA escreva "places", "transitions", "arcs", "agents".
+
     2. Para cada task em tasks_json gere UM lugar (id P1, P2, ...) e UMA transição (id T1, T2, ...). O lugar representa o estado "task pronta para executar"; a transição representa o disparo da execução pelo agente CrewAI.
+
     3. Cada lugar associado a uma task DEVE ter "agentId" preenchido com o id do agente responsável (o mesmo id presente em agents_json/agents.yaml). Lugares de início/fim podem ter agentId=null.
-    4. O PRIMEIRO lugar (entrada do fluxo) recebe tokens=1. Demais lugares iniciam com tokens=0.
-    5. Modele as dependencies como arcos: lugar_pronta → transição_disparo → lugar_pronta_próxima. Para tasks paralelas, conecte uma transição a múltiplos lugares de saída.
-    6. Cada lugar associado a uma task DEVE incluir o campo "logica" com placeholder JavaScript de execução assíncrona, no padrão:
+
+    4. O PRIMEIRO lugar P0 ("Início do Fluxo") recebe tokens=1 e agentId=null. Demais lugares iniciam com tokens=0.
+
+    5. ⚠ CRUCIAL — MODELAGEM DE DEPENDÊNCIA DE DADOS:
+       a) Para CADA par (task_A, task_B) onde task_B USA o output de task_A (ex: B precisa do calendário gerado por A, ou da lista produzida por A), você DEVE criar uma cadeia sequencial:
+          P_A → T_AB → P_B
+          Isso garante que P_B só dispara DEPOIS de P_A terminar, e P_B recebe o output de P_A.
+
+       b) Use o campo "dependencies" (`flow_document_md`) como FONTE DE VERDADE: ele lista quem alimenta quem. Reproduza essas dependências como arcos sequenciais.
+
+       c) ANTIPATTERN PROIBIDO: NÃO crie uma transição-fonte (sem entrada) que dispara 5+ lugares paralelos. Esse padrão faz com que todos os agentes executem com input vazio e ignorem o contexto.
+          Errado: T0 sem entrada → [P1, P2, P3, P4, P5, P6, P7, P8]
+          Certo:  P0 (token=1) → T_start → P1 → T1 → P2 → T2 → P3 ...
+
+       d) Só use paralelismo (1 transição → vários lugares) quando as tasks de saída de fato NÃO compartilham dados, ex: duas pipelines de domínios distintos.
+
+    6. ⚠ SINCRONIZAÇÃO (join):
+       Quando uma task C usa output de A E de B, modele um JOIN:
+          P_A → T_join → P_C
+          P_B → T_join → P_C
+       T_join só dispara quando AMBOS P_A e P_B têm tokens. O P_C recebe input agregado dos dois.
+
+    7. ⚠ BRANCHING (xor/if):
+       Se há decisão (ex: "se tipo == carrossel então P_X senão P_Y"), use MÚLTIPLAS transições competindo pelo mesmo token de entrada, CADA UMA com guard distinto:
+          P_decisao → T_carrossel (guard: "input.tipo === 'carrossel'") → P_X
+          P_decisao → T_artigo    (guard: "input.tipo === 'artigo'")    → P_Y
+       NÃO use 1 transição com múltiplas saídas pra branching — isso é paralelismo, dispara todas.
+
+    8. Cada lugar associado a uma task DEVE incluir o campo "logica" com placeholder JavaScript de execução assíncrona, no padrão:
        "logica": "const output = utils.clone(input); output.task_name = '<nome_task>'; await new Promise(r => setTimeout(r, 100)); return output;"
-    7. Para transições com condição (ex: branching baseado em dado), preencha "guard" com expressão JS (ex: "tokens.P1 > 0"). Se não há condição, deixe guard = "".
-    8. Cada agente em "agentes" deve ter id idêntico ao agent_id usado em agents_json.
+       (O backend substitui esse placeholder por código real de WebSocket. O importante é registrar o nome da task.)
+
+    9. PROIBIDO transições mortas: TODA transição deve ter ≥1 arco de entrada (lugar→trans) E ≥1 arco de saída (trans→lugar). A única exceção é T_start vindo de P0.
+
+    10. Termine o fluxo com 1 lugar final P_fim (nome="Fim do Fluxo", agentId=null) recebendo tokens dos últimos lugares de cada pipeline via uma transição de fim por pipeline.
+
+    11. Cada agente em "agentes" deve ter id idêntico ao agent_id usado em agents_json.
+
+    EXEMPLO MINIMAL (3 tasks: A → B, B → C, mais uma D independente):
+    {{
+      "lugares": [
+        {{"id":"P0","nome":"Início","tokens":1,"agentId":null,"logica":""}},
+        {{"id":"P_A","nome":"Task A pronta","tokens":0,"agentId":"agent_a","logica":"..."}},
+        {{"id":"P_B","nome":"Task B pronta","tokens":0,"agentId":"agent_b","logica":"..."}},
+        {{"id":"P_C","nome":"Task C pronta","tokens":0,"agentId":"agent_c","logica":"..."}},
+        {{"id":"P_D","nome":"Task D pronta","tokens":0,"agentId":"agent_d","logica":"..."}},
+        {{"id":"P_fim","nome":"Fim","tokens":0,"agentId":null}}
+      ],
+      "transicoes": [
+        {{"id":"T_start","guard":"","prioridade":1}},
+        {{"id":"T_AB","guard":"","prioridade":1}},
+        {{"id":"T_BC","guard":"","prioridade":1}},
+        {{"id":"T_Cfim","guard":"","prioridade":1}},
+        {{"id":"T_Dfim","guard":"","prioridade":1}}
+      ],
+      "arcos": [
+        {{"origem":"P0","destino":"T_start","peso":1}},
+        {{"origem":"T_start","destino":"P_A","peso":1}},
+        {{"origem":"T_start","destino":"P_D","peso":1}},
+        {{"origem":"P_A","destino":"T_AB","peso":1}},
+        {{"origem":"T_AB","destino":"P_B","peso":1}},
+        {{"origem":"P_B","destino":"T_BC","peso":1}},
+        {{"origem":"T_BC","destino":"P_C","peso":1}},
+        {{"origem":"P_C","destino":"T_Cfim","peso":1}},
+        {{"origem":"T_Cfim","destino":"P_fim","peso":1}},
+        {{"origem":"P_D","destino":"T_Dfim","peso":1}},
+        {{"origem":"T_Dfim","destino":"P_fim","peso":1}}
+      ]
+    }}
+    Note: P_A → P_B → P_C é SEQUENCIAL (cadeia de dependência). P_D é paralelo (independente).
 
   expected_output: >
     JSON em PORTUGUÊS com EXATAMENTE esta estrutura:
@@ -1084,6 +1155,12 @@ design_petri_net:
       "agentes": [{"id": "<agent_id>", "nome": "<label>"}]
     }
     Apenas o JSON, sem texto adicional. Campos visuais (coordenadas, delay, etc.) serão preenchidos pelo backend.
+
+    AUTOVERIFICAÇÃO antes de responder:
+    - [ ] Toda transição tem ≥1 arco de entrada E ≥1 arco de saída? (exceto T_start saindo de P0)
+    - [ ] Nenhuma transição tem mais que 3 saídas paralelas?
+    - [ ] Para cada dependência declarada em dependencies, existe um caminho P_A → T → P_B no grafo?
+    - [ ] Branching usa múltiplas transições com guards (não 1 transição com várias saídas)?
 
 # Code Generation Tasks
 generate_yaml_files:

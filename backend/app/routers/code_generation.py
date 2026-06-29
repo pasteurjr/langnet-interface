@@ -126,15 +126,19 @@ def _guess_language(path: str) -> str:
 
 
 def _strip_md_fences(content: str) -> str:
-    """Remove cercas ```yaml ... ``` que o LLM frequentemente coloca em volta."""
+    """Remove cercas ```yaml ... ``` que o LLM frequentemente coloca em volta.
+
+    Lida com prefixos antes da fence (ex: 'tasks.yaml:' antes do bloco).
+    """
     if not content:
         return content
+    import re as _re
+    m = _re.search(r"```(?:ya?ml|yaml)?\s*\n(.*?)\n```", content, _re.DOTALL | _re.IGNORECASE)
+    if m:
+        return m.group(1)
     lines = content.strip().splitlines()
-    if lines and lines[0].strip().startswith("```"):
-        lines = lines[1:]
-    if lines and lines[-1].strip() == "```":
-        lines = lines[:-1]
-    return "\n".join(lines)
+    cleaned = [ln for ln in lines if not ln.strip().startswith("```")]
+    return "\n".join(cleaned)
 
 
 def _load_agents_and_tasks_yaml(req: GenerateCodeRequest):
@@ -188,6 +192,14 @@ async def generate_code(
     state["tasks_yaml"] = tasks_yaml
     state["petri_net_data"] = petri_net
     state["websocket_port"] = int(request.websocket_port)
+    # Recupera nome real do projeto do banco (para parametrizar templates)
+    try:
+        from app.database import execute_query
+        row = execute_query("SELECT name FROM projects WHERE id=%s", (project_id,), fetch_one=True)
+        if row and row.get("name"):
+            state["project_name"] = row["name"]
+    except Exception:
+        pass
     state["project_name"] = state.get("project_name") or "Sistema Agêntico"
     state["use_deepseek"] = True
 

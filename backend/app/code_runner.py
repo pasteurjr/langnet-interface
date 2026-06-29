@@ -214,6 +214,251 @@ def _install_missing(req_file: Path, run: CodeRun) -> bool:
         return False
 
 
+def _load_env_file_into(env: dict, path: Path) -> None:
+    """Carrega KEY=VALUE de um .env para o dict env. Ignora se arquivo não existe."""
+    if not path.exists():
+        return
+    try:
+        for raw_line in path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, _, v = line.partition("=")
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")
+            # Não sobrescreve quem já tinha (priority: existing env > file)
+            if k and k not in env:
+                env[k] = v
+    except Exception:
+        pass
+
+
+def _run_backend_service(run: "CodeRun", backend_dir: Path, parent_env: dict, side_procs: list) -> None:
+    """Sobe o backend FastAPI do pacote visualtasksexec.
+
+    Usa o python do env conda langnet (já tem fastapi+uvicorn instalados).
+    Stream com prefixo [backend].
+    """
+    try:
+        env = parent_env.copy()
+        env_python = _conda_bin("python")
+        if not env_python.exists():
+            run.append_line("[backend] env conda 'langnet' indisponível — pulando")
+            return
+        # FastAPI/uvicorn já existem no env langnet (usados pelo próprio LangNet)
+        run.append_line(f"[backend] starting: {env_python} main.py (cwd={backend_dir})")
+        proc = subprocess.Popen(
+            [str(env_python), "main.py"],
+            cwd=str(backend_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            bufsize=1,
+            preexec_fn=os.setsid if os.name != "nt" else None,
+        )
+        side_procs.append(proc)
+        for raw in iter(proc.stdout.readline, b""):
+            line = raw.decode("utf-8", errors="replace").rstrip("\n")
+            run.append_line(f"[backend] {line}")
+        try:
+            proc.stdout.close()
+        except Exception:
+            pass
+        rc = proc.wait()
+        run.append_line(f"[backend] exited (code={rc})")
+    except Exception as exc:  # noqa: BLE001
+        run.append_line(f"[backend] ERROR: {exc}")
+
+
+# Cache global de node_modules — instala uma vez, reusa em todos os runs
+_FRONTEND_CACHE_DIR = Path(os.environ.get(
+    "LANGNET_FRONTEND_CACHE",
+    str(Path.home() / ".langnet-cache" / "frontend"),
+))
+
+
+def _ensure_frontend_cache(run: "CodeRun", template_pkg_json: str, npm_bin: Path, env: dict) -> bool:
+    """Garante que ~/.langnet-cache/frontend/node_modules existe.
+
+    Se package.json mudou desde a última instalação, reinstala.
+    Retorna True se cache tá pronto.
+    """
+    cache_node_modules = _FRONTEND_CACHE_DIR / "node_modules"
+    cache_pkg_json = _FRONTEND_CACHE_DIR / "package.json"
+
+    _FRONTEND_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Invalida cache se package.json mudou
+    same_pkg = cache_pkg_json.exists() and cache_pkg_json.read_text(encoding="utf-8").strip() == template_pkg_json.strip()
+    if cache_node_modules.exists() and same_pkg:
+        return True
+
+    # Reconstrói o cache
+    run.append_line(f"[frontend:cache] populando cache em {_FRONTEND_CACHE_DIR}")
+    if cache_node_modules.exists():
+        run.append_line("[frontend:cache] invalidando cache antigo (package.json mudou)")
+        shutil.rmtree(cache_node_modules, ignore_errors=True)
+    cache_pkg_json.write_text(template_pkg_json, encoding="utf-8")
+
+    try:
+        inst = subprocess.Popen(
+            [str(npm_bin), "install", "--legacy-peer-deps", "--silent", "--no-audit", "--no-fund"],
+            cwd=str(_FRONTEND_CACHE_DIR),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            bufsize=1,
+            preexec_fn=os.setsid if os.name != "nt" else None,
+        )
+        for raw in iter(inst.stdout.readline, b""):
+            line = raw.decode("utf-8", errors="replace").rstrip("\n")
+            if line and not line.startswith("npm WARN"):
+                run.append_line(f"[frontend:cache] {line[:200]}")
+        try:
+            inst.stdout.close()
+        except Exception:
+            pass
+        rc = inst.wait()
+        if rc != 0:
+            run.append_line(f"[frontend:cache] FALHOU (code={rc})")
+            return False
+    except Exception as exc:
+        run.append_line(f"[frontend:cache] ERROR: {exc}")
+        return False
+
+    run.append_line("[frontend:cache] cache pronto ✓")
+    return True
+
+
+def _link_cache_into(frontend_dir: Path, run: "CodeRun") -> bool:
+    """Faz hardlink (cp -al) do cache de node_modules para o frontend do run."""
+    cache_nm = _FRONTEND_CACHE_DIR / "node_modules"
+    dst_nm = frontend_dir / "node_modules"
+    if dst_nm.exists():
+        return True  # já tem node_modules local — não toca
+    if not cache_nm.exists():
+        return False
+    try:
+        # cp -al: hardlink recursivo. Instantâneo + zero disk extra.
+        rc = subprocess.run(
+            ["cp", "-al", str(cache_nm), str(dst_nm)],
+            check=False,
+            capture_output=True,
+            text=True,
+        ).returncode
+        if rc == 0:
+            run.append_line(f"[frontend:cache] hardlinked node_modules ({rc}) — pulando npm install")
+            return True
+        run.append_line(f"[frontend:cache] cp -al falhou (rc={rc}) — fallback para npm install")
+        return False
+    except Exception as exc:
+        run.append_line(f"[frontend:cache] hardlink ERROR: {exc} — fallback para npm install")
+        return False
+
+
+def _find_node_bin() -> Optional[Path]:
+    """Localiza um node disponível (NVM, /usr/local/bin, etc)."""
+    candidates: List[Path] = []
+    if shutil.which("node"):
+        candidates.append(Path(shutil.which("node")))
+    nvm = Path.home() / ".nvm/versions/node"
+    if nvm.exists():
+        # Pega a versão mais recente
+        versions = sorted((p for p in nvm.iterdir() if p.is_dir()), reverse=True)
+        for v in versions:
+            cand = v / "bin/node"
+            if cand.exists():
+                candidates.append(cand)
+                break
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
+
+
+def _run_frontend_service(run: "CodeRun", frontend_dir: Path, parent_env: dict, side_procs: list) -> None:
+    """Sobe o frontend React (npm install se preciso + npm start).
+
+    Pode demorar 1-2min na primeira vez (install). Stream com prefixo [frontend].
+    """
+    try:
+        node_bin = _find_node_bin()
+        if not node_bin:
+            run.append_line("[frontend] node não encontrado no PATH — instale Node.js ou NVM")
+            return
+        npm_bin = node_bin.parent / "npm"
+        if not npm_bin.exists():
+            run.append_line(f"[frontend] npm não encontrado em {npm_bin}")
+            return
+
+        env = parent_env.copy()
+        # Garante PATH com node bin
+        env["PATH"] = f"{node_bin.parent}:{env.get('PATH','')}"
+        env["BROWSER"] = "none"  # não tenta abrir browser
+
+        # 1) Garante node_modules: usa cache global (hardlink) se possível.
+        if not (frontend_dir / "node_modules").exists():
+            pkg_json_text = (frontend_dir / "package.json").read_text(encoding="utf-8") if (frontend_dir / "package.json").exists() else ""
+            # 1a) Popula cache se ainda não existe (ou se package.json mudou)
+            cache_ok = _ensure_frontend_cache(run, pkg_json_text, npm_bin, env)
+            # 1b) Hardlink cache → node_modules do run (instantâneo)
+            linked = cache_ok and _link_cache_into(frontend_dir, run)
+            if not linked:
+                run.append_line("[frontend] sem cache — npm install local (1-2 min)...")
+                inst = subprocess.Popen(
+                    [str(npm_bin), "install", "--legacy-peer-deps", "--silent", "--no-audit", "--no-fund"],
+                    cwd=str(frontend_dir),
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    env=env,
+                    bufsize=1,
+                    preexec_fn=os.setsid if os.name != "nt" else None,
+                )
+                side_procs.append(inst)
+                for raw in iter(inst.stdout.readline, b""):
+                    line = raw.decode("utf-8", errors="replace").rstrip("\n")
+                    if line and not line.startswith("npm WARN"):
+                        run.append_line(f"[frontend:install] {line[:200]}")
+                try:
+                    inst.stdout.close()
+                except Exception:
+                    pass
+                rc = inst.wait()
+                if rc != 0:
+                    run.append_line(f"[frontend] npm install FALHOU (code={rc})")
+                    return
+                run.append_line("[frontend] npm install OK")
+                try:
+                    side_procs.remove(inst)
+                except ValueError:
+                    pass
+
+        # 2) npm start
+        run.append_line(f"[frontend] starting: {npm_bin} start (cwd={frontend_dir})")
+        proc = subprocess.Popen(
+            [str(npm_bin), "start"],
+            cwd=str(frontend_dir),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            env=env,
+            bufsize=1,
+            preexec_fn=os.setsid if os.name != "nt" else None,
+        )
+        side_procs.append(proc)
+        for raw in iter(proc.stdout.readline, b""):
+            line = raw.decode("utf-8", errors="replace").rstrip("\n")
+            if line:
+                run.append_line(f"[frontend] {line[:300]}")
+        try:
+            proc.stdout.close()
+        except Exception:
+            pass
+        rc = proc.wait()
+        run.append_line(f"[frontend] exited (code={rc})")
+    except Exception as exc:  # noqa: BLE001
+        run.append_line(f"[frontend] ERROR: {exc}")
+
+
 def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
     """Thread worker: usa env conda langnet, instala apenas o que falta, sobe main.py."""
     try:
@@ -234,6 +479,13 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
 
         env_python = _conda_bin("python")
         run.append_line(f"[runner] interpreter: {env_python}")
+
+        # Layout visualtasksexec: ws-server, frontend, backend em subdirs.
+        # Detect e ajusta cwd para o subdir do ws-server (cwd legacy = raiz).
+        ws_dir = run.work_dir / "ws-server"
+        if ws_dir.exists() and (ws_dir / "main.py").exists():
+            run.append_line("[runner] layout visualtasksexec detectado — cwd = ws-server/")
+            run.work_dir = ws_dir
 
         # 2) Checa deps faltantes (sem instalar nada ainda)
         req_file = run.work_dir / "requirements.txt"
@@ -261,10 +513,17 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
             run.broadcast_status()
             return
 
-        run.append_line(f"[runner] starting: {env_python} main.py")
+        run.append_line(f"[ws] starting: {env_python} main.py")
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
-        # Carrega .env do projeto se existir
+        env["CREWAI_TESTING"] = env.get("CREWAI_TESTING", "true")
+        env["OTEL_SDK_DISABLED"] = env.get("OTEL_SDK_DISABLED", "true")
+        # Carrega .env do ws-server (DEEPSEEK_API_KEY etc.) se existir
+        _load_env_file_into(env, run.work_dir / ".env")
+        _load_env_file_into(env, run.work_dir / ".env.example")  # fallback: usa exemplo
+        # Também pega .env do BACKEND principal (LangNet) — DEEPSEEK_API_KEY normalmente vive aí
+        _load_env_file_into(env, Path("/home/pasteurjr/progreact/langnet-interface/backend/.env"))
+
         run.process = subprocess.Popen(
             [str(env_python), "main.py"],
             cwd=str(run.work_dir),
@@ -274,6 +533,28 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
             bufsize=1,
             preexec_fn=os.setsid if os.name != "nt" else None,
         )
+
+        # Detecta layout visualtasksexec: sobe backend FastAPI + frontend React em paralelo
+        root_dir = run.work_dir.parent if run.work_dir.name == "ws-server" else run.work_dir
+        backend_dir = root_dir / "backend"
+        frontend_dir = root_dir / "frontend"
+
+        side_procs: List[subprocess.Popen] = []
+        if backend_dir.exists() and (backend_dir / "main.py").exists():
+            run.append_line("[runner] iniciando backend FastAPI...")
+            threading.Thread(
+                target=_run_backend_service,
+                args=(run, backend_dir, env, side_procs),
+                daemon=True,
+            ).start()
+        if frontend_dir.exists() and (frontend_dir / "package.json").exists():
+            run.append_line("[runner] iniciando frontend React...")
+            threading.Thread(
+                target=_run_frontend_service,
+                args=(run, frontend_dir, env, side_procs),
+                daemon=True,
+            ).start()
+
         run.status = "running"
         run.broadcast_status()
 
@@ -281,20 +562,23 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
         try:
             for raw in iter(run.process.stdout.readline, b""):
                 line = raw.decode("utf-8", errors="replace").rstrip("\n")
-                run.append_line(line)
+                run.append_line(f"[ws] {line}")
         finally:
             try:
                 run.process.stdout.close()
             except Exception:
                 pass
 
-        # Process terminou
+        # ws-server terminou. Mantém frontend/backend rodando (são independentes)
+        # — só derruba todos quando alguém pediu stop_run explicitamente.
         rc = run.process.wait()
         run.exit_code = rc
         run.finished_at = datetime.utcnow().isoformat()
         if run.status == "running":
             run.status = "stopped" if rc == 0 else "crashed"
-        run.append_line(f"[runner] process exited (code={rc})")
+        run.append_line(f"[ws] process exited (code={rc})")
+        # Anexa side_procs ao run pra stop_run poder matar tudo depois
+        run.side_processes = side_procs  # noqa: SLF001 (atributo dinâmico)
         run.broadcast_status()
 
     except Exception as exc:  # noqa: BLE001
@@ -352,9 +636,20 @@ def stop_run(run_id: str) -> Optional[CodeRun]:
                     os.killpg(os.getpgid(run.process.pid), signal.SIGKILL)
             except Exception:
                 pass
+    # Também derruba os side processes (backend FastAPI + frontend React)
+    side_procs = getattr(run, "side_processes", []) or []
+    for p in side_procs:
+        try:
+            if p and p.poll() is None:
+                if os.name == "nt":
+                    p.terminate()
+                else:
+                    os.killpg(os.getpgid(p.pid), signal.SIGTERM)
+        except Exception:
+            pass
     run.status = "stopped"
     run.finished_at = datetime.utcnow().isoformat()
-    run.append_line("[runner] stopped by user")
+    run.append_line("[runner] stopped by user (ws + backend + frontend)")
     run.broadcast_status()
     return run
 

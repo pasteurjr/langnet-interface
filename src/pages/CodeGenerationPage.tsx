@@ -94,22 +94,34 @@ const CodeGenerationPage: React.FC = () => {
       lastToastedRunRef.current = codeRun.run.run_id;
       const port = currentSession?.websocket_port ?? 5002;
       const wsUrl = `ws://localhost:${port}`;
+      const frontendUrl = `http://localhost:3001`;
       toast.success(
         <div>
-          <div style={{ marginBottom: 6 }}>
+          <div style={{ marginBottom: 8 }}>
             🌐 Servidor agêntico ativo em <code>{wsUrl}</code>
           </div>
-          <button
-            onClick={() => navigate(`/project/${projectId}/petri-net?autoconnect=${encodeURIComponent(wsUrl)}`)}
-            style={{
-              padding: '6px 14px', background: '#1976d2', color: '#fff',
-              border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13,
-            }}
-          >
-            Ir para Petri Net e conectar →
-          </button>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <button
+              onClick={() => window.open(frontendUrl, '_blank', 'noopener')}
+              style={{
+                padding: '6px 14px', background: '#2e7d32', color: '#fff',
+                border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13,
+              }}
+            >
+              ▶ Abrir UI da aplicação ↗
+            </button>
+            <button
+              onClick={() => navigate(`/project/${projectId}/petri-net?autoconnect=${encodeURIComponent(wsUrl)}`)}
+              style={{
+                padding: '6px 14px', background: '#1976d2', color: '#fff',
+                border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 13,
+              }}
+            >
+              Editor Petri Net →
+            </button>
+          </div>
         </div>,
-        { autoClose: 12000, position: 'top-right' },
+        { autoClose: 20000, position: 'top-right' },
       );
     }
   }, [codeRun.run?.status, codeRun.run?.run_id, currentSession?.websocket_port, projectId, navigate]);
@@ -250,6 +262,10 @@ const CodeGenerationPage: React.FC = () => {
         return `Em adapters.py, o dict TASK_TOOLS referencia tasks que não existem em tasks.yaml: ${items}. Remova essas entradas órfãs de TASK_TOOLS.`;
       case 'unknown_agent_in_bindings':
         return `Em adapters.py, o dict AGENT_TOOLS referencia agentes que não existem em agents.yaml: ${items}. Remova essas entradas órfãs de AGENT_TOOLS.`;
+      case 'task_missing_agent':
+        return `Em tasks.yaml, as tasks abaixo não têm o campo "agent:" — sem isso o websocket_server rejeita execute_task com "task sem agente vinculado". Adicione "agent: <agent_id>" para cada uma, escolhendo o agent_id apropriado a partir de agents.yaml e do TASK_TOOLS/AGENT_TOOLS em adapters.py.\n\nTasks afetadas: ${items}`;
+      case 'task_unknown_agent':
+        return `Em tasks.yaml, as tasks abaixo apontam "agent:" para um agent_id que NÃO existe em agents.yaml. Corrija para um agente listado em agents.yaml.\n\nTasks afetadas: ${items}`;
       case 'petri_unknown_agent':
         return `Em petri_net.json, os places listados referenciam agentId que não existe em agents.yaml: ${items}. Para cada um, ajuste o agentId para um agente válido (consulte agents.yaml) ou set null se o lugar não exigir agente.`;
       case 'petri_unknown_task':
