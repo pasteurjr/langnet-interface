@@ -1,110 +1,91 @@
-import { useState, useCallback, useRef } from "react";
-
-const WS_URL = process.env.REACT_APP_WS_URL || "ws://localhost:{{WS_PORT}}";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { PetriNetSimulator } from "../petri-engine/PetriNetSimulator";
 
 /**
- * Engine de execução da Petri Net no browser.
- * - Avança transição habilitada → executa place.logica (JS) do(s) lugar(es) de saída
- * - place.logica abre WebSocket para o agente, envia execute_task e recebe task_completed
- * - Mantém marking, outputs por place, eventos consolidados
+ * Hook que orquestra a execução da Petri Net usando o motor REAL importado
+ * do petri-net-editor:
+ *   - PetriNetSimulator: matrizes de incidência + disparo + log
+ *   - PlaceProcessor: executa place.logica em sandbox com utils.{merge,getPlaceOutput,...}
+ *   - GuardEvaluator: guards JS com escopo isolado
+ *
+ * O contrato de UI:
+ *   - exec.marking          → tokens por place (cópia do markingVector)
+ *   - exec.outputs          → place.output_data agregados
+ *   - exec.events           → [{ts, type, ...}] consolidados
+ *   - exec.enabledTransitions
+ *   - exec.runOneStep()
+ *   - exec.runAll(maxSteps?)
+ *   - exec.reset()
+ *   - exec.runTask(name, input)  → dispara 1 task WS isolada (manual, sem petri)
  */
 const usePetriNetExecution = (project) => {
   const petri = project?.petriNet || project?.project_data || {};
-  const places = petri.lugares || [];
-  const transitions = petri.transicoes || [];
-  const arcs = petri.arcos || [];
 
-  // marking inicial: tokens definidos no JSON
-  const initialMarking = () => Object.fromEntries(places.map((p) => [p.id, p.tokens || 0]));
+  // Simulator vive em ref pra sobreviver re-renders
+  const simulatorRef = useRef(null);
+  const [tick, setTick] = useState(0); // força re-render quando muda estado interno
 
-  const [marking, setMarking] = useState(initialMarking);
-  const [outputs, setOutputs] = useState({}); // {placeId: outputObject}
-  const [events, setEvents] = useState([]);   // [{ts, type, place, task_name, data}]
+  const [events, setEvents] = useState([]);
   const [running, setRunning] = useState(false);
-  const [step, setStep] = useState(0);
-  const outputsRef = useRef({});
 
   const pushEvent = useCallback((evt) => {
     const e = { ts: new Date().toISOString(), ...evt };
     setEvents((prev) => [...prev, e]);
   }, []);
 
-  // Pré-arcos de cada transição (lugar → transição)
-  const preArcsOf = (transId) => arcs.filter((a) => a.destino === transId);
-  // Pós-arcos de cada transição (transição → lugar)
-  const postArcsOf = (transId) => arcs.filter((a) => a.origem === transId);
-
-  const isTransitionEnabled = useCallback((trans, m) => {
-    const pre = preArcsOf(trans.id);
-    return pre.every((a) => (m[a.origem] || 0) >= (a.peso || 1));
-  }, [arcs]);
-
-  const getEnabledTransitions = useCallback((m = marking) =>
-    transitions.filter((t) => isTransitionEnabled(t, m)),
-    [transitions, marking, isTransitionEnabled]
-  );
-
-  // Executa o JS de logica de um place. Retorna o output.
-  const runPlaceLogic = useCallback(async (place, input) => {
-    if (!place.logica || !place.logica.includes("WebSocket")) {
-      return { ...input, place_id: place.id, status: "skipped" };
-    }
-    // utils disponível dentro do JS do place
-    const utils = {
-      clone: (o) => JSON.parse(JSON.stringify(o || {})),
-      now: () => new Date().toISOString(),
-      getPlaceOutput: (pid) => outputsRef.current[pid] || null,
+  // Inicializa o simulator quando o projeto chegar
+  useEffect(() => {
+    if (!petri || !petri.lugares || petri.lugares.length === 0) return;
+    const sim = new PetriNetSimulator(petri);
+    sim.placeProcessor.setCallbacks({
+      onPlaceProcessed: (placeId, inputData, outputData) => {
+        pushEvent({ type: "place_done", place: placeId, data: outputData });
+        setTick((t) => t + 1);
+      },
+      onError: (placeId, error) => {
+        pushEvent({
+          type: "place_error",
+          place: placeId,
+          data: { error: error?.message || String(error) },
+        });
+        setTick((t) => t + 1);
+      },
+    });
+    simulatorRef.current = sim;
+    setTick((t) => t + 1);
+    return () => {
+      try { sim.cancelAllProcessing(); } catch {}
     };
-    pushEvent({ type: "place_start", place: place.id, task_name: extractTaskName(place.logica) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project]);
+
+  const fireOne = useCallback(async (transitionId) => {
+    const sim = simulatorRef.current;
+    if (!sim) return false;
+    if (!sim.isTransitionEnabled(transitionId)) return false;
+    pushEvent({ type: "transition_fired", place: transitionId });
     try {
-      // Cria função async a partir do código JS armazenado em place.logica
-      // eslint-disable-next-line no-new-func
-      const fn = new Function("input", "utils", "WebSocket", `return (async () => { ${place.logica} })();`);
-      const out = await fn(input || {}, utils, WebSocket);
-      pushEvent({ type: "place_done", place: place.id, data: out });
-      return out;
+      sim.fireTransition(transitionId);
+      sim.updatePetriNetTokens();
+      setTick((t) => t + 1);
+      return true;
     } catch (err) {
-      pushEvent({ type: "place_error", place: place.id, data: { error: err.message } });
-      return { ...input, error: err.message, status: "error" };
+      pushEvent({ type: "fire_error", place: transitionId, data: { error: err.message } });
+      return false;
     }
   }, [pushEvent]);
 
-  const fireTransition = useCallback(async (trans) => {
-    pushEvent({ type: "transition_fired", place: trans.id });
-    // remove tokens dos predecessores e adiciona aos sucessores
-    const newMarking = { ...marking };
-    for (const a of preArcsOf(trans.id)) newMarking[a.origem] = (newMarking[a.origem] || 0) - (a.peso || 1);
-    for (const a of postArcsOf(trans.id)) newMarking[a.destino] = (newMarking[a.destino] || 0) + (a.peso || 1);
-    setMarking(newMarking);
-    setStep((s) => s + 1);
-
-    // Para cada lugar de saída, executa a lógica JS — usando ref pra evitar stale state
-    for (const a of postArcsOf(trans.id)) {
-      const place = places.find((p) => p.id === a.destino);
-      if (!place) continue;
-      // Input agrega outputs dos lugares de entrada da transição
-      const inputData = {};
-      for (const preA of preArcsOf(trans.id)) {
-        Object.assign(inputData, outputsRef.current[preA.origem] || {});
-      }
-      const result = await runPlaceLogic(place, inputData);
-      outputsRef.current[place.id] = result;
-      // Force re-render com o estado mais recente
-      setOutputs({ ...outputsRef.current });
-    }
-    return newMarking;
-  }, [marking, places, arcs, runPlaceLogic, pushEvent]);
-
   const runOneStep = useCallback(async () => {
-    const enabled = getEnabledTransitions();
+    const sim = simulatorRef.current;
+    if (!sim) return false;
+    const enabled = sim.getEnabledTransitions();
     if (enabled.length === 0) {
       pushEvent({ type: "no_transitions" });
       return false;
     }
-    // Estratégia: dispara a primeira habilitada (priorizando ordem)
-    await fireTransition(enabled[0]);
-    return true;
-  }, [getEnabledTransitions, fireTransition, pushEvent]);
+    // Estratégia: primeira habilitada (poderia ser por prioridade)
+    return await fireOne(enabled[0].id);
+  }, [fireOne, pushEvent]);
 
   const runAll = useCallback(async (maxSteps = 50) => {
     setRunning(true);
@@ -113,6 +94,8 @@ const usePetriNetExecution = (project) => {
     while (s < maxSteps) {
       const ok = await runOneStep();
       if (!ok) break;
+      // Aguarda os places em processamento (place.logica async)
+      await new Promise((r) => setTimeout(r, 800));
       s++;
     }
     pushEvent({ type: "run_finished", data: { steps: s } });
@@ -120,23 +103,27 @@ const usePetriNetExecution = (project) => {
   }, [runOneStep, pushEvent]);
 
   const reset = useCallback(() => {
-    setMarking(initialMarking());
-    setOutputs({});
-    outputsRef.current = {};
+    const sim = simulatorRef.current;
+    if (sim) {
+      sim.cancelAllProcessing();
+      sim.resetSimulation();
+    }
     setEvents([]);
-    setStep(0);
-    setRunning(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [places]);
+    setTick((t) => t + 1);
+  }, []);
 
-  // Dispara 1 task isolada (sem avançar tokens) — útil pro debug manual
+  // ===== Disparo de task isolada (manual, sem passar pela Petri) =====
+  const WS_URL = process.env.REACT_APP_WS_URL || "ws://localhost:{{WS_PORT}}";
   const runTask = useCallback(async (taskName, inputData) => {
     pushEvent({ type: "manual_task_start", task_name: taskName, data: inputData });
     try {
       const ws = new WebSocket(WS_URL);
       const result = await new Promise((resolve, reject) => {
         const t = setTimeout(() => { ws.close(); reject(new Error("timeout")); }, 120000);
-        ws.onopen = () => ws.send(JSON.stringify({ type: "execute_task", data: { task_name: taskName, input_data: inputData || {} } }));
+        ws.onopen = () => ws.send(JSON.stringify({
+          type: "execute_task",
+          data: { task_name: taskName, input_data: inputData || {} },
+        }));
         ws.onmessage = (e) => {
           const r = JSON.parse(e.data);
           if (r.type === "task_completed" || r.type === "task_result") {
@@ -155,18 +142,37 @@ const usePetriNetExecution = (project) => {
       pushEvent({ type: "manual_task_error", task_name: taskName, data: { error: err.message } });
       throw err;
     }
-  }, [pushEvent]);
+  }, [WS_URL, pushEvent]);
+
+  // Snapshot do estado pro UI consumir
+  const sim = simulatorRef.current;
+  const marking = sim ? { ...sim.markingVector } : {};
+  const outputs = {};
+  if (sim) {
+    sim.petriNet.lugares.forEach((p) => {
+      if (p.output_data && Object.keys(p.output_data).length > 0) {
+        outputs[p.id] = p.output_data;
+      }
+    });
+  }
+  const enabledTransitions = sim ? sim.getEnabledTransitions() : [];
+  const step = sim ? sim.simulationLog.length : 0;
 
   return {
-    marking, outputs, events, running, step,
-    enabledTransitions: getEnabledTransitions(),
-    runOneStep, runAll, reset, runTask,
+    marking,
+    outputs,
+    events,
+    running,
+    step,
+    enabledTransitions,
+    runOneStep,
+    runAll,
+    reset,
+    runTask,
+    // expostos pra debug / abas
+    _tick: tick,
+    _simulator: sim,
   };
 };
-
-function extractTaskName(logica) {
-  const m = /TASK_NAME\s*=\s*['"]([^'"]+)['"]/.exec(logica || "");
-  return m ? m[1] : "";
-}
 
 export default usePetriNetExecution;

@@ -121,27 +121,33 @@ def get_llm(use_deepseek: bool = False):
             if not deepseek_api_key:
                 raise ValueError("DEEPSEEK_API_KEY not found in environment variables")
 
-            # Read model from environment (same pattern as app/llm.py)
-            deepseek_model = os.getenv("DEEPSEEK_MODEL_NAME", "deepseek/deepseek-chat")
+            # Read model from environment. Defaults to deepseek-v4-flash:
+            # DeepSeek deprecou deepseek-chat / deepseek-reasoner em 2026; ambos
+            # redirecionavam pra deepseek-v4-flash silenciosamente.
+            deepseek_model = os.getenv("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
 
-            # Handle deepseek/ prefix (avoid deepseek/deepseek/...)
+            # API DeepSeek (consumida diretamente por ChatOpenAI/langchain) rejeita
+            # prefixo "deepseek/"; só aceita "deepseek-v4-flash" ou "deepseek-v4-pro".
+            # Strip qualquer prefixo "deepseek/" que tenha vindo do env.
             if deepseek_model.startswith("deepseek/"):
+                deepseek_model_clean = deepseek_model[len("deepseek/"):]
+            else:
                 deepseek_model_clean = deepseek_model
-            else:
-                deepseek_model_clean = f"deepseek/{deepseek_model}"
 
-            # Adjust max_tokens based on model
-            if "reasoner" in deepseek_model.lower():
-                max_tokens_value = 65536  # 64K for deepseek-reasoner
-            else:
-                max_tokens_value = 8192   # 8K for deepseek-chat
+            # V4 aceita até 393216 max_tokens (output ENTIRE budget = reasoning + content).
+            # Pra geração longa (specs, code, yaml) deixamos reasoning OFF — libera os
+            # 32K pro content. Pra tasks específicas que precisam raciocínio, override
+            # via env DEEPSEEK_REASONING=true.
+            max_tokens_value = int(os.getenv("DEEPSEEK_MAX_TOKENS", "32768"))
+            reasoning_enabled = (os.getenv("DEEPSEEK_REASONING", "false").lower() == "true")
 
             _llm_cache[cache_key] = ChatOpenAI(
                 model=deepseek_model_clean,
                 openai_api_key=deepseek_api_key,
-                openai_api_base="https://api.deepseek.com",
+                openai_api_base="https://api.deepseek.com/v1",
                 temperature=0.3,
-                max_tokens=max_tokens_value
+                max_tokens=max_tokens_value,
+                extra_body={"reasoning": {"enabled": reasoning_enabled}},
             )
         else:
             # Default OpenAI
@@ -1880,25 +1886,41 @@ def generate_yaml_output_func(state: LangNetFullState, result: Any) -> LangNetFu
     return log_task_complete(updated_state, "generate_yaml_files")
 
 
-_PLACE_LOGICA_TEMPLATE = """// place.logica para task '{task_name}' — gerado pelo LangNet
+_PLACE_LOGICA_TEMPLATE = """// place.logica para task '{task_name}' — executado pelo PlaceProcessor do petri-net-editor.
+// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.
 const PORT = {ws_port};
 const TASK_NAME = '{task_name}';
 const PREV_PLACE_IDS = {prev_places_json};
 const TIMEOUT_MS = {timeout_ms};
 
-const output = utils.clone(input);
+// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).
+function deepMerge(target, source) {{
+  if (!source || typeof source !== 'object') return target;
+  for (const k of Object.keys(source)) {{
+    const sv = source[k];
+    const tv = target[k];
+    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&
+        tv && typeof tv === 'object' && !Array.isArray(tv)) {{
+      deepMerge(tv, sv);
+    }} else {{
+      target[k] = sv;
+    }}
+  }}
+  return target;
+}}
+
+const output = JSON.parse(JSON.stringify(input || {{}}));
 try {{
-  // Aguarda dados do(s) place(s) anterior(es), com deadline.
+  // Agrega outputs de TODOS os predecessores (espera com deadline).
   if (PREV_PLACE_IDS.length > 0) {{
     const deadline = Date.now() + 20000;
     for (const pid of PREV_PLACE_IDS) {{
       let prev = utils.getPlaceOutput(pid);
-      while (!prev || prev.status === 'pending') {{
-        if (Date.now() > deadline) break;
+      while ((!prev || Object.keys(prev).length === 0) && Date.now() < deadline) {{
         await new Promise(r => setTimeout(r, 200));
         prev = utils.getPlaceOutput(pid);
       }}
-      if (prev && typeof prev === 'object') Object.assign(output, prev);
+      if (prev && typeof prev === 'object') deepMerge(output, prev);
     }}
   }}
 
@@ -1923,12 +1945,12 @@ try {{
   }});
 
   if (result && typeof result === 'object') {{
-    Object.assign(output, result);
+    deepMerge(output, result);
   }} else {{
     output.result = result;
   }}
   output.status = 'completed';
-  output.timestamp = utils.now();
+  output.timestamp = new Date().toISOString();
 }} catch (err) {{
   output.status = 'error';
   output.error = err.message;
@@ -1973,11 +1995,26 @@ def _build_petri_net_with_real_logica(
     # Set de task names válidos (do tasks.yaml)
     valid_tasks = set(known_task_names or [])
 
+    # Intermediário no padrão PlaceProcessor real: usa utils.merge / globals.
+    # Agrega outputs dos predecessores conhecidos pra propagar contexto adiante.
     _INTERMEDIATE_LOGICA = (
-        "// place intermediário — propaga input adiante (sem chamar WS)\n"
-        "const output = utils.clone(input);\n"
+        "// place intermediário — agrega outputs dos predecessores e propaga\n"
+        "function deepMerge(target, source) {\n"
+        "  if (!source || typeof source !== 'object') return target;\n"
+        "  for (const k of Object.keys(source)) {\n"
+        "    const sv = source[k]; const tv = target[k];\n"
+        "    if (sv && typeof sv === 'object' && !Array.isArray(sv) && tv && typeof tv === 'object' && !Array.isArray(tv)) deepMerge(tv, sv);\n"
+        "    else target[k] = sv;\n"
+        "  }\n"
+        "  return target;\n"
+        "}\n"
+        "const output = JSON.parse(JSON.stringify(input || {}));\n"
+        "for (const pid of (typeof PREV_PLACE_IDS !== 'undefined' ? PREV_PLACE_IDS : [])) {\n"
+        "  const prev = utils.getPlaceOutput(pid);\n"
+        "  if (prev && typeof prev === 'object') deepMerge(output, prev);\n"
+        "}\n"
         "output.status = 'completed';\n"
-        "output.timestamp = utils.now();\n"
+        "output.timestamp = new Date().toISOString();\n"
         "return output;"
     )
 
@@ -2008,19 +2045,22 @@ def _build_petri_net_with_real_logica(
             continue
         lid = lugar.get("id", "")
 
-        # Places SEM agentId não chamam WS (são intermediários: _out, _in,
-        # ready, fim do fluxo). JS minimal que apenas propaga input → output
-        # para que sucessores leiam via getPlaceOutput.
-        if not lugar.get("agentId"):
-            new_lugar = {**lugar}
-            new_lugar["logica"] = _INTERMEDIATE_LOGICA
-            out["lugares"].append(new_lugar)
-            continue
-
+        # Calcula prev_places do GRAFO (predecessores via transição de entrada)
         prev_places: List[str] = []
         for trans_id in trans_into_place.get(lid, []):
             prev_places.extend(places_into_trans.get(trans_id, []))
         prev_places = sorted(set(p for p in prev_places if p and p != lid))
+
+        # Places SEM agentId não chamam WS (são intermediários: _out, _in,
+        # ready, fim do fluxo). JS agrega outputs dos predecessores para propagar.
+        if not lugar.get("agentId"):
+            new_lugar = {**lugar}
+            new_lugar["logica"] = (
+                f"const PREV_PLACE_IDS = {json.dumps(prev_places)};\n"
+                + _INTERMEDIATE_LOGICA
+            )
+            out["lugares"].append(new_lugar)
+            continue
 
         # Extrai task_name nessa ordem:
         #   1. task_name explícito no campo (se houver)
@@ -2189,11 +2229,17 @@ import adapters as adapters_module
 def _build_llm() -> LLM:
     provider = (os.getenv("LLM_PROVIDER") or "deepseek").lower()
     if provider == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
+        # DeepSeek V4 (deepseek-v4-flash): aceita até 393216 max_tokens.
+        # reasoning OFF por padrão pra liberar budget pra content.
+        # Override via DEEPSEEK_REASONING=true em tasks que precisam raciocínio.
+        reasoning_enabled = (os.getenv("DEEPSEEK_REASONING", "false").lower() == "true")
         return LLM(
-            model=os.getenv("DEEPSEEK_MODEL_NAME", "deepseek/deepseek-chat"),
+            model=os.getenv("DEEPSEEK_MODEL_NAME", "deepseek/deepseek-v4-flash"),
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
             temperature=0.7,
+            max_tokens=int(os.getenv("DEEPSEEK_MAX_TOKENS", "32768")),
+            extra_body={"reasoning": {"enabled": reasoning_enabled}},
         )
     # Fallback: OpenAI (crewai default)
     return LLM(
@@ -2383,7 +2429,11 @@ def _template_env_example(detected_tools: List[str]) -> str:
         "LLM_PROVIDER=deepseek",
         "DEEPSEEK_API_KEY=sk-...",
         "DEEPSEEK_API_BASE=https://api.deepseek.com",
-        "DEEPSEEK_MODEL_NAME=deepseek/deepseek-chat",
+        "DEEPSEEK_MODEL_NAME=deepseek/deepseek-v4-flash",
+        "# Reasoning OFF por padrão (libera o budget de output só pra content).",
+        "# Ligue (=true) só em tasks que precisam de raciocínio explícito.",
+        "DEEPSEEK_REASONING=false",
+        "DEEPSEEK_MAX_TOKENS=32768",
         "",
         "# Alternativa OpenAI",
         "OPENAI_API_KEY=sk-...",
