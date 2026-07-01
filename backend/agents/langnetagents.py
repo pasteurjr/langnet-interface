@@ -121,30 +121,23 @@ def get_llm(use_deepseek: bool = False):
             if not deepseek_api_key:
                 raise ValueError("DEEPSEEK_API_KEY not found in environment variables")
 
-            # Read model from environment. Defaults to deepseek-v4-flash:
-            # DeepSeek deprecou deepseek-chat / deepseek-reasoner em 2026; ambos
-            # redirecionavam pra deepseek-v4-flash silenciosamente.
+            # CrewAI LLM via litellm (necessário pq Agents internamente chamam litellm —
+            # se passarmos langchain ChatOpenAI, CrewAI extrai o model field e cai em
+            # litellm sem provider). LLM da CrewAI exige prefix "deepseek/" e ele mesmo
+            # strippa antes de chamar a API.
+            from crewai import LLM as CrewLLM
+
             deepseek_model = os.getenv("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+            if not deepseek_model.startswith("deepseek/"):
+                deepseek_model = f"deepseek/{deepseek_model}"
 
-            # API DeepSeek (consumida diretamente por ChatOpenAI/langchain) rejeita
-            # prefixo "deepseek/"; só aceita "deepseek-v4-flash" ou "deepseek-v4-pro".
-            # Strip qualquer prefixo "deepseek/" que tenha vindo do env.
-            if deepseek_model.startswith("deepseek/"):
-                deepseek_model_clean = deepseek_model[len("deepseek/"):]
-            else:
-                deepseek_model_clean = deepseek_model
-
-            # V4 aceita até 393216 max_tokens (output ENTIRE budget = reasoning + content).
-            # Pra geração longa (specs, code, yaml) deixamos reasoning OFF — libera os
-            # 32K pro content. Pra tasks específicas que precisam raciocínio, override
-            # via env DEEPSEEK_REASONING=true.
             max_tokens_value = int(os.getenv("DEEPSEEK_MAX_TOKENS", "32768"))
             reasoning_enabled = (os.getenv("DEEPSEEK_REASONING", "false").lower() == "true")
 
-            _llm_cache[cache_key] = ChatOpenAI(
-                model=deepseek_model_clean,
-                openai_api_key=deepseek_api_key,
-                openai_api_base="https://api.deepseek.com/v1",
+            _llm_cache[cache_key] = CrewLLM(
+                model=deepseek_model,
+                api_key=deepseek_api_key,
+                base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1"),
                 temperature=0.3,
                 max_tokens=max_tokens_value,
                 extra_body={"reasoning": {"enabled": reasoning_enabled}},
@@ -1909,15 +1902,23 @@ function deepMerge(target, source) {{
   return target;
 }}
 
+// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).
+function hasUsefulPayload(o) {{
+  if (!o || typeof o !== 'object') return false;
+  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);
+  return Object.keys(o).some(k => !meta.has(k));
+}}
+
 const output = JSON.parse(JSON.stringify(input || {{}}));
 try {{
-  // Agrega outputs de TODOS os predecessores (espera com deadline).
+  // Agrega outputs de TODOS os predecessores (espera com deadline grande
+  // pq predecessores podem estar processando WS upstream — 90s).
   if (PREV_PLACE_IDS.length > 0) {{
-    const deadline = Date.now() + 20000;
+    const deadline = Date.now() + 90000;
     for (const pid of PREV_PLACE_IDS) {{
       let prev = utils.getPlaceOutput(pid);
-      while ((!prev || Object.keys(prev).length === 0) && Date.now() < deadline) {{
-        await new Promise(r => setTimeout(r, 200));
+      while (!hasUsefulPayload(prev) && Date.now() < deadline) {{
+        await new Promise(r => setTimeout(r, 300));
         prev = utils.getPlaceOutput(pid);
       }}
       if (prev && typeof prev === 'object') deepMerge(output, prev);
@@ -1997,8 +1998,12 @@ def _build_petri_net_with_real_logica(
 
     # Intermediário no padrão PlaceProcessor real: usa utils.merge / globals.
     # Agrega outputs dos predecessores conhecidos pra propagar contexto adiante.
+    # Intermediário: aguarda cada predecessor ter output não-vazio (com
+    # deadline pra não travar), depois deepMerge os outputs e propaga.
+    # Wait loop necessário pq processPlace dispara quando token chega, mas
+    # places WS upstream podem estar processando DeepSeek (~45s).
     _INTERMEDIATE_LOGICA = (
-        "// place intermediário — agrega outputs dos predecessores e propaga\n"
+        "// place intermediário — aguarda predecessores e propaga outputs deep-merged\n"
         "function deepMerge(target, source) {\n"
         "  if (!source || typeof source !== 'object') return target;\n"
         "  for (const k of Object.keys(source)) {\n"
@@ -2008,9 +2013,20 @@ def _build_petri_net_with_real_logica(
         "  }\n"
         "  return target;\n"
         "}\n"
+        "function hasUsefulPayload(o) {\n"
+        "  if (!o || typeof o !== 'object') return false;\n"
+        "  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n"
+        "  return Object.keys(o).some(k => !meta.has(k));\n"
+        "}\n"
         "const output = JSON.parse(JSON.stringify(input || {}));\n"
-        "for (const pid of (typeof PREV_PLACE_IDS !== 'undefined' ? PREV_PLACE_IDS : [])) {\n"
-        "  const prev = utils.getPlaceOutput(pid);\n"
+        "const PREV = (typeof PREV_PLACE_IDS !== 'undefined' ? PREV_PLACE_IDS : []);\n"
+        "const WAIT_DEADLINE = Date.now() + 90000;\n"
+        "for (const pid of PREV) {\n"
+        "  let prev = utils.getPlaceOutput(pid);\n"
+        "  while (!hasUsefulPayload(prev) && Date.now() < WAIT_DEADLINE) {\n"
+        "    await new Promise(r => setTimeout(r, 300));\n"
+        "    prev = utils.getPlaceOutput(pid);\n"
+        "  }\n"
         "  if (prev && typeof prev === 'object') deepMerge(output, prev);\n"
         "}\n"
         "output.status = 'completed';\n"
@@ -2045,11 +2061,16 @@ def _build_petri_net_with_real_logica(
             continue
         lid = lugar.get("id", "")
 
-        # Calcula prev_places do GRAFO (predecessores via transição de entrada)
+        # Calcula prev_places do GRAFO (predecessores via transição de entrada).
+        # Filtra "sources" (places sem entrada, como P0 "Início do Fluxo") —
+        # eles nunca terão output útil, apenas metadata; ficariam presos no
+        # wait loop até o deadline expirar.
         prev_places: List[str] = []
         for trans_id in trans_into_place.get(lid, []):
             prev_places.extend(places_into_trans.get(trans_id, []))
         prev_places = sorted(set(p for p in prev_places if p and p != lid))
+        # Remove sources (nenhuma transição alimenta esse place)
+        prev_places = [p for p in prev_places if trans_into_place.get(p)]
 
         # Places SEM agentId não chamam WS (são intermediários: _out, _in,
         # ready, fim do fluxo). JS agrega outputs dos predecessores para propagar.
@@ -2239,7 +2260,7 @@ def _build_llm() -> LLM:
             base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
             temperature=0.7,
             max_tokens=int(os.getenv("DEEPSEEK_MAX_TOKENS", "32768")),
-            extra_body={"reasoning": {"enabled": reasoning_enabled}},
+            extra_body={{"reasoning": {{"enabled": reasoning_enabled}}}},
         )
     # Fallback: OpenAI (crewai default)
     return LLM(

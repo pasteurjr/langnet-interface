@@ -52,6 +52,8 @@ const usePetriNetExecution = (project) => {
       },
     });
     simulatorRef.current = sim;
+    // Debug: expõe globalmente pra inspeção via test/console
+    if (typeof window !== "undefined") window._petriSim = sim;
     setTick((t) => t + 1);
     return () => {
       try { sim.cancelAllProcessing(); } catch {}

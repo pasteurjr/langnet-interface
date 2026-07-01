@@ -220,7 +220,9 @@ export class PlaceProcessor {
    */
   executeLogicCode(logicCode, context) {
     // Timeout para prevenir loops infinitos
-    const timeout = 10000; // 10 segundos
+    // Timeout aumentado: place.logica pode chamar DeepSeek via WebSocket (~45s)
+    // e ainda aguardar predecessores num JOIN. 3 minutos é folga confortável.
+    const timeout = 180000; // 3 minutos
     
     // Usa AsyncFunction para permitir `await` dentro do code (place.logica usa
     // WebSocket com await new Promise(...)). new Function não suporta await.

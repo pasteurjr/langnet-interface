@@ -95,7 +95,8 @@ test('Transit completo v2: 4 passos, P1+P2 → JOIN', async ({ page }) => {
   // P3: T_process002 → P_T002_out — quase instantâneo
   await clickNext('Passo 3 — T_process002', 5_000);
   // P4: T_join003 → P_T003_in (integrate_suggested_themes) ~60s
-  await clickNext('Passo 4 — T_join003 (JOIN, integrate_suggested_themes)', 90_000);
+  // (wait longo pra encadeamento de waits nos intermediários + DeepSeek 45s)
+  await clickNext('Passo 4 — T_join003 (JOIN, integrate_suggested_themes)', 250_000);
 
   console.log('=== EVENTOS ===');
   for (const e of events) console.log(e);
