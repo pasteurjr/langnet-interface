@@ -227,51 +227,76 @@ Suposições e dependências externas.
 
 ---
 
-## 3. Requisitos Funcionais Detalhados
+## 3. Requisitos Cobertos por Esta Especificação
 
-### 3.1 Consolidação de Requisitos
-Para CADA requisito funcional identificado no documento de requisitos:
+⚠️ REGRA CRÍTICA: Esta seção NÃO redetalha requisitos. Ela apenas ENUMERA os
+IDs originais do Documento de Requisitos, que É a fonte oficial. NÃO copie
+descrições longas nem crie novos IDs paralelos (ex.: se o requirements usa
+"FR-XXX", você DEVE usar "FR-XXX" na íntegra — NUNCA renomear para "RF-XXX"
+ou similar; se usa "NFR-XXX", mantenha "NFR-XXX").
 
-**RF-XXX: [Nome do Requisito]**
-- **Descrição:** [Descrição completa]
-- **Prioridade:** [Alta/Média/Baixa]
-- **Origem:** [Rastreamento para documento de requisitos]
-- **Critérios de Aceitação:**
-  1. [Critério mensurável 1]
-  2. [Critério mensurável 2]
-- **Regras de Negócio Associadas:** [Se aplicável]
-- **Dependências:** [Outros requisitos relacionados]
+### 3.1 Requisitos Funcionais Cobertos
 
-[Repetir para TODOS os requisitos funcionais]
+Extraia do Documento de Requisitos (acima) TODOS os IDs de requisitos
+funcionais e liste-os aqui, com uma linha resumida cada:
+
+| ID (original) | Nome | Prioridade |
+|---------------|------|------------|
+| FR-001 | [nome curto do requirements] | [prioridade do requirements] |
+| FR-002 | [nome curto do requirements] | [prioridade do requirements] |
+| ... | ... | ... |
+
+Regras:
+- Copie os IDs EXATAMENTE como aparecem no Documento de Requisitos (não
+  renomeie FR→RF ou parecidos)
+- NÃO omita nenhum FR/RF/NFR/RNF que exista no requirements
+- Nome curto = 5-10 palavras. Descrição completa fica no requirements.
+- Se algum ID pareceu ambíguo no requirements, use o ID literal e escreva
+  "(revisar no requirements)" na coluna Nome.
+
+### 3.2 Requisitos Não-Funcionais Cobertos
+
+Mesma regra da 3.1, para NFRs / RNFs:
+
+| ID (original) | Categoria | Métrica-chave |
+|---------------|-----------|---------------|
+| NFR-001 | [Performance/Segurança/...] | [métrica-chave do requirements] |
+| ... | ... | ... |
+
+### 3.3 Regras de Negócio Cobertas
+
+| ID (original) | Descrição resumida |
+|---------------|---------------------|
+| BR-001 | [descrição curta do requirements] |
+| ... | ... |
 
 ---
 
-## 4. Requisitos Não-Funcionais
+## 4. Detalhamentos Técnicos de RNFs (complementares ao requirements)
 
-### 4.1 Requisitos de Performance
-- [Tempo de resposta esperado]
-- [Capacidade de processamento]
-- [Escalabilidade]
+Esta seção NÃO repete os NFRs do requirements. Ela adiciona detalhamento
+TÉCNICO E MENSURÁVEL que o requirements ainda não tinha, útil pra
+implementação e testes:
 
-### 4.2 Requisitos de Segurança
-- [Autenticação e autorização]
-- [Criptografia]
-- [Proteção de dados]
+### 4.1 Métricas Concretas de Performance
+- Para cada NFR de performance do requirements, especifique medidas
+  técnicas concretas (ex.: "P95 < 300ms", "throughput 100 rps",
+  "concurrent users 200")
+- Referencie o NFR-XXX de origem em cada linha
 
-### 4.3 Requisitos de Usabilidade
-- [Acessibilidade]
-- [Interface do usuário]
-- [Experiência do usuário]
+### 4.2 Políticas Operacionais
+- Retry policies, circuit breakers, backoff exponencial
+- Thresholds de alarme e SLIs/SLOs mensuráveis
+- Referencie NFRs de confiabilidade que motivam cada política
 
-### 4.4 Requisitos de Confiabilidade
-- [Disponibilidade]
-- [Recuperação de falhas]
-- [Backup]
+### 4.3 Detalhes de Segurança/Compliance
+- Algoritmos concretos (ex.: AES-256-GCM, TLS 1.3), tamanhos de chave,
+  políticas de rotação
+- Modelo de ameaças resumido (top 3-5 riscos e mitigações)
+- Referencie NFR-XXX e BR-XXX de origem
 
-### 4.5 Requisitos de Manutenibilidade
-- [Modularidade]
-- [Documentação]
-- [Testabilidade]
+⚠️ Se o Documento de Requisitos JÁ contém uma métrica concreta, apenas
+referencie-a — não a reformule.
 
 ---
 
@@ -296,6 +321,8 @@ Para CADA requisito funcional identificado no documento de requisitos:
 5. Sub-passos opcionais são numerados como 2.1, 2.2, etc.
 6. Cada UC DEVE ter wireframe da(s) tela(s) principal(is)
 7. O documento pode ser LONGO — isso é ESPERADO e OBRIGATÓRIO. Não comprima.
+8. 🔴 RASTREABILIDADE OBRIGATÓRIA: nos campos "RFs Relacionados" e "RNs Aplicáveis" de cada UC, use SOMENTE os IDs EXATOS do Documento de Requisitos (ex.: se o requirements tem "FR-001", use "FR-001" — NUNCA renomeie para "RF-001" ou similar). Se o UC não implementa nenhum FR do requirements literal, escreva "Nenhum" — jamais invente IDs novos.
+9. 🔴 CADA UC deve rastrear a PELO MENOS 1 requisito real do Documento de Requisitos. Se você não encontrar um requisito compatível no requirements, ESSE UC NÃO DEVE EXISTIR — reescreva a lista de UCs a partir dos requisitos existentes.
 
 ### 5.1 Atores do Sistema
 [Listar TODOS os atores identificados no documento de requisitos com nome real e papel]
@@ -594,6 +621,10 @@ O documento DEVE conter EXATAMENTE estas 14 seções numeradas:
 ☐ Seção 12 (Glossário) presente?
 ☐ Seção 13 (Rastreabilidade) presente com MATRIZ?
 ☐ Seção 14 (Apêndices) presente?
+☐ 🔴 Seção 3 NÃO redetalha os requisitos — só lista IDs originais (FR-XXX/NFR-XXX/BR-XXX) em tabelas de rastreabilidade?
+☐ 🔴 Todos os IDs em rastreabilidade batem LITERALMENTE com os IDs do Documento de Requisitos (nenhum FR virou RF, nenhum NFR virou RNF, etc)?
+☐ 🔴 Cada UC referencia IDs REAIS do requirements no campo "RFs Relacionados" (nada de IDs inventados na spec)?
+☐ 🔴 Nenhum requisito do requirements foi omitido nem duplicado nas tabelas de 3.1, 3.2, 3.3?
 {('☐ 🔴 INSTRUÇÕES CUSTOMIZADAS DO USUÁRIO aplicadas em CADA UC individual (não só em uma seção isolada)?' + chr(10) + '☐ 🔴 Se as INSTRUÇÕES CUSTOMIZADAS pediram NOVA SEÇÃO transversal, ela existe LITERAL no documento com o título exato?' + chr(10) + '☐ 🔴 Cada UC contém as subseções específicas pedidas (ex.: Autenticação, LGPD, Auditoria, Riscos), com conteúdo REAL e DIFERENTE por UC?' + chr(10)) if custom_instructions and custom_instructions.strip() else ''}
 ## FORMATO DE SAÍDA
 
