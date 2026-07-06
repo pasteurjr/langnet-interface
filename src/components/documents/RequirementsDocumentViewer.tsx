@@ -26,6 +26,10 @@ export const RequirementsDocumentViewer: React.FC<RequirementsDocumentViewerProp
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [metadata, setMetadata] = useState<any>(null);
+  const [showRefinePanel, setShowRefinePanel] = useState(false);
+  const [refineMessage, setRefineMessage] = useState('');
+  const [refining, setRefining] = useState(false);
+  const [refineFeedback, setRefineFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     loadRequirementsDocument();
@@ -78,8 +82,32 @@ export const RequirementsDocumentViewer: React.FC<RequirementsDocumentViewerProp
   };
 
   const handleOpenChat = () => {
-    // TODO: Navigate to chat with document context
-    alert('Chat refinement will be implemented in next phase');
+    setShowRefinePanel(prev => !prev);
+    setRefineFeedback(null);
+  };
+
+  const handleSubmitRefine = async () => {
+    const msg = refineMessage.trim();
+    if (!msg) {
+      setRefineFeedback('Digite instruções antes de enviar.');
+      return;
+    }
+    setRefining(true);
+    setRefineFeedback('Refinando via LLM (pode levar alguns minutos)…');
+    try {
+      const result = await langnetService.refineRequirementsDocument(executionId, msg);
+      setMarkdown(result.document);
+      setRefineFeedback(
+        `✓ Documento refinado em ${result.elapsed_seconds}s ` +
+        `(${result.previous_size} → ${result.document_size} chars)`
+      );
+      setRefineMessage('');
+    } catch (err: any) {
+      const detail = err.response?.data?.detail || err.message || 'Erro desconhecido';
+      setRefineFeedback(`✗ ${detail}`);
+    } finally {
+      setRefining(false);
+    }
   };
 
   if (loading) {
@@ -134,6 +162,47 @@ export const RequirementsDocumentViewer: React.FC<RequirementsDocumentViewerProp
           )}
         </div>
       </div>
+
+      {showRefinePanel && (
+        <div className="refine-panel">
+          <div className="refine-header">
+            <strong>💬 Refinar via Agente (LLM)</strong>
+            <button
+              className="btn-close-refine"
+              onClick={() => setShowRefinePanel(false)}
+              disabled={refining}
+            >
+              ✕
+            </button>
+          </div>
+          <div className="refine-hint">
+            Descreva as mudanças. O documento inteiro será reprocessado por um LLM (pode
+            levar alguns minutos com R1 local).
+          </div>
+          <textarea
+            className="refine-textarea"
+            value={refineMessage}
+            onChange={(e) => setRefineMessage(e.target.value)}
+            placeholder={
+              'Ex.: Adicione um novo FR-027 para conformidade com LGPD; ' +
+              'adicione seção sobre acessibilidade WCAG 2.1 AA; ' +
+              'aumente prioridade dos FR-002 e FR-003 para "Alta"…'
+            }
+            rows={6}
+            disabled={refining}
+          />
+          <div className="refine-actions">
+            <button
+              className="btn-submit-refine"
+              onClick={handleSubmitRefine}
+              disabled={refining || !refineMessage.trim()}
+            >
+              {refining ? 'Aguarde…' : 'Enviar para o Agente'}
+            </button>
+            {refineFeedback && <div className="refine-feedback">{refineFeedback}</div>}
+          </div>
+        </div>
+      )}
 
       <div className="viewer-content">
         <div className="markdown-container">

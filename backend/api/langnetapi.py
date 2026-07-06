@@ -592,3 +592,160 @@ async def get_requirements_document(execution_id: str):
             status_code=500,
             detail=f"Failed to retrieve requirements document: {str(e)}"
         )
+
+
+class RefineRequirementsRequest(BaseModel):
+    message: str
+
+
+@router.post("/execution/{execution_id}/requirements-document/refine")
+async def refine_requirements_document(execution_id: str, req: RefineRequirementsRequest):
+    """Refina o documento de requisitos com base em uma instrução do usuário.
+
+    - Carrega o doc atual da execution_sessions
+    - Envia pro LLM (respeita LLM_PROVIDER — DeepSeek cloud ou LM Studio local)
+    - Persiste a nova versão em requirements_document
+    - Retorna o documento novo + tempo de processamento
+    """
+    import time as _time
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            cur.execute(
+                "SELECT requirements_document FROM execution_sessions WHERE id=%s",
+                (execution_id,),
+            )
+            row = cur.fetchone()
+            cur.close()
+        if not row or not row.get("requirements_document"):
+            raise HTTPException(status_code=404, detail="Requirements document not found")
+
+        current = row["requirements_document"]
+        instruction = (req.message or "").strip()
+        if not instruction:
+            raise HTTPException(status_code=400, detail="Empty refinement message")
+
+        # LLM (usa get_llm que respeita LLM_PROVIDER)
+        try:
+            from backend.agents.langnetagents import get_llm  # execução com PYTHONPATH normal
+        except Exception:
+            from agents.langnetagents import get_llm  # execução a partir de backend/
+
+        llm = get_llm(use_deepseek=False)
+
+        n_lines = len(current.splitlines())
+        n_chars = len(current)
+        prompt = f"""TAREFA: Copiar um documento Markdown inteiro, aplicando pequenas modificações.
+
+VOCÊ ESTÁ PROIBIDO DE:
+- Escrever "[...]", "[Restante do conteúdo original]", "[demais seções idênticas]",
+  "[conteúdo mantido]", "[Resto omitido]", "[...continua]", "…", ou qualquer
+  outra notação que represente conteúdo omitido.
+- Resumir seções.
+- Substituir tabelas por descrições curtas.
+- Escrever meta-comentários tipo "aqui vai o mesmo conteúdo do original".
+
+VOCÊ DEVE:
+- Copiar CADA LINHA do documento original ({n_lines} linhas, {n_chars} chars),
+  do início ao fim, alterando apenas o que a instrução pedir.
+- Preservar TODAS as tabelas com todas as linhas.
+- Preservar TODAS as seções (1 a 20), com todos os itens.
+- Se por acaso você atingir seu limite de tokens antes de terminar, continue
+  copiando LITERALMENTE em vez de abreviar.
+- Atualizar a versão nos metadados (1.0 → 1.1) e registrar a mudança na seção
+  "Controle de Versões".
+
+Seu output será REJEITADO automaticamente se contiver qualquer marca de omissão.
+O output esperado deve ter aproximadamente {n_chars} chars (podendo ficar um
+pouco maior por causa das adições).
+
+MODIFICAÇÕES A APLICAR:
+{instruction}
+
+DOCUMENTO ORIGINAL COMPLETO ({n_chars} chars, {n_lines} linhas):
+=====BEGIN_ORIGINAL_DOC=====
+{current}
+=====END_ORIGINAL_DOC=====
+
+Agora produza o documento COMPLETO, do primeiro ao último caractere, com as
+modificações aplicadas. Comece com "# Documento de Requisitos" e não pare
+até ter copiado todas as {n_lines} linhas (com adições aplicadas)."""
+
+        t0 = _time.time()
+        try:
+            raw = llm.call([{"role": "user", "content": prompt}])
+        except Exception:
+            raw = llm.call(prompt)
+        elapsed = _time.time() - t0
+
+        # Extrai após </think> se presente (R1 e similares)
+        import re as _re
+        m = _re.search(r"</think>\s*(.*)", raw, _re.DOTALL)
+        new_doc = m.group(1).strip() if m else raw.strip()
+        # Remove fence markdown se veio dentro de bloco
+        m = _re.match(r"^```(?:markdown|md)?\s*\n(.*)\n```\s*$", new_doc, _re.DOTALL | _re.IGNORECASE)
+        if m:
+            new_doc = m.group(1).strip()
+
+        # Detecta placeholders de omissão que LLMs pequenos gostam de usar
+        omission_patterns = [
+            r"\.\.\.\s*\[Restante do conteúdo",
+            r"\[conteúdo original mantido\]",
+            r"\[Resto do documento",
+            r"\[Restante omitido",
+            r"\[demais seções idênticas",
+        ]
+        import re as _re
+        detected_omissions = [p for p in omission_patterns if _re.search(p, new_doc)]
+
+        if detected_omissions:
+            # Rejeita — LLM comprimiu. Pede pra usuário tentar de novo (idealmente com modelo maior).
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "LLM comprimiu o documento usando placeholders "
+                    f"({', '.join(detected_omissions)[:200]}). O modelo local não conseguiu "
+                    "reescrever o documento inteiro. Tente: (a) mudar pra deepseek cloud "
+                    "(LLM_PROVIDER=deepseek); (b) fazer uma mudança menor por vez; ou "
+                    "(c) usar modelo maior (R1 32B ou v4-pro)."
+                ),
+            )
+
+        if len(new_doc) < 500:
+            raise HTTPException(
+                status_code=502,
+                detail=f"LLM retornou resposta muito curta ({len(new_doc)} chars). Preview: {new_doc[:200]}",
+            )
+
+        # Ratio de compressão suspeito: se doc encolheu mais de 40%, provavelmente perdeu conteúdo
+        if len(current) > 5000 and len(new_doc) < len(current) * 0.6:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"LLM devolveu documento muito menor ({len(new_doc)} vs original {len(current)} chars, "
+                    f"redução de {100*(1-len(new_doc)/len(current)):.0f}%). "
+                    "Provavelmente omitiu conteúdo. Tente pedido mais focado ou modelo maior."
+                ),
+            )
+
+        # Persiste
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "UPDATE execution_sessions SET requirements_document=%s WHERE id=%s",
+                (new_doc, execution_id),
+            )
+            conn.commit()
+            cur.close()
+
+        return {
+            "execution_id": execution_id,
+            "document": new_doc,
+            "elapsed_seconds": round(elapsed, 1),
+            "document_size": len(new_doc),
+            "previous_size": len(current),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Refine failed: {str(e)}")

@@ -25,9 +25,13 @@ class LLMClient:
             )
             self.model = settings.deepseek_model_name
         elif self.provider == "lmstudio":
+            # Timeout ALTO (60 min) — modelo local 32B pode demorar em outputs longos.
+            import os as _os
             self.client = OpenAI(
                 api_key="lm-studio",  # LM Studio doesn't require a real key
-                base_url=settings.lmstudio_api_base
+                base_url=settings.lmstudio_api_base,
+                timeout=float(_os.getenv("LMSTUDIO_TIMEOUT", "3600")),
+                max_retries=1,
             )
             self.model = settings.lmstudio_model_name
         elif self.provider == "anthropic":

@@ -118,6 +118,7 @@ def get_llm(use_deepseek: bool = False):
         elif llm_provider == "lmstudio":
             # LM Studio local — API OpenAI-compatible, zero custo por token.
             # Modelo típico: deepseek-r1-distill-qwen-32b (context 40k+).
+            # Timeout ALTO (60 min) — modelo local 32B pode demorar em outputs longos.
             from crewai import LLM as CrewLLM
             lm_base = os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1")
             lm_model = os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b")
@@ -128,6 +129,7 @@ def get_llm(use_deepseek: bool = False):
                 base_url=lm_base,
                 temperature=0.3,
                 max_tokens=int(os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
+                timeout=int(os.getenv("LMSTUDIO_TIMEOUT", "3600")),  # 60 min padrão
             )
 
         elif llm_provider == "deepseek":

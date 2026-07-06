@@ -406,5 +406,18 @@ export default {
   getRequirementsDocument: async (executionId: string): Promise<string> => {
     const response = await api.get(`/api/langnet/execution/${executionId}/requirements-document`);
     return response.data.document;
+  },
+
+  // Refine requirements document via LLM (respeita LLM_PROVIDER — R1 local ou cloud)
+  refineRequirementsDocument: async (
+    executionId: string,
+    message: string
+  ): Promise<{ document: string; elapsed_seconds: number; document_size: number; previous_size: number }> => {
+    const response = await api.post(
+      `/api/langnet/execution/${executionId}/requirements-document/refine`,
+      { message },
+      { timeout: 20 * 60 * 1000 } // 20 min — R1 local pode ser lento
+    );
+    return response.data;
   }
 };
