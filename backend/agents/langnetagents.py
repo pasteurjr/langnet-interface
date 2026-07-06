@@ -115,6 +115,21 @@ def get_llm(use_deepseek: bool = False):
                 max_tokens=16384
             )
 
+        elif llm_provider == "lmstudio":
+            # LM Studio local — API OpenAI-compatible, zero custo por token.
+            # Modelo típico: deepseek-r1-distill-qwen-32b (context 40k+).
+            from crewai import LLM as CrewLLM
+            lm_base = os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1")
+            lm_model = os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b")
+            print(f"[LangNet] Using LM Studio at {lm_base} — model={lm_model}")
+            _llm_cache[cache_key] = CrewLLM(
+                model=lm_model,
+                api_key=os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
+                base_url=lm_base,
+                temperature=0.3,
+                max_tokens=int(os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
+            )
+
         elif llm_provider == "deepseek":
             # DeepSeek configuration
             deepseek_api_key = os.getenv("DEEPSEEK_API_KEY")
@@ -2167,10 +2182,23 @@ def _parse_tools_from_spec(md: str) -> Dict[str, Dict[str, List[str]]]:
             if not (nome and tools):
                 continue
             name = nome.group(1).strip()
-            tools_list = [
-                _re.sub(r"\s*\(.*?\)\s*", "", t).strip()
-                for t in tools.group(1).split(",")
-            ]
+            raw_tools = tools.group(1)
+            # PRIMEIRO remove parênteses com conteúdo (evita quebrar vírgulas
+            # internas em nomes tipo "database_tool (CRUD, histórico)").
+            # Faz até 3 passadas pra lidar com parênteses aninhados.
+            for _ in range(3):
+                raw_tools = _re.sub(r"\s*\([^()]*\)\s*", " ", raw_tools)
+            # AGORA sim splita por vírgula
+            tools_list = [t.strip() for t in raw_tools.split(",")]
+            # Normaliza cada tool: só primeira palavra "snake_case" antes de espaço
+            def _norm(t: str) -> str:
+                t = t.strip()
+                # tira asteriscos/backticks/aspas comuns em markdown
+                t = _re.sub(r"[`*'\"]+", "", t)
+                # se veio "database_tool blabla", pega só o primeiro token
+                m = _re.match(r"([a-z][a-z0-9_]+)", t)
+                return m.group(1) if m else ""
+            tools_list = [_norm(t) for t in tools_list]
             tools_list = [t for t in tools_list if t]
             if name:
                 result[name] = tools_list
@@ -2246,31 +2274,72 @@ import tools as tools_module
 import adapters as adapters_module
 
 
-# ─── LLM (DeepSeek por padrão, com fallback OpenAI) ───────────────────────────
-def _build_llm() -> LLM:
-    provider = (os.getenv("LLM_PROVIDER") or "deepseek").lower()
-    if provider == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
-        # DeepSeek V4 (deepseek-v4-flash): aceita até 393216 max_tokens.
-        # reasoning OFF por padrão pra liberar budget pra content.
-        # Override via DEEPSEEK_REASONING=true em tasks que precisam raciocínio.
-        reasoning_enabled = (os.getenv("DEEPSEEK_REASONING", "false").lower() == "true")
+# ─── LLM: 3 providers configuráveis via LLM_PROVIDER ─────────────────────────
+# - deepseek (default): API cloud, custa tokens. V4 Flash/Pro.
+# - lmstudio: LM Studio local, R1 distill Qwen 32B. Zero custo/token.
+# - openai: fallback.
+#
+# Estratégia: 2 LLMs pré-construídos, um "fast" e um "reasoning".
+# - FLASH_LLM: pura geração de texto/JSON. Rápido. Agentes SEM tools.
+# - PRO_LLM: raciocina antes de decidir chamar tool. Agentes COM tools.
+# _build_agent escolhe automaticamente com base em `AGENT_TOOLS[agent_id]`.
+def _current_provider() -> str:
+    return (os.getenv("LLM_PROVIDER") or "deepseek").lower()
+
+
+def _build_llm_flash() -> LLM:
+    prov = _current_provider()
+    if prov == "lmstudio":
+        # LM Studio API OpenAI-compatible. Sem custo por token.
+        # Modelo FAST (mesmo do reasoning aqui — LM Studio típico só tem R1 carregado).
+        return LLM(
+            model=os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b"),
+            api_key=os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
+            base_url=os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1"),
+            temperature=0.7,
+            max_tokens=int(os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
+        )
+    if prov == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
         return LLM(
             model=os.getenv("DEEPSEEK_MODEL_NAME", "deepseek/deepseek-v4-flash"),
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
             temperature=0.7,
             max_tokens=int(os.getenv("DEEPSEEK_MAX_TOKENS", "32768")),
-            extra_body={{"reasoning": {{"enabled": reasoning_enabled}}}},
+            extra_body={{"reasoning": {{"enabled": False}}}},
         )
-    # Fallback: OpenAI (crewai default)
-    return LLM(
-        model=os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"),
-        api_key=os.getenv("OPENAI_API_KEY"),
-        temperature=0.7,
-    )
+    return LLM(model=os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"),
+               api_key=os.getenv("OPENAI_API_KEY"), temperature=0.7)
 
 
-SHARED_LLM = _build_llm()
+def _build_llm_pro() -> LLM:
+    prov = _current_provider()
+    if prov == "lmstudio":
+        # R1 já raciocina por padrão — sem flag necessário. Mesmo modelo do flash aqui.
+        return LLM(
+            model=os.getenv("LMSTUDIO_MODEL_NAME_PRO", os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b")),
+            api_key=os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
+            base_url=os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1"),
+            temperature=0.3,
+            max_tokens=int(os.getenv("LMSTUDIO_MAX_TOKENS_PRO", "24000")),
+        )
+    if prov == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
+        return LLM(
+            model=os.getenv("DEEPSEEK_MODEL_NAME_PRO", "deepseek/deepseek-v4-pro"),
+            api_key=os.getenv("DEEPSEEK_API_KEY"),
+            base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
+            temperature=0.3,
+            max_tokens=int(os.getenv("DEEPSEEK_MAX_TOKENS_PRO", "32768")),
+            extra_body={{"reasoning": {{"enabled": True}}}},
+        )
+    return LLM(model=os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"),
+               api_key=os.getenv("OPENAI_API_KEY"), temperature=0.3)
+
+
+FLASH_LLM = _build_llm_flash()
+PRO_LLM = _build_llm_pro()
+# Compat: código legado que ainda referencia SHARED_LLM funciona.
+SHARED_LLM = FLASH_LLM
 
 
 def _load_yaml(path: str) -> Dict[str, Any]:
@@ -2313,14 +2382,18 @@ def _agent_for_task(task_id: str) -> str:
 def _build_agent(agent_id: str) -> Agent:
     cfg = AGENTS_CONFIG.get(agent_id, {{}})
     tool_names = AGENT_TOOLS.get(agent_id, [])
+    tools = _resolve_tools(tool_names)
+    # Se o agente tem TOOLS reais, usa PRO_LLM (com reasoning) — necessário
+    # pra CrewAI conseguir fazer tool call. Sem tools, usa FLASH_LLM (mais barato/rápido).
+    chosen_llm = PRO_LLM if tools else FLASH_LLM
     return Agent(
         role=cfg.get("role", agent_id),
         goal=cfg.get("goal", ""),
         backstory=cfg.get("backstory", ""),
         verbose=cfg.get("verbose", True),
         allow_delegation=cfg.get("allow_delegation", False),
-        tools=_resolve_tools(tool_names),
-        llm=SHARED_LLM,
+        tools=tools,
+        llm=chosen_llm,
     )
 
 
@@ -2363,12 +2436,19 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
         input_fn = getattr(adapters_module, f"{{task_name}}_input_func", None)
         prepared = input_fn(input_data) if callable(input_fn) else input_data
 
-        # Formata a descrição da task com inputs
+        # Formata a descrição da task com inputs — usa format_map com dict que
+        # devolve string vazia p/ chaves ausentes, evitando fallback silencioso
+        # que deixa {{placeholders}} literais no prompt do agente.
         description = task_cfg.get("description", "")
-        try:
-            description = description.format(**prepared) if prepared else description
-        except Exception:
-            pass  # placeholders ausentes não impedem a execução
+        if prepared:
+            class _SafeDict(dict):
+                def __missing__(self, key):
+                    return ""  # placeholder ausente vira vazio (não quebra)
+            # Achata prepared em strings pra evitar KeyError em __missing__
+            try:
+                description = description.format_map(_SafeDict(prepared))
+            except Exception:
+                pass  # último recurso: mantém description literal
 
         task = _build_task(task_name, agent, description)
         crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
@@ -2432,12 +2512,133 @@ def _template_requirements_txt(_extra_pkgs: List[str] = None) -> str:
         "pydantic>=2.0.0",
         "python-dotenv>=1.0.0",
         "pyyaml>=6.0",
+        # Database (para database_tool real)
+        "mysql-connector-python>=8.0.0",
     ]
     if _extra_pkgs:
         for p in _extra_pkgs:
             if p not in base:
                 base.append(p)
     return "\n".join(base) + "\n"
+
+
+def _template_database_tool_py() -> str:
+    """Template do database_tool.py real, com conexão MySQL configurável.
+
+    O tool aceita queries SQL parametrizadas e retorna resultados como JSON.
+    Suporta SELECT (retorna linhas), INSERT/UPDATE/DELETE (retorna affected rows +
+    last insert id). Conexão via variáveis de ambiente DB_HOST/DB_PORT/DB_USER/DB_PASSWORD/DB_NAME.
+    """
+    return '''"""Database Tool — CrewAI BaseTool que executa queries reais em MySQL.
+
+Configuração via ambiente:
+- DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+
+O tool é seguro por padrão: SELECT retorna linhas como JSON, mutations retornam
+row count + last_insert_id. Aceita params posicionais via placeholder %s.
+
+Uso pelos agentes CrewAI:
+    result = database_tool.run(query="SELECT * FROM leads WHERE score > 70")
+    result = database_tool.run(
+        query="INSERT INTO leads (nome, empresa, score) VALUES (%s, %s, %s)",
+        params=["Fulano", "Beltrano SA", 85]
+    )
+"""
+from __future__ import annotations
+
+import json
+import os
+import logging
+from typing import Any, List, Optional
+from pydantic import BaseModel, Field
+from crewai.tools import BaseTool
+
+import mysql.connector
+
+log = logging.getLogger(__name__)
+
+
+class DatabaseToolSchema(BaseModel):
+    query: str = Field(..., description="Query SQL. Use %s como placeholder pra parâmetros.")
+    params: Optional[List[Any]] = Field(
+        default=None,
+        description="Lista de parâmetros posicionais pra bindings %s da query."
+    )
+
+
+class DatabaseTool(BaseTool):
+    name: str = "database_tool"
+    description: str = (
+        "Executa queries SQL no banco de dados da aplicação (MySQL). "
+        "Para SELECT retorna as linhas em JSON. Para INSERT/UPDATE/DELETE retorna "
+        "affected_rows e last_insert_id. Sempre use placeholders %s pra parâmetros "
+        "(evita SQL injection e formata datas/strings corretamente)."
+    )
+    args_schema: type[BaseModel] = DatabaseToolSchema
+
+    def _connect(self):
+        return mysql.connector.connect(
+            host=os.getenv("DB_HOST", "localhost"),
+            port=int(os.getenv("DB_PORT", "3306")),
+            user=os.getenv("DB_USER", "root"),
+            password=os.getenv("DB_PASSWORD", ""),
+            database=os.getenv("DB_NAME", ""),
+            connection_timeout=10,
+            autocommit=False,
+        )
+
+    def _run(self, query: str, params: Optional[List[Any]] = None) -> str:
+        q = (query or "").strip()
+        if not q:
+            return json.dumps({"error": "query vazia"}, ensure_ascii=False)
+
+        is_select = q.lstrip("(").lower().startswith(("select", "show", "describe", "explain"))
+        conn = None
+        try:
+            conn = self._connect()
+            cur = conn.cursor(dictionary=True)
+            cur.execute(q, tuple(params) if params else None)
+
+            if is_select:
+                rows = cur.fetchall()
+                # Serializa datas/UUIDs pra string
+                out = json.dumps(
+                    {"rows": rows, "row_count": len(rows)},
+                    ensure_ascii=False, default=str,
+                )
+            else:
+                conn.commit()
+                out = json.dumps(
+                    {
+                        "affected_rows": cur.rowcount,
+                        "last_insert_id": cur.lastrowid,
+                    },
+                    ensure_ascii=False,
+                )
+            cur.close()
+            return out
+
+        except mysql.connector.Error as e:
+            if conn:
+                try: conn.rollback()
+                except Exception: pass
+            log.exception("DatabaseTool error")
+            return json.dumps(
+                {"error": str(e), "errno": e.errno if hasattr(e, "errno") else None},
+                ensure_ascii=False,
+            )
+        except Exception as e:
+            log.exception("DatabaseTool unexpected error")
+            return json.dumps({"error": str(e)}, ensure_ascii=False)
+        finally:
+            if conn:
+                try: conn.close()
+                except Exception: pass
+
+
+# Instância pronta pra ser importada pelo TOOL_REGISTRY
+database_tool = DatabaseTool()
+'''
 
 
 def _template_env_example(detected_tools: List[str]) -> str:
@@ -2463,6 +2664,21 @@ def _template_env_example(detected_tools: List[str]) -> str:
         "# Desabilita telemetria/banner interativo do CrewAI (essencial em background)",
         "CREWAI_TESTING=true",
         "OTEL_SDK_DISABLED=true",
+        "",
+        "# Banco de dados (usado por database_tool)",
+        "DB_HOST=camerascasas.no-ip.info",
+        "DB_PORT=3308",
+        "DB_USER=producao",
+        "DB_PASSWORD=112358123",
+        "DB_NAME=quantica_ops",
+        "",
+        "# LM Studio local (economia total em dev — troque LLM_PROVIDER=lmstudio)",
+        "# LLM_PROVIDER=lmstudio",
+        "LMSTUDIO_API_BASE=http://192.168.1.115:1234/v1",
+        "LMSTUDIO_MODEL_NAME=openai/deepseek-r1-distill-qwen-32b",
+        "LMSTUDIO_API_KEY=lm-studio",
+        "LMSTUDIO_MAX_TOKENS=16000",
+        "LMSTUDIO_MAX_TOKENS_PRO=24000",
         "",
     ]
     tools_lower = " ".join(detected_tools).lower()
@@ -2566,14 +2782,32 @@ def _detect_extra_packages(tools_py: str) -> List[str]:
     """Detecta pacotes Python a adicionar ao requirements baseado em imports do tools.py."""
     extras: List[str] = []
     txt = (tools_py or "").lower()
-    if "imap_tools" in txt or "from imaplib" in txt:
-        extras.append("imap-tools>=1.0.0")
-    if "mindsdb" in txt:
-        extras.append("mindsdb-sdk>=1.7.0")
-    if "pandas" in txt:
-        extras.append("pandas>=2.0.0")
-    if "requests" in txt:
-        extras.append("requests>=2.31.0")
+    # Mapping determinístico: token no código → pacote pip
+    mapping = [
+        (("imap_tools", "from imaplib"), "imap-tools>=1.0.0"),
+        (("mindsdb",), "mindsdb-sdk>=1.7.0"),
+        (("pandas",), "pandas>=2.0.0"),
+        (("requests",), "requests>=2.31.0"),
+        (("feedparser",), "feedparser>=6.0.0"),
+        (("beautifulsoup", "bs4"), "beautifulsoup4>=4.12.0"),
+        (("lxml",), "lxml>=4.9.0"),
+        (("httpx",), "httpx>=0.25.0"),
+        (("aiohttp",), "aiohttp>=3.9.0"),
+        (("linkedin_api",), "linkedin-api>=2.0.0"),
+        (("pdfplumber",), "pdfplumber>=0.10.0"),
+        (("pypdf",), "pypdf>=3.0.0"),
+        (("docx",), "python-docx>=1.0.0"),
+        (("openpyxl",), "openpyxl>=3.1.0"),
+        (("google.oauth2", "googleapiclient"), "google-api-python-client>=2.100.0"),
+        (("slack_sdk",), "slack-sdk>=3.20.0"),
+        (("boto3",), "boto3>=1.28.0"),
+        (("psycopg", "psycopg2"), "psycopg2-binary>=2.9.0"),
+        (("redis",), "redis>=5.0.0"),
+        (("sqlalchemy",), "sqlalchemy>=2.0.0"),
+    ]
+    for tokens, pkg in mapping:
+        if any(t in txt for t in tokens):
+            extras.append(pkg)
     return extras
 
 
@@ -2624,6 +2858,325 @@ def _inject_task_tools_into_adapters(adapters_py: str, agents_map: Dict[str, Lis
     block_lines.append("}")
     block_lines.append("")
     return adapters_py.rstrip() + "\n" + "\n".join(block_lines) + "\n"
+
+
+def _inject_input_placeholders_in_task_descriptions(tasks_yaml: str, tasks_map: dict = None) -> str:
+    """Adiciona placeholders Jinja `{campo}` + instrução de uso obrigatório das
+    tools nas descriptions das tasks.
+
+    - Placeholder block: expõe cada input do WS via `{key}` (CrewAI só interpola
+      se aparecer como `{key}` na description).
+    - Instrução mandatória: força o LLM a USAR as tools em vez de alucinar
+      respostas (padrão comum quando a description é só "inserir na tabela").
+    """
+    import re as _re
+    if not tasks_yaml:
+        return tasks_yaml
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml)
+    except Exception:
+        return tasks_yaml
+    if not isinstance(parsed, dict):
+        return tasks_yaml
+    tasks_map = tasks_map or {}
+
+    changed = 0
+    for task_name, cfg in parsed.items():
+        if not isinstance(cfg, dict):
+            continue
+        desc = cfg.get("description") or ""
+        if not isinstance(desc, str) or not desc:
+            continue
+
+        # Extrai chaves do bloco Input data format
+        # Aceita variações: "Input data format:", "Input:", "Inputs:"
+        m = _re.search(
+            r"(?:Input(?:s|\s+data\s+format)?):\s*\n((?:\s*-\s*[a-z_][a-z0-9_]*\s*:.*\n?)+)",
+            desc, _re.IGNORECASE,
+        )
+        keys: list = []
+        if m:
+            for line in m.group(1).split("\n"):
+                km = _re.match(r"\s*-\s*([a-z_][a-z0-9_]*)\s*:", line)
+                if km:
+                    keys.append(km.group(1))
+        # Fallback: se não achou bloco, tenta pegar qualquer "- key: tipo" no doc
+        if not keys:
+            for line in desc.split("\n"):
+                km = _re.match(r"\s*-\s*([a-z_][a-z0-9_]*)\s*:\s*(?:string|integer|int|uuid|date|datetime|boolean|bool|array|list|dict|object|float)",
+                               line, _re.IGNORECASE)
+                if km:
+                    keys.append(km.group(1))
+
+        keys = list(dict.fromkeys(keys))  # dedup mantendo ordem
+        if not keys:
+            continue
+
+        # Se todos os placeholders já estão presentes, pula
+        if all(("{" + k + "}") in desc for k in keys):
+            continue
+
+        # Tools da task (pra montar instrução mandatória)
+        tools_of_task = tasks_map.get(task_name, []) if isinstance(tasks_map, dict) else []
+        # Instrução mandatória de uso das tools
+        # IMPORTANTE: qualquer `{...}` que NÃO seja placeholder de input deve usar
+        # `{{` e `}}` — senão str.format_map falha e a description vai literal.
+        if tools_of_task:
+            tool_names = ", ".join(f"`{t}`" for t in tools_of_task)
+            mandatory = (
+                f"⚠️ REGRAS OBRIGATÓRIAS PARA ESTA TAREFA:\n"
+                f"1. Você DEVE usar as ferramentas: {tool_names}. NÃO simule resultados.\n"
+                f"2. Se a tarefa exige INSERT/UPDATE/DELETE, chame `database_tool` com a query SQL real.\n"
+                f"3. Não invente UUIDs, IDs nem confirmações — pegue do resultado real da tool.\n"
+                f"4. Se uma consulta falhar (retornar chave 'error' no JSON), reporte o erro no output; não maquie.\n\n"
+            )
+        else:
+            mandatory = ""
+
+        # Blinda o resto da description contra format_map: escapa qualquer `{`
+        # ou `}` que NÃO seja um dos placeholders conhecidos (as chaves em keys).
+        # Isso permite que o LLM escreva `{"chave": ...}` em exemplos sem quebrar.
+        known = set(keys)
+        parts: list = []
+        i = 0
+        while i < len(desc):
+            ch = desc[i]
+            if ch in "{}":
+                # detecta placeholder legítimo: {key} onde key ∈ known
+                if ch == "{":
+                    end = desc.find("}", i + 1)
+                    if end != -1:
+                        candidate = desc[i + 1 : end]
+                        if candidate in known:
+                            parts.append(desc[i : end + 1])
+                            i = end + 1
+                            continue
+                # não é placeholder legítimo → duplica pra escapar
+                parts.append(ch * 2)
+                i += 1
+                continue
+            parts.append(ch)
+            i += 1
+        desc = "".join(parts)
+
+        placeholder_block = (
+            "📥 INPUTS RECEBIDOS (use esses valores nas suas queries e chamadas de tool):\n"
+            + "\n".join(f"  - {k} = {{{k}}}" for k in keys)
+            + "\n\n"
+        )
+        cfg["description"] = mandatory + placeholder_block + desc
+        changed += 1
+
+    if changed == 0:
+        return tasks_yaml
+    try:
+        return _yaml.safe_dump(parsed, sort_keys=False, allow_unicode=True, default_flow_style=False)
+    except Exception:
+        return tasks_yaml
+
+
+def _rewrite_input_funcs_pass_input_data(adapters_py: str) -> str:
+    """Reescreve todos os `<task>_input_func(state)` gerados pelo LLM pra sempre
+    passar `state["input_data"]` como inputs do agente, evitando o padrão comum
+    do LLM de hardcodar dados de exemplo (ex.: ``{"nome": "João Silva"}``).
+
+    Estratégia: sobrescreve o CORPO da função por um passthrough determinístico
+    que combina `input_data` do WS + qualquer output já acumulado em `state["outputs"]`
+    (necessário pra JOIN entre tasks).
+    """
+    import re as _re
+    if not adapters_py:
+        return adapters_py
+
+    # Padrão: def <name>_input_func(<args>) -> <ret>: ... até próxima def/class ou fim
+    pattern = _re.compile(
+        r"(^def\s+(?P<name>[a-zA-Z_][a-zA-Z0-9_]*)_input_func\s*\([^)]*\)[^:]*:\n)"
+        r"(?P<body>(?:[ \t]+.*\n|[ \t]*\n)+)",
+        _re.MULTILINE,
+    )
+
+    def _replace(m: "_re.Match[str]") -> str:
+        header = m.group(1)
+        # Novo corpo determinístico
+        new_body = (
+            "    # Passthrough determinístico injetado pelo LangNet: encaminha o\n"
+            "    # input_data do WS + outputs acumulados; ignora corpo original do LLM\n"
+            "    # (que costumava hardcodar dados de exemplo).\n"
+            "    payload = state.get('input_data') if isinstance(state, dict) else None\n"
+            "    if not isinstance(payload, dict):\n"
+            "        payload = state if isinstance(state, dict) else {}\n"
+            "    upstream = state.get('outputs') if isinstance(state, dict) else None\n"
+            "    if isinstance(upstream, dict) and upstream:\n"
+            "        merged = dict(payload)\n"
+            "        merged['upstream_outputs'] = upstream\n"
+            "        return merged\n"
+            "    return payload\n"
+            "\n"
+        )
+        return header + new_body
+
+    new_txt, n = pattern.subn(_replace, adapters_py)
+    if n > 0:
+        # Marca no topo pra rastreabilidade
+        marker = "# NOTE: input_funcs reescritos determinísticamente pelo LangNet (evitando hardcode do LLM).\n"
+        if marker not in new_txt:
+            new_txt = marker + new_txt
+    return new_txt
+
+
+def _inject_tools_into_agents_yaml(agents_yaml: str, agents_map: dict) -> str:
+    """Injeta a lista de tools em cada agente do agents.yaml usando o mapping
+    extraído do agent_task_spec. Sobrescreve `tools:` existente (comumente vazio
+    ou incompleto quando vindo do LLM).
+    """
+    import re as _re
+    if not agents_yaml or not agents_map:
+        return agents_yaml
+
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(agents_yaml) or {}
+    except Exception:
+        # Se falhou parsear, retorna original
+        return agents_yaml
+
+    if not isinstance(parsed, dict):
+        return agents_yaml
+
+    changed = 0
+    for agent_id, tools in agents_map.items():
+        if agent_id in parsed and isinstance(parsed[agent_id], dict):
+            # Só sobrescreve se yaml estava vazio ou com tools genéricas.
+            current = parsed[agent_id].get("tools") or []
+            new_tools = sorted(set(tools))
+            if list(current) != new_tools:
+                parsed[agent_id]["tools"] = new_tools
+                changed += 1
+
+    if changed == 0:
+        return agents_yaml
+
+    # Re-dump preservando ordem original das chaves
+    try:
+        return _yaml.safe_dump(
+            parsed, sort_keys=False, allow_unicode=True, default_flow_style=False
+        )
+    except Exception:
+        return agents_yaml
+
+
+def _fix_common_tool_imports(tools_py: str) -> str:
+    """LLM comumente escreve ``from crewai_tools import BaseTool`` — errado em
+    versões atuais do CrewAI (BaseTool vive em ``crewai.tools``)."""
+    import re as _re
+    if not tools_py:
+        return tools_py
+    # Substitui import mal — se o LLM importou BaseTool de crewai_tools, troca
+    # pra crewai.tools. Se tem outros nomes na mesma linha, preserva eles em
+    # linha separada de crewai_tools.
+    def _repl(m):
+        items = [x.strip() for x in m.group(1).split(",") if x.strip()]
+        has_basetool = "BaseTool" in items
+        others = [x for x in items if x != "BaseTool"]
+        lines = []
+        if has_basetool:
+            lines.append("from crewai.tools import BaseTool")
+        if others:
+            lines.append("from crewai_tools import " + ", ".join(others))
+        return "\n".join(lines)
+    tools_py = _re.sub(
+        r"^from\s+crewai_tools\s+import\s+([^\n]+)$",
+        _repl, tools_py, flags=_re.MULTILINE,
+    )
+    return tools_py
+
+
+def _fix_pydantic_type_hint_typos(tools_py: str) -> str:
+    """Corrige padrão inválido que o LLM comumente gera em classes BaseTool:
+    ``field: "string"`` ou ``field: '''texto'''`` (sem ``str = ``). Pydantic
+    tenta interpretar isso como forward reference e falha com SyntaxError.
+
+    Também converte ``description: "..."`` sem ``str = `` no formato correto.
+    """
+    import re as _re
+    if not tools_py:
+        return tools_py
+
+    # Padrão: campo com type hint que é literal string (aspas triplas ou simples/duplas)
+    # e SEM ``= `` — sinal de que o LLM esqueceu o tipo e default.
+    # Ex: ``description: """texto"""`` → ``description: str = """texto"""``
+    lines = tools_py.split("\n")
+    fields_to_str = ("name", "description")
+    for i, ln in enumerate(lines):
+        for field in fields_to_str:
+            # ``    description: """xxx"""`` (aspas triplas) sem ``str = ``
+            m = _re.match(rf"^(\s+){field}\s*:\s*(\"\"\"|''')", ln)
+            if m:
+                indent, quote = m.group(1), m.group(2)
+                rest = ln[m.end():]
+                lines[i] = f"{indent}{field}: str = {quote}{rest}"
+                continue
+            # ``    description: "xxx"`` (aspas simples ou duplas)
+            m = _re.match(rf"^(\s+){field}\s*:\s*([\"'])", ln)
+            if m and not _re.match(rf"^\s+{field}\s*:\s*(str|int|type\[)", ln):
+                indent, quote = m.group(1), m.group(2)
+                rest = ln[m.end():]
+                # Só se a linha claramente é literal (termina com mesma aspa e sem `=`)
+                if "=" not in ln[:m.end()]:
+                    lines[i] = f"{indent}{field}: str = {quote}{rest}"
+    return "\n".join(lines)
+
+
+def _inject_real_database_tool(tools_py: str) -> str:
+    """Substitui a classe DatabaseTool stub (se existir) por reexport do módulo real.
+
+    O `database_tool.py` já injetado tem DatabaseTool + instância `database_tool`.
+    Aqui removemos qualquer redefinição no tools.py pra evitar shadowing.
+    """
+    import re as _re
+    if not tools_py:
+        tools_py = ""
+
+    # Remove classe DatabaseTool/DatabaseToolSchema se estiver no tools.py (stubs)
+    # Padrão: "class DatabaseTool..." até próxima class/def de nível 0 ou fim
+    def strip_class(src: str, class_name: str) -> str:
+        pattern = rf"^class\s+{class_name}\b.*?(?=^(?:class|def|from|import|@|#\s*[-=])|\Z)"
+        return _re.sub(pattern, "", src, flags=_re.MULTILINE | _re.DOTALL)
+
+    tools_py = strip_class(tools_py, "DatabaseToolSchema")
+    tools_py = strip_class(tools_py, "DatabaseTool")
+
+    # Injeta import no TOPO absoluto — depois de docstring (se houver) mas antes
+    # de qualquer código. Evita colocar dentro de try/except.
+    import_line = "from database_tool import DatabaseTool, database_tool"
+    if import_line not in tools_py:
+        lines = tools_py.split("\n")
+        insert_idx = 0
+        # pula docstring inicial (aspas triplas em bloco)
+        if lines and lines[0].lstrip().startswith(('"""', "'''")):
+            quote = lines[0].lstrip()[:3]
+            # docstring de 1 linha
+            if lines[0].count(quote) >= 2:
+                insert_idx = 1
+            else:
+                # multiline — acha a linha de fechamento
+                for i in range(1, len(lines)):
+                    if quote in lines[i]:
+                        insert_idx = i + 1
+                        break
+        lines.insert(insert_idx, import_line)
+        tools_py = "\n".join(lines)
+
+    # No TOOL_REGISTRY (dict), garante que "database_tool": database_tool esteja lá
+    if "TOOL_REGISTRY" in tools_py:
+        # substitui referências antigas
+        tools_py = _re.sub(
+            r"['\"]database_tool['\"]\s*:\s*DatabaseTool\(\)",
+            "'database_tool': database_tool",
+            tools_py,
+        )
+    return tools_py
 
 
 def _inject_tool_registry_stub(tools_py: str, all_tool_names: List[str]) -> str:
@@ -2871,13 +3424,31 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     tools_py = (llm_files.get("tools_py") or "").strip() or _empty_tools_py(detected_tools)
     adapters_py = (llm_files.get("adapters_py") or "").strip() or _empty_adapters_py()
 
+    # Corrige typo comum do LLM: ``field: "string"`` sem ``str = `` (quebra Pydantic).
+    tools_py = _fix_common_tool_imports(tools_py)
+    tools_py = _fix_pydantic_type_hint_typos(tools_py)
+
     # Injeta TOOL_REGISTRY no tools.py (se LLM não incluiu) e AGENT_TOOLS/TASK_TOOLS no adapters.py
     tools_py = _inject_tool_registry_stub(tools_py, all_tool_names)
     adapters_py = _inject_task_tools_into_adapters(adapters_py, agents_map, tasks_map)
 
+    # Reescreve todos os `<task>_input_func` gerados pelo LLM pra sempre passar
+    # o `state["input_data"]` como inputs do agente (evita hardcode/exemplo do LLM).
+    adapters_py = _rewrite_input_funcs_pass_input_data(adapters_py)
+
+    # Injeta a lista de tools no agents.yaml — o LLM comumente deixa `tools: []`,
+    # matando qualquer capacidade real do agente. Bindings vêm do agent_task_spec.
+    agents_yaml = _inject_tools_into_agents_yaml(agents_yaml, agents_map)
+
     # Autofill 'agent:' nas tasks do tasks.yaml — sem isso o websocket_server
     # rejeita execute_task com "task sem agente vinculado"
     tasks_yaml = _autofill_tasks_yaml_agents(tasks_yaml, agents_yaml, agents_map, tasks_map)
+
+    # Injeta placeholders Jinja {campo} + instrução de uso obrigatório das tools
+    # nas descriptions das tasks — CrewAI só interpola os inputs do kickoff se
+    # aparecem como {key} na description; e sem instrução mandatória o LLM
+    # alucina "sucesso" sem chamar as tools.
+    tasks_yaml = _inject_input_placeholders_in_task_descriptions(tasks_yaml, tasks_map)
 
     # Extrai task names do tasks.yaml para validar contra os place.task_name do LLM
     try:
@@ -2896,6 +3467,9 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Agora vai como subdir 'ws-server/' do pacote visualtasksexec.
     add("ws-server/main.py", _template_main_py(project_name, ws_port))
     add("ws-server/websocket_server.py", _template_websocket_server_py(ws_port))
+    add("ws-server/database_tool.py", _template_database_tool_py())
+    # Injeta import do database_tool real e substitui classe stub se existir
+    tools_py = _inject_real_database_tool(tools_py)
     add("ws-server/tools.py", tools_py if tools_py.endswith("\n") else tools_py + "\n")
     add("ws-server/adapters.py", adapters_py if adapters_py.endswith("\n") else adapters_py + "\n")
     if agents_yaml:

@@ -539,17 +539,15 @@ async def get_requirements_document(execution_id: str):
     """
     try:
         # Get execution from database
-        conn = get_db_connection()
-        cursor = conn.cursor(dictionary=True)
-
-        cursor.execute(
-            "SELECT final_state, status, completed_at FROM execution_sessions WHERE id = %s",
-            (execution_id,)
-        )
-
-        execution = cursor.fetchone()
-        cursor.close()
-        conn.close()
+        with get_db_connection() as conn:
+            cursor = conn.cursor(dictionary=True)
+            # Nota: a coluna real é finished_at (não completed_at), e final_marking (não final_state)
+            cursor.execute(
+                "SELECT execution_metadata, status, finished_at, requirements_document FROM execution_sessions WHERE id = %s",
+                (execution_id,)
+            )
+            execution = cursor.fetchone()
+            cursor.close()
 
         if not execution:
             raise HTTPException(status_code=404, detail="Execution not found")
@@ -560,11 +558,17 @@ async def get_requirements_document(execution_id: str):
                 detail=f"Execution not completed yet (status: {execution['status']})"
             )
 
-        # Parse final state
-        final_state = json.loads(execution['final_state'])
-
-        # Extract requirements document
-        requirements_md = final_state.get("requirements_document_md", "")
+        # Preferência: coluna dedicada `requirements_document`. Fallback: extrair
+        # do execution_metadata (JSON) se ele tiver `requirements_document_md`.
+        requirements_md = execution.get("requirements_document") or ""
+        meta = {}
+        if execution.get("execution_metadata"):
+            try:
+                meta = json.loads(execution["execution_metadata"]) or {}
+            except Exception:
+                meta = {}
+            if not requirements_md:
+                requirements_md = meta.get("requirements_document_md", "") or meta.get("requirements_document", "")
 
         if not requirements_md:
             raise HTTPException(
@@ -575,10 +579,10 @@ async def get_requirements_document(execution_id: str):
         return {
             "execution_id": execution_id,
             "document": requirements_md,
-            "generated_at": execution['completed_at'].isoformat() if execution['completed_at'] else None,
-            "project_id": final_state.get("project_id"),
-            "document_id": final_state.get("document_id"),
-            "project_name": final_state.get("project_name")
+            "generated_at": execution['finished_at'].isoformat() if execution.get('finished_at') else None,
+            "project_id": meta.get("project_id"),
+            "document_id": meta.get("document_id"),
+            "project_name": meta.get("project_name")
         }
 
     except HTTPException:

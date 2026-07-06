@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     deepseek_api_base: str = Field(default="https://api.deepseek.com/v1", env="DEEPSEEK_API_BASE")
     deepseek_model_name: str = Field(default="deepseek/deepseek-chat", env="DEEPSEEK_MODEL_NAME")
 
+    # LM Studio: usar LMSTUDIO_* (sem underscore) — já declarados acima nas linhas 49-50.
+    lmstudio_api_key: str = Field(default="lm-studio", env="LMSTUDIO_API_KEY")
+    lmstudio_max_tokens: int = Field(default=16000, env="LMSTUDIO_MAX_TOKENS")
+
     # Anthropic Claude
     anthropic_api_key: str = Field(default="", env="ANTHROPIC_API_KEY")
     anthropic_model_name: str = Field(default="claude-3-5-sonnet-20241022", env="ANTHROPIC_MODEL_NAME")

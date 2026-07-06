@@ -105,6 +105,12 @@ const PROJECT_MENU_ITEMS: MenuItem[] = [
     path: "/spec",
   },
   {
+    id: "data-model",
+    label: "Modelo de Dados",
+    icon: "🗄️",
+    path: "/data-model",
+  },
+  {
     id: "agent-task",
     label: "Agentes & Tarefas",
     icon: "⚙️",
