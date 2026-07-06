@@ -100,11 +100,45 @@ A FONTE PRIMÁRIA e OFICIAL é o Documento de Requisitos acima.
 
     # Build custom instructions section
     custom_section = ""
+    custom_recall_short = ""
     if custom_instructions and custom_instructions.strip():
         custom_section = f"""
-## INSTRUÇÕES CUSTOMIZADAS DO USUÁRIO
+## 🔴 INSTRUÇÕES CUSTOMIZADAS DO USUÁRIO — PRIORIDADE MÁXIMA
 
+**Estas instruções foram dadas pelo USUÁRIO e são MAIS IMPORTANTES que o template
+padrão abaixo. Você DEVE aplicá-las EXPLICITAMENTE em cada parte da spec que elas
+afetem, não só como menção genérica em uma seção isolada.**
+
+**Se as instruções pedirem que algo apareça "em cada UC" ou "em cada caso de uso",
+esse algo DEVE aparecer LITERAL E EXPLÍCITO em CADA UM dos UCs individuais que
+você gerar — NÃO basta cobrir isso genericamente na seção 4 (RNFs) ou 10 (arquitetura).**
+
+**Se as instruções pedirem uma NOVA SEÇÃO transversal (por exemplo "adicione uma seção
+X"), essa seção DEVE existir NO DOCUMENTO com o título exato pedido.**
+
+⚠️ Antes de terminar, você DEVE verificar mentalmente se essas instruções foram
+aplicadas em cada UC e em cada seção afetada.
+
+INSTRUÇÕES:
 {custom_instructions}
+
+---
+"""
+        # Recall curto que vou colar dentro da seção 5 (Casos de Uso)
+        # pra que o LLM veja isso NA HORA de gerar cada UC.
+        _short = custom_instructions.strip().replace('\n', ' ')
+        if len(_short) > 800:
+            _short = _short[:800] + '...'
+        custom_recall_short = f"""
+
+### 🔴 LEMBRETE — INSTRUÇÕES CUSTOMIZADAS DO USUÁRIO PARA CASOS DE USO:
+
+As instruções abaixo (também dadas no topo) DEVEM ser aplicadas EM CADA UC individual
+que você gerar. Se elas pedem subseções (ex.: Autenticação, LGPD, Auditoria, Riscos),
+essas subseções DEVEM aparecer LITERAL EM CADA UC — não é aceitável concentrar tudo
+em uma seção isolada e alegar cobertura.
+
+> {_short}
 
 ---
 """
@@ -242,7 +276,7 @@ Para CADA requisito funcional identificado no documento de requisitos:
 ---
 
 ## 5. Casos de Uso
-{f'''
+{custom_recall_short}{f'''
 ### 🚨 REGRAS ABSOLUTAS — VIOLAÇÃO INVALIDA O DOCUMENTO:
 
 **PROIBIÇÕES ABSOLUTAS — NUNCA ESCREVA:**
@@ -307,6 +341,8 @@ Para CADA caso de uso (MÍNIMO 10):
 |----|--------------|---------------------|
 | E1 | [erro real que pode ocorrer] | [mensagem exata exibida ao usuário + ação disponível ex: botão "Tentar novamente"] |
 | E2 | [outro erro possível] | [tratamento e recuperação] |
+
+{('#### 🔴 Subseções Específicas Pedidas pelas Instruções Customizadas' + chr(10) + chr(10) + 'Se as INSTRUÇÕES CUSTOMIZADAS DO USUÁRIO (no topo do prompt e recallada na seção 5) pediram subseções específicas para cada UC (ex.: Autenticação/Autorização, Dados Sensíveis LGPD, Registros de Auditoria, Riscos de Segurança e mitigações), você DEVE incluir essas subseções AQUI para cada UC — com conteúdo real e específico deste UC (não copiado de outros).' + chr(10)) if custom_instructions and custom_instructions.strip() else ''}
 
 #### Wireframe da Interface
 
@@ -558,7 +594,7 @@ O documento DEVE conter EXATAMENTE estas 14 seções numeradas:
 ☐ Seção 12 (Glossário) presente?
 ☐ Seção 13 (Rastreabilidade) presente com MATRIZ?
 ☐ Seção 14 (Apêndices) presente?
-
+{('☐ 🔴 INSTRUÇÕES CUSTOMIZADAS DO USUÁRIO aplicadas em CADA UC individual (não só em uma seção isolada)?' + chr(10) + '☐ 🔴 Se as INSTRUÇÕES CUSTOMIZADAS pediram NOVA SEÇÃO transversal, ela existe LITERAL no documento com o título exato?' + chr(10) + '☐ 🔴 Cada UC contém as subseções específicas pedidas (ex.: Autenticação, LGPD, Auditoria, Riscos), com conteúdo REAL e DIFERENTE por UC?' + chr(10)) if custom_instructions and custom_instructions.strip() else ''}
 ## FORMATO DE SAÍDA
 
 - Comece DIRETAMENTE com o cabeçalho: "# Especificação Funcional - {project_name}"
