@@ -1071,9 +1071,24 @@ design_petri_net:
     REGRAS OBRIGATÓRIAS (siga TODAS):
     1. Use chaves SEMPRE em PORTUGUÊS: "lugares", "transicoes", "arcos", "agentes". NUNCA escreva "places", "transitions", "arcs", "agents".
 
-    2. Para cada task em tasks_json gere UM lugar (id P1, P2, ...) e UMA transição (id T1, T2, ...). O lugar representa o estado "task pronta para executar"; a transição representa o disparo da execução pelo agente CrewAI.
+    2. 🔴 COBERTURA COMPLETA — REGRA CRÍTICA: Para CADA task em tasks_json (SEM EXCEÇÃO)
+       gere UM lugar (id P1, P2, ...) representando "task pronta" E UMA transição de execução
+       (id T_<task_name>). Se tasks_json tem N tasks, então DEVEM existir no mínimo N
+       transições cujo nome contém o nome da task, cada uma com agentId E task_id preenchidos.
+       Transições auxiliares (T_start, T_join_*, T_fim) são ADICIONAIS a essas N — não
+       substituem. Antes de responder CONTE quantas tasks estão em tasks_json e VERIFIQUE
+       que sua rede tem transição de execução para CADA UMA delas. Não simplifique nem
+       agrupe tasks — cada task_id do tasks.yaml deve mapear 1:1 a uma transição.
 
-    3. Cada lugar associado a uma task DEVE ter "agentId" preenchido com o id do agente responsável (o mesmo id presente em agents_json/agents.yaml). Lugares de início/fim podem ter agentId=null.
+    3. 🔴 AGENTE OBRIGATÓRIO EM CADA TRANSIÇÃO DE EXECUÇÃO: Cada transição de execução
+       DEVE ter os campos "agente_id" e "task_id" preenchidos:
+         - "agente_id": o id do agente responsável, buscado no campo agent: do tasks.yaml
+           (mesmo id presente em agents_json)
+         - "task_id": o nome (snake_case) da task correspondente, exatamente como aparece
+           em tasks_json
+       Lugares que representam "task pronta" também DEVEM ter agentId preenchido.
+       Transições auxiliares (T_start, T_join_*, T_fim) e o lugar P0/P_fim podem ter
+       agente_id=null e task_id=null.
 
     4. O PRIMEIRO lugar P0 ("Início do Fluxo") recebe tokens=1 e agentId=null. Demais lugares iniciam com tokens=0.
 
@@ -1150,13 +1165,16 @@ design_petri_net:
     {
       "nome": "<nome descritivo da rede>",
       "lugares": [{"id": "P1", "nome": "<label legível>", "tokens": <int>, "input_data": {}, "agentId": "<agent_id|null>", "logica": "<string JS>"}],
-      "transicoes": [{"id": "T1", "nome": "<label>", "guard": "<expr JS ou ''>", "prioridade": 1}],
+      "transicoes": [{"id": "T1", "nome": "<label>", "guard": "<expr JS ou ''>", "prioridade": 1, "agente_id": "<agent_id|null>", "task_id": "<task_id|null>"}],
       "arcos": [{"origem": "<id>", "destino": "<id>", "peso": 1}],
       "agentes": [{"id": "<agent_id>", "nome": "<label>"}]
     }
     Apenas o JSON, sem texto adicional. Campos visuais (coordenadas, delay, etc.) serão preenchidos pelo backend.
 
     AUTOVERIFICAÇÃO antes de responder:
+    - [ ] 🔴 CONTEI as tasks em tasks_json? Existe transição de execução para CADA UMA (nome contém task_name + task_id preenchido)?
+    - [ ] 🔴 Cada transição de execução tem agente_id preenchido (não null)?
+    - [ ] 🔴 Cada agente listado em "agentes" é referenciado por PELO MENOS 1 transição?
     - [ ] Toda transição tem ≥1 arco de entrada E ≥1 arco de saída? (exceto T_start saindo de P0)
     - [ ] Nenhuma transição tem mais que 3 saídas paralelas?
     - [ ] Para cada dependência declarada em dependencies, existe um caminho P_A → T → P_B no grafo?
