@@ -203,13 +203,36 @@ async def generate_code(
     state["project_name"] = state.get("project_name") or "Sistema Agêntico"
     state["use_deepseek"] = True
 
-    # Carrega agent_task_spec_document (markdown) se foi informado — permite o
-    # adapter Python parsear a coluna `| Tools |` e amarrar tools por task/agente.
-    if request.agent_task_spec_session_id:
-        from app.database import get_agent_task_spec_session
-        ats_session = get_agent_task_spec_session(request.agent_task_spec_session_id)
+    # Carrega agent_task_spec_document (markdown) — permite o adapter Python
+    # parsear a coluna `| Tools |` e amarrar tools por task/agente.
+    # Se o frontend não passou, tenta descobrir a session mais recente do
+    # projeto (frontend antigo tem só 3 selects e não expõe esse campo).
+    from app.database import get_agent_task_spec_session, get_db_connection
+    ats_id = request.agent_task_spec_session_id
+    if not ats_id:
+        try:
+            with get_db_connection() as _conn:
+                _cur = _conn.cursor(dictionary=True)
+                _cur.execute(
+                    "SELECT id FROM agent_task_specification_sessions "
+                    "WHERE project_id=%s AND status='completed' "
+                    "AND agent_task_spec_document IS NOT NULL "
+                    "AND CHAR_LENGTH(agent_task_spec_document) > 0 "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (project_id,),
+                )
+                _row = _cur.fetchone()
+                _cur.close()
+                if _row:
+                    ats_id = _row["id"]
+                    print(f"[CODE-GEN] agent_task_spec_session_id auto-descoberto: {ats_id}")
+        except Exception as _e:
+            print(f"[CODE-GEN] falha ao auto-descobrir agent_task_spec: {_e}")
+    if ats_id:
+        ats_session = get_agent_task_spec_session(ats_id)
         if ats_session and ats_session.get("agent_task_spec_document"):
             state["agent_task_spec_document"] = ats_session["agent_task_spec_document"]
+            print(f"[CODE-GEN] spec_md carregado: {len(ats_session['agent_task_spec_document'])} chars")
 
     session_id = str(uuid.uuid4())
     session_name = request.session_name or f"code_gen_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
