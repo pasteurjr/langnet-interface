@@ -32,7 +32,7 @@ DEVE conter os passos SQL EXPLÍCITOS respeitando o schema acima. Se a descripti
 documento MD já tem os passos SQL, COPIE-OS textualmente para o YAML. Se não tem
 (descrição genérica), VOCÊ deve gerar os passos SQL corretos com base no schema.
 
-Exemplo para uma task cadastrar_persona_alvo em schema normalizado:
+Exemplo para uma task cadastrar_persona_alvo em schema normalizado com PK UUID:
 
 ```yaml
 cadastrar_persona_alvo:
@@ -48,25 +48,32 @@ cadastrar_persona_alvo:
       - objecoes: List[String]
       - palavras_chave: List[String]
 
-    Process steps:
-      1. INSERT INTO personas(nome, descricao) VALUES(%s, %s) fazendo os parametros
-         nome = {{nome}} e descricao = {{descricao}}. Capture o id gerado
-         (usando SELECT id FROM personas WHERE nome = {{nome}} ORDER BY created_at DESC LIMIT 1
-         ou LAST_INSERT_ID()).
-      2. Para CADA canal em {{canais}}:
-         INSERT INTO canais(persona_id, nome_canal) VALUES(persona_id, canal)
-      3. Para CADA problema em {{problemas}}:
-         INSERT INTO problemas(persona_id, descricao) VALUES(persona_id, problema)
-      4. Para CADA gatilho em {{gatilhos_de_compra}}:
-         INSERT INTO gatilhos_de_compra(persona_id, descricao) VALUES(persona_id, gatilho)
-      5. Idem para {{objecoes}} → tabela objecoes e {{palavras_chave}} → tabela palavras_chave
-      6. Retornar persona_id (do INSERT em personas) + status "sucesso"
+    Process steps (⚠️ schema usa CHAR(36) UUID — LAST_INSERT_ID() SEMPRE retorna
+    0 e é INÚTIL; capture o id via SELECT após INSERT):
+      1. INSERT: chame database_tool com
+         query="INSERT INTO personas(nome, descricao) VALUES(%s, %s)"
+         params=[{{nome}}, {{descricao}}]
+      2. CAPTURE o id UUID recém-gerado: chame database_tool com
+         query="SELECT id FROM personas WHERE nome = %s ORDER BY created_at DESC LIMIT 1"
+         params=[{{nome}}]
+         O tool devolverá [{"id": "uuid-real"}]. Guarde esse "uuid-real"
+         numa variável chamada persona_id (NUNCA use a string "LAST_INSERT_ID()").
+      3. Para CADA canal em {{canais}}, chame database_tool com
+         query="INSERT INTO canais(persona_id, nome_canal) VALUES(%s, %s)"
+         params=[persona_id, canal]
+      4. Idem para {{problemas}}, {{gatilhos_de_compra}}, {{objecoes}}, {{palavras_chave}}
+         (usando o persona_id capturado no passo 2, sempre com params separados).
+      5. Retornar persona_id (UUID real capturado no passo 2) + status "sucesso".
 
   expected_output: >
     Retornar um texto em formato JSON contendo as seguintes keys:
-    - persona_id: UUID (ID retornado pelo INSERT em personas)
+    - persona_id: UUID real capturado via SELECT após INSERT (não LAST_INSERT_ID())
     - status: String (sucesso ou erro)
 ```
+
+⚠️ Regra ABSOLUTA: se o schema tem PK CHAR(36) com DEFAULT UUID() (padrão do
+Data Model gerado), NUNCA escreva LAST_INSERT_ID() nas descriptions —
+SEMPRE use SELECT id ... ORDER BY created_at DESC LIMIT 1.
 
 ⚠ NÃO GERE INSERTs com colunas inexistentes. Consulte o schema acima para
 CADA tabela antes de escrever os Process steps. Se o input tem lista mas a

@@ -79,8 +79,16 @@ Regras derivadas deste schema (aplique em cada task que persiste dados):
 
 3. Use nomes EXATOS de tabela e coluna do schema (case-sensitive).
 
-4. Para FKs, sempre CAPTURE o id retornado pelo INSERT anterior e passe como
-   parâmetro no INSERT filho (via LAST_INSERT_ID() ou SELECT do próprio nome).
+4. Para FKs, sempre CAPTURE o id retornado pelo INSERT anterior. 🔴 REGRA CRÍTICA:
+   - Se a tabela usa PK do tipo CHAR(36) com DEFAULT UUID() ou similar (UUID),
+     LAST_INSERT_ID() do MySQL SEMPRE RETORNA 0 e é INÚTIL. Nesses casos USE
+     SEMPRE: SELECT id FROM {tabela} WHERE {coluna_unica}=%s ORDER BY created_at DESC LIMIT 1
+     (onde {coluna_unica} é um campo UNIQUE tipo nome, para localizar a linha recém-inserida)
+   - Só use LAST_INSERT_ID() se a PK for INT AUTO_INCREMENT (raro no schema
+     gerado pelo Data Model).
+   - Antes de escrever a task, LEIA o schema acima e VERIFIQUE o tipo da PK.
+     Se for CHAR(36)/UUID, use SELECT. Se for AUTO_INCREMENT INT, pode usar
+     LAST_INSERT_ID().
 
 5. Se o schema tem constraints/UNIQUE, mencione na description como lidar com
    duplicatas (ex.: "se nome_canal já existir, faça UPDATE em vez de INSERT").
