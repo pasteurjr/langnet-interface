@@ -144,13 +144,44 @@ async def execute_agent_task_spec_generation(
 
         spec_document = spec_session["specification_document"]
 
+        # 1.5 Buscar schema_sql do Data Model mais recente do projeto — permite
+        # o Agent-Task Spec conhecer a estrutura REAL de tabelas e gerar task
+        # descriptions com INSERTs corretos (crítico p/ schemas normalizados).
+        data_model_schema_sql = ""
+        try:
+            with get_db_connection() as _c:
+                _cur = _c.cursor(dictionary=True)
+                _cur.execute("""
+                    SELECT ss.project_id
+                    FROM execution_specification_sessions ss
+                    WHERE ss.id = %s
+                    LIMIT 1
+                """, (request.specification_session_id,))
+                _prow = _cur.fetchone()
+                if _prow:
+                    _proj = _prow["project_id"]
+                    _cur.execute("""
+                        SELECT schema_sql FROM data_model_sessions
+                        WHERE project_id=%s AND schema_sql IS NOT NULL
+                          AND CHAR_LENGTH(schema_sql) > 0
+                        ORDER BY created_at DESC LIMIT 1
+                    """, (_proj,))
+                    _dm = _cur.fetchone()
+                    if _dm:
+                        data_model_schema_sql = _dm["schema_sql"]
+                        print(f"[AGENT_TASK_SPEC] Data Model schema carregado ({len(data_model_schema_sql)} chars)")
+                _cur.close()
+        except Exception as _e:
+            print(f"[AGENT_TASK_SPEC] warning: falha ao carregar Data Model schema: {_e}")
+
         # 2. Construir prompt
         prompt = build_agent_task_spec_prompt(
             specification_document=spec_document,
             detail_level=request.detail_level.value,
             max_agents=request.max_agents,
             frameworks=request.frameworks,
-            custom_instructions=request.custom_instructions
+            custom_instructions=request.custom_instructions,
+            data_model_schema_sql=data_model_schema_sql,
         )
 
         # 3. Salvar mensagem de início

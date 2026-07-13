@@ -2,7 +2,7 @@
 Prompt para Gerar tasks.yaml a partir de Documento de Especificação de Agentes/Tarefas
 """
 
-def get_tasks_yaml_prompt(agent_task_spec_document: str, custom_instructions: str = "") -> str:
+def get_tasks_yaml_prompt(agent_task_spec_document: str, custom_instructions: str = "", data_model_schema_sql: str = "") -> str:
     """
     Gera o prompt para criação de tasks.yaml
 
@@ -19,6 +19,59 @@ TAREFA: Transformar a ESPECIFICAÇÃO DE TAREFAS (Seção 3 do documento MD) em 
 
 DOCUMENTO MD (Seção 3 - Tarefas):
 {agent_task_spec_document}
+
+{f'''🔴 SCHEMA REAL DO BANCO DE DADOS (fonte oficial da estrutura):
+
+```sql
+{data_model_schema_sql}
+```
+
+REGRA CRÍTICA — SQL EM PROCESS STEPS:
+Quando uma task persiste dados (INSERT/UPDATE/DELETE), o campo `description → Process steps`
+DEVE conter os passos SQL EXPLÍCITOS respeitando o schema acima. Se a description do
+documento MD já tem os passos SQL, COPIE-OS textualmente para o YAML. Se não tem
+(descrição genérica), VOCÊ deve gerar os passos SQL corretos com base no schema.
+
+Exemplo para uma task cadastrar_persona_alvo em schema normalizado:
+
+```yaml
+cadastrar_persona_alvo:
+  agent: persona_manager_agent
+  description: >
+    Cadastrar persona-alvo no banco respeitando o schema normalizado.
+    Input data format:
+      - nome: String
+      - descricao: String
+      - problemas: List[String]
+      - canais: List[String]
+      - gatilhos_de_compra: List[String]
+      - objecoes: List[String]
+      - palavras_chave: List[String]
+
+    Process steps:
+      1. INSERT INTO personas(nome, descricao) VALUES(%s, %s) fazendo os parametros
+         nome = {{nome}} e descricao = {{descricao}}. Capture o id gerado
+         (usando SELECT id FROM personas WHERE nome = {{nome}} ORDER BY created_at DESC LIMIT 1
+         ou LAST_INSERT_ID()).
+      2. Para CADA canal em {{canais}}:
+         INSERT INTO canais(persona_id, nome_canal) VALUES(persona_id, canal)
+      3. Para CADA problema em {{problemas}}:
+         INSERT INTO problemas(persona_id, descricao) VALUES(persona_id, problema)
+      4. Para CADA gatilho em {{gatilhos_de_compra}}:
+         INSERT INTO gatilhos_de_compra(persona_id, descricao) VALUES(persona_id, gatilho)
+      5. Idem para {{objecoes}} → tabela objecoes e {{palavras_chave}} → tabela palavras_chave
+      6. Retornar persona_id (do INSERT em personas) + status "sucesso"
+
+  expected_output: >
+    Retornar um texto em formato JSON contendo as seguintes keys:
+    - persona_id: UUID (ID retornado pelo INSERT em personas)
+    - status: String (sucesso ou erro)
+```
+
+⚠ NÃO GERE INSERTs com colunas inexistentes. Consulte o schema acima para
+CADA tabela antes de escrever os Process steps. Se o input tem lista mas a
+tabela pai NÃO tem coluna array (é normalizada), gere INSERT em cadeia.
+''' if data_model_schema_sql else ''}
 
 FORMATO tasks.yaml (seguir EXATAMENTE o padrão do framework):
 

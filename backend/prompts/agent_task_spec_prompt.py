@@ -12,7 +12,8 @@ def build_agent_task_spec_prompt(
     detail_level: str = "balanced",
     max_agents: int = 10,
     frameworks: List[str] = ["CrewAI"],
-    custom_instructions: Optional[str] = None
+    custom_instructions: Optional[str] = None,
+    data_model_schema_sql: Optional[str] = None,
 ) -> str:
     """
     Constrói prompt para gerar especificação de agentes e tarefas
@@ -40,6 +41,65 @@ especificando TODOS os agentes e tarefas necessários para implementar o sistema
 ## ESPECIFICAÇÃO FUNCIONAL (FONTE PRIMÁRIA)
 
 {specification_document}
+
+{f'''## 🔴 DATA MODEL DO BANCO (SCHEMA REAL — FONTE OFICIAL DA ESTRUTURA DE DADOS)
+
+⚠️ CRÍTICO: Este é o schema REAL que o database_tool vai encontrar. As tasks que
+persistirem dados DEVEM respeitar EXATAMENTE esta estrutura de tabelas e colunas.
+Se o Data Model normaliza dados em múltiplas tabelas (ex.: uma persona com
+tabelas filhas para canais, problemas, gatilhos), as tasks descriptions DEVEM
+gerar múltiplos INSERTs em cadeia (persona → canais_da_persona → problemas → etc),
+NÃO um único INSERT com colunas array.
+
+```sql
+{data_model_schema_sql}
+```
+
+Regras derivadas deste schema (aplique em cada task que persiste dados):
+
+1. LEIA as colunas de CADA tabela envolvida antes de gerar a description. NUNCA
+   invente colunas (ex.: NÃO tente inserir "canais" numa tabela persona que só
+   tem id/nome/descricao — canais deve ir em tabela separada).
+
+2. Para dados de input que são LISTAS/ARRAYS (ex.: input `canais: List[str]`), se
+   o schema tem tabela filha, a task DEVE fazer UM INSERT por item da lista,
+   apontando FK pro registro principal recém-criado. Ex.:
+
+   Se input é {{"nome": "X", "canais": ["linkedin","email"]}} e schema tem:
+     personas(id, nome, ...)
+     canais(id, persona_id FK, nome_canal)
+
+   A description da task DEVE explicitar:
+   ```
+   1. INSERT INTO personas (nome, descricao) VALUES (...); capture o id gerado
+   2. Para CADA canal na lista, INSERT INTO canais (persona_id, nome_canal) VALUES (...)
+   3. Idem para problemas, gatilhos_de_compra, objecoes, palavras_chave
+   4. Retornar persona_id + status
+   ```
+
+3. Use nomes EXATOS de tabela e coluna do schema (case-sensitive).
+
+4. Para FKs, sempre CAPTURE o id retornado pelo INSERT anterior e passe como
+   parâmetro no INSERT filho (via LAST_INSERT_ID() ou SELECT do próprio nome).
+
+5. Se o schema tem constraints/UNIQUE, mencione na description como lidar com
+   duplicatas (ex.: "se nome_canal já existir, faça UPDATE em vez de INSERT").
+
+6. 🔴 REGRA MAIS IMPORTANTE — ONDE COLOCAR OS PASSOS SQL:
+   A tabela **Descrição** de cada task (campo "Descrição" na tabela |Atributo|Especificação|
+   dentro do Bloco `#### T-XXX-YYY`) DEVE conter EXPLICITAMENTE os PASSOS SQL,
+   NÃO uma frase genérica "criar novo perfil".
+
+   ❌ ERRADO (genérico demais — vai virar código bugado no tasks.yaml):
+   | **Descrição** | Criar um novo perfil do cliente-alvo. |
+
+   ✅ CERTO (SQL steps explícitos que a task deve executar):
+   | **Descrição** | 1. INSERT INTO personas(nome, descricao) VALUES(%s, %s); capture LAST_INSERT_ID().  2. Para cada canal em input.canais: INSERT INTO canais(persona_id, nome_canal) VALUES(id, canal).  3. Para cada problema em input.problemas: INSERT INTO problemas(persona_id, descricao) VALUES(id, prob).  4. Idem para gatilhos_de_compra, objecoes, palavras_chave.  5. Retornar persona_id, status. |
+
+   Faça isso para TODA task que persiste dados. Isso é obrigatório para o LLM
+   do próximo estágio (generate_tasks_yaml) conseguir gerar Process steps
+   corretos que o CrewAI Agent vai executar de verdade contra o banco.
+''' if data_model_schema_sql else ''}
 
 ## FRAMEWORKS SUPORTADOS
 

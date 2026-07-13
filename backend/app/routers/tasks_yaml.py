@@ -76,13 +76,34 @@ async def generate_tasks_yaml(
 
     create_tasks_yaml_session(session_data)
 
+    # Busca schema_sql do Data Model mais recente do projeto — permite ao LLM
+    # gerar Process steps SQL corretos respeitando o schema real das tabelas.
+    _schema_sql = ""
+    try:
+        from app.database import get_db_connection as _gdb
+        with _gdb() as _c:
+            _cur = _c.cursor(dictionary=True)
+            _cur.execute("""
+                SELECT schema_sql FROM data_model_sessions
+                WHERE project_id=%s AND schema_sql IS NOT NULL
+                  AND CHAR_LENGTH(schema_sql) > 0
+                ORDER BY created_at DESC LIMIT 1
+            """, (spec_session["project_id"],))
+            _r = _cur.fetchone()
+            if _r:
+                _schema_sql = _r["schema_sql"]
+            _cur.close()
+    except Exception as _e:
+        print(f"[TASKS_YAML] warning: falha ao carregar schema: {_e}")
+
     # Background task
     background_tasks.add_task(
         execute_tasks_yaml_generation,
         session_id,
         spec_session["agent_task_spec_document"],
         request.custom_instructions,
-        user_id
+        user_id,
+        _schema_sql,
     )
 
     return {
@@ -96,7 +117,8 @@ async def execute_tasks_yaml_generation(
     session_id: str,
     agent_task_spec_document: str,
     custom_instructions: Optional[str],
-    user_id: str
+    user_id: str,
+    data_model_schema_sql: str = "",
 ):
     """
     Background task: Gera tasks.yaml via LLM
@@ -104,10 +126,15 @@ async def execute_tasks_yaml_generation(
     try:
         print(f"\n{'='*80}")
         print(f"[TASKS_YAML] Starting generation for session {session_id}")
+        print(f"[TASKS_YAML] schema_sql: {len(data_model_schema_sql)} chars")
         print(f"{'='*80}\n")
 
         # Construir prompt
-        prompt = get_tasks_yaml_prompt(agent_task_spec_document, custom_instructions or "")
+        prompt = get_tasks_yaml_prompt(
+            agent_task_spec_document,
+            custom_instructions or "",
+            data_model_schema_sql=data_model_schema_sql,
+        )
 
         print(f"[TASKS_YAML] Calling LLM...")
         start_time = datetime.now()
