@@ -2437,6 +2437,20 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
         await _send(ws, "error", {{"task_name": task_name, "error": f"task '{{task_name}}' não definida em tasks.yaml"}})
         return
 
+    # Deterministic bypass: se adapters.py define <task>_deterministic, roda
+    # direto em Python (sem CrewAI/LLM). Isso resolve o travamento do modelo
+    # local em cadeias longas de tool calls que interrompia CRUD em cascata.
+    det_fn = getattr(adapters_module, f"{{task_name}}_deterministic", None)
+    if callable(det_fn):
+        try:
+            payload = input_data if isinstance(input_data, dict) else {{}}
+            loop = asyncio.get_running_loop()
+            det_result = await loop.run_in_executor(None, det_fn, payload)
+            await _send(ws, "task_completed", {{"task_name": task_name, "result": det_result}})
+        except Exception as _exc:
+            await _send(ws, "error", {{"task_name": task_name, "error": str(_exc), "traceback": traceback.format_exc()}})
+        return
+
     agent_id = task_cfg.get("agent") or task_cfg.get("agent_id")
     if not agent_id:
         await _send(ws, "error", {{"task_name": task_name, "error": "task sem agente vinculado"}})
@@ -3140,7 +3154,7 @@ def _parse_task_description_to_python(desc: str) -> str:
     # Optionally preceded by "Para CADA <it> em {<lista>}:" for loops.
     query_re = _re.compile(r'query="([^"]+)"')
     params_re = _re.compile(r'params=\[([^\]]*)\]')
-    loop_re = _re.compile(r'Para CADA\s+(\w+)\s+em\s+\{(\w+)\}\s*:', _re.I)
+    loop_re = _re.compile(r'Para CADA\s+([\wÀ-ÿ]+)\s+em\s+\{(\w+)\}\s*:', _re.I | _re.U)
     capture_re = _re.compile(r'Guarde em\s+(\w+)', _re.I)
 
     # Normalize: work line-by-line, sliding a small state (inside a loop or not).
@@ -3155,7 +3169,11 @@ def _parse_task_description_to_python(desc: str) -> str:
         loop_list = None
         if loop_m:
             in_loop = True
-            loop_item = loop_m.group(1)  # canal, problema, ...
+            # Normalize accents so the emitted variable name is a valid Python
+            # identifier that also matches the string used inside params=[...].
+            _raw_item = loop_m.group(1)
+            import unicodedata as _ud
+            loop_item = _ud.normalize('NFKD', _raw_item).encode('ascii', 'ignore').decode('ascii')
             loop_list = loop_m.group(2)  # canais, problemas, ...
             i += 1  # move past the "Para CADA" line
             # skip lines until we find a query=
@@ -3675,6 +3693,16 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Reescreve todos os `<task>_input_func` gerados pelo LLM pra sempre passar
     # o `state["input_data"]` como inputs do agente (evita hardcode/exemplo do LLM).
     adapters_py = _rewrite_input_funcs_pass_input_data(adapters_py)
+
+    # Gera funções <task>_deterministic(input_data) parseando os passos SQL
+    # canonicais das descriptions do tasks.yaml. O websocket_server chama
+    # essas funções antes do agente CrewAI quando existem — modelos locais
+    # como Qwen2.5-coder-32b travam depois de ~4 tool calls sequenciais em
+    # cadeia, então CRUD determinístico em Python é a única forma robusta
+    # de executar tasks de persistência em cascata.
+    _det_snippet = _generate_deterministic_adapters(tasks_yaml)
+    if _det_snippet:
+        adapters_py = (adapters_py.rstrip() + "\n" + _det_snippet)
 
     # Injeta a lista de tools no agents.yaml — o LLM comumente deixa `tools: []`,
     # matando qualquer capacidade real do agente. Bindings vêm do agent_task_spec.
