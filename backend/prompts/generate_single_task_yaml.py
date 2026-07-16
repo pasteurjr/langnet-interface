@@ -82,6 +82,18 @@ def _parse_single_block(raw: str) -> Optional[Dict[str, str]]:
             fields["description"] = val
         elif key == "agent":
             fields["agent"] = val
+            # Extract snake_case agent name from "AG-XX (Human Name)" pattern.
+            # The tasks.yaml expects the snake_case identifier, not the AG-XX id.
+            paren = re.search(r'\(([^)]+)\)', val)
+            if paren:
+                human = paren.group(1).strip()
+                snake = re.sub(r'[^a-z0-9]+', '_', human.lower()).strip('_')
+                if snake and not snake.endswith('_agent'):
+                    snake = f"{snake}_agent"
+                fields["agent_snake"] = snake
+            else:
+                # already snake_case? use as-is
+                fields["agent_snake"] = val
         elif key == "tools":
             fields["tools"] = val
         elif "input" in key and "schema" in key:
@@ -246,7 +258,10 @@ REGRAS ABSOLUTAS:
        expected_output: >
          <descrição textual em prosa dos campos do JSON>
 3. Indentação: 2 espaços. Use `>` para blocos multiline.
-4. Placeholders: {{{{variavel}}}} (chaves duplas).
+4. Placeholders: uma chave só ao redor do nome, ex: substitua o nome do
+   parametro por chave-abre + nome + chave-fecha, formato CrewAI oficial.
+   Nunca use duas ou quatro chaves — o CrewAI trata isso como literal
+   e a task quebra em runtime.
 """
 
 _SQL_RULES = """
@@ -291,12 +306,12 @@ cadastrar_pessoa:
     Process steps:
       1. INSERT: chame database_tool com
          query="INSERT INTO pessoas(nome) VALUES(%s)"
-         params=[{{nome}}]
+         params=[{nome}]
       2. Capture o id UUID: chame database_tool com
          query="SELECT id FROM pessoas WHERE nome=%s ORDER BY created_at DESC LIMIT 1"
-         params=[{{nome}}]
+         params=[{nome}]
          Guarde em pessoa_id (NUNCA use LAST_INSERT_ID()).
-      3. Para CADA telefone em {{telefones}}:
+      3. Para CADA telefone em {telefones}:
          chame database_tool com
          query="INSERT INTO telefones(pessoa_id, numero) VALUES(%s, %s)"
          params=[pessoa_id, telefone]
@@ -308,7 +323,7 @@ cadastrar_pessoa:
     - status: String (sucesso ou erro)
 ```
 
-⚠️ ATENÇÃO CRÍTICA: use EXATAMENTE duas chaves `{{nome}}` — nem uma, nem quatro.
+Note o formato dos placeholders acima: exatamente UMA chave por variável.
 """
 
 
@@ -336,11 +351,16 @@ def build_single_task_prompt(
     if retry_hint:
         retry_block = f"\n⚠️ RETRY — na tentativa anterior você esqueceu: {retry_hint}\nCorrija agora.\n"
 
+    # Prefer the snake_case agent id extracted from "AG-XX (Human Name)" —
+    # the tasks.yaml agent field must reference the agents.yaml key, which
+    # is always the snake_case name (never the AG-XX id).
+    agent_val = task.get('agent_snake') or task.get('agent', '')
+
     task_block = f"""## TASK A GERAR
 
 **ID:** {task.get('id', '')}
 **Nome (chave YAML):** {task_name}
-**Agent:** {task.get('agent', '')}
+**Agent (use EXATAMENTE este valor em `agent:`):** {agent_val}
 **Descrição (do ATS):** {task.get('description', '')}
 **Input Schema:** {task.get('input_schema', '')}
 **Output Schema:** {task.get('output_schema', '')}
