@@ -56,7 +56,7 @@ cadastrar_persona_alvo:
       2. CAPTURE o id UUID recém-gerado: chame database_tool com
          query="SELECT id FROM personas WHERE nome = %s ORDER BY created_at DESC LIMIT 1"
          params=[{{nome}}]
-         O tool devolverá [{"id": "uuid-real"}]. Guarde esse "uuid-real"
+         O tool devolverá [{{"id": "uuid-real"}}]. Guarde esse "uuid-real"
          numa variável chamada persona_id (NUNCA use a string "LAST_INSERT_ID()").
       3. Para CADA canal em {{canais}}, chame database_tool com
          query="INSERT INTO canais(persona_id, nome_canal) VALUES(%s, %s)"

@@ -122,6 +122,11 @@ def get_llm(use_deepseek: bool = False):
             from crewai import LLM as CrewLLM
             lm_base = os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1")
             lm_model = os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b")
+            # CrewAI/LiteLLM exige provider prefix "openai/" para APIs OpenAI-compatible.
+            # O app/llm.py (OpenAI SDK direto) rejeita esse prefix, então mantemos o
+            # .env sem prefix e adicionamos aqui só para o CrewAI LLM.
+            if lm_model and not lm_model.startswith("openai/") and "/" not in lm_model:
+                lm_model = f"openai/{lm_model}"
             print(f"[LangNet] Using LM Studio at {lm_base} — model={lm_model}")
             _llm_cache[cache_key] = CrewLLM(
                 model=lm_model,
@@ -2294,8 +2299,11 @@ def _build_llm_flash() -> LLM:
     if prov == "lmstudio":
         # LM Studio API OpenAI-compatible. Sem custo por token.
         # Modelo FAST (mesmo do reasoning aqui — LM Studio típico só tem R1 carregado).
+        _m = os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b")
+        if _m and not _m.startswith("openai/") and "/" not in _m:
+            _m = f"openai/{{_m}}"
         return LLM(
-            model=os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b"),
+            model=_m,
             api_key=os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
             base_url=os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1"),
             temperature=0.7,
@@ -2318,8 +2326,11 @@ def _build_llm_pro() -> LLM:
     prov = _current_provider()
     if prov == "lmstudio":
         # R1 já raciocina por padrão — sem flag necessário. Mesmo modelo do flash aqui.
+        _m = os.getenv("LMSTUDIO_MODEL_NAME_PRO", os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b"))
+        if _m and not _m.startswith("openai/") and "/" not in _m:
+            _m = f"openai/{{_m}}"
         return LLM(
-            model=os.getenv("LMSTUDIO_MODEL_NAME_PRO", os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b")),
+            model=_m,
             api_key=os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
             base_url=os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1"),
             temperature=0.3,

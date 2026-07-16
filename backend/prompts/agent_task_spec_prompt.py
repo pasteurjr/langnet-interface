@@ -82,8 +82,8 @@ Regras derivadas deste schema (aplique em cada task que persiste dados):
 4. Para FKs, sempre CAPTURE o id retornado pelo INSERT anterior. 🔴 REGRA CRÍTICA:
    - Se a tabela usa PK do tipo CHAR(36) com DEFAULT UUID() ou similar (UUID),
      LAST_INSERT_ID() do MySQL SEMPRE RETORNA 0 e é INÚTIL. Nesses casos USE
-     SEMPRE: SELECT id FROM {tabela} WHERE {coluna_unica}=%s ORDER BY created_at DESC LIMIT 1
-     (onde {coluna_unica} é um campo UNIQUE tipo nome, para localizar a linha recém-inserida)
+     SEMPRE: SELECT id FROM {{tabela}} WHERE {{coluna_unica}}=%s ORDER BY created_at DESC LIMIT 1
+     (onde {{coluna_unica}} é um campo UNIQUE tipo nome, para localizar a linha recém-inserida)
    - Só use LAST_INSERT_ID() se a PK for INT AUTO_INCREMENT (raro no schema
      gerado pelo Data Model).
    - Antes de escrever a task, LEIA o schema acima e VERIFIQUE o tipo da PK.

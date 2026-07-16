@@ -37,8 +37,11 @@ def _get_llm():
     provider = (os.getenv("LLM_PROVIDER") or "deepseek").lower()
 
     if provider == "lmstudio":
+        lm_model = os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b")
+        if lm_model and not lm_model.startswith("openai/") and "/" not in lm_model:
+            lm_model = f"openai/{lm_model}"
         _llm_cache[key] = CrewLLM(
-            model=os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b"),
+            model=lm_model,
             api_key=os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
             base_url=os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1"),
             temperature=0.2,

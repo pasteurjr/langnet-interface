@@ -18,6 +18,11 @@ from app.database import (
 from app.routers.auth import get_current_user
 from app.llm import get_llm_response_async
 from prompts.generate_tasks_yaml import get_tasks_yaml_prompt
+from prompts.generate_single_task_yaml import (
+    parse_task_blocks, parse_schema_tables, select_relevant_tables,
+    build_sub_schema, needs_persistence, validate_task_yaml,
+    build_single_task_prompt, extract_task_block,
+)
 from prompts.review_tasks_yaml import get_review_tasks_yaml_prompt
 
 router = APIRouter(prefix="/tasks-yaml", tags=["tasks-yaml"])
@@ -121,7 +126,18 @@ async def execute_tasks_yaml_generation(
     data_model_schema_sql: str = "",
 ):
     """
-    Background task: Gera tasks.yaml via LLM
+    Background task: Gera tasks.yaml via LLM.
+
+    Estratégia atual (chunked):
+      1. Parseia tasks do ATS.
+      2. Parseia schema em tabelas individuais.
+      3. Para cada task: seleciona sub-schema relevante, chama LLM com prompt
+         focado em UMA task, valida (INSERT/UPDATE/DELETE presente se persistir),
+         retenta 1x com hint em caso de falha.
+      4. Concatena todas em tasks.yaml final.
+
+    Fallback: se >50% das tasks falharem mesmo após retry, cai pro single-shot
+    legado (get_tasks_yaml_prompt).
     """
     try:
         print(f"\n{'='*80}")
@@ -129,36 +145,44 @@ async def execute_tasks_yaml_generation(
         print(f"[TASKS_YAML] schema_sql: {len(data_model_schema_sql)} chars")
         print(f"{'='*80}\n")
 
-        # Construir prompt
-        prompt = get_tasks_yaml_prompt(
-            agent_task_spec_document,
-            custom_instructions or "",
-            data_model_schema_sql=data_model_schema_sql,
-        )
-
-        print(f"[TASKS_YAML] Calling LLM...")
         start_time = datetime.now()
 
-        # LLM call
-        tasks_yaml_content = await get_llm_response_async(
-            prompt=prompt,
-            system="Você é um especialista em CrewAI e geração de arquivos YAML.",
-            temperature=0.3,
-            max_tokens=16000
-        )
+        # ── Parse ──
+        task_blocks = parse_task_blocks(agent_task_spec_document)
+        tables = parse_schema_tables(data_model_schema_sql) if data_model_schema_sql else {}
+        print(f"[TASKS_YAML] parsed {len(task_blocks)} tasks, {len(tables)} tables")
+
+        if not task_blocks:
+            print("[TASKS_YAML] ⚠️ no task blocks parsed — falling back to single-shot")
+            tasks_yaml_content = await _fallback_single_shot(
+                agent_task_spec_document, custom_instructions, data_model_schema_sql
+            )
+        else:
+            # ── Chunked per-task generation ──
+            chunks, stats = await _generate_task_by_task(
+                task_blocks, tables, custom_instructions
+            )
+            fail_ratio = stats["failed"] / max(stats["total"], 1)
+            if fail_ratio > 0.5:
+                print(f"[TASKS_YAML] ⚠️ {stats['failed']}/{stats['total']} tasks failed — falling back to single-shot")
+                tasks_yaml_content = await _fallback_single_shot(
+                    agent_task_spec_document, custom_instructions, data_model_schema_sql
+                )
+            else:
+                tasks_yaml_content = "\n".join(chunks)
+                print(f"[TASKS_YAML] chunked OK: {stats['ok']} ok, {stats['retried']} retried, "
+                      f"{stats['failed']} failed, {stats['with_sql']} with SQL")
 
         end_time = datetime.now()
         generation_time_ms = int((end_time - start_time).total_seconds() * 1000)
 
         print(f"[TASKS_YAML] ✅ Generated {len(tasks_yaml_content)} chars in {generation_time_ms}ms")
 
-        # Contar tasks (linhas terminando com :)
+        # Contar tasks (linhas top-level com nome_snake:)
         import re
-        task_matches = re.findall(r'^[a-z_]+:', tasks_yaml_content, re.MULTILINE)
-        # Filtrar para contar apenas tasks (não 'description' ou 'expected_output')
-        total_tasks = len([t for t in task_matches if not t.startswith(('description:', 'expected_output:'))])
+        task_matches = re.findall(r'^[a-z_][\w]*:\s*$', tasks_yaml_content, re.MULTILINE)
+        total_tasks = len(task_matches)
 
-        # Atualizar sessão
         update_tasks_yaml_session(session_id, {
             "status": "completed",
             "tasks_yaml_content": tasks_yaml_content,
@@ -167,14 +191,13 @@ async def execute_tasks_yaml_generation(
             "finished_at": datetime.now()
         })
 
-        # Salvar versão 1
         create_tasks_yaml_version({
             "session_id": session_id,
             "version": 1,
             "tasks_yaml_content": tasks_yaml_content,
             "created_by": user_id,
             "change_type": "initial_generation",
-            "change_description": "Geração inicial do tasks.yaml",
+            "change_description": "Geração inicial do tasks.yaml (chunked por task)",
             "doc_size": len(tasks_yaml_content)
         })
 
@@ -189,6 +212,114 @@ async def execute_tasks_yaml_generation(
             "status": "failed",
             "generation_log": str(e)
         })
+
+
+async def _generate_task_by_task(
+    task_blocks: list,
+    tables: dict,
+    custom_instructions: Optional[str],
+):
+    """
+    Gera 1 task por chamada LLM, com sub-schema focado e retry.
+    Retorna (chunks, stats).
+    """
+    chunks = []
+    stats = {"total": len(task_blocks), "ok": 0, "retried": 0, "failed": 0, "with_sql": 0}
+
+    for idx, task in enumerate(task_blocks, 1):
+        task_name = task.get("name", f"task_{idx}")
+        picked = select_relevant_tables(task, tables)
+        sub_schema = build_sub_schema(picked, tables)
+        pers = needs_persistence(task)
+
+        print(f"[TASKS_YAML] [{idx}/{stats['total']}] {task_name} persist={pers} tables={picked}")
+
+        result = await _generate_one_task_with_retry(task, sub_schema, pers, custom_instructions)
+
+        if result is None:
+            stats["failed"] += 1
+            print(f"[TASKS_YAML]   ❌ {task_name} failed after retry")
+            continue
+
+        chunk, was_retried = result
+        chunks.append(chunk)
+        if was_retried:
+            stats["retried"] += 1
+        stats["ok"] += 1
+        if any(op in chunk for op in ("INSERT INTO", "UPDATE ", "DELETE FROM")):
+            stats["with_sql"] += 1
+
+    return chunks, stats
+
+
+async def _generate_one_task_with_retry(
+    task: dict,
+    sub_schema: str,
+    persistence: bool,
+    custom_instructions: Optional[str],
+):
+    """
+    Gera + valida + retenta 1x. Retorna (yaml_chunk, was_retried) ou None.
+    """
+    task_name = task.get("name", "")
+
+    # Attempt 1
+    prompt = build_single_task_prompt(task, sub_schema, persistence)
+    if custom_instructions:
+        prompt = f"{prompt}\n\n## INSTRUÇÕES ADICIONAIS DO USUÁRIO\n{custom_instructions}"
+
+    raw = await get_llm_response_async(
+        prompt=prompt,
+        system="Você é especialista em CrewAI e YAML. Gere APENAS um bloco YAML de task.",
+        temperature=0.2,
+        max_tokens=3500,
+    )
+    chunk = extract_task_block(task_name, raw or "")
+    ok, reason = validate_task_yaml(task_name, chunk, persistence)
+    if ok:
+        return chunk, False
+
+    print(f"[TASKS_YAML]   ⚠️ attempt 1 failed: {reason} — retrying")
+
+    # Attempt 2 with explicit hint
+    prompt2 = build_single_task_prompt(task, sub_schema, persistence, retry_hint=reason)
+    raw2 = await get_llm_response_async(
+        prompt=prompt2,
+        system="Você é especialista em CrewAI e YAML. Gere APENAS um bloco YAML de task.",
+        temperature=0.1,
+        max_tokens=3500,
+    )
+    chunk2 = extract_task_block(task_name, raw2 or "")
+    ok2, reason2 = validate_task_yaml(task_name, chunk2, persistence)
+    if ok2:
+        return chunk2, True
+
+    # If persistence retry failed but chunk2 is still a valid YAML structure,
+    # keep it (better than nothing — user can refine).
+    if chunk2 and task_name in chunk2 and "description:" in chunk2:
+        print(f"[TASKS_YAML]   ⚠️ retry still no SQL, keeping chunk anyway ({reason2})")
+        return chunk2, True
+
+    return None
+
+
+async def _fallback_single_shot(
+    agent_task_spec_document: str,
+    custom_instructions: Optional[str],
+    data_model_schema_sql: str,
+) -> str:
+    """Original monolithic prompt — used when chunked path can't recover."""
+    prompt = get_tasks_yaml_prompt(
+        agent_task_spec_document,
+        custom_instructions or "",
+        data_model_schema_sql=data_model_schema_sql,
+    )
+    return await get_llm_response_async(
+        prompt=prompt,
+        system="Você é um especialista em CrewAI e geração de arquivos YAML.",
+        temperature=0.3,
+        max_tokens=16000,
+    )
 
 
 # ═══════════════════════════════════════════════════════════
