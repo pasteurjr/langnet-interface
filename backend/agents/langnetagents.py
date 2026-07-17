@@ -3861,7 +3861,28 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
     # 4) App.jsx shell — navegação lateral (telas) + aba Admin (Petri)
     add("frontend/src/App.jsx", _template_business_app(comp_meta, project_name))
 
+    # 5) index.html com Tailwind CDN + Inter (as telas usam classes Tailwind)
+    add("frontend/public/index.html", _template_business_index_html(project_name), "html")
+
     return out
+
+
+def _template_business_index_html(project_name: str) -> str:
+    title = project_name.replace("<", "").replace(">", "")
+    return (
+        '<!DOCTYPE html>\n<html lang="pt-BR">\n<head>\n'
+        '  <meta charset="utf-8" />\n'
+        '  <meta name="viewport" content="width=device-width, initial-scale=1" />\n'
+        '  <meta name="theme-color" content="#4f46e5" />\n'
+        '  <script src="https://cdn.tailwindcss.com"></script>\n'
+        '  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />\n'
+        '  <style>body{font-family:\'Inter\',sans-serif}</style>\n'
+        f'  <title>{title}</title>\n'
+        '</head>\n<body class="bg-slate-100">\n'
+        '  <noscript>JavaScript precisa estar habilitado.</noscript>\n'
+        '  <div id="root"></div>\n'
+        '</body>\n</html>\n'
+    )
 
 
 def _template_ws_client(ws_port: int) -> str:
@@ -3950,39 +3971,51 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
                 payload_lines.append(f'      {json.dumps(f)}: form[{json.dumps(f)}]')
     payload_body = ",\n".join(payload_lines) if payload_lines else ""
 
-    # JSX dos inputs
+    # ── JSX dos inputs (Tailwind) ──
+    INPUT_CLS = "w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+    LABEL_CLS = "block text-sm font-medium text-slate-700 mb-1.5"
     jsx_fields = []
     for c in fields:
         f = c["field"]
         label = c.get("label", f)
         t = c.get("type")
+        wide = ' className="md:col-span-2"' if t == "textarea" else ""
         if t == "textarea":
-            ctrl = f'<textarea style={{S.input}} rows={{3}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+            ctrl = f'<textarea className="{INPUT_CLS}" rows={{2}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
         elif t == "multiselect":
-            ctrl = f'<input style={{S.input}} placeholder="separe por vírgula" value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+            ctrl = f'<input className="{INPUT_CLS}" placeholder="separe por vírgula" value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
         elif t == "number":
-            ctrl = f'<input type="number" style={{S.input}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+            ctrl = f'<input type="number" className="{INPUT_CLS}" value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
         elif t == "date":
-            ctrl = f'<input type="date" style={{S.input}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+            ctrl = f'<input type="date" className="{INPUT_CLS}" value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
         else:
-            ctrl = f'<input style={{S.input}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+            ctrl = f'<input className="{INPUT_CLS}" value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
         jsx_fields.append(
-            f'        <label style={{S.label}}>{label}\n          {ctrl}\n        </label>'
+            f'          <div{wide}>\n'
+            f'            <label className="{LABEL_CLS}">{label}</label>\n'
+            f'            {ctrl}\n'
+            f'          </div>'
         )
-    jsx_fields_str = "\n".join(jsx_fields) if jsx_fields else '        <p style={{color:"#888"}}>Sem campos de entrada.</p>'
+    jsx_fields_str = "\n".join(jsx_fields) if jsx_fields else '          <p className="text-slate-400 text-sm">Sem campos de entrada.</p>'
 
-    # JSX dos readonly (cards)
+    # ── JSX dos readonly (cards de métrica) ──
     jsx_readonly = ""
     if readonly:
         cards = []
         for c in readonly:
             lbl = c.get("label", c.get("field", ""))
-            cards.append(f'          <div style={{S.card}}><div style={{S.cardLabel}}>{lbl}</div><div style={{S.cardValue}}>—</div></div>')
+            cards.append(
+                '          <div className="bg-white rounded-2xl border border-slate-200 p-5">\n'
+                f'            <div className="text-xs text-slate-400 uppercase tracking-wide">{lbl}</div>\n'
+                '            <div className="text-3xl font-bold text-slate-800 mt-1">—</div>\n'
+                '          </div>'
+            )
         jsx_readonly = (
-            '      <div style={S.cards}>\n' + "\n".join(cards) + '\n      </div>\n'
+            '        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">\n'
+            + "\n".join(cards) + '\n        </div>\n'
         )
 
-    # Botão principal
+    # ── Botão principal ──
     if primary:
         target = primary["target"]
         btn_label = primary.get("label", "Executar")
@@ -3997,29 +4030,20 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
             '  };\n'
         )
         primary_btn = (
-            f'        <button style={{S.btn}} disabled={{busy}} onClick={{onPrimary}}>'
-            f'{{busy ? "Processando…" : {json.dumps(btn_label)}}}</button>'
+            '        <div className="mt-6 pt-5 border-t border-slate-100 flex justify-end">\n'
+            '          <button className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60" '
+            f'disabled={{busy}} onClick={{onPrimary}}>{{busy ? "Processando…" : {json.dumps(btn_label)}}}</button>\n'
+            '        </div>'
         )
     else:
         action_fn = '  const onPrimary = () => {};\n'
         primary_btn = ''
 
+    subtitle = f"{'/'.join(screen.get('uc', []))} · {layout}"
+
     return (
         'import React, { useState } from "react";\n'
         'import { runTask, splitList } from "./wsClient";\n\n'
-        'const S = {\n'
-        '  wrap: { maxWidth: 760 },\n'
-        '  h2: { color: "#1976d2", marginTop: 0 },\n'
-        '  label: { display: "block", marginBottom: 14, fontSize: 13, color: "#333", fontWeight: 600 },\n'
-        '  input: { width: "100%", padding: 8, marginTop: 4, border: "1px solid #ccc", borderRadius: 4, fontSize: 13, fontWeight: 400 },\n'
-        '  btn: { background: "#1976d2", color: "white", border: "none", padding: "10px 20px", borderRadius: 4, cursor: "pointer", fontSize: 14, marginTop: 8 },\n'
-        '  result: { background: "#f0f7f0", border: "1px solid #cfe8cf", padding: 12, borderRadius: 4, marginTop: 16, fontFamily: "monospace", fontSize: 12, whiteSpace: "pre-wrap" },\n'
-        '  err: { background: "#fdecea", border: "1px solid #f5c6cb", color: "#b71c1c", padding: 12, borderRadius: 4, marginTop: 16 },\n'
-        '  cards: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 12, marginBottom: 16 },\n'
-        '  card: { background: "#f5f9fc", border: "1px solid #dbe7f0", borderRadius: 8, padding: 14 },\n'
-        '  cardLabel: { fontSize: 12, color: "#678" },\n'
-        '  cardValue: { fontSize: 24, fontWeight: 700, color: "#1976d2" },\n'
-        '};\n\n'
         f'export default function {comp_name}() {{\n'
         f'  const [form, setForm] = useState({{ {init_state} }});\n'
         '  const [result, setResult] = useState(null);\n'
@@ -4028,13 +4052,20 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
         '  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));\n\n'
         + action_fn +
         '\n  return (\n'
-        '    <div style={S.wrap}>\n'
-        f'      <h2 style={{S.h2}}>{name}</h2>\n'
+        '    <div className="max-w-5xl">\n'
+        '      <div className="mb-6">\n'
+        f'        <h1 className="text-xl font-semibold text-slate-800">{name}</h1>\n'
+        f'        <p className="text-xs text-slate-400 mt-0.5">{subtitle}</p>\n'
+        '      </div>\n'
+        '      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-7">\n'
         + jsx_readonly +
-        jsx_fields_str + '\n'
+        '        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">\n'
+        + jsx_fields_str + '\n'
+        '        </div>\n'
         + (primary_btn + '\n' if primary_btn else '') +
-        '      {err && <div style={S.err}>⚠ {err}</div>}\n'
-        '      {result && <div style={S.result}>{JSON.stringify(result, null, 2)}</div>}\n'
+        '      </div>\n'
+        '      {err && <div className="mt-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">⚠ {err}</div>}\n'
+        '      {result && <div className="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3"><pre className="text-xs text-emerald-800 whitespace-pre-wrap">{JSON.stringify(result, null, 2)}</pre></div>}\n'
         '    </div>\n'
         '  );\n'
         '}\n'
@@ -4055,14 +4086,7 @@ def _template_business_app(comp_meta: list, project_name: str) -> str:
         + imports + '\n\n'
         'const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8001";\n\n'
         'const SCREENS = [\n' + items + '\n];\n\n'
-        'const S = {\n'
-        '  app: { fontFamily: \'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif\', minHeight: "100vh", background: "#f5f7fa", display: "flex" },\n'
-        '  side: { width: 240, background: "#0f2942", color: "#cfe0f0", minHeight: "100vh", padding: "16px 0" },\n'
-        '  brand: { color: "white", fontWeight: 700, fontSize: 16, padding: "8px 20px 16px" },\n'
-        '  item: (active) => ({ padding: "10px 20px", cursor: "pointer", fontSize: 13, background: active ? "#1976d2" : "transparent", color: active ? "white" : "#cfe0f0" }),\n'
-        '  sep: { borderTop: "1px solid #1c3a5a", margin: "12px 0" },\n'
-        '  main: { flex: 1, padding: 28, overflow: "auto" },\n'
-        '};\n\n'
+        f'const BRAND = {json.dumps(project_name, ensure_ascii=False)};\n\n'
         'function App() {\n'
         '  const [view, setView] = useState(SCREENS.length ? SCREENS[0].id : "admin");\n'
         '  const [project, setProject] = useState(null);\n\n'
@@ -4072,21 +4096,27 @@ def _template_business_app(comp_meta: list, project_name: str) -> str:
         '      if (p) fetch(`${BACKEND_URL}/api/projects/${p.id}`).then((r) => r.json()).then((x) => setProject(x.project));\n'
         '    }).catch(() => {});\n'
         '  }, []);\n\n'
-        '  const current = SCREENS.find((s) => s.id === view);\n\n'
+        '  const current = SCREENS.find((s) => s.id === view);\n'
+        '  const itemCls = (active) => "px-5 py-2.5 cursor-pointer text-sm " + (active ? "bg-indigo-600 text-white font-medium" : "text-slate-300 hover:bg-slate-800");\n\n'
         '  return (\n'
-        '    <div style={S.app}>\n'
-        '      <div style={S.side}>\n'
-        f'        <div style={{S.brand}}>{{{json.dumps(project_name, ensure_ascii=False)}}}</div>\n'
-        '        {SCREENS.map((s) => (\n'
-        '          <div key={s.id} style={S.item(view === s.id)} onClick={() => setView(s.id)}>{s.label}</div>\n'
-        '        ))}\n'
-        '        <div style={S.sep} />\n'
-        '        <div style={S.item(view === "admin")} onClick={() => setView("admin")}>⚙ Admin / Petri</div>\n'
-        '      </div>\n'
-        '      <div style={S.main}>\n'
+        '    <div className="flex min-h-screen bg-slate-100" style={{fontFamily:"Inter,sans-serif"}}>\n'
+        '      <aside className="w-60 bg-slate-900 flex flex-col shrink-0">\n'
+        '        <div className="px-5 py-4 text-white font-bold text-base flex items-center gap-2">\n'
+        '          <span className="w-6 h-6 rounded bg-indigo-500 inline-flex items-center justify-center text-sm">{BRAND.slice(0,1)}</span>\n'
+        '          {BRAND}\n'
+        '        </div>\n'
+        '        <nav className="mt-1 flex-1 overflow-y-auto">\n'
+        '          {SCREENS.map((s) => (\n'
+        '            <div key={s.id} className={itemCls(view === s.id)} onClick={() => setView(s.id)}>{s.label}</div>\n'
+        '          ))}\n'
+        '          <div className="border-t border-slate-700 my-2" />\n'
+        '          <div className={itemCls(view === "admin")} onClick={() => setView("admin")}>⚙ Admin / Petri</div>\n'
+        '        </nav>\n'
+        '      </aside>\n'
+        '      <main className="flex-1 p-8 overflow-auto">\n'
         '        {current && <current.Comp />}\n'
-        '        {view === "admin" && (project ? <MainExecutor project={project} onBack={() => {}} /> : <p>Carregando projeto…</p>)}\n'
-        '      </div>\n'
+        '        {view === "admin" && (project ? <MainExecutor project={project} onBack={() => {}} /> : <p className="text-slate-400">Carregando projeto…</p>)}\n'
+        '      </main>\n'
         '    </div>\n'
         '  );\n'
         '}\n\n'

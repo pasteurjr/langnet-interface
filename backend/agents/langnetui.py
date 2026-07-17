@@ -91,8 +91,11 @@ def render_html_to_png_b64(html: str, width: int = 960) -> Optional[str]:
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(args=["--no-sandbox"])
-            page = browser.new_page(viewport={"width": width, "height": 700})
+            page = browser.new_page(viewport={"width": width, "height": 800})
             page.set_content(html, wait_until="networkidle")
+            # Tailwind CDN (JIT) processa as classes via JS após o load — dá um
+            # tempo pra pintar antes de tirar o screenshot.
+            page.wait_for_timeout(1200)
             png = page.screenshot(full_page=True)
             browser.close()
         return "data:image/png;base64," + base64.b64encode(png).decode("ascii")

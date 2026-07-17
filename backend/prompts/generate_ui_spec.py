@@ -201,27 +201,47 @@ REGRAS:
 2. `actions`: o botão principal de salvar/criar deve ter kind "task" e target no
    formato verbo_objeto snake_case (ex.: cadastrar_persona_alvo), casando com o
    nome provável da task do pipeline. Botões de cancelar/voltar usam kind "navigate".
-3. `mockup_html`: HTML COMPLETO e AUTOCONTIDO (com <style> inline), visualmente
-   caprichado (cabeçalho, card, campos com labels, botões destacados). Deve refletir
-   o wireframe ASCII fornecido, mas renderizado como UI real e limpa. Largura ~900px,
-   fonte sans-serif, paleta sóbria (azul #1976d2 pros botões primários). SEM
-   JavaScript, SEM libs externas — só HTML + CSS inline.
+3. `mockup_html`: HTML COMPLETO e AUTOCONTIDO usando **Tailwind CSS via CDN**,
+   com aparência de PRODUTO SaaS moderno e profissional — não um formulário cru.
+   Comece SEMPRE com:
+     <!doctype html><html lang="pt-br"><head><meta charset="utf-8">
+     <script src="https://cdn.tailwindcss.com"></script>
+     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+     <style>body{{font-family:'Inter',sans-serif}}</style></head>
+     <body class="bg-slate-100">
+   DESIGN SYSTEM obrigatório (use estas classes Tailwind consistentemente):
+   - Layout: <div class="flex min-h-screen"> com <aside class="w-60 bg-slate-900 text-slate-300">
+     (menu lateral com o nome do produto no topo e 4-6 itens) + <main class="flex-1">.
+   - Header do conteúdo: <header class="bg-white border-b border-slate-200 px-8 py-4
+     flex items-center justify-between"> com título (text-lg font-semibold text-slate-800)
+     + subtítulo cinza pequeno + botões de ação à direita.
+   - Card: <div class="bg-white rounded-2xl shadow-sm border border-slate-200 p-7">.
+     Use grid (grid grid-cols-2 gap-6) para organizar campos.
+   - Input/textarea/select: class="w-full rounded-lg border border-slate-300 px-3.5 py-2.5
+     text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none".
+     Sempre com <label class="block text-sm font-medium text-slate-700 mb-1.5">.
+   - Botão primário: class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm
+     font-medium shadow-sm hover:bg-indigo-700". Secundário: border border-slate-300
+     text-slate-600 hover:bg-slate-50.
+   - Campos de LISTA (canais, tags, palavras-chave): renderize como CHIPS coloridos
+     (<span class="px-2.5 py-1 rounded-full bg-indigo-50 text-indigo-700 text-xs
+     font-medium border border-indigo-200">LinkedIn ✕</span>) + um chip tracejado "+ adicionar".
+   - Tabelas: <table class="w-full text-sm"> com <thead class="text-xs text-slate-500
+     uppercase border-b"> e linhas com hover:bg-slate-50.
+   Preencha com dados de EXEMPLO plausíveis (não deixe tudo vazio) pra parecer real.
+   SEM JavaScript. Largura do main confortável (~1000px de conteúdo).
 4. Se a tela for de ação agêntica (gerar/classificar/coletar), o layout pode ser
-   "detail" ou "dashboard": mostre os inputs necessários + um botão de disparo + uma
-   área de resultado (placeholder).
+   "detail" ou "dashboard": inputs necessários + botão de disparo (indigo) + uma área
+   de resultado estilizada (bg-slate-50 rounded-xl border p-5 com texto de placeholder).
 5. 🔴 DADOS DE EXIBIÇÃO vs CAMPOS DE ENTRADA — regra crítica:
-   - Em telas "dashboard" (métricas, estatísticas, relatórios, KPIs), os valores
-     numéricos/agregados são EXIBIÇÃO: use type "readonly" e no mockup renderize
-     como CARDS ou linhas de leitura com o número em destaque (ex.: "Impressões
-     1.240"), NUNCA como <input> vazio pra digitar.
-   - Campos de <input>/<textarea>/<select> só aparecem quando o USUÁRIO realmente
-     digita/escolhe um valor (formulários de cadastro/edição, filtros de período,
-     parâmetros de disparo). Uma métrica que o sistema calcula NÃO é input.
-   - Exemplo dashboard de métricas (mockup): grade de cards
-     ┌───────────┐ ┌───────────┐ com <div class="card"><span class="valor">1.240</span>
-     │Impressões │ │ Curtidas  │ <span class="rotulo">Impressões</span></div>, e no
-     │  1.240    │ │    89     │ TOPO um filtro de período (esse sim é input) + botão
-     └───────────┘ └───────────┘ "Atualizar/Coletar".
+   - Em telas "dashboard" (métricas, KPIs, relatórios), os valores são EXIBIÇÃO:
+     type "readonly", renderizados como CARDS Tailwind:
+     <div class="bg-white rounded-2xl border border-slate-200 p-5">
+       <div class="text-xs text-slate-400 uppercase tracking-wide">Impressões</div>
+       <div class="text-3xl font-bold text-slate-800 mt-1">12.480</div>
+       <div class="text-xs text-emerald-600 mt-1">▲ 8% vs. semana anterior</div></div>
+     numa grade grid grid-cols-4 gap-4. NUNCA <input> vazio pra métrica.
+   - Inputs só quando o usuário digita/escolhe (formulários, filtro de período, disparo).
 
 {agentic_note}
 
@@ -318,6 +338,9 @@ def validate_screen(screen: dict) -> Tuple[bool, str]:
         if not screen.get(k):
             return False, f"faltando '{k}'"
     html = screen.get("mockup_html", "")
-    if "<" not in html or "style" not in html.lower():
-        return False, "mockup_html sem HTML/CSS"
+    if "<" not in html or "class=" not in html.lower():
+        return False, "mockup_html sem HTML/classes"
+    # exige Tailwind CDN pra render ficar estilizado
+    if "tailwind" not in html.lower():
+        return False, "mockup_html sem Tailwind CDN"
     return True, "ok"
