@@ -4171,8 +4171,10 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
         for a in (s.get("actions") or []):
             if a.get("kind") in ("task", "crud") and a.get("target"):
                 target = a["target"]; break
-        module = task_modules.get(_resolve_module_task(target, task_modules)) if target else None
-        module = module or _infer_module(s)
+        # Menu: SEMPRE nos 6 grupos canônicos (Cadastros/Conteúdo/Publicação/
+        # Engajamento/Relatórios/Integrações). Os módulos finos do agent_task_spec
+        # (15+) fragmentavam o menu — não são usados para agrupar.
+        module = _infer_module(s, kind)
 
         if kind == "crud":
             src = _crud_screen(s, comp_name, entity, model.get(entity, {}))
@@ -4207,21 +4209,24 @@ def _resolve_module_task(target, task_modules):
     return best if best_s >= 2 else target
 
 
-_MODULE_KW = [
-    ("Cadastros", ("persona", "usuario", "permiss", "pilar", "cadastr")),
-    ("Conteúdo", ("calendario", "conteudo", "conteúdo", "tema", "sugest", "revis", "fato")),
-    ("Publicação", ("agendar", "agendamento", "publica")),
-    ("Engajamento", ("metric", "métric", "coment", "resposta", "lead", "engaj")),
-    ("Relatórios", ("relat", "export")),
-    ("Integrações", ("google", "calendar", "sincron", "ide")),
-]
-
-def _infer_module(screen: dict) -> str:
+def _infer_module(screen: dict, kind: str = "") -> str:
+    """Mapeia a tela em UM dos 6 grupos canônicos do menu. Ordem de prioridade
+    resolve sobreposições (ex.: 'exportar calendário' é Relatórios, não Conteúdo)."""
     name = (screen.get("name", "") + " " + screen.get("id", "")).lower()
-    for mod, kws in _MODULE_KW:
-        if any(k in name for k in kws):
-            return mod
-    return "Geral"
+    has = lambda *kws: any(k in name for k in kws)
+    if kind == "report" or has("relat", "export"):
+        return "Relatórios"
+    if has("google", "sincron", " ide", "integra"):
+        return "Integrações"
+    if has("persona", "usuario", "usuário", "permiss", "pilar", "cadastr"):
+        return "Cadastros"
+    if has("agendar", "agendamento", "publica"):
+        return "Publicação"
+    if has("metric", "métric", "coment", "resposta", "lead", "engaj", "classific"):
+        return "Engajamento"
+    if has("calendario", "calendário", "conteudo", "conteúdo", "tema", "sugest", "revis", "fato"):
+        return "Conteúdo"
+    return "Cadastros"
 
 
 def _template_business_index_html(project_name: str) -> str:
@@ -4333,6 +4338,7 @@ export default function %COMP%() {
   const [editId, setEditId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [confirmId, setConfirmId] = useState(null);
+  const [detail, setDetail] = useState(null);
   const [err, setErr] = useState(null);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
@@ -4343,6 +4349,11 @@ export default function %COMP%() {
   useEffect(() => { load(); }, []);
 
   const novo = () => { setForm(emptyForm()); setEditId(null); setErr(null); setMode("form"); };
+  const visualizar = async (id) => {
+    setErr(null);
+    try { const r = await runTask(T.get, { id }); setDetail(r); setMode("view"); }
+    catch (e) { setErr(e.message); }
+  };
   const editar = async (id) => {
     setErr(null);
     try {
@@ -4384,11 +4395,12 @@ export default function %COMP%() {
 
       {mode === "list" && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <div className="px-4 py-2.5 text-xs text-slate-500 border-b border-slate-100 bg-slate-50/50">{rows.length} registro(s)</div>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
                 {COLS.map((c) => <th key={c} className="text-left px-4 py-3 font-semibold">{c}</th>)}
-                <th className="px-4 py-3 text-right">Ações</th>
+                <th className="px-4 py-3 text-center w-40">Ações</th>
               </tr>
             </thead>
             <tbody>
@@ -4398,21 +4410,47 @@ export default function %COMP%() {
               {rows.map((row, i) => (
                 <tr key={row.id || i} className="border-b border-slate-100 hover:bg-slate-50">
                   {COLS.map((c) => <td key={c} className="px-4 py-2.5 text-slate-700">{String(row[c] ?? "")}</td>)}
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                    <button className="text-indigo-600 hover:underline mr-3" onClick={() => editar(row.id)}>Editar</button>
+                  <td className="px-4 py-2 text-center whitespace-nowrap">
                     {confirmId === row.id ? (
-                      <span>
-                        <button className="text-red-600 font-medium mr-1" onClick={() => excluir(row.id)}>Confirmar</button>
-                        <button className="text-slate-500" onClick={() => setConfirmId(null)}>✕</button>
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="text-xs text-slate-500">Excluir?</span>
+                        <button className="px-2.5 py-1 rounded-md bg-red-600 text-white text-xs font-medium hover:bg-red-700" onClick={() => excluir(row.id)}>Sim</button>
+                        <button className="px-2.5 py-1 rounded-md border border-slate-300 text-slate-600 text-xs hover:bg-slate-100" onClick={() => setConfirmId(null)}>Não</button>
                       </span>
                     ) : (
-                      <button className="text-red-600 hover:underline" onClick={() => setConfirmId(row.id)}>Excluir</button>
+                      <span className="inline-flex items-center gap-1.5">
+                        <button title="Visualizar" className="px-2.5 py-1 rounded-md border border-slate-200 text-slate-600 hover:bg-slate-100 inline-flex items-center gap-1" onClick={() => visualizar(row.id)}>👁 Ver</button>
+                        <button title="Editar" className="px-2.5 py-1 rounded-md border border-indigo-200 text-indigo-600 hover:bg-indigo-50 inline-flex items-center gap-1" onClick={() => editar(row.id)}>✎ Editar</button>
+                        <button title="Excluir" className="px-2.5 py-1 rounded-md border border-red-200 text-red-600 hover:bg-red-50 inline-flex items-center gap-1" onClick={() => setConfirmId(row.id)}>🗑 Excluir</button>
+                      </span>
                     )}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {mode === "view" && detail && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-7 max-w-3xl">
+          <h2 className="text-base font-semibold text-slate-700 mb-5">Detalhes do registro</h2>
+          <dl className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {FIELDS.map((fd) => {
+              let v = detail[fd.key];
+              if (Array.isArray(v)) v = v.join(", ");
+              return (
+                <div key={fd.key} className={fd.type === "textarea" ? "md:col-span-2" : ""}>
+                  <dt className="text-xs text-slate-400 uppercase tracking-wide">{fd.label}</dt>
+                  <dd className="text-sm text-slate-800 mt-0.5 break-words">{v == null || v === "" ? "—" : String(v)}</dd>
+                </div>
+              );
+            })}
+          </dl>
+          <div className="mt-6 pt-5 border-t border-slate-100 flex justify-end gap-2">
+            <button className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" onClick={() => setMode("list")}>← Voltar</button>
+            <button className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700" onClick={() => editar(detail.id)}>✎ Editar</button>
+          </div>
         </div>
       )}
 
