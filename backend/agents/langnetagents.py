@@ -3766,7 +3766,332 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         # README.md.tpl e docker-compose.yml.tpl vão pra raiz
         files.append(f)
 
+    # === Cara A: telas de negócio reais a partir do ui_spec (se existir) ===
+    # Gera componentes React por tela e SUBSTITUI o App.jsx do template para
+    # que a UI de negócio seja a principal e o executor de Petri vire aba Admin.
+    ui_spec = state.get("ui_spec") or {}
+    if ui_spec and ui_spec.get("screens"):
+        screen_files = _generate_business_screens(ui_spec, ws_port, project_name, tasks_yaml)
+        # Remove o App.jsx do template (vamos sobrescrever)
+        files = [f for f in files if f["path"] != "frontend/src/App.jsx"]
+        files.extend(screen_files)
+
     return files
+
+
+def _norm_field(s: str) -> str:
+    """Normaliza um nome de campo pra casar variações: minúsculas, sem acento,
+    sem underscores e sem a stopword 'de' (gatilhos_de_compra ~ gatilhos_compra)."""
+    import unicodedata as _ud
+    s = _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii").lower()
+    s = s.replace("_de_", "_").replace("-", "_")
+    toks = [t for t in s.split("_") if t and t != "de"]
+    return "".join(toks)
+
+
+def _parse_task_input_fields(task_description: str) -> Dict[str, bool]:
+    """Extrai os campos de input de uma task a partir da sua description canônica.
+    Retorna {campo: is_list}. is_list=True quando aparece 'Para CADA x em {campo}'.
+    Fonte de verdade dos nomes que o adapter/determinístico espera."""
+    import re as _re
+    fields: Dict[str, bool] = {}
+    if not task_description:
+        return fields
+    # placeholders {campo}
+    for m in _re.finditer(r'\{(\w+)\}', task_description):
+        fields.setdefault(m.group(1), False)
+    # listas: "Para CADA <item> em {<lista>}"
+    for m in _re.finditer(r'Para CADA\s+[\wÀ-ÿ]+\s+em\s+\{(\w+)\}', task_description, _re.I | _re.U):
+        fields[m.group(1)] = True
+    return fields
+
+
+# ─────────────────────────────────────────────────────────────────────
+# Cara A — geração de telas React de negócio a partir do ui_spec
+# ─────────────────────────────────────────────────────────────────────
+def _pascal_case(s: str) -> str:
+    import re as _re
+    parts = _re.split(r'[^a-zA-Z0-9]+', s or "")
+    return "".join(p[:1].upper() + p[1:] for p in parts if p) or "Screen"
+
+
+def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, tasks_yaml: str = "") -> List[Dict[str, str]]:
+    """Emite os arquivos React das telas de negócio + wsClient + App shell.
+
+    Cada tela vira um componente funcional:
+      - form: inputs controlados por componente, botão que dispara a task/CRUD
+        via WebSocket (ws-server) e exibe o resultado.
+      - dashboard/detail: filtros opcionais + botão de disparo + área de resultado.
+
+    tasks_yaml é a fonte de verdade dos nomes de campo esperados por cada task
+    (o payload do botão é montado com os campos reais da task, casando com os
+    componentes da tela por similaridade de nome).
+    """
+    out: List[Dict[str, str]] = []
+    screens = ui_spec.get("screens", [])
+
+    # Mapa task_name → {campo: is_list} a partir das descriptions do tasks.yaml
+    task_fields: Dict[str, Dict[str, bool]] = {}
+    try:
+        parsed = yaml.safe_load(tasks_yaml) if tasks_yaml else {}
+        if isinstance(parsed, dict):
+            for tname, cfg in parsed.items():
+                if isinstance(cfg, dict):
+                    task_fields[tname] = _parse_task_input_fields(cfg.get("description", "") or "")
+    except Exception:
+        pass
+
+    def add(path, content, lang="javascript"):
+        out.append({"path": path, "content": content if content.endswith("\n") else content + "\n", "language": lang})
+
+    # 1) wsClient.js — helper de chamada ao ws-server
+    add("frontend/src/screens/wsClient.js", _template_ws_client(ws_port))
+
+    # 2) um componente por tela
+    comp_meta = []  # (id, name, comp_name, route)
+    for s in screens:
+        comp_name = _pascal_case(s.get("id") or s.get("name") or "Screen")
+        comp_meta.append((s.get("id"), s.get("name", comp_name), comp_name, s.get("route", "/")))
+        add(f"frontend/src/screens/{comp_name}.jsx", _react_component_for_screen(s, comp_name, task_fields))
+
+    # 3) index.js — re-exporta todos
+    idx_lines = [f'export {{ default as {c} }} from "./{c}";' for _, _, c, _ in comp_meta]
+    add("frontend/src/screens/index.js", "\n".join(idx_lines))
+
+    # 4) App.jsx shell — navegação lateral (telas) + aba Admin (Petri)
+    add("frontend/src/App.jsx", _template_business_app(comp_meta, project_name))
+
+    return out
+
+
+def _template_ws_client(ws_port: int) -> str:
+    return (
+        'const WS_URL = process.env.REACT_APP_WS_URL || "ws://localhost:' + str(ws_port) + '";\n\n'
+        '// Dispara uma task no ws-server e resolve com o resultado (task_completed).\n'
+        'export function runTask(taskName, inputData) {\n'
+        '  return new Promise((resolve, reject) => {\n'
+        '    let ws;\n'
+        '    try { ws = new WebSocket(WS_URL); } catch (e) { reject(e); return; }\n'
+        '    const timer = setTimeout(() => { try { ws.close(); } catch (e) {} reject(new Error("timeout")); }, 120000);\n'
+        '    ws.onopen = () => ws.send(JSON.stringify({ type: "execute_task", data: { task_name: taskName, input_data: inputData || {} } }));\n'
+        '    ws.onmessage = (ev) => {\n'
+        '      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }\n'
+        '      if (m.type === "task_completed" || m.type === "task_result") {\n'
+        '        clearTimeout(timer); ws.close(); resolve(m.data && m.data.result !== undefined ? m.data.result : (m.data || {}));\n'
+        '      } else if (m.type === "error") {\n'
+        '        clearTimeout(timer); ws.close(); reject(new Error((m.data && m.data.error) || "erro na task"));\n'
+        '      }\n'
+        '    };\n'
+        '    ws.onerror = () => { clearTimeout(timer); reject(new Error("WebSocket error")); };\n'
+        '  });\n'
+        '}\n\n'
+        '// Converte "a, b, c" em ["a","b","c"] (campos de lista → tabela filha)\n'
+        'export function splitList(v) {\n'
+        '  if (Array.isArray(v)) return v;\n'
+        '  if (!v) return [];\n'
+        '  return String(v).split(",").map((x) => x.trim()).filter(Boolean);\n'
+        '}\n'
+    )
+
+
+def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optional[Dict[str, Dict[str, bool]]] = None) -> str:
+    """Gera o componente funcional de UMA tela a partir da estrutura do ui_spec.
+
+    Se a ação primária aponta pra uma task conhecida (task_fields), o payload é
+    montado com os NOMES DE CAMPO REAIS DA TASK (fonte de verdade), casando com
+    os componentes da tela por similaridade de nome. Isso evita divergência entre
+    o nome que o LLM da UI escolheu e o nome que o adapter/determinístico lê.
+    """
+    task_fields = task_fields or {}
+    name = screen.get("name", comp_name)
+    layout = screen.get("layout", "form")
+    components = screen.get("components", []) or []
+    actions = screen.get("actions", []) or []
+
+    # Campos que viram estado do form (input controlado)
+    input_types = {"text", "textarea", "number", "date", "select", "multiselect", "checkbox"}
+    fields = [c for c in components if c.get("type") in input_types and c.get("field")]
+    readonly = [c for c in components if c.get("type") == "readonly" or c.get("type") == "table"]
+
+    # Estado inicial
+    init_state = ", ".join(f'{json.dumps(c["field"])}: ""' for c in fields)
+
+    # Ação primária (task/crud). Pega a primeira com kind task/crud.
+    primary = None
+    for a in actions:
+        if a.get("kind") in ("task", "crud") and a.get("target"):
+            primary = a
+            break
+
+    # Índice de campos da tela por nome normalizado → nome do campo no form
+    screen_by_norm = {_norm_field(c["field"]): c["field"] for c in fields}
+    multiselect_norm = {_norm_field(c["field"]) for c in fields if c.get("type") == "multiselect"}
+
+    # Monta payload. Se a task é conhecida, usa os campos DELA (autoritativo).
+    payload_lines = []
+    target_task = primary.get("target") if primary else None
+    tf = task_fields.get(target_task) if target_task else None
+    if tf:
+        for tfield, is_list in tf.items():
+            norm = _norm_field(tfield)
+            src = screen_by_norm.get(norm)  # campo correspondente na tela (se houver)
+            src_expr = f'form[{json.dumps(src)}]' if src else '""'
+            if is_list or norm in multiselect_norm:
+                payload_lines.append(f'      {json.dumps(tfield)}: splitList({src_expr})')
+            else:
+                payload_lines.append(f'      {json.dumps(tfield)}: {src_expr}')
+    else:
+        # Sem task conhecida: usa os campos da tela como estão
+        for c in fields:
+            f = c["field"]
+            if c.get("type") == "multiselect":
+                payload_lines.append(f'      {json.dumps(f)}: splitList(form[{json.dumps(f)}])')
+            else:
+                payload_lines.append(f'      {json.dumps(f)}: form[{json.dumps(f)}]')
+    payload_body = ",\n".join(payload_lines) if payload_lines else ""
+
+    # JSX dos inputs
+    jsx_fields = []
+    for c in fields:
+        f = c["field"]
+        label = c.get("label", f)
+        t = c.get("type")
+        if t == "textarea":
+            ctrl = f'<textarea style={{S.input}} rows={{3}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+        elif t == "multiselect":
+            ctrl = f'<input style={{S.input}} placeholder="separe por vírgula" value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+        elif t == "number":
+            ctrl = f'<input type="number" style={{S.input}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+        elif t == "date":
+            ctrl = f'<input type="date" style={{S.input}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+        else:
+            ctrl = f'<input style={{S.input}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+        jsx_fields.append(
+            f'        <label style={{S.label}}>{label}\n          {ctrl}\n        </label>'
+        )
+    jsx_fields_str = "\n".join(jsx_fields) if jsx_fields else '        <p style={{color:"#888"}}>Sem campos de entrada.</p>'
+
+    # JSX dos readonly (cards)
+    jsx_readonly = ""
+    if readonly:
+        cards = []
+        for c in readonly:
+            lbl = c.get("label", c.get("field", ""))
+            cards.append(f'          <div style={{S.card}}><div style={{S.cardLabel}}>{lbl}</div><div style={{S.cardValue}}>—</div></div>')
+        jsx_readonly = (
+            '      <div style={S.cards}>\n' + "\n".join(cards) + '\n      </div>\n'
+        )
+
+    # Botão principal
+    if primary:
+        target = primary["target"]
+        btn_label = primary.get("label", "Executar")
+        action_fn = (
+            '  const onPrimary = async () => {\n'
+            '    setBusy(true); setResult(null); setErr(null);\n'
+            '    try {\n'
+            '      const payload = {\n' + payload_body + '\n      };\n'
+            f'      const r = await runTask({json.dumps(target)}, payload);\n'
+            '      setResult(r);\n'
+            '    } catch (e) { setErr(e.message); } finally { setBusy(false); }\n'
+            '  };\n'
+        )
+        primary_btn = (
+            f'        <button style={{S.btn}} disabled={{busy}} onClick={{onPrimary}}>'
+            f'{{busy ? "Processando…" : {json.dumps(btn_label)}}}</button>'
+        )
+    else:
+        action_fn = '  const onPrimary = () => {};\n'
+        primary_btn = ''
+
+    return (
+        'import React, { useState } from "react";\n'
+        'import { runTask, splitList } from "./wsClient";\n\n'
+        'const S = {\n'
+        '  wrap: { maxWidth: 760 },\n'
+        '  h2: { color: "#1976d2", marginTop: 0 },\n'
+        '  label: { display: "block", marginBottom: 14, fontSize: 13, color: "#333", fontWeight: 600 },\n'
+        '  input: { width: "100%", padding: 8, marginTop: 4, border: "1px solid #ccc", borderRadius: 4, fontSize: 13, fontWeight: 400 },\n'
+        '  btn: { background: "#1976d2", color: "white", border: "none", padding: "10px 20px", borderRadius: 4, cursor: "pointer", fontSize: 14, marginTop: 8 },\n'
+        '  result: { background: "#f0f7f0", border: "1px solid #cfe8cf", padding: 12, borderRadius: 4, marginTop: 16, fontFamily: "monospace", fontSize: 12, whiteSpace: "pre-wrap" },\n'
+        '  err: { background: "#fdecea", border: "1px solid #f5c6cb", color: "#b71c1c", padding: 12, borderRadius: 4, marginTop: 16 },\n'
+        '  cards: { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 12, marginBottom: 16 },\n'
+        '  card: { background: "#f5f9fc", border: "1px solid #dbe7f0", borderRadius: 8, padding: 14 },\n'
+        '  cardLabel: { fontSize: 12, color: "#678" },\n'
+        '  cardValue: { fontSize: 24, fontWeight: 700, color: "#1976d2" },\n'
+        '};\n\n'
+        f'export default function {comp_name}() {{\n'
+        f'  const [form, setForm] = useState({{ {init_state} }});\n'
+        '  const [result, setResult] = useState(null);\n'
+        '  const [err, setErr] = useState(null);\n'
+        '  const [busy, setBusy] = useState(false);\n'
+        '  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));\n\n'
+        + action_fn +
+        '\n  return (\n'
+        '    <div style={S.wrap}>\n'
+        f'      <h2 style={{S.h2}}>{name}</h2>\n'
+        + jsx_readonly +
+        jsx_fields_str + '\n'
+        + (primary_btn + '\n' if primary_btn else '') +
+        '      {err && <div style={S.err}>⚠ {err}</div>}\n'
+        '      {result && <div style={S.result}>{JSON.stringify(result, null, 2)}</div>}\n'
+        '    </div>\n'
+        '  );\n'
+        '}\n'
+    )
+
+
+def _template_business_app(comp_meta: list, project_name: str) -> str:
+    """App shell: sidebar com telas de negócio + aba Admin (Petri executor)."""
+    imports = "\n".join(f'import {{ {c} }} from "./screens";' for _, _, c, _ in comp_meta) if comp_meta else ""
+    # lista de telas pro menu
+    items = ",\n".join(
+        f'  {{ id: {json.dumps(cid)}, label: {json.dumps(cname)}, Comp: {c} }}'
+        for cid, cname, c, _ in comp_meta
+    )
+    return (
+        'import React, { useEffect, useState } from "react";\n'
+        'import MainExecutor from "./components/MainExecutor";\n'
+        + imports + '\n\n'
+        'const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8001";\n\n'
+        'const SCREENS = [\n' + items + '\n];\n\n'
+        'const S = {\n'
+        '  app: { fontFamily: \'-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif\', minHeight: "100vh", background: "#f5f7fa", display: "flex" },\n'
+        '  side: { width: 240, background: "#0f2942", color: "#cfe0f0", minHeight: "100vh", padding: "16px 0" },\n'
+        '  brand: { color: "white", fontWeight: 700, fontSize: 16, padding: "8px 20px 16px" },\n'
+        '  item: (active) => ({ padding: "10px 20px", cursor: "pointer", fontSize: 13, background: active ? "#1976d2" : "transparent", color: active ? "white" : "#cfe0f0" }),\n'
+        '  sep: { borderTop: "1px solid #1c3a5a", margin: "12px 0" },\n'
+        '  main: { flex: 1, padding: 28, overflow: "auto" },\n'
+        '};\n\n'
+        'function App() {\n'
+        '  const [view, setView] = useState(SCREENS.length ? SCREENS[0].id : "admin");\n'
+        '  const [project, setProject] = useState(null);\n\n'
+        '  useEffect(() => {\n'
+        '    fetch(`${BACKEND_URL}/api/projects`).then((r) => r.json()).then((d) => {\n'
+        '      const p = (d.projects || [])[0];\n'
+        '      if (p) fetch(`${BACKEND_URL}/api/projects/${p.id}`).then((r) => r.json()).then((x) => setProject(x.project));\n'
+        '    }).catch(() => {});\n'
+        '  }, []);\n\n'
+        '  const current = SCREENS.find((s) => s.id === view);\n\n'
+        '  return (\n'
+        '    <div style={S.app}>\n'
+        '      <div style={S.side}>\n'
+        f'        <div style={{S.brand}}>{{{json.dumps(project_name, ensure_ascii=False)}}}</div>\n'
+        '        {SCREENS.map((s) => (\n'
+        '          <div key={s.id} style={S.item(view === s.id)} onClick={() => setView(s.id)}>{s.label}</div>\n'
+        '        ))}\n'
+        '        <div style={S.sep} />\n'
+        '        <div style={S.item(view === "admin")} onClick={() => setView("admin")}>⚙ Admin / Petri</div>\n'
+        '      </div>\n'
+        '      <div style={S.main}>\n'
+        '        {current && <current.Comp />}\n'
+        '        {view === "admin" && (project ? <MainExecutor project={project} onBack={() => {}} /> : <p>Carregando projeto…</p>)}\n'
+        '      </div>\n'
+        '    </div>\n'
+        '  );\n'
+        '}\n\n'
+        'export default App;\n'
+    )
 
 
 def _validate_generated_project(files: List[Dict[str, str]], state: LangNetFullState) -> List[str]:

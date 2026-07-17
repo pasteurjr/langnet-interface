@@ -1,0 +1,145 @@
+.uispec-page {
+  padding: 20px 28px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+.uispec-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #e0e0e0;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+}
+.uispec-header h1 {
+  margin: 0;
+  font-size: 22px;
+  color: #1976d2;
+}
+.uispec-meta {
+  color: #777;
+  font-size: 13px;
+}
+.uispec-actions {
+  display: flex;
+  gap: 8px;
+}
+.btn-primary {
+  background: #1976d2;
+  color: #fff;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.btn-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.btn-approve {
+  background: #2e7d32;
+  color: #fff;
+  border: none;
+  padding: 9px 18px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.uispec-empty {
+  background: #f5f9fc;
+  border: 1px solid #dbe7f0;
+  border-radius: 8px;
+  padding: 28px;
+  color: #456;
+  text-align: center;
+}
+.uispec-body {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 18px;
+}
+.uispec-list {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.uispec-item {
+  padding: 10px 14px;
+  border-bottom: 1px solid #eee;
+  cursor: pointer;
+}
+.uispec-item:hover {
+  background: #f5f9fc;
+}
+.uispec-item.active {
+  background: #e3f2fd;
+  border-left: 3px solid #1976d2;
+}
+.uispec-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #234;
+}
+.uispec-item-meta {
+  font-size: 11px;
+  color: #888;
+  margin-top: 2px;
+}
+.uispec-preview {
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  padding: 18px;
+  background: #fff;
+}
+.uispec-preview h3 {
+  margin-top: 0;
+  color: #234;
+}
+.uispec-mockup {
+  width: 100%;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+.uispec-nomock {
+  padding: 40px;
+  text-align: center;
+  color: #999;
+  background: #fafafa;
+  border-radius: 6px;
+}
+.uispec-struct {
+  margin-top: 16px;
+  font-size: 13px;
+}
+.uispec-struct h4 {
+  margin: 12px 0 6px;
+  color: #1976d2;
+}
+.uispec-struct code {
+  background: #f4f4f4;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+.uispec-chat {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+.uispec-chat input {
+  flex: 1;
+  padding: 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  font-size: 13px;
+}
+.uispec-chat button {
+  background: #1976d2;
+  color: #fff;
+  border: none;
+  padding: 0 20px;
+  border-radius: 5px;
+  cursor: pointer;
+}

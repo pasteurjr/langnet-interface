@@ -11,6 +11,7 @@ import ProjectDetail from "./pages/ProjectDetail";
 import DocumentsPage from "./pages/DocumentsPage";
 import SpecificationPage from "./pages/SpecificationPage";
 import DataModelPage from "./pages/DataModelPage";
+import UISpecPage from "./pages/UISpecPage";
 import SequenciaTarefasPage from "./pages/SequenciaTarefasPage";
 import AgentsPage from "./pages/AgentsPage";
 import TasksPage from "./pages/TasksPage";
@@ -82,6 +83,7 @@ const App: React.FC = () => {
             <Route path="projects/:id/documents" element={<DocumentsPage />} />
             <Route path="projects/:id/spec" element={<SpecificationPage />} />
             <Route path="projects/:id/data-model" element={<DataModelPage />} />
+            <Route path="projects/:id/ui-spec" element={<UISpecPage />} />
             <Route path="projects/:id/agent-task" element={<AgentTaskPage />} />
             <Route path="projects/:id/agents" element={<AgentsPage />} />
             <Route path="projects/:id/tasks" element={<TasksPage />} />
@@ -127,6 +129,8 @@ const App: React.FC = () => {
             <Route path="/specification" element={<SpecificationPage />} />
             <Route path="/data-model" element={<DataModelPage />} />
             <Route path="/project/:projectId/data-model" element={<DataModelPage />} />
+            <Route path="/ui-spec" element={<UISpecPage />} />
+            <Route path="/project/:projectId/ui-spec" element={<UISpecPage />} />
             <Route path="/task-execution-flow" element={<SequenciaTarefasPage />} />
             <Route path="/code" element={<CodePage />} />
             <Route path="/monitoring" element={<MonitoringPage />} />

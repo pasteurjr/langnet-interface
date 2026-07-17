@@ -234,6 +234,27 @@ async def generate_code(
             state["agent_task_spec_document"] = ats_session["agent_task_spec_document"]
             print(f"[CODE-GEN] spec_md carregado: {len(ats_session['agent_task_spec_document'])} chars")
 
+    # Carrega ui_spec (telas de negócio) mais recente do projeto — permite ao
+    # code gen construir a UI real (Cara A) além do executor de Petri (Cara B).
+    try:
+        with get_db_connection() as _conn:
+            _cur = _conn.cursor(dictionary=True)
+            _cur.execute(
+                "SELECT ui_spec_json FROM ui_spec_sessions "
+                "WHERE project_id=%s AND ui_spec_json IS NOT NULL "
+                "ORDER BY created_at DESC LIMIT 1",
+                (project_id,),
+            )
+            _uirow = _cur.fetchone()
+            _cur.close()
+            if _uirow and _uirow.get("ui_spec_json"):
+                import json as _json
+                state["ui_spec"] = _json.loads(_uirow["ui_spec_json"])
+                _n = len(state["ui_spec"].get("screens", []))
+                print(f"[CODE-GEN] ui_spec carregado: {_n} telas de negócio")
+    except Exception as _e:
+        print(f"[CODE-GEN] falha ao carregar ui_spec: {_e}")
+
     session_id = str(uuid.uuid4())
     session_name = request.session_name or f"code_gen_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
 
