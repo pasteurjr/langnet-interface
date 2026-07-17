@@ -2422,24 +2422,21 @@ def _build_task(task_id: str, agent: Agent, description: str) -> Task:
 
 
 async def _send(ws, msg_type: str, data: Any) -> None:
+    # default=str serializa datetime/date/Decimal/UUID vindos do banco (SELECT *).
     await ws.send(json.dumps({{
         "type": msg_type,
         "timestamp": datetime.utcnow().isoformat(),
         "data": data,
-    }}))
+    }}, default=str, ensure_ascii=False))
 
 
 async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
     await _send(ws, "task_start", {{"task_name": task_name, "input_data": input_data}})
 
-    task_cfg = TASKS_CONFIG.get(task_name)
-    if not task_cfg:
-        await _send(ws, "error", {{"task_name": task_name, "error": f"task '{{task_name}}' não definida em tasks.yaml"}})
-        return
-
-    # Deterministic bypass: se adapters.py define <task>_deterministic, roda
-    # direto em Python (sem CrewAI/LLM). Isso resolve o travamento do modelo
-    # local em cadeias longas de tool calls que interrompia CRUD em cascata.
+    # Deterministic-first: se adapters.py define <task>_deterministic, roda direto
+    # em Python (sem CrewAI/LLM). Vale inclusive para tasks CRUD auto-geradas
+    # (listar_/atualizar_/excluir_<entidade>) que NÃO estão no tasks.yaml — por
+    # isso este check vem ANTES da validação em TASKS_CONFIG.
     det_fn = getattr(adapters_module, f"{{task_name}}_deterministic", None)
     if callable(det_fn):
         try:
@@ -2449,6 +2446,11 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             await _send(ws, "task_completed", {{"task_name": task_name, "result": det_result}})
         except Exception as _exc:
             await _send(ws, "error", {{"task_name": task_name, "error": str(_exc), "traceback": traceback.format_exc()}})
+        return
+
+    task_cfg = TASKS_CONFIG.get(task_name)
+    if not task_cfg:
+        await _send(ws, "error", {{"task_name": task_name, "error": f"task '{{task_name}}' não definida em tasks.yaml"}})
         return
 
     agent_id = task_cfg.get("agent") or task_cfg.get("agent_id")
@@ -3140,6 +3142,230 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
     return header + "\n\n".join(generated) + "\n"
 
 
+# ─────────────────────────────────────────────────────────────────────
+# CRUD determinístico completo por entidade (list / obter / atualizar / excluir)
+# ─────────────────────────────────────────────────────────────────────
+_TECH_COLS = {"created_at", "updated_at"}
+
+def _schema_model(schema_sql: str) -> Dict[str, dict]:
+    """Modela o schema: {tabela: {cols:[(nome,tipo)], pk, uniques:[..], children:[(child,fk_col,val_col)]}}."""
+    import re as _re
+    tables = _parse_schema_tables_full(schema_sql)
+    model: Dict[str, dict] = {}
+    # 1ª passada: colunas, pk, uniques
+    for t, ddl in tables.items():
+        cols = []
+        for m in _re.finditer(r'^\s*[`"]?(\w+)[`"]?\s+(CHAR|VARCHAR|TEXT|LONGTEXT|INT|BIGINT|TINYINT|DECIMAL|FLOAT|DOUBLE|DATE|DATETIME|TIMESTAMP|ENUM|GEOMETRY|BOOLEAN|JSON)', ddl, _re.I | _re.M):
+            cols.append((m.group(1), m.group(2).upper()))
+        pk = "id"
+        pkm = _re.search(r'[`"]?(\w+)[`"]?\s+[^\n,]*PRIMARY KEY', ddl, _re.I) or _re.search(r'PRIMARY KEY\s*\(\s*[`"]?(\w+)', ddl, _re.I)
+        if pkm:
+            pk = pkm.group(1)
+        uniques = _re.findall(r'UNIQUE(?:\s+INDEX|\s+KEY)?[^\n(]*\(\s*[`"]?(\w+)', ddl, _re.I)
+        model[t] = {"cols": cols, "pk": pk, "uniques": uniques, "children": [], "ddl": ddl}
+    # 2ª passada: FKs → filhos
+    for t, ddl in tables.items():
+        for m in _re.finditer(r'FOREIGN KEY\s*\(\s*[`"]?(\w+)[`"]?\s*\)\s*REFERENCES\s*[`"]?(\w+)', ddl, _re.I):
+            fk_col, ref = m.group(1), m.group(2)
+            if ref in model:
+                # coluna de valor da filha = 1ª coluna que não é id/fk/técnica
+                val_col = None
+                for cn, _ct in model[t]["cols"]:
+                    if cn in (fk_col, model[t]["pk"]) or cn in _TECH_COLS:
+                        continue
+                    val_col = cn; break
+                model[ref]["children"].append((t, fk_col, val_col))
+    return model
+
+
+def _parse_schema_tables_full(schema_sql: str) -> Dict[str, str]:
+    import re as _re
+    tables: Dict[str, str] = {}
+    if not schema_sql:
+        return tables
+    n = len(schema_sql); i = 0
+    while i < n:
+        m = _re.match(r'\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"]?(\w+)[`"]?\s*\(', schema_sql[i:], _re.I)
+        if m:
+            name = m.group(1); paren = i + m.end() - 1; depth = 1; j = paren + 1
+            while j < n and depth > 0:
+                if schema_sql[j] == '(': depth += 1
+                elif schema_sql[j] == ')': depth -= 1
+                j += 1
+            end = schema_sql.find(';', j)
+            if end < 0: end = n
+            tables[name] = schema_sql[i:end+1].strip(); i = end + 1
+        else:
+            i += 1
+    return tables
+
+
+def _generate_crud_adapters(entities: List[str], schema_sql: str) -> str:
+    """Gera listar_/obter_/atualizar_/excluir_<entidade>_deterministic pra cada
+    entidade que existe no schema, com base nas colunas e tabelas filhas."""
+    model = _schema_model(schema_sql)
+    out_fns: List[str] = []
+    names: List[str] = []
+    conn_block = (
+        "    import os, mysql.connector\n"
+        "    conn = mysql.connector.connect(host=os.getenv('DB_HOST','localhost'),\n"
+        "        port=int(os.getenv('DB_PORT','3306')), user=os.getenv('DB_USER','root'),\n"
+        "        password=os.getenv('DB_PASSWORD',''), database=os.getenv('DB_NAME',''))\n"
+    )
+    seen = set()
+    for ent in entities:
+        if not ent or ent not in model or ent in seen:
+            continue
+        seen.add(ent)
+        m = model[ent]
+        pk = m["pk"]
+        editable = [c for c, t in m["cols"] if c != pk and c not in _TECH_COLS]
+        display = [pk] + [c for c in editable][:5]
+        children = m["children"]
+
+        # LISTAR
+        cols_sql = ", ".join(display)
+        listar = (
+            f"def listar_{ent}_deterministic(input_data):\n"
+            f"    \"\"\"Lista registros de {ent} (auto-gerado).\"\"\"\n"
+            + conn_block +
+            "    try:\n"
+            "        cur = conn.cursor(dictionary=True)\n"
+            f"        cur.execute(\"SELECT {cols_sql} FROM {ent} ORDER BY created_at DESC LIMIT 200\")\n"
+            "        rows = cur.fetchall()\n"
+            "        return {'rows': rows, 'total': len(rows)}\n"
+            "    except Exception as _e:\n"
+            "        return {'status':'erro','error':str(_e)}\n"
+            "    finally:\n"
+            "        try: cur.close()\n"
+            "        except Exception: pass\n"
+            "        conn.close()\n"
+        )
+        out_fns.append(listar); names.append(f"listar_{ent}")
+
+        # CRIAR (main + filhos) — INSERT pai, captura id via SELECT, INSERTs filhos
+        uniq = m["uniques"][0] if m["uniques"] else (editable[0] if editable else pk)
+        ins_cols = ", ".join(editable)
+        ins_ph = ", ".join(["%s"] * len(editable))
+        ins_params = ", ".join(f"input_data.get('{c}')" for c in editable)
+        child_ins = ""
+        for ch, fk, val in children:
+            if not val: continue
+            child_ins += (
+                f"        for _v in (input_data.get('{ch}') or []):\n"
+                f"            cur.execute(\"INSERT INTO {ch}({fk}, {val}) VALUES(%s,%s)\", [_new_id, _v])\n"
+            )
+        criar = (
+            f"def criar_{ent}_deterministic(input_data):\n"
+            f"    \"\"\"Cria um registro de {ent} + filhos (auto-gerado).\"\"\"\n"
+            + conn_block +
+            "    try:\n"
+            "        cur = conn.cursor(dictionary=True)\n"
+            f"        cur.execute(\"INSERT INTO {ent}({ins_cols}) VALUES({ins_ph})\", [{ins_params}])\n"
+            f"        cur.execute(\"SELECT {pk} AS id FROM {ent} WHERE {uniq}=%s ORDER BY created_at DESC LIMIT 1\", [input_data.get('{uniq}')])\n"
+            "        _row = cur.fetchone(); _new_id = _row['id'] if _row else None\n"
+            + child_ins +
+            "        conn.commit()\n"
+            f"        return {{'status':'sucesso','{pk}':_new_id}}\n"
+            "    except Exception as _e:\n"
+            "        conn.rollback(); return {'status':'erro','error':str(_e)}\n"
+            "    finally:\n"
+            "        try: cur.close()\n"
+            "        except Exception: pass\n"
+            "        conn.close()\n"
+        )
+        out_fns.append(criar); names.append(f"criar_{ent}")
+
+        # OBTER (+ filhos)
+        child_fetch = ""
+        for ch, fk, val in children:
+            if not val: continue
+            child_fetch += (
+                f"        cur.execute(\"SELECT {val} FROM {ch} WHERE {fk}=%s\", [_id])\n"
+                f"        item['{ch}'] = [r['{val}'] for r in cur.fetchall()]\n"
+            )
+        obter = (
+            f"def obter_{ent}_deterministic(input_data):\n"
+            f"    \"\"\"Obtém um registro de {ent} + filhos (auto-gerado).\"\"\"\n"
+            + conn_block +
+            "    try:\n"
+            "        cur = conn.cursor(dictionary=True)\n"
+            f"        _id = input_data.get('{pk}') or input_data.get('id')\n"
+            f"        cur.execute(\"SELECT * FROM {ent} WHERE {pk}=%s\", [_id])\n"
+            "        item = cur.fetchone()\n"
+            "        if not item: return {'status':'erro','error':'não encontrado'}\n"
+            + child_fetch +
+            "        return item\n"
+            "    except Exception as _e:\n"
+            "        return {'status':'erro','error':str(_e)}\n"
+            "    finally:\n"
+            "        try: cur.close()\n"
+            "        except Exception: pass\n"
+            "        conn.close()\n"
+        )
+        out_fns.append(obter); names.append(f"obter_{ent}")
+
+        # ATUALIZAR (main + substitui filhos)
+        set_clause = ", ".join(f"{c}=%s" for c in editable)
+        set_params = ", ".join(f"input_data.get('{c}')" for c in editable)
+        child_upd = ""
+        for ch, fk, val in children:
+            if not val: continue
+            # nome da lista no input: usa o nome da tabela filha
+            child_upd += (
+                f"        cur.execute(\"DELETE FROM {ch} WHERE {fk}=%s\", [_id])\n"
+                f"        for _v in (input_data.get('{ch}') or []):\n"
+                f"            cur.execute(\"INSERT INTO {ch}({fk}, {val}) VALUES(%s,%s)\", [_id, _v])\n"
+            )
+        atualizar = (
+            f"def atualizar_{ent}_deterministic(input_data):\n"
+            f"    \"\"\"Atualiza {ent} e substitui filhos (auto-gerado).\"\"\"\n"
+            + conn_block +
+            "    try:\n"
+            "        cur = conn.cursor(dictionary=True)\n"
+            f"        _id = input_data.get('{pk}') or input_data.get('id')\n"
+            f"        cur.execute(\"UPDATE {ent} SET {set_clause} WHERE {pk}=%s\", [{set_params}, _id])\n"
+            + child_upd +
+            "        conn.commit()\n"
+            f"        return {{'status':'sucesso','{pk}':_id}}\n"
+            "    except Exception as _e:\n"
+            "        conn.rollback(); return {'status':'erro','error':str(_e)}\n"
+            "    finally:\n"
+            "        try: cur.close()\n"
+            "        except Exception: pass\n"
+            "        conn.close()\n"
+        )
+        out_fns.append(atualizar); names.append(f"atualizar_{ent}")
+
+        # EXCLUIR (cascade cuida dos filhos)
+        excluir = (
+            f"def excluir_{ent}_deterministic(input_data):\n"
+            f"    \"\"\"Exclui um registro de {ent} (auto-gerado; cascade nos filhos).\"\"\"\n"
+            + conn_block +
+            "    try:\n"
+            "        cur = conn.cursor()\n"
+            f"        _id = input_data.get('{pk}') or input_data.get('id')\n"
+            f"        cur.execute(\"DELETE FROM {ent} WHERE {pk}=%s\", [_id])\n"
+            "        conn.commit()\n"
+            "        return {'status':'sucesso','excluidos':cur.rowcount}\n"
+            "    except Exception as _e:\n"
+            "        conn.rollback(); return {'status':'erro','error':str(_e)}\n"
+            "    finally:\n"
+            "        try: cur.close()\n"
+            "        except Exception: pass\n"
+            "        conn.close()\n"
+        )
+        out_fns.append(excluir); names.append(f"excluir_{ent}")
+
+    if not out_fns:
+        return ""
+    header = (
+        "\n\n# ─── CRUD determinístico completo por entidade (auto-gerado) ───\n"
+        f"# Entidades: {', '.join(sorted(seen))}\n"
+    )
+    return header + "\n\n".join(out_fns) + "\n"
+
+
 def _parse_task_description_to_python(desc: str) -> str:
     """Parses a task description's SQL steps and returns the Python body (indented
     with 8 spaces to fit inside ``try:`` of the wrapper). Returns "" if no SQL."""
@@ -3704,6 +3930,37 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     if _det_snippet:
         adapters_py = (adapters_py.rstrip() + "\n" + _det_snippet)
 
+    # CRUD determinístico completo (listar/obter/atualizar/excluir) por entidade
+    # das telas — permite telas ricas de cadastro (lista + novo + editar + excluir),
+    # não só "salvar". Só gera pra entidades que existem no schema.
+    _schema_sql_cg = state.get("data_model_schema_sql") or ""
+    if not _schema_sql_cg:
+        # tenta do ui_spec/state ou busca a mais recente do projeto
+        try:
+            from app.database import get_db_connection as _gdb2
+            with _gdb2() as _c2:
+                _cur2 = _c2.cursor(dictionary=True)
+                _cur2.execute(
+                    "SELECT schema_sql FROM data_model_sessions WHERE project_id=%s "
+                    "AND schema_sql IS NOT NULL AND CHAR_LENGTH(schema_sql)>0 "
+                    "ORDER BY created_at DESC LIMIT 1", (str(state.get('project_id') or ''),))
+                _r2 = _cur2.fetchone()
+                if _r2:
+                    _schema_sql_cg = _r2["schema_sql"]
+                _cur2.close()
+        except Exception:
+            pass
+    _ui_spec_cg = state.get("ui_spec") or {}
+    _entities = []
+    for _s in (_ui_spec_cg.get("screens") or []):
+        _e = _s.get("entity")
+        if _e and _e not in _entities:
+            _entities.append(_e)
+    if _entities and _schema_sql_cg:
+        _crud_snippet = _generate_crud_adapters(_entities, _schema_sql_cg)
+        if _crud_snippet:
+            adapters_py = adapters_py.rstrip() + "\n" + _crud_snippet
+
     # Injeta a lista de tools no agents.yaml — o LLM comumente deixa `tools: []`,
     # matando qualquer capacidade real do agente. Bindings vêm do agent_task_spec.
     agents_yaml = _inject_tools_into_agents_yaml(agents_yaml, agents_map)
@@ -3771,12 +4028,34 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # que a UI de negócio seja a principal e o executor de Petri vire aba Admin.
     ui_spec = state.get("ui_spec") or {}
     if ui_spec and ui_spec.get("screens"):
-        screen_files = _generate_business_screens(ui_spec, ws_port, project_name, tasks_yaml)
+        # schema pra montar telas CRUD ricas (mesma fonte do CRUD determinístico)
+        _schema_for_ui = locals().get("_schema_sql_cg") or state.get("data_model_schema_sql") or ""
+        # módulos das tasks (pra agrupar o menu lateral)
+        _modules = _parse_task_modules(spec_md)
+        screen_files = _generate_business_screens(ui_spec, ws_port, project_name, tasks_yaml,
+                                                  schema_sql=_schema_for_ui, task_modules=_modules)
         # Remove o App.jsx do template (vamos sobrescrever)
         files = [f for f in files if f["path"] != "frontend/src/App.jsx"]
         files.extend(screen_files)
 
     return files
+
+
+def _parse_task_modules(spec_md: str) -> Dict[str, str]:
+    """Extrai {task_name: módulo} do agent_task_spec (coluna | **Módulo** | e | **Nome** |
+    dentro de cada bloco #### T-...). Usado pra agrupar o menu lateral."""
+    import re as _re
+    modules: Dict[str, str] = {}
+    if not spec_md:
+        return modules
+    for block in _re.split(r'(?=####\s+T-)', spec_md):
+        if not block.startswith("####"):
+            continue
+        nm = _re.search(r'\|\s*\*\*Nome\*\*\s*\|\s*(\w+)\s*\|', block)
+        md = _re.search(r'\|\s*\*\*M[oó]dulo\*\*\s*\|\s*([^|]+?)\s*\|', block)
+        if nm and md:
+            modules[nm.group(1)] = md.group(1).strip()
+    return modules
 
 
 def _norm_field(s: str) -> str:
@@ -3787,6 +4066,26 @@ def _norm_field(s: str) -> str:
     s = s.replace("_de_", "_").replace("-", "_")
     toks = [t for t in s.split("_") if t and t != "de"]
     return "".join(toks)
+
+
+_STOP_TOK = {"de", "do", "da", "o", "a", "e", "por", "com", "novamente", "automatico",
+             "automatica", "automaticas", "automaticamente", "manualmente"}
+
+def _tokens(s: str):
+    """Tokens normalizados (sem acento, sem stopwords) pra casar nomes de task."""
+    import unicodedata as _ud
+    import re as _re
+    s = _ud.normalize("NFKD", str(s or "")).encode("ascii", "ignore").decode("ascii").lower()
+    raw = _re.split(r'[^a-z]+', s)
+    out = []
+    for t in raw:
+        if not t or t in _STOP_TOK:
+            continue
+        # singulariza plural simples
+        if len(t) > 4 and t.endswith("s"):
+            t = t[:-1]
+        out.append(t)
+    return out
 
 
 def _parse_task_input_fields(task_description: str) -> Dict[str, bool]:
@@ -3815,20 +4114,35 @@ def _pascal_case(s: str) -> str:
     return "".join(p[:1].upper() + p[1:] for p in parts if p) or "Screen"
 
 
-def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, tasks_yaml: str = "") -> List[Dict[str, str]]:
+def _classify_screen(screen: dict, entity_exists: bool) -> str:
+    """Classifica a tela: crud | report | agent | form."""
+    name = (screen.get("name", "") + " " + screen.get("id", "")).lower()
+    layout = screen.get("layout", "form")
+    if any(k in name for k in ("relat", "export")):
+        return "report"
+    if entity_exists and layout in ("form", "table", "detail"):
+        return "crud"
+    agent_kw = ("gerar", "gera ", "classific", "coletar", "coleta", "verific", "publicar",
+                "publica", "identific", "sincroniz", "aprovar", "sugest", "revis", "monitor")
+    if any(name.strip().startswith(k) or k in name for k in agent_kw) or layout in ("dashboard", "detail"):
+        return "agent"
+    return "form"
+
+
+def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, tasks_yaml: str = "",
+                               schema_sql: str = "", task_modules: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
     """Emite os arquivos React das telas de negócio + wsClient + App shell.
 
-    Cada tela vira um componente funcional:
-      - form: inputs controlados por componente, botão que dispara a task/CRUD
-        via WebSocket (ws-server) e exibe o resultado.
-      - dashboard/detail: filtros opcionais + botão de disparo + área de resultado.
-
-    tasks_yaml é a fonte de verdade dos nomes de campo esperados por cada task
-    (o payload do botão é montado com os campos reais da task, casando com os
-    componentes da tela por similaridade de nome).
+    Cada tela é classificada e gera um componente rico conforme o tipo:
+      - crud   → lista (tabela + Novo + Editar/Excluir) + formulário (Salvar/Cancelar)
+      - report → filtros + tabela de resultados + Exportar
+      - agent  → inputs + Executar com IA + painel de resultado formatado
+      - form   → formulário simples (fallback)
     """
     out: List[Dict[str, str]] = []
     screens = ui_spec.get("screens", [])
+    task_modules = task_modules or {}
+    model = _schema_model(schema_sql) if schema_sql else {}
 
     # Mapa task_name → {campo: is_list} a partir das descriptions do tasks.yaml
     task_fields: Dict[str, Dict[str, bool]] = {}
@@ -3844,27 +4158,70 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
     def add(path, content, lang="javascript"):
         out.append({"path": path, "content": content if content.endswith("\n") else content + "\n", "language": lang})
 
-    # 1) wsClient.js — helper de chamada ao ws-server
     add("frontend/src/screens/wsClient.js", _template_ws_client(ws_port))
 
-    # 2) um componente por tela
-    comp_meta = []  # (id, name, comp_name, route)
+    comp_meta = []  # (id, name, comp_name, route, kind, module)
     for s in screens:
         comp_name = _pascal_case(s.get("id") or s.get("name") or "Screen")
-        comp_meta.append((s.get("id"), s.get("name", comp_name), comp_name, s.get("route", "/")))
-        add(f"frontend/src/screens/{comp_name}.jsx", _react_component_for_screen(s, comp_name, task_fields))
+        entity = s.get("entity")
+        entity_exists = bool(entity and entity in model)
+        kind = _classify_screen(s, entity_exists)
+        # módulo: pela task alvo → módulo do agent_task_spec, senão heurística
+        target = None
+        for a in (s.get("actions") or []):
+            if a.get("kind") in ("task", "crud") and a.get("target"):
+                target = a["target"]; break
+        module = task_modules.get(_resolve_module_task(target, task_modules)) if target else None
+        module = module or _infer_module(s)
 
-    # 3) index.js — re-exporta todos
-    idx_lines = [f'export {{ default as {c} }} from "./{c}";' for _, _, c, _ in comp_meta]
+        if kind == "crud":
+            src = _crud_screen(s, comp_name, entity, model.get(entity, {}))
+        elif kind == "report":
+            src = _report_screen(s, comp_name, task_fields)
+        elif kind == "agent":
+            src = _agent_screen(s, comp_name, task_fields)
+        else:
+            src = _react_component_for_screen(s, comp_name, task_fields)
+        add(f"frontend/src/screens/{comp_name}.jsx", src)
+        comp_meta.append((s.get("id"), s.get("name", comp_name), comp_name, s.get("route", "/"), kind, module))
+
+    idx_lines = [f'export {{ default as {c} }} from "./{c}";' for _, _, c, _, _, _ in comp_meta]
     add("frontend/src/screens/index.js", "\n".join(idx_lines))
-
-    # 4) App.jsx shell — navegação lateral (telas) + aba Admin (Petri)
     add("frontend/src/App.jsx", _template_business_app(comp_meta, project_name))
-
-    # 5) index.html com Tailwind CDN + Inter (as telas usam classes Tailwind)
     add("frontend/public/index.html", _template_business_index_html(project_name), "html")
-
     return out
+
+
+def _resolve_module_task(target, task_modules):
+    """Casa o alvo (às vezes inventado) com a task real do dict de módulos."""
+    if not target:
+        return target
+    if target in task_modules:
+        return target
+    tset = set(_tokens(target))
+    best, best_s = target, 0
+    for real in task_modules:
+        s = len(tset & set(_tokens(real)))
+        if s > best_s:
+            best, best_s = real, s
+    return best if best_s >= 2 else target
+
+
+_MODULE_KW = [
+    ("Cadastros", ("persona", "usuario", "permiss", "pilar", "cadastr")),
+    ("Conteúdo", ("calendario", "conteudo", "conteúdo", "tema", "sugest", "revis", "fato")),
+    ("Publicação", ("agendar", "agendamento", "publica")),
+    ("Engajamento", ("metric", "métric", "coment", "resposta", "lead", "engaj")),
+    ("Relatórios", ("relat", "export")),
+    ("Integrações", ("google", "calendar", "sincron", "ide")),
+]
+
+def _infer_module(screen: dict) -> str:
+    name = (screen.get("name", "") + " " + screen.get("id", "")).lower()
+    for mod, kws in _MODULE_KW:
+        if any(k in name for k in kws):
+            return mod
+    return "Geral"
 
 
 def _template_business_index_html(project_name: str) -> str:
@@ -3915,6 +4272,390 @@ def _template_ws_client(ws_port: int) -> str:
     )
 
 
+def _resolve_task_target(target, task_fields):
+    """Casa o alvo da ação (às vezes inventado pelo UI Spec) com a task real
+    (chave em task_fields) por similaridade de tokens. Nível de módulo p/ reuso."""
+    if not target or not task_fields:
+        return target
+    if target in task_fields:
+        return target
+    tnorm = _norm_field(target)
+    best, best_score = None, 0
+    for real in task_fields:
+        rnorm = _norm_field(real)
+        shared = len(set(_tokens(target)) & set(_tokens(real)))
+        contains = 1 if (tnorm in rnorm or rnorm in tnorm) else 0
+        score = shared * 2 + contains
+        if score > best_score:
+            best, best_score = real, score
+    return best if best_score >= 2 else target
+
+
+def _humanize(col: str) -> str:
+    s = str(col or "").replace("_", " ").strip()
+    return s[:1].upper() + s[1:] if s else col
+
+
+def _crud_fields(entity_model: dict, screen: dict):
+    """Descritores de campo (main cols editáveis + tabelas filhas) + colunas de lista."""
+    pk = entity_model.get("pk", "id")
+    cols = entity_model.get("cols", [])
+    children = entity_model.get("children", [])
+    coltype = {c: t for c, t in cols}
+    editable = [c for c, t in cols if c != pk and c not in _TECH_COLS and t != "GEOMETRY"]
+    # labels vindos do ui_spec (por nome normalizado)
+    lab = {}
+    for comp in (screen.get("components") or []):
+        if comp.get("field") and comp.get("label"):
+            lab[_norm_field(comp["field"])] = comp["label"]
+    def label_for(k):
+        return lab.get(_norm_field(k), _humanize(k))
+    fields = []
+    for c in editable:
+        t = coltype.get(c, "VARCHAR")
+        ftype = "textarea" if t in ("TEXT", "LONGTEXT") else ("date" if t in ("DATE", "DATETIME", "TIMESTAMP") else ("number" if t in ("INT", "BIGINT", "DECIMAL", "FLOAT", "DOUBLE", "TINYINT") else "text"))
+        fields.append({"key": c, "label": label_for(c), "type": ftype, "list": False})
+    for ch, fk, val in children:
+        if not val:
+            continue
+        fields.append({"key": ch, "label": _humanize(ch), "type": "list", "list": True})
+    display = [pk] + [f["key"] for f in fields if not f["list"]][:4]
+    return fields, display, pk
+
+
+_CRUD_BODY = r'''
+const emptyForm = () => Object.fromEntries(FIELDS.map((f) => [f.key, ""]));
+
+export default function %COMP%() {
+  const [mode, setMode] = useState("list");
+  const [rows, setRows] = useState([]);
+  const [form, setForm] = useState(emptyForm());
+  const [editId, setEditId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmId, setConfirmId] = useState(null);
+  const [err, setErr] = useState(null);
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const load = async () => {
+    try { const r = await runTask(T.list, {}); setRows((r && r.rows) || []); }
+    catch (e) { setErr(e.message); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const novo = () => { setForm(emptyForm()); setEditId(null); setErr(null); setMode("form"); };
+  const editar = async (id) => {
+    setErr(null);
+    try {
+      const r = await runTask(T.get, { id });
+      const f = emptyForm();
+      FIELDS.forEach((fd) => { let v = r ? r[fd.key] : ""; if (Array.isArray(v)) v = v.join(", "); f[fd.key] = v == null ? "" : v; });
+      setForm(f); setEditId(id); setMode("form");
+    } catch (e) { setErr(e.message); }
+  };
+  const excluir = async (id) => {
+    try { await runTask(T.del, { id }); setConfirmId(null); load(); }
+    catch (e) { setErr(e.message); }
+  };
+  const salvar = async () => {
+    setBusy(true); setErr(null);
+    try {
+      const payload = {};
+      FIELDS.forEach((fd) => { payload[fd.key] = fd.list ? splitList(form[fd.key]) : form[fd.key]; });
+      if (editId) { payload.id = editId; await runTask(T.update, payload); }
+      else { await runTask(T.create, payload); }
+      setMode("list"); load();
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const IN = "w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none";
+
+  return (
+    <div className="max-w-6xl">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">%TITLE%</h1>
+          <p className="text-xs text-slate-400 mt-0.5">%SUBTITLE%</p>
+        </div>
+        {mode === "list" && (
+          <button className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700" onClick={novo}>＋ Novo</button>
+        )}
+      </div>
+      {err && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">⚠ {err}</div>}
+
+      {mode === "list" && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                {COLS.map((c) => <th key={c} className="text-left px-4 py-3 font-semibold">{c}</th>)}
+                <th className="px-4 py-3 text-right">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr><td colSpan={COLS.length + 1} className="px-4 py-8 text-center text-slate-400">Nenhum registro. Clique em “＋ Novo”.</td></tr>
+              )}
+              {rows.map((row, i) => (
+                <tr key={row.id || i} className="border-b border-slate-100 hover:bg-slate-50">
+                  {COLS.map((c) => <td key={c} className="px-4 py-2.5 text-slate-700">{String(row[c] ?? "")}</td>)}
+                  <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                    <button className="text-indigo-600 hover:underline mr-3" onClick={() => editar(row.id)}>Editar</button>
+                    {confirmId === row.id ? (
+                      <span>
+                        <button className="text-red-600 font-medium mr-1" onClick={() => excluir(row.id)}>Confirmar</button>
+                        <button className="text-slate-500" onClick={() => setConfirmId(null)}>✕</button>
+                      </span>
+                    ) : (
+                      <button className="text-red-600 hover:underline" onClick={() => setConfirmId(row.id)}>Excluir</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {mode === "form" && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-7 max-w-3xl">
+          <h2 className="text-base font-semibold text-slate-700 mb-5">{editId ? "Editar registro" : "Novo registro"}</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {FIELDS.map((fd) => (
+              <div key={fd.key} className={fd.type === "textarea" ? "md:col-span-2" : ""}>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">{fd.label}</label>
+                {fd.type === "textarea" ? (
+                  <textarea className={IN} rows={2} value={form[fd.key]} onChange={(e) => set(fd.key, e.target.value)} />
+                ) : fd.type === "list" ? (
+                  <input className={IN} placeholder="separe por vírgula" value={form[fd.key]} onChange={(e) => set(fd.key, e.target.value)} />
+                ) : (
+                  <input type={fd.type === "number" ? "number" : fd.type === "date" ? "date" : "text"} className={IN} value={form[fd.key]} onChange={(e) => set(fd.key, e.target.value)} />
+                )}
+              </div>
+            ))}
+          </div>
+          <div className="mt-6 pt-5 border-t border-slate-100 flex justify-end gap-2">
+            <button className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" onClick={() => setMode("list")}>Cancelar</button>
+            <button className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60" disabled={busy} onClick={salvar}>{busy ? "Salvando…" : "Salvar"}</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+'''
+
+
+def _crud_screen(screen: dict, comp_name: str, entity: str, entity_model: dict) -> str:
+    fields, display, pk = _crud_fields(entity_model, screen)
+    T = {
+        "list": f"listar_{entity}", "create": f"criar_{entity}",
+        "update": f"atualizar_{entity}", "get": f"obter_{entity}", "del": f"excluir_{entity}",
+    }
+    header = (
+        'import React, { useState, useEffect } from "react";\n'
+        'import { runTask, splitList } from "./wsClient";\n\n'
+        f'const T = {json.dumps(T)};\n'
+        f'const FIELDS = {json.dumps(fields, ensure_ascii=False)};\n'
+        f'const COLS = {json.dumps(display, ensure_ascii=False)};\n'
+    )
+    body = (_CRUD_BODY
+            .replace("%COMP%", comp_name)
+            .replace("%TITLE%", screen.get("name", comp_name).replace('"', ""))
+            .replace("%SUBTITLE%", f"{'/'.join(screen.get('uc', []))} · cadastro"))
+    return header + body
+
+
+_AGENT_BODY = r'''
+export default function %COMP%() {
+  const [form, setForm] = useState(Object.fromEntries(INPUTS.map((f) => [f.key, ""])));
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const IN = "w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none";
+
+  const executar = async () => {
+    setBusy(true); setResult(null); setErr(null);
+    try { const r = await runTask(TASK, form); setResult(r); }
+    catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+
+  const renderResult = (r) => {
+    if (r == null) return null;
+    if (typeof r === "string") return <p className="text-slate-700 whitespace-pre-wrap">{r}</p>;
+    if (Array.isArray(r)) return <ul className="list-disc pl-5 text-slate-700">{r.map((x, i) => <li key={i}>{typeof x === "object" ? JSON.stringify(x) : String(x)}</li>)}</ul>;
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {Object.entries(r).map(([k, v]) => (
+          <div key={k} className="bg-slate-50 rounded-lg border border-slate-200 p-3">
+            <div className="text-xs text-slate-400 uppercase">{k}</div>
+            <div className="text-sm text-slate-800 mt-0.5 break-words">{typeof v === "object" ? JSON.stringify(v) : String(v)}</div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  return (
+    <div className="max-w-4xl">
+      <div className="mb-6">
+        <h1 className="text-xl font-semibold text-slate-800">%TITLE%</h1>
+        <p className="text-xs text-slate-400 mt-0.5">%SUBTITLE% · executado por agente de IA</p>
+      </div>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-7">
+        {INPUTS.length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+            {INPUTS.map((fd) => (
+              <div key={fd.key}>
+                <label className="block text-sm font-medium text-slate-700 mb-1.5">{fd.label}</label>
+                <input className={IN} value={form[fd.key]} onChange={(e) => set(fd.key, e.target.value)} />
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-3">
+          <button className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60 inline-flex items-center gap-2" disabled={busy} onClick={executar}>
+            {busy && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+            {busy ? "Executando com IA…" : "▷ Executar com IA"}
+          </button>
+          <span className="text-xs text-slate-400">Dispara o agente <code>{TASK}</code></span>
+        </div>
+      </div>
+      {err && <div className="mt-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">⚠ {err}</div>}
+      {result != null && (
+        <div className="mt-5">
+          <h3 className="text-sm font-semibold text-slate-600 mb-2">Resultado</h3>
+          <div className="bg-white rounded-2xl border border-slate-200 p-5">{renderResult(result)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+'''
+
+
+def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
+    actions = screen.get("actions") or []
+    target = None
+    for a in actions:
+        if a.get("kind") in ("task", "crud") and a.get("target"):
+            target = a["target"]; break
+    target = _resolve_task_target(target, task_fields)
+    # inputs = componentes de entrada da tela
+    inp = []
+    for c in (screen.get("components") or []):
+        if c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea") and c.get("field"):
+            inp.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
+    header = (
+        'import React, { useState } from "react";\n'
+        'import { runTask } from "./wsClient";\n\n'
+        f'const TASK = {json.dumps(target or screen.get("id"))};\n'
+        f'const INPUTS = {json.dumps(inp, ensure_ascii=False)};\n'
+    )
+    body = (_AGENT_BODY.replace("%COMP%", comp_name)
+            .replace("%TITLE%", screen.get("name", comp_name).replace('"', ""))
+            .replace("%SUBTITLE%", "/".join(screen.get("uc", []))))
+    return header + body
+
+
+_REPORT_BODY = r'''
+export default function %COMP%() {
+  const [filtros, setFiltros] = useState(Object.fromEntries(FILTROS.map((f) => [f.key, ""])));
+  const [rows, setRows] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const set = (k, v) => setFiltros((f) => ({ ...f, [k]: v }));
+  const IN = "rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none";
+
+  const gerar = async () => {
+    setBusy(true); setErr(null); setRows(null);
+    try {
+      const r = await runTask(TASK, filtros);
+      setRows(r && r.rows ? r.rows : (Array.isArray(r) ? r : (r ? [r] : [])));
+    } catch (e) { setErr(e.message); } finally { setBusy(false); }
+  };
+  const exportarCsv = () => {
+    if (!rows || !rows.length) return;
+    const cols = Object.keys(rows[0]);
+    const csv = [cols.join(",")].concat(rows.map((r) => cols.map((c) => JSON.stringify(r[c] ?? "")).join(","))).join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = "%COMP%.csv"; a.click();
+  };
+
+  return (
+    <div className="max-w-6xl">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">%TITLE%</h1>
+          <p className="text-xs text-slate-400 mt-0.5">%SUBTITLE% · relatório</p>
+        </div>
+        {rows && rows.length > 0 && (
+          <button className="px-4 py-2 rounded-lg border border-slate-300 text-slate-600 text-sm hover:bg-slate-50" onClick={exportarCsv}>⭳ Exportar CSV</button>
+        )}
+      </div>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 mb-5 flex flex-wrap items-end gap-4">
+        {FILTROS.map((fd) => (
+          <div key={fd.key}>
+            <label className="block text-xs font-medium text-slate-500 mb-1">{fd.label}</label>
+            <input type={fd.type || "text"} className={IN} value={filtros[fd.key]} onChange={(e) => set(fd.key, e.target.value)} />
+          </div>
+        ))}
+        <button className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60" disabled={busy} onClick={gerar}>{busy ? "Gerando…" : "Gerar relatório"}</button>
+      </div>
+      {err && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">⚠ {err}</div>}
+      {rows && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+          {rows.length === 0 ? (
+            <div className="px-4 py-8 text-center text-slate-400">Sem dados para os filtros informados.</div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead><tr className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
+                {Object.keys(rows[0]).map((c) => <th key={c} className="text-left px-4 py-3 font-semibold">{c}</th>)}
+              </tr></thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} className="border-b border-slate-100 hover:bg-slate-50">
+                    {Object.keys(rows[0]).map((c) => <td key={c} className="px-4 py-2.5 text-slate-700">{typeof r[c] === "object" ? JSON.stringify(r[c]) : String(r[c] ?? "")}</td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+'''
+
+
+def _report_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
+    actions = screen.get("actions") or []
+    target = None
+    for a in actions:
+        if a.get("kind") in ("task", "crud") and a.get("target"):
+            target = a["target"]; break
+    target = _resolve_task_target(target, task_fields)
+    filt = []
+    for c in (screen.get("components") or []):
+        if c.get("type") in ("date", "select", "text", "number") and c.get("field"):
+            filt.append({"key": c["field"], "label": c.get("label", _humanize(c["field"])),
+                         "type": "date" if c.get("type") == "date" else "text"})
+    if not filt:
+        filt = [{"key": "periodo", "label": "Período", "type": "text"}]
+    header = (
+        'import React, { useState } from "react";\n'
+        'import { runTask } from "./wsClient";\n\n'
+        f'const TASK = {json.dumps(target or screen.get("id"))};\n'
+        f'const FILTROS = {json.dumps(filt, ensure_ascii=False)};\n'
+    )
+    body = (_REPORT_BODY.replace("%COMP%", comp_name)
+            .replace("%TITLE%", screen.get("name", comp_name).replace('"', ""))
+            .replace("%SUBTITLE%", "/".join(screen.get("uc", []))))
+    return header + body
+
+
 def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optional[Dict[str, Dict[str, bool]]] = None) -> str:
     """Gera o componente funcional de UMA tela a partir da estrutura do ui_spec.
 
@@ -3948,9 +4689,36 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
     screen_by_norm = {_norm_field(c["field"]): c["field"] for c in fields}
     multiselect_norm = {_norm_field(c["field"]) for c in fields if c.get("type") == "multiselect"}
 
-    # Monta payload. Se a task é conhecida, usa os campos DELA (autoritativo).
+    # Resolve o alvo da ação (botão) pro nome REAL da task no tasks.yaml.
+    # O UI Spec roda antes do tasks.yaml e às vezes inventa um nome de task que
+    # não existe (ex.: "aprovar_calendario_mensal" vs real "gerar_calendario_mensal").
+    # Casamos pelo nome mais próximo (similaridade normalizada) pra o botão apontar
+    # pra uma task que de fato existe no servidor.
+    def _resolve_task(target):
+        if not target or not task_fields:
+            return target
+        if target in task_fields:
+            return target
+        tnorm = _norm_field(target)
+        best, best_score = None, 0
+        for real in task_fields:
+            rnorm = _norm_field(real)
+            # score por tokens compartilhados
+            a = set(_tokens(target))
+            b = set(_tokens(real))
+            shared = len(a & b)
+            # bônus se um contém o outro
+            contains = 1 if (tnorm in rnorm or rnorm in tnorm) else 0
+            score = shared * 2 + contains
+            if score > best_score:
+                best, best_score = real, score
+        return best if best_score >= 2 else target
+
     payload_lines = []
-    target_task = primary.get("target") if primary else None
+    raw_target = primary.get("target") if primary else None
+    target_task = _resolve_task(raw_target)
+    if primary and target_task:
+        primary["target"] = target_task  # usa o nome real no runTask
     tf = task_fields.get(target_task) if target_task else None
     if tf:
         for tfield, is_list in tf.items():
@@ -4072,45 +4840,65 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
     )
 
 
+_MODULE_ORDER = ["Cadastros", "Conteúdo", "Publicação", "Engajamento", "Relatórios", "Integrações", "Geral"]
+_KIND_ICON = {"crud": "▦", "report": "▤", "agent": "✦", "form": "▧"}
+
 def _template_business_app(comp_meta: list, project_name: str) -> str:
-    """App shell: sidebar com telas de negócio + aba Admin (Petri executor)."""
-    imports = "\n".join(f'import {{ {c} }} from "./screens";' for _, _, c, _ in comp_meta) if comp_meta else ""
-    # lista de telas pro menu
+    """App shell: sidebar AGRUPADA por módulo (com subitens) + aba Admin (Petri)."""
+    imports = "\n".join(f'import {{ {c} }} from "./screens";' for _, _, c, _, _, _ in comp_meta) if comp_meta else ""
     items = ",\n".join(
-        f'  {{ id: {json.dumps(cid)}, label: {json.dumps(cname)}, Comp: {c} }}'
-        for cid, cname, c, _ in comp_meta
+        f'  {{ id: {json.dumps(cid)}, label: {json.dumps(cname)}, Comp: {c}, kind: {json.dumps(kind)}, module: {json.dumps(module or "Geral")} }}'
+        for cid, cname, c, _route, kind, module in comp_meta
     )
     return (
         'import React, { useEffect, useState } from "react";\n'
         'import MainExecutor from "./components/MainExecutor";\n'
         + imports + '\n\n'
         'const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "http://localhost:8001";\n\n'
-        'const SCREENS = [\n' + items + '\n];\n\n'
+        'const SCREENS = [\n' + items + '\n];\n'
+        f'const MODULE_ORDER = {json.dumps(_MODULE_ORDER, ensure_ascii=False)};\n'
+        f'const KIND_ICON = {json.dumps(_KIND_ICON, ensure_ascii=False)};\n'
         f'const BRAND = {json.dumps(project_name, ensure_ascii=False)};\n\n'
         'function App() {\n'
         '  const [view, setView] = useState(SCREENS.length ? SCREENS[0].id : "admin");\n'
-        '  const [project, setProject] = useState(null);\n\n'
+        '  const [project, setProject] = useState(null);\n'
+        '  const [collapsed, setCollapsed] = useState({});\n\n'
         '  useEffect(() => {\n'
         '    fetch(`${BACKEND_URL}/api/projects`).then((r) => r.json()).then((d) => {\n'
         '      const p = (d.projects || [])[0];\n'
         '      if (p) fetch(`${BACKEND_URL}/api/projects/${p.id}`).then((r) => r.json()).then((x) => setProject(x.project));\n'
         '    }).catch(() => {});\n'
         '  }, []);\n\n'
+        '  // agrupa telas por módulo, na ordem canônica\n'
+        '  const groups = {};\n'
+        '  SCREENS.forEach((s) => { (groups[s.module] = groups[s.module] || []).push(s); });\n'
+        '  const orderedMods = MODULE_ORDER.filter((m) => groups[m]).concat(Object.keys(groups).filter((m) => !MODULE_ORDER.includes(m)));\n\n'
         '  const current = SCREENS.find((s) => s.id === view);\n'
-        '  const itemCls = (active) => "px-5 py-2.5 cursor-pointer text-sm " + (active ? "bg-indigo-600 text-white font-medium" : "text-slate-300 hover:bg-slate-800");\n\n'
+        '  const itemCls = (active) => "px-4 py-2 cursor-pointer text-sm rounded-md mx-2 flex items-center gap-2 " + (active ? "bg-indigo-600 text-white font-medium" : "text-slate-300 hover:bg-slate-800");\n\n'
         '  return (\n'
         '    <div className="flex min-h-screen bg-slate-100" style={{fontFamily:"Inter,sans-serif"}}>\n'
-        '      <aside className="w-60 bg-slate-900 flex flex-col shrink-0">\n'
-        '        <div className="px-5 py-4 text-white font-bold text-base flex items-center gap-2">\n'
-        '          <span className="w-6 h-6 rounded bg-indigo-500 inline-flex items-center justify-center text-sm">{BRAND.slice(0,1)}</span>\n'
+        '      <aside className="w-64 bg-slate-900 flex flex-col shrink-0">\n'
+        '        <div className="px-5 py-4 text-white font-bold text-base flex items-center gap-2 border-b border-slate-800">\n'
+        '          <span className="w-7 h-7 rounded-lg bg-indigo-500 inline-flex items-center justify-center text-sm">{BRAND.slice(0,1)}</span>\n'
         '          {BRAND}\n'
         '        </div>\n'
-        '        <nav className="mt-1 flex-1 overflow-y-auto">\n'
-        '          {SCREENS.map((s) => (\n'
-        '            <div key={s.id} className={itemCls(view === s.id)} onClick={() => setView(s.id)}>{s.label}</div>\n'
+        '        <nav className="mt-2 flex-1 overflow-y-auto pb-4">\n'
+        '          {orderedMods.map((mod) => (\n'
+        '            <div key={mod} className="mb-1">\n'
+        '              <div className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500 flex items-center justify-between cursor-pointer select-none"\n'
+        '                   onClick={() => setCollapsed((c) => ({ ...c, [mod]: !c[mod] }))}>\n'
+        '                <span>{mod}</span><span className="text-slate-600">{collapsed[mod] ? "▸" : "▾"}</span>\n'
+        '              </div>\n'
+        '              {!collapsed[mod] && groups[mod].map((s) => (\n'
+        '                <div key={s.id} className={itemCls(view === s.id)} onClick={() => setView(s.id)}>\n'
+        '                  <span className="text-xs opacity-70">{KIND_ICON[s.kind] || "•"}</span>{s.label}\n'
+        '                </div>\n'
+        '              ))}\n'
+        '            </div>\n'
         '          ))}\n'
-        '          <div className="border-t border-slate-700 my-2" />\n'
-        '          <div className={itemCls(view === "admin")} onClick={() => setView("admin")}>⚙ Admin / Petri</div>\n'
+        '          <div className="border-t border-slate-800 mt-2 pt-2">\n'
+        '            <div className={itemCls(view === "admin")} onClick={() => setView("admin")}><span className="text-xs">⚙</span>Admin / Petri</div>\n'
+        '          </div>\n'
         '        </nav>\n'
         '      </aside>\n'
         '      <main className="flex-1 p-8 overflow-auto">\n'
