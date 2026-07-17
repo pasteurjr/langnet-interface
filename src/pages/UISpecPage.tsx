@@ -106,12 +106,16 @@ const UISpecPage: React.FC = () => {
     setChatSending(true);
     try {
       const r = await fetch(`${API_BASE}/ui-spec/${session.session_id}/chat`, {
-        method: "POST", headers, body: JSON.stringify({ content: chatMsg }),
+        method: "POST", headers,
+        body: JSON.stringify({ content: chatMsg, screen_id: selected }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
       setChatMsg("");
-      toast.success("UI Spec refinada");
-      await loadLatest();
+      // Atualiza só o mockup da tela refinada, sem recarregar tudo
+      if (d.mockup_update) setMockups((m) => ({ ...m, ...d.mockup_update }));
+      if (d.ui_spec) setSession((s) => (s ? { ...s, ui_spec: d.ui_spec } : s));
+      toast.success(`Tela "${d.refined_screen || selected}" atualizada`);
     } catch (e: any) {
       toast.error(`Falha no refino: ${e.message}`);
     } finally {
@@ -218,7 +222,7 @@ const UISpecPage: React.FC = () => {
           <input
             value={chatMsg}
             onChange={(e) => setChatMsg(e.target.value)}
-            placeholder='Refinar (ex.: "na tela de métricas use cards read-only")'
+            placeholder={current ? `Refinar "${current.name}" (ex.: "adicione um campo telefone")` : "Selecione uma tela para refinar"}
             onKeyDown={(e) => e.key === "Enter" && sendRefine()}
           />
           <button onClick={sendRefine} disabled={chatSending}>

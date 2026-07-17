@@ -31,6 +31,7 @@ class GenerateRequest(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     content: str
+    screen_id: Optional[str] = None
 
 
 class ApprovalRequest(BaseModel):
@@ -190,17 +191,27 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
     row = _fetch_session(session_id)
     current_json = row.get("ui_spec_json") or "{}"
     try:
-        result = refine_ui_spec(current_json, req.content)
+        result = refine_ui_spec(current_json, req.content, screen_id=req.screen_id)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Falha no refino: {e}")
 
     new_spec = result["ui_spec"]
+    mockup_update = result.get("mockup_update") or {}
+    refined = result.get("refined_screen")
+
+    # Mescla o PNG atualizado no mockups_json existente
+    existing_mockups = json.loads(row["mockups_json"]) if row.get("mockups_json") else {}
+    existing_mockups.update(mockup_update)
+
     with get_db_connection() as conn:
         cur = conn.cursor()
         try:
             cur.execute(
-                """UPDATE ui_spec_sessions SET ui_spec_json=%s, screens_count=%s, version=version+1 WHERE id=%s""",
-                (json.dumps(new_spec, ensure_ascii=False), len(new_spec.get("screens", [])), session_id),
+                """UPDATE ui_spec_sessions SET ui_spec_json=%s, mockups_json=%s,
+                   screens_count=%s, version=version+1 WHERE id=%s""",
+                (json.dumps(new_spec, ensure_ascii=False),
+                 json.dumps(existing_mockups, ensure_ascii=False),
+                 len(new_spec.get("screens", [])), session_id),
             )
             cur.execute(
                 "INSERT INTO ui_spec_chat_messages (id, ui_spec_session_id, role, content) VALUES (%s,%s,%s,%s)",
@@ -208,12 +219,13 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
             )
             cur.execute(
                 "INSERT INTO ui_spec_chat_messages (id, ui_spec_session_id, role, content) VALUES (%s,%s,%s,%s)",
-                (str(uuid.uuid4()), session_id, "assistant", f"UI Spec atualizada: {len(new_spec.get('screens', []))} telas"),
+                (str(uuid.uuid4()), session_id, "assistant", f"Tela '{refined}' atualizada."),
             )
             conn.commit()
         finally:
             cur.close()
-    return {"status": "ok", "ui_spec": new_spec}
+    return {"status": "ok", "refined_screen": refined, "ui_spec": new_spec,
+            "mockup_update": mockup_update}
 
 
 @router.get("/{session_id}/chat")

@@ -226,25 +226,111 @@ def _build_navigation(screens: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     return nav
 
 
-def refine_ui_spec(current_ui_spec_json: str, instruction: str, schema_sql: str = "") -> Dict[str, Any]:
-    """Refina a UI spec inteira via chat. Para v1: regenera as telas afetadas
-    pela instrução. Implementação simples — reencaminha a instrução ao LLM
-    pedindo o JSON completo atualizado.
+_REFINE_SCREEN_PROMPT = """Você é designer de produto e engenheiro front-end sênior.
+Abaixo está a especificação JSON de UMA tela (com seu mockup HTML/Tailwind) e uma
+INSTRUÇÃO de mudança do usuário. Aplique SÓ a mudança pedida e devolva a tela
+INTEIRA atualizada, no MESMO formato JSON (com mockup_html completo).
 
-    Nota: para manter barato e robusto, a v1 aceita a instrução como um patch
-    textual e reprocessa o ui_spec como um todo via LLM. Telas com muitos
-    componentes podem exceder contexto — nesse caso o chamador deve refinar
-    tela a tela (endpoint futuro)."""
-    prompt = (
-        "Você é engenheiro front-end. Abaixo está uma UI Spec em JSON e uma "
-        "instrução de mudança. Aplique a instrução e retorne o JSON COMPLETO "
-        "atualizado (apenas o JSON).\n\n"
-        f"## UI SPEC ATUAL\n{current_ui_spec_json}\n\n"
-        f"## INSTRUÇÃO\n{instruction}\n\nRetorne o JSON atualizado:"
+REGRAS:
+- Mantenha o design system Tailwind já usado (sidebar slate-900, cards rounded-2xl,
+  inputs com focus ring indigo, chips coloridos, fonte Inter, Tailwind via CDN).
+- Preserve tudo que a instrução NÃO pediu pra mudar (id, route, demais campos).
+- Se a instrução adiciona um campo, inclua-o em `components` (com type/label/bindTo)
+  E também no mockup_html.
+- Retorne SOMENTE o objeto JSON da tela, começando com {{ e terminando com }}.
+
+## TELA ATUAL (JSON)
+{screen_json}
+
+## INSTRUÇÃO DO USUÁRIO
+{instruction}
+
+Retorne a tela atualizada (apenas o JSON):"""
+
+
+def refine_one_screen(screen: Dict[str, Any], instruction: str, render_png: bool = True) -> Dict[str, Any]:
+    """Refina UMA tela conforme a instrução. Regenera estrutura + mockup_html e
+    re-renderiza o PNG. Retorna {'screen': novo_screen, 'png': data_uri|None}."""
+    prompt = _REFINE_SCREEN_PROMPT.format(
+        screen_json=json.dumps(screen, ensure_ascii=False),
+        instruction=instruction,
     )
     raw = _call_llm(prompt)
     obj = extract_json_object(raw or "")
-    if not obj:
-        raise RuntimeError("refino não retornou JSON válido")
-    ui_spec = json.loads(obj)
-    return {"ui_spec": ui_spec}
+    new_screen = None
+    if obj:
+        try:
+            cand = json.loads(obj)
+            ok, _ = validate_screen(cand)
+            if ok:
+                new_screen = cand
+        except Exception:
+            new_screen = None
+
+    if new_screen is None:
+        # retry curto
+        raw2 = _call_llm(prompt + "\n\n⚠️ Retorne SOMENTE o JSON válido da tela.")
+        obj2 = extract_json_object(raw2 or "")
+        if obj2:
+            try:
+                cand2 = json.loads(obj2)
+                ok2, _ = validate_screen(cand2)
+                if ok2:
+                    new_screen = cand2
+            except Exception:
+                pass
+    if new_screen is None:
+        raise RuntimeError("refino da tela não retornou JSON válido")
+
+    # preserva id/route se o LLM os removeu
+    new_screen.setdefault("id", screen.get("id"))
+    new_screen.setdefault("route", screen.get("route"))
+
+    png = None
+    if render_png and new_screen.get("mockup_html"):
+        png = render_html_to_png_b64(new_screen["mockup_html"])
+    return {"screen": new_screen, "png": png}
+
+
+def refine_ui_spec(current_ui_spec_json: str, instruction: str, schema_sql: str = "",
+                   screen_id: Optional[str] = None) -> Dict[str, Any]:
+    """Refina a UI spec. Se screen_id é dado, refina SÓ aquela tela (robusto e
+    barato); senão tenta inferir a tela alvo pela instrução; se não achar, aplica
+    à primeira tela. Re-renderiza o PNG da tela alterada.
+
+    Retorna {'ui_spec': ..., 'mockup_update': {screen_id: png}}.
+    """
+    ui_spec = json.loads(current_ui_spec_json) if current_ui_spec_json else {}
+    screens = ui_spec.get("screens", [])
+    if not screens:
+        raise RuntimeError("ui_spec sem telas")
+
+    # Seleciona a tela alvo
+    target_idx = None
+    if screen_id:
+        for i, s in enumerate(screens):
+            if s.get("id") == screen_id:
+                target_idx = i
+                break
+    if target_idx is None:
+        # tenta casar por nome/id mencionado na instrução
+        instr_low = instruction.lower()
+        for i, s in enumerate(screens):
+            name = (s.get("name", "") + " " + s.get("id", "")).lower()
+            toks = [t for t in name.replace("-", " ").split() if len(t) > 3]
+            if any(t in instr_low for t in toks):
+                target_idx = i
+                break
+    if target_idx is None:
+        target_idx = 0
+
+    result = refine_one_screen(screens[target_idx], instruction)
+    new_screen = result["screen"]
+    screens[target_idx] = new_screen
+    ui_spec["screens"] = screens
+
+    mockup_update = {}
+    if result.get("png"):
+        mockup_update[new_screen.get("id")] = result["png"]
+
+    return {"ui_spec": ui_spec, "mockup_update": mockup_update, "refined_screen": new_screen.get("id")}
