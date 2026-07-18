@@ -164,3 +164,32 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* ── Reorganização do menu: seções + selo "em implementação" ── */
+.nav-section {
+  padding: 16px 20px 5px !important;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: #6b7280;
+  pointer-events: none;
+}
+/* nav-link vira flex p/ empurrar o selo pro lado oposto do ícone */
+.sidebar-nav .nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sidebar-collapsed .nav-link {
+  justify-content: center;
+  gap: 0;
+}
+.nav-badge {
+  margin-left: auto;
+  font-size: 0.8rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.nav-child-link .nav-badge { margin-left: auto; }
+.sidebar-collapsed .nav-badge,
+.sidebar-collapsed .nav-section { display: none; }

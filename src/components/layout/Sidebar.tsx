@@ -59,68 +59,99 @@ const Sidebar: React.FC<SidebarProps> = ({ collapsed, onToggleCollapse }) => {
 
       <nav className="sidebar-nav">
         <ul>
-          {menuItems.map((item) => (
-            <li key={item.id} className="nav-item">
-              {item.children && item.children.length > 0 ? (
-                // Item com submenu
-                <div className="nav-item-with-children">
-                  <div
-                    className={`nav-link nav-parent ${
-                      isActiveRoute(item.path) ? "active" : ""
-                    }`}
-                    onClick={() => !collapsed && toggleExpanded(item.id)}
-                  >
-                    <span className="nav-icon">{item.icon}</span>
-                    {!collapsed && (
-                      <>
-                        <span className="nav-label">{item.label}</span>
-                        <span
-                          className={`nav-arrow ${
-                            expandedItems.includes(item.id) ? "expanded" : ""
-                          }`}
-                        >
-                          ▼
-                        </span>
-                      </>
-                    )}
-                  </div>
-
-                  {!collapsed && expandedItems.includes(item.id) && (
-                    <ul className="nav-children">
-                      {item.children.map((child) => (
-                        <li key={child.id} className="nav-child-item">
-                          <Link
-                            to={child.path}
-                            className={`nav-child-link ${
-                              isActiveRoute(child.path) ? "active" : ""
-                            }`}
-                          >
-                            <span className="nav-child-icon">{child.icon}</span>
-                            <span className="nav-child-label">
-                              {child.label}
+          {menuItems.map((item, idx) => {
+            const showSection =
+              !collapsed &&
+              !!item.section &&
+              item.section !== menuItems[idx - 1]?.section;
+            return (
+              <React.Fragment key={item.id}>
+                {showSection && (
+                  <li className="nav-section">{item.section}</li>
+                )}
+                <li className="nav-item">
+                  {item.children && item.children.length > 0 ? (
+                    // Item com submenu
+                    <div className="nav-item-with-children">
+                      <div
+                        className={`nav-link nav-parent ${
+                          isActiveRoute(item.path) ? "active" : ""
+                        }`}
+                        onClick={() => !collapsed && toggleExpanded(item.id)}
+                      >
+                        <span className="nav-icon">{item.icon}</span>
+                        {!collapsed && (
+                          <>
+                            <span className="nav-label">{item.label}</span>
+                            {item.status === "mock" && (
+                              <span className="nav-badge" title="Em implementação">
+                                🚧
+                              </span>
+                            )}
+                            <span
+                              className={`nav-arrow ${
+                                expandedItems.includes(item.id) ? "expanded" : ""
+                              }`}
+                            >
+                              ▼
                             </span>
-                          </Link>
-                        </li>
-                      ))}
-                    </ul>
+                          </>
+                        )}
+                      </div>
+
+                      {!collapsed && expandedItems.includes(item.id) && (
+                        <ul className="nav-children">
+                          {item.children.map((child) => (
+                            <li key={child.id} className="nav-child-item">
+                              <Link
+                                to={child.path}
+                                className={`nav-child-link ${
+                                  isActiveRoute(child.path) ? "active" : ""
+                                }`}
+                              >
+                                <span className="nav-child-icon">
+                                  {child.icon}
+                                </span>
+                                <span className="nav-child-label">
+                                  {child.label}
+                                </span>
+                                {child.status === "mock" && (
+                                  <span
+                                    className="nav-badge"
+                                    title="Em implementação"
+                                  >
+                                    🚧
+                                  </span>
+                                )}
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  ) : (
+                    // Item normal sem submenu
+                    <Link
+                      to={item.path}
+                      className={`nav-link ${
+                        isActiveRoute(item.path) ? "active" : ""
+                      }`}
+                    >
+                      <span className="nav-icon">{item.icon}</span>
+                      {!collapsed && (
+                        <span className="nav-label">{item.label}</span>
+                      )}
+                      {!collapsed && item.status === "mock" && (
+                        <span className="nav-badge" title="Em implementação">
+                          🚧
+                        </span>
+                      )}
+                    </Link>
                   )}
-                </div>
-              ) : (
-                // Item normal sem submenu
-                <Link
-                  to={item.path}
-                  className={`nav-link ${
-                    isActiveRoute(item.path) ? "active" : ""
-                  }`}
-                >
-                  <span className="nav-icon">{item.icon}</span>
-                  {!collapsed && (
-                    <span className="nav-label">{item.label}</span>
-                  )}
-                </Link>
-              )}
-            </li>
-          ))}
+                </li>
+              </React.Fragment>
+            );
+          })}
         </ul>
       </nav>
 

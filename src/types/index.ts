@@ -166,6 +166,8 @@ export interface MenuItem {
   icon: string;
   path: string;
   children?: MenuItem[];
+  section?: string; // título da seção (Pipeline/Operação/Interação/Integração & Config)
+  status?: "ready" | "mock"; // "mock" exibe o selo 🚧 "em implementação"
 }
 
 export interface Notification {

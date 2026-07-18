@@ -36,7 +36,7 @@ const NavigationContext = createContext<NavigationContextType | undefined>(
   undefined
 );
 
-// ✅ MANTÉM GLOBAL_MENU_ITEMS EXATAMENTE COMO NO ORIGINAL
+// Menu GLOBAL. status:"mock" exibe o selo 🚧 (etapa ainda a implementar).
 const GLOBAL_MENU_ITEMS: MenuItem[] = [
   {
     id: "dashboard",
@@ -55,25 +55,11 @@ const GLOBAL_MENU_ITEMS: MenuItem[] = [
     label: "MCP",
     icon: "🔗",
     path: "/mcp",
+    status: "mock",
     children: [
-      {
-        id: "mcp-config",
-        label: "Configuração Global",
-        icon: "🌐",
-        path: "/mcp/config", // ✅ McpGlobalConfigPage.tsx
-      },
-      {
-        id: "mcp-services",
-        label: "Descoberta de Serviços",
-        icon: "🔍",
-        path: "/mcp/services", // ✅ McpServiceDiscoveryPage.tsx
-      },
-      {
-        id: "mcp-state-sync",
-        label: "Sincronização de Estados",
-        icon: "🔄",
-        path: "/mcp/state-sync", // 🆕 A implementar
-      },
+      { id: "mcp-config", label: "Configuração Global", icon: "🌐", path: "/mcp/config" },
+      { id: "mcp-services", label: "Descoberta de Serviços", icon: "🔍", path: "/mcp/services" },
+      { id: "mcp-state-sync", label: "Sincronização de Estados", icon: "🔄", path: "/mcp/state-sync" },
     ],
   },
   {
@@ -81,176 +67,56 @@ const GLOBAL_MENU_ITEMS: MenuItem[] = [
     label: "Configurações",
     icon: "⚙️",
     path: "/settings",
+    status: "mock",
   },
   {
     id: "help",
     label: "Ajuda",
     icon: "❓",
     path: "/help",
+    status: "mock",
   },
 ];
 
-// ✅ PROJECT_MENU_ITEMS - APENAS ADICIONA Interface Interativa
+// Menu de PROJETO — agrupado por seções (section). Duplicados removidos
+// (Agentes, Tarefas, YAML avulso, Gerar YAML). Mock/roadmap marcado com status:"mock".
 const PROJECT_MENU_ITEMS: MenuItem[] = [
-  {
-    id: "documents",
-    label: "Documentos",
-    icon: "📄",
-    path: "/documents",
-  },
-  {
-    id: "spec",
-    label: "Especificação",
-    icon: "📝",
-    path: "/spec",
-  },
-  {
-    id: "data-model",
-    label: "Modelo de Dados",
-    icon: "🗄️",
-    path: "/data-model",
-  },
-  {
-    id: "ui-spec",
-    label: "Interface & Protótipo",
-    icon: "🎨",
-    path: "/ui-spec",
-  },
-  {
-    id: "agent-task",
-    label: "Agentes & Tarefas",
-    icon: "⚙️",
-    path: "/agent-task",
-  },
-  {
-    id: "yaml-generation",
-    label: "YAML de Agentes e Tarefas",
-    icon: "📦",
-    path: "/yaml-generation",
-  },
-  {
-    id: "generate-yaml",
-    label: "Gerar YAML",
-    icon: "🔧",
-    path: "/generate-yaml",
-  },
-  {
-    id: "task-execution-flow",
-    label: "Sequência de Tarefas",
-    icon: "🔄",
-    path: "/task-execution-flow",
-  },
-  {
-    id: "agents",
-    label: "Agentes",
-    icon: "🤖",
-    path: "/agents",
-  },
-  {
-    id: "tasks",
-    label: "Tarefas",
-    icon: "📋",
-    path: "/tasks",
-  },
-  {
-    id: "yaml",
-    label: "YAML",
-    icon: "📄",
-    path: "/yaml",
-  },
-  {
-    id: "petri-net",
-    label: "Rede de Petri",
-    icon: "🔗",
-    path: "/petri-net",
-  },
-  {
-    id: "code-generation",
-    label: "Geração de Código",
-    icon: "💻",
-    path: "/code-generation",
-  },
-  {
-    id: "test-cases",
-    label: "Casos de Teste & Validação",
-    icon: "🧪",
-    path: "/test-cases",
-  },
+  // ── Pipeline (funcional) ──
+  { id: "documents", label: "Documentos", icon: "📄", path: "/documents", section: "Pipeline" },
+  { id: "spec", label: "Especificação", icon: "📝", path: "/spec", section: "Pipeline" },
+  { id: "data-model", label: "Modelo de Dados", icon: "🗄️", path: "/data-model", section: "Pipeline" },
+  { id: "ui-spec", label: "Interface & Protótipo", icon: "🎨", path: "/ui-spec", section: "Pipeline" },
+  { id: "agent-task", label: "Agentes & Tarefas", icon: "⚙️", path: "/agent-task", section: "Pipeline" },
+  { id: "yaml-generation", label: "YAML de Agentes e Tarefas", icon: "📦", path: "/yaml-generation", section: "Pipeline" },
+  { id: "task-execution-flow", label: "Sequência de Tarefas", icon: "🔄", path: "/task-execution-flow", section: "Pipeline" },
+  { id: "petri-net", label: "Rede de Petri", icon: "🔗", path: "/petri-net", section: "Pipeline" },
+  { id: "code-generation", label: "Geração de Código", icon: "💻", path: "/code-generation", section: "Pipeline" },
+  { id: "test-cases", label: "Casos de Teste & Validação", icon: "🧪", path: "/test-cases", section: "Pipeline" },
+
+  // ── Operação (a implementar) ──
+  { id: "deploy", label: "Deploy", icon: "🚀", path: "/deploy", section: "Operação", status: "mock" },
+  { id: "monitoring", label: "Monitoramento", icon: "📊", path: "/monitoring", section: "Operação", status: "mock" },
+
+  // ── Interação (a implementar) ──
+  { id: "agent-chat", label: "Chat com Agentes", icon: "💬", path: "/interactive/agent-chat", section: "Interação", status: "mock" },
+  { id: "agent-designer", label: "Designer de Agentes", icon: "🤖", path: "/interactive/agent-designer", section: "Interação", status: "mock" },
+  { id: "artifact-manager", label: "Gestão de Artefatos", icon: "📦", path: "/interactive/artifacts", section: "Interação", status: "mock" },
+  { id: "system-state", label: "Estado do Sistema", icon: "📊", path: "/interactive/system-state", section: "Interação", status: "mock" },
+  { id: "dynamic-forms", label: "Formulários Dinâmicos", icon: "📝", path: "/interactive/forms", section: "Interação", status: "mock" },
+
+  // ── Integração & Config (a implementar) ──
   {
     id: "mcp-project",
-    label: "MCP",
+    label: "MCP do Projeto",
     icon: "🔌",
     path: "/mcp",
+    section: "Integração & Config",
+    status: "mock",
     children: [
-      {
-        id: "mcp-project-integration",
-        label: "Integração",
-        icon: "🔗",
-        path: "/mcp", // ✅ McpProjectIntegrationPage.tsx
-      },
-      {
-        id: "mcp-project-sync",
-        label: "Sincronização",
-        icon: "🔄",
-        path: "/mcp/sync", // 🆕 A implementar
-      },
-      {
-        id: "mcp-project-services",
-        label: "Serviços",
-        icon: "🛠️",
-        path: "/mcp/services", // 🆕 A implementar
-      },
+      { id: "mcp-project-integration", label: "Integração", icon: "🔗", path: "/mcp" },
+      { id: "mcp-project-sync", label: "Sincronização", icon: "🔄", path: "/mcp/sync" },
+      { id: "mcp-project-services", label: "Serviços", icon: "🛠️", path: "/mcp/services" },
     ],
-  },
-  {
-    id: "interactive-ui", // 🆕 APENAS no menu de PROJETO
-    label: "Interface Interativa",
-    icon: "🎨",
-    path: "/interactive",
-    children: [
-      {
-        id: "agent-chat",
-        label: "Chat com Agentes",
-        icon: "💬",
-        path: "/interactive/agent-chat", // ✅ AgentChatPage.tsx
-      },
-      {
-        id: "agent-designer",
-        label: "Designer de Agentes",
-        icon: "🤖",
-        path: "/interactive/agent-designer", // 🆕 A implementar
-      },
-      {
-        id: "artifact-manager",
-        label: "Gestão de Artefatos",
-        icon: "📦",
-        path: "/interactive/artifacts", // 🆕 A implementar
-      },
-      {
-        id: "system-state",
-        label: "Estado do Sistema",
-        icon: "📊",
-        path: "/interactive/system-state", // 🆕 A implementar
-      },
-      {
-        id: "dynamic-forms",
-        label: "Formulários Dinâmicos",
-        icon: "📝",
-        path: "/interactive/forms", // 🆕 A implementar
-      },
-    ],
-  },
-  {
-    id: "deploy",
-    label: "Deploy",
-    icon: "🚀",
-    path: "/deploy",
-  },
-  {
-    id: "monitoring",
-    label: "Monitoramento",
-    icon: "📊",
-    path: "/monitoring",
   },
 ];
 
