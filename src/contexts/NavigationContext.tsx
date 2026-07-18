@@ -171,6 +171,12 @@ const PROJECT_MENU_ITEMS: MenuItem[] = [
     path: "/code-generation",
   },
   {
+    id: "test-cases",
+    label: "Casos de Teste & Validação",
+    icon: "🧪",
+    path: "/test-cases",
+  },
+  {
     id: "mcp-project",
     label: "MCP",
     icon: "🔌",

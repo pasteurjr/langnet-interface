@@ -17,6 +17,7 @@ from app.routers.tasks_yaml import router as tasks_yaml_router
 from app.routers.task_execution_flow import router as task_execution_flow_router
 from app.routers.petri_net import router as petri_net_router
 from app.routers.code_generation import router as code_generation_router
+from app.routers.test_cases import router as test_cases_router
 from api.langnetapi import router as langnet_router
 from api.langnetwebsocket import websocket_endpoint
 from app.utils import decode_access_token
@@ -56,6 +57,7 @@ app.include_router(tasks_yaml_router, prefix="/api")  # tasks.yaml generation fr
 app.include_router(task_execution_flow_router, prefix="/api")  # Task execution flow document generation
 app.include_router(petri_net_router, prefix="/api")  # Petri Net generation/get/update (project_data)
 app.include_router(code_generation_router, prefix="/api")  # Code generation: Python multi-file
+app.include_router(test_cases_router)  # Casos de Teste por Grafo de Causa-Efeito (prefix já inclui /api/test-cases)
 app.include_router(langnet_router, prefix="/api")  # LangNet multi-agent system
 
 
