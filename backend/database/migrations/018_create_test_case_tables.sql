@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS test_case_sessions (
     status                    VARCHAR(30) DEFAULT 'draft',   -- draft | generating | executed | approved
     results_json              LONGTEXT,                      -- {"results":[{uc,name,ceg,decision_table,test_cases,...}]}
     execution_json            LONGTEXT,                      -- resultado da execução (esperado×obtido) — fase executor
+    validation_document       LONGTEXT,                      -- Documento de Validação (HTML) persistido na geração/refino
     total_ucs                 INT(11)     DEFAULT 0,
     total_cases               INT(11)     DEFAULT 0,
     generation_log            TEXT,

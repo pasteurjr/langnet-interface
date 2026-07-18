@@ -94,6 +94,43 @@ def _update_results(session_id: str, results: List[dict], status: str, log: str)
             cur.close()
 
 
+def _project_name(project_id: str) -> str:
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute("SELECT name FROM projects WHERE id=%s", (project_id,))
+            p = cur.fetchone()
+        finally:
+            cur.close()
+    return (p or {}).get("name") or "Projeto"
+
+
+def _regen_validation_document(session_id: str) -> None:
+    """(Re)gera o Documento de Validação e PERSISTE no banco (coluna validation_document),
+    seguindo o padrão das outras etapas — o documento é um artefato versionado, não efêmero."""
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute("SELECT project_id, results_json FROM test_case_sessions WHERE id=%s", (session_id,))
+            row = cur.fetchone()
+        finally:
+            cur.close()
+    if not row:
+        return
+    data = json.loads(row["results_json"]) if row.get("results_json") else {"results": []}
+    html = build_validation_html(
+        data.get("results", []), _project_name(row["project_id"]),
+        datetime.date.today().strftime("%d/%m/%Y"),
+    )
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute("UPDATE test_case_sessions SET validation_document=%s WHERE id=%s", (html, session_id))
+            conn.commit()
+        finally:
+            cur.close()
+
+
 def _serialize(row: Dict[str, Any], with_svg: bool = True) -> Dict[str, Any]:
     data = json.loads(row["results_json"]) if row.get("results_json") else {"results": []}
     results = data.get("results", [])
@@ -146,6 +183,11 @@ def _run_generation(session_id: str, spec_doc: str, only: Optional[List[str]]) -
         # persiste a cada UC — status 'generating' até o último
         st = "draft" if i == len(ucs) else "generating"
         _update_results(session_id, results, st, "\n".join(log))
+    # ao concluir, gera e persiste o Documento de Validação no banco
+    try:
+        _regen_validation_document(session_id)
+    except Exception:
+        pass
 
 
 # ─────────────────── Endpoints ───────────────────
@@ -269,6 +311,12 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
         finally:
             cur.close()
 
+    # regenera e persiste o Documento de Validação (reflete o refino)
+    try:
+        _regen_validation_document(session_id)
+    except Exception:
+        pass
+
     updated = dict(results[idx])
     try:
         updated["svg"] = ceg_to_svg(new_ceg)
@@ -310,22 +358,11 @@ def approve_session(session_id: str, req: ApprovalRequest, current_user=Depends(
 
 @router.get("/{session_id}/document", response_class=HTMLResponse)
 def get_validation_document(session_id: str, current_user=Depends(get_current_user)):
-    """Documento de Validação por Casos de Teste (HTML imprimível/baixável)."""
+    """Documento de Validação por Casos de Teste — servido do banco (persistido na
+    geração/refino). Se ainda não houver, gera, persiste e retorna."""
     row = _fetch_session(session_id)
-    data = json.loads(row["results_json"]) if row.get("results_json") else {"results": []}
-    # nome do projeto
-    project_name = "Projeto"
-    with get_db_connection() as conn:
-        cur = conn.cursor(dictionary=True)
-        try:
-            cur.execute("SELECT name FROM projects WHERE id=%s", (row["project_id"],))
-            p = cur.fetchone()
-            if p:
-                project_name = p["name"]
-        finally:
-            cur.close()
-    html = build_validation_html(
-        data.get("results", []), project_name,
-        datetime.date.today().strftime("%d/%m/%Y"),
-    )
-    return HTMLResponse(content=html)
+    if row.get("validation_document"):
+        return HTMLResponse(content=row["validation_document"])
+    _regen_validation_document(session_id)
+    row = _fetch_session(session_id)
+    return HTMLResponse(content=row.get("validation_document") or "<h1>Documento indisponível</h1>")
