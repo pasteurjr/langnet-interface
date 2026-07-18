@@ -14,7 +14,7 @@ import os
 import re
 from typing import Any, Dict, List, Optional
 
-from prompts.generate_ceg import build_ceg_prompt
+from prompts.generate_ceg import build_ceg_prompt, build_ceg_refine_prompt
 from agents.ceg_engine import generate_test_cases
 
 _llm_cache: Dict[str, Any] = {}
@@ -120,6 +120,25 @@ def ceg_for_uc(uc: dict) -> Optional[dict]:
             ceg.setdefault("uc", uc["id"])
             ceg.setdefault("constraints", [])
             return ceg
+    return None
+
+
+def refine_ceg(ceg: dict, instruction: str) -> Optional[dict]:
+    """Reajusta um grafo causa-efeito existente conforme instrução do usuário (1 retry)."""
+    prompt = build_ceg_refine_prompt(ceg, instruction)
+    for attempt in range(2):
+        raw = _call_llm(prompt if attempt == 0 else prompt + "\n\n⚠️ Retorne SOMENTE o JSON válido do grafo.")
+        js = _extract_json(raw or "")
+        if not js:
+            continue
+        try:
+            new = json.loads(js)
+        except Exception:
+            continue
+        if new.get("causes") and new.get("effects") and new.get("rules"):
+            new.setdefault("uc", ceg.get("uc"))
+            new.setdefault("constraints", [])
+            return new
     return None
 
 

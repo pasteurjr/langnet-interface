@@ -39,6 +39,20 @@
 .tc-btn.primary { background: #1a56db; color: #fff; }
 .tc-btn.primary:hover:not(:disabled) { background: #1e40af; }
 .tc-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.tc-btn.ghost { background: #fff; color: #1a56db; border: 1px solid #cbd5e1; }
+.tc-btn.ghost:hover:not(:disabled) { border-color: #1a56db; background: #f8fafc; }
+.tc-btn.approve { background: #16a34a; color: #fff; }
+.tc-btn.approve:hover:not(:disabled) { background: #15803d; }
+
+/* Seletor de origem (documento de casos de uso) */
+.tc-actions { display: flex; align-items: flex-end; gap: 12px; }
+.tc-src { display: flex; flex-direction: column; gap: 4px; }
+.tc-src span { font-size: 11px; color: #64748b; font-weight: 600; }
+.tc-src select {
+  border: 1px solid #cbd5e1; border-radius: 8px; padding: 9px 12px;
+  font-size: 13px; background: #fff; color: #334155; min-width: 220px; cursor: pointer;
+}
+.tc-src select:focus { outline: none; border-color: #1a56db; }
 
 /* Summary bar */
 .tc-summary {
@@ -68,6 +82,24 @@
 .tc-badge.approved { background: #dcfce7; color: #166534; }
 .tc-spin { color: #92400e; animation: tcpulse 1.2s infinite; }
 @keyframes tcpulse { 50% { opacity: 0.45; } }
+.tc-summary-actions { margin-left: auto; display: flex; gap: 8px; }
+.tc-summary-actions .tc-btn { padding: 7px 13px; font-size: 12.5px; }
+
+/* Painel de refino pelo agente */
+.tc-refine { border-color: #c7d2fe; background: #fbfcff; }
+.tc-refine-hint { font-size: 12px; color: #64748b; line-height: 1.5; margin: 0 0 12px; }
+.tc-chat-log { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; max-height: 260px; overflow-y: auto; }
+.tc-chat-msg { font-size: 12.5px; padding: 8px 12px; border-radius: 9px; line-height: 1.45; }
+.tc-chat-msg.user { background: #eff6ff; border: 1px solid #bfdbfe; align-self: flex-end; max-width: 85%; }
+.tc-chat-msg.assistant { background: #f8fafc; border: 1px solid #e2e8f0; align-self: flex-start; max-width: 85%; }
+.tc-chat-role { display: block; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; color: #94a3b8; margin-bottom: 3px; }
+.tc-chat-input { display: flex; gap: 8px; align-items: flex-end; }
+.tc-chat-input textarea {
+  flex: 1; border: 1px solid #cbd5e1; border-radius: 8px; padding: 9px 12px;
+  font-size: 13px; font-family: inherit; resize: vertical; color: #334155;
+}
+.tc-chat-input textarea:focus { outline: none; border-color: #1a56db; }
+.tc-chat-input .tc-btn { white-space: nowrap; }
 
 .tc-empty {
   text-align: center;

@@ -108,3 +108,42 @@ def build_ceg_prompt(uc: dict) -> str:
         fluxos_alt=uc.get("fluxos_alt", "(nenhum)"),
         fluxos_exc=uc.get("fluxos_exc", "(nenhum)"),
     )
+
+
+_CEG_REFINE_INSTRUCTIONS = """Você é engenheiro de testes especialista na técnica do GRAFO DE CAUSA-EFEITO.
+Abaixo está um grafo causa-efeito JÁ EXISTENTE (de um caso de uso) e uma INSTRUÇÃO de ajuste
+do usuário. Aplique o ajuste e devolva o grafo COMPLETO e corrigido, no MESMO formato JSON.
+
+REGRAS (mantenha):
+- CAUSAS = ações do ator / condições de entrada. EFEITOS = respostas do sistema.
+- NUNCA crie causas complementares (a negação é obtida no grafo, não como causa nova).
+- Agrupe campos preenchidos juntos numa ÚNICA causa (não uma por campo). Meta: 3–6 causas.
+- Para cada efeito, mantenha a expressão booleana (and/or/not) das causas que o ativam.
+- Preserve o que a instrução NÃO pediu para mudar (ids, descrições, regras não citadas).
+
+GRAFO ATUAL (JSON):
+{current_ceg}
+
+INSTRUÇÃO DO USUÁRIO:
+{instruction}
+
+FORMATO DE SAÍDA (apenas o JSON do grafo completo e ajustado):
+{{
+  "uc": "{uc_id}",
+  "causes":  [{{"id":"c1","desc":"..."}}, ...],
+  "effects": [{{"id":"e1","desc":"..."}}, ...],
+  "rules":   [{{"effect":"e1","expr": EXPR}}, ...],
+  "constraints": [...]
+}}
+onde EXPR := "cX" | {{"op":"not","arg":EXPR}} | {{"op":"and","args":[EXPR,...]}} | {{"op":"or","args":[EXPR,...]}}
+
+Devolva agora o grafo ajustado (apenas o JSON):"""
+
+
+def build_ceg_refine_prompt(ceg: dict, instruction: str) -> str:
+    import json as _json
+    return _CEG_REFINE_INSTRUCTIONS.format(
+        current_ceg=_json.dumps(ceg, ensure_ascii=False, indent=2),
+        instruction=instruction,
+        uc_id=ceg.get("uc", "UC"),
+    )
