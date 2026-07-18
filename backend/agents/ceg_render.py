@@ -25,7 +25,9 @@ def ceg_to_svg(ceg: dict) -> str:
     cause_y = {c["id"]: pad_top + i * row_h + 24 for i, c in enumerate(causes)}
     effect_y = {e["id"]: pad_top + i * row_h + 24 for i, e in enumerate(effects)}
 
-    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" font-family="Inter,Arial,sans-serif">']
+    parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{W}" height="{H}" '
+             f'viewBox="0 0 {W} {H}" preserveAspectRatio="xMinYMin meet" '
+             f'font-family="Inter,Arial,sans-serif">']
     parts.append(f'<rect width="{W}" height="{H}" fill="#f8fafc"/>')
     parts.append(f'<text x="30" y="34" font-size="18" font-weight="700" fill="#1a56db">Grafo de Causa-Efeito — {ceg.get("uc","")}</text>')
     parts.append(f'<text x="{cause_x}" y="{pad_top-12}" font-size="12" font-weight="700" fill="#64748b">CAUSAS (ações do ator)</text>')
