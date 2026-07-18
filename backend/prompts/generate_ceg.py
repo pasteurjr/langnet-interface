@@ -23,9 +23,16 @@ DEFINIÇÕES (siga à risca):
   condições que fazem o fluxo divergir (dos fluxos alternativos/exceção).
   Cada causa é uma condição booleana (verdadeira/falsa).
 - EFEITOS = as RESPOSTAS DO SISTEMA (saídas). Cada efeito é uma condição de saída.
-- REGRA CRÍTICA: NUNCA crie causas complementares. Se existe a causa
+- REGRA CRÍTICA 1: NUNCA crie causas complementares. Se existe a causa
   "campos obrigatórios preenchidos", NÃO crie "campos não preenchidos" — esta é a
   negação (~) da primeira e será obtida no grafo, não como causa separada.
+- REGRA CRÍTICA 2 (AGRUPAMENTO — evite explosão combinatória): um CONJUNTO de campos
+  preenchidos juntos no mesmo passo é UMA ÚNICA causa, não uma causa por campo.
+  Ex.: se o passo é "preenche nome, descrição, e-mail, telefone", crie APENAS
+  "c: campos obrigatórios preenchidos" — JAMAIS c1=nome, c2=descrição, c3=e-mail…
+  Só separe um campo em causa própria se ele tiver uma REGRA DE VALIDAÇÃO ESPECÍFICA
+  distinta (ex.: "e-mail em formato válido", "valor > 0") que gere um efeito próprio.
+  Meta: manter o nº de causas pequeno (tipicamente 3–6 por caso de uso).
 - Para cada efeito, escreva a EXPRESSÃO booleana das causas que o ATIVAM, usando
   os operadores and/or/not.
 - RESTRIÇÕES intercausas (quando aplicável):
