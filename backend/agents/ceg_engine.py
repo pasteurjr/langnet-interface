@@ -54,6 +54,36 @@ def eval_expr(expr: Any, assign: Dict[str, bool]) -> bool:
     return False
 
 
+def eval_expr3(expr: Any, assign: Dict[str, Optional[bool]]) -> Optional[bool]:
+    """Avaliação de 3 valores: True / False / None(indeterminado). Causa don't-care
+    entra como None. Um efeito só 'dispara' se resultar definitivamente True."""
+    if isinstance(expr, str):
+        return assign.get(expr, None)
+    if not isinstance(expr, dict):
+        return None
+    op = expr.get("op")
+    if op == "not":
+        v = eval_expr3(expr.get("arg"), assign)
+        return None if v is None else (not v)
+    if op == "and":
+        vals = [eval_expr3(a, assign) for a in expr.get("args", [])]
+        if any(v is False for v in vals):
+            return False
+        if any(v is None for v in vals):
+            return None
+        return True
+    if op == "or":
+        vals = [eval_expr3(a, assign) for a in expr.get("args", [])]
+        if any(v is True for v in vals):
+            return True
+        if any(v is None for v in vals):
+            return None
+        return False
+    if op in ("id", "identity"):
+        return eval_expr3(expr.get("arg"), assign)
+    return None
+
+
 def expr_causes(expr: Any, acc: Optional[set] = None) -> set:
     """Causas (folhas cX) que aparecem numa expressão."""
     if acc is None:
@@ -140,8 +170,11 @@ def build_decision_table(ceg: dict) -> List[dict]:
                 continue
             if not eval_expr(expr, full):
                 continue  # combinação não ativa o efeito
-            # calcula todos os efeitos (com don't-care das não-envolvidas = False)
-            ev = {x: eval_expr(rules.get(x, False), full) for x in effect_ids}
+            # efeitos com lógica de 3 valores: don't-care = None (indeterminado).
+            # Assim um efeito só marca 1 se for definitivamente verdadeiro com as
+            # causas SETADAS — evita coativação espúria (fiel ao método).
+            assign3 = {c: (partial[c] if c in partial else None) for c in cause_ids}
+            ev = {x: eval_expr3(rules.get(x), assign3) for x in effect_ids}
             ev = _effect_mask(ev, constraints)
             causes_col = {c: (partial[c] if c in partial else "X") for c in cause_ids}
             key = (eid, tuple(sorted((k, str(v)) for k, v in causes_col.items())))
