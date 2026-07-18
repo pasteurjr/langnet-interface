@@ -78,6 +78,11 @@
   border-radius: 12px;
 }
 .tc-empty p { margin: 6px 0; }
+.tc-empty.tc-auth {
+  background: #fffbeb;
+  border: 1px solid #fcd34d;
+  color: #92400e;
+}
 
 /* Body: list + detail */
 .tc-body {

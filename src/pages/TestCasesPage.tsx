@@ -61,13 +61,22 @@ const TestCasesPage: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [authExpired, setAuthExpired] = useState(false);
   const pollRef = useRef<any>(null);
 
   const loadLatest = useCallback(async () => {
     if (!effectiveProjectId) return;
     try {
       const r = await fetch(`${API_BASE}/test-cases/project/${effectiveProjectId}/latest`, { headers });
+      if (r.status === 401 || r.status === 403) {
+        setAuthExpired(true);
+        setGenerating(false);
+        toast.error("Sessão expirada. Faça login novamente para ver os casos de teste.");
+        return;
+      }
       const d: Session = await r.json();
+      if (!r.ok) throw new Error((d as any)?.detail || `HTTP ${r.status}`);
+      setAuthExpired(false);
       setSession(d);
       setGenerating(d.status === "generating");
       setSelected((prev) => prev || (d.results && d.results[0] ? d.results[0].uc : null));
@@ -147,7 +156,14 @@ const TestCasesPage: React.FC = () => {
         </div>
       )}
 
-      {(!session || !session.session_id) && (
+      {authExpired && (
+        <div className="tc-empty tc-auth">
+          <p>🔒 <b>Sua sessão expirou.</b></p>
+          <p>Faça <b>login novamente</b> para carregar os casos de teste — os dados continuam salvos.</p>
+        </div>
+      )}
+
+      {!authExpired && (!session || !session.session_id) && (
         <div className="tc-empty">
           <p>Nenhum caso de teste gerado ainda.</p>
           <p>Clique em <b>Gerar casos de teste</b> para extrair o grafo causa-efeito de cada caso de uso da especificação.</p>
