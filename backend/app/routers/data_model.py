@@ -12,7 +12,7 @@ from datetime import datetime
 
 from app.database import get_db_connection, get_db_cursor
 from app.dependencies import get_current_user
-from agents.langnetdatamodel import execute_data_model_workflow, refine_data_model
+from agents.langnetdatamodel import execute_data_model_workflow, refine_data_model, review_data_model
 
 
 router = APIRouter(prefix="/api/data-model", tags=["data-model"])
@@ -31,6 +31,7 @@ class UpdateRequest(BaseModel):
     models_py: Optional[str] = None
     alembic_migration: Optional[str] = None
     status: Optional[str] = None
+    change_description: Optional[str] = None
 
 
 class ChatMessageRequest(BaseModel):
@@ -104,6 +105,63 @@ def _fetch_latest_by_project(project_id: str) -> Optional[Dict[str, Any]]:
         cur.close()
 
 
+_VERSION_ARTIFACT_COLS = (
+    "data_model_yaml", "schema_sql", "models_py",
+    "alembic_migration", "entities_json", "validation_report",
+)
+
+
+def _save_version(session_id: str, artifacts: Dict[str, Any], change_type: str,
+                  change_description: Optional[str], user_id: Optional[str]) -> int:
+    """Grava um snapshot no histórico (data_model_version_history) e retorna a nova versão.
+
+    A próxima versão = COALESCE(MAX(version),0)+1 do histórico dessa sessão. A coluna
+    data_model_sessions.version é mantida em sincronia com esse número (fonte única de
+    verdade), evitando dupla contagem em fluxos que também mexem em version.
+    """
+    with get_db_connection() as conn:
+      cur = conn.cursor(dictionary=True)
+      try:
+        cur.execute(
+            "SELECT COALESCE(MAX(version),0)+1 AS next_version "
+            "FROM data_model_version_history WHERE session_id=%s",
+            (session_id,),
+        )
+        r = cur.fetchone()
+        new_version = r["next_version"] if r and r.get("next_version") else 1
+      finally:
+        cur.close()
+
+    vals = {c: artifacts.get(c) for c in _VERSION_ARTIFACT_COLS}
+    doc_size = len(vals.get("schema_sql") or vals.get("data_model_yaml") or "")
+
+    with get_db_connection() as conn:
+      cur = conn.cursor()
+      try:
+        cur.execute(
+            """INSERT INTO data_model_version_history
+               (session_id, version, data_model_yaml, schema_sql, models_py,
+                alembic_migration, entities_json, validation_report,
+                created_by, change_type, change_description, doc_size)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (
+                session_id, new_version,
+                vals.get("data_model_yaml"), vals.get("schema_sql"),
+                vals.get("models_py"), vals.get("alembic_migration"),
+                vals.get("entities_json"), vals.get("validation_report"),
+                user_id, change_type,
+                (change_description or "")[:500] or None, doc_size,
+            ),
+        )
+        # mantém data_model_sessions.version em sincronia com o histórico
+        cur.execute("UPDATE data_model_sessions SET version=%s WHERE id=%s",
+                    (new_version, session_id))
+        conn.commit()
+      finally:
+        cur.close()
+    return new_version
+
+
 # ─────────────────── Endpoints ───────────────────
 
 @router.post("/{project_id}/generate")
@@ -147,6 +205,17 @@ def generate_data_model(project_id: str, req: GenerateRequest, current_user=Depe
         conn.commit()
       finally:
         cur.close()
+
+    # registra a versão inicial no histórico (snapshot dos artefatos gerados)
+    try:
+        _save_version(
+            session_id, result,
+            change_type="initial_generation",
+            change_description="Geração inicial do Modelo de Dados",
+            user_id=current_user["id"],
+        )
+    except Exception:
+        pass
 
     return {"session_id": session_id, "status": "draft", **result}
 
@@ -214,7 +283,16 @@ def update_session(session_id: str, req: UpdateRequest, current_user=Depends(get
         conn.commit()
       finally:
         cur.close()
-    return {"status": "ok"}
+
+    # registra a versão da edição manual (snapshot do estado pós-update)
+    refreshed = _fetch_session(session_id)
+    new_version = _save_version(
+        session_id, refreshed,
+        change_type="manual_edit",
+        change_description=req.change_description or "Edição manual do Modelo de Dados",
+        user_id=current_user.get("id"),
+    )
+    return {"status": "ok", "version": new_version}
 
 
 @router.post("/{session_id}/chat")
@@ -233,11 +311,12 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
     with get_db_connection() as conn:
       cur = conn.cursor()
       try:
+        # NÃO incrementa version aqui — _save_version é a fonte única da verdade
         cur.execute(
             """UPDATE data_model_sessions SET
                data_model_yaml=%s, schema_sql=%s, models_py=%s,
                alembic_migration=%s, entities_json=%s,
-               validation_report=%s, version=version+1
+               validation_report=%s
                WHERE id=%s""",
             (
                 result["data_model_yaml"],
@@ -263,6 +342,17 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
         conn.commit()
       finally:
         cur.close()
+
+    # registra a nova versão no histórico (fonte única — também sincroniza version)
+    try:
+        _save_version(
+            session_id, result,
+            change_type="ai_refinement",
+            change_description=req.content,
+            user_id=current_user.get("id"),
+        )
+    except Exception:
+        pass
 
     return {"status": "ok", **result}
 
@@ -297,3 +387,75 @@ def approve_session(session_id: str, req: ApprovalRequest, current_user=Depends(
       finally:
         cur.close()
     return {"status": "approved" if req.approve else "draft"}
+
+
+# ─────────────────── Histórico de versões ───────────────────
+
+@router.get("/{session_id}/versions")
+def list_versions(session_id: str, current_user=Depends(get_current_user)):
+    """Lista as versões da sessão (mais recente primeiro)."""
+    _fetch_session(session_id)
+    with get_db_connection() as conn:
+      cur = conn.cursor(dictionary=True)
+      try:
+        cur.execute(
+            """SELECT version, created_at, change_description, change_type, doc_size
+               FROM data_model_version_history WHERE session_id=%s
+               ORDER BY version DESC""",
+            (session_id,),
+        )
+        rows = cur.fetchall()
+      finally:
+        cur.close()
+    return {"versions": [
+        {"version": r["version"], "created_at": str(r["created_at"]),
+         "change_description": r["change_description"], "change_type": r["change_type"],
+         "doc_size": r["doc_size"]}
+        for r in rows
+    ]}
+
+
+@router.get("/{session_id}/versions/{version}")
+def get_version(session_id: str, version: int, current_user=Depends(get_current_user)):
+    """Retorna o snapshot completo de uma versão (todos os artefatos)."""
+    with get_db_connection() as conn:
+      cur = conn.cursor(dictionary=True)
+      try:
+        cur.execute(
+            "SELECT * FROM data_model_version_history WHERE session_id=%s AND version=%s",
+            (session_id, version),
+        )
+        row = cur.fetchone()
+      finally:
+        cur.close()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Versão {version} não encontrada")
+    return {
+        "session_id": session_id,
+        "version": row["version"],
+        "change_type": row["change_type"],
+        "change_description": row["change_description"],
+        "created_at": str(row.get("created_at")),
+        "data_model_yaml": row.get("data_model_yaml"),
+        "schema_sql": row.get("schema_sql"),
+        "models_py": row.get("models_py"),
+        "alembic_migration": row.get("alembic_migration"),
+        "entities_json": row.get("entities_json"),
+        "validation_report": row.get("validation_report"),
+    }
+
+
+@router.post("/{session_id}/review")
+def review_session(session_id: str, current_user=Depends(get_current_user)):
+    """Revisão automática (LLM): retorna sugestões de melhoria do Modelo de Dados.
+    NÃO modifica os artefatos nem cria versão."""
+    row = _fetch_session(session_id)
+    try:
+        suggestions = review_data_model(
+            row.get("data_model_yaml") or "",
+            row.get("schema_sql") or "",
+            row.get("validation_report") or "",
+        )
+    except Exception as e:
+        suggestions = f"Não foi possível gerar sugestões automáticas no momento ({e})."
+    return {"suggestions": suggestions}

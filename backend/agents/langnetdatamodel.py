@@ -441,3 +441,43 @@ Retorne SOMENTE o YAML final."""
         }
     except Exception as e:
         raise RuntimeError(f"YAML refinado inválido: {e}")
+
+
+def review_data_model(
+    data_model_yaml: str,
+    schema_sql: str = "",
+    validation_report: str = "",
+) -> str:
+    """Usa o LLM para sugerir melhorias no Modelo de Dados (NÃO modifica nada).
+
+    Recebe o YAML canônico + o DDL (e, opcionalmente, o relatório de validação) e
+    devolve um texto com sugestões objetivas de melhoria. Robusto a falhas: em erro,
+    retorna uma mensagem útil ao invés de estourar.
+    """
+    try:
+        yaml_snippet = (data_model_yaml or "").strip()[:20000]
+        sql_snippet = (schema_sql or "").strip()[:20000]
+        val_snippet = (validation_report or "").strip()[:6000]
+        if not yaml_snippet and not sql_snippet:
+            return "Não há Modelo de Dados para revisar."
+        prompt = (
+            "Você é um arquiteto de dados sênior. Abaixo está o Modelo de Dados de um "
+            "sistema (descritor YAML e/ou DDL SQL). Analise criticamente e liste "
+            "sugestões objetivas de melhoria: normalização, integridade referencial "
+            "(chaves estrangeiras faltantes), índices ausentes para consultas prováveis, "
+            "tipos de dados inadequados, colunas de auditoria (created_at/updated_at), "
+            "restrições (NOT NULL, UNIQUE, CHECK) faltantes, nomes inconsistentes e "
+            "possíveis problemas de desempenho. NÃO reescreva o modelo — apenas "
+            "recomende. Responda em português, em tópicos.\n\n"
+            "DATA MODEL (YAML):\n```yaml\n" + yaml_snippet + "\n```\n\n"
+            "SCHEMA (SQL):\n```sql\n" + sql_snippet + "\n```\n"
+        )
+        if val_snippet:
+            prompt += "\nRELATÓRIO DE VALIDAÇÃO:\n" + val_snippet + "\n"
+        out = _call_llm(prompt)
+        return (out or "").strip() or "O agente não retornou sugestões."
+    except Exception as e:
+        return (
+            f"Não foi possível gerar sugestões automáticas no momento ({e}). "
+            "Revise manualmente: normalização, chaves estrangeiras, índices e restrições."
+        )
