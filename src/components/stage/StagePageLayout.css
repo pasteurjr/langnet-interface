@@ -1,0 +1,51 @@
+/* Modo "viewer largo": para etapas com visualização especial (grafo causa-efeito,
+   editor de Petri, mockups de interface). Inverte a proporção do layout base
+   (350px 1fr 400px): o chat vira uma coluna estreita e o miolo ocupa o principal. */
+.documents-chat-container.stage-wide-viewer {
+  grid-template-columns: 320px 340px minmax(0, 1fr) !important;
+}
+.documents-chat-container.stage-wide-viewer .actions-panel {
+  max-width: none;
+  min-width: 0;
+  overflow: auto;
+}
+/* Neutraliza wrappers antigos (ex.: .tc-page max-width+margin:auto) que
+   centralizariam/estreitariam o miolo dentro da casca — o viewer usa a largura toda. */
+.documents-chat-container.stage-wide-viewer .actions-panel > * {
+  max-width: none !important;
+  width: 100%;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+.documents-chat-container.stage-wide-viewer .chat-area {
+  min-width: 0;
+}
+/* Chat recolhido: só config + viewer (viewer usa toda a largura) */
+.documents-chat-container.stage-wide-viewer.chat-collapsed {
+  grid-template-columns: 320px minmax(0, 1fr) !important;
+}
+.btn-chat-toggle {
+  width: 100%;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.btn-chat-toggle:hover {
+  background: #e0e7ff;
+}
+
+@media (max-width: 1200px) {
+  .documents-chat-container.stage-wide-viewer {
+    grid-template-columns: 300px minmax(0, 1fr);
+  }
+  .documents-chat-container.stage-wide-viewer .chat-area {
+    grid-column: 1 / -1;
+    max-height: 320px;
+  }
+}

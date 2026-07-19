@@ -2,6 +2,7 @@ import React from "react";
 // Reutiliza EXATAMENTE o mesmo CSS da página de Especificação / Documentos,
 // garantindo uniformidade visual entre todas as etapas do pipeline.
 import "../../pages/DocumentsPage.css";
+import "./StagePageLayout.css";
 
 export interface StagePageLayoutProps {
   /** Título grande no cabeçalho (ex.: "🧪 Casos de Teste & Validação"). */
@@ -49,6 +50,10 @@ export interface StagePageLayoutProps {
 
   /** Banner de erro no topo (opcional). */
   error?: React.ReactNode;
+
+  /** Miolo largo (grafo/editor/mockups): chat vira coluna estreita e o
+   *  visualizador ocupa a área principal. Default false (etapas de documento). */
+  wideViewer?: boolean;
 }
 
 /**
@@ -80,7 +85,12 @@ const StagePageLayout: React.FC<StagePageLayoutProps> = ({
   modals,
   sidebarTitle = "📁 Origem",
   error,
+  wideViewer = false,
 }) => {
+  // Em modo viewer-largo o chat começa recolhido (o miolo/grafo usa a largura toda);
+  // nas etapas de documento o chat fica sempre visível.
+  const [chatOpen, setChatOpen] = React.useState(!wideViewer);
+  const showChat = !wideViewer || chatOpen;
   return (
     <div className="documents-page-chat">
       <div className="page-header">
@@ -92,7 +102,11 @@ const StagePageLayout: React.FC<StagePageLayoutProps> = ({
 
       {error && <div className="error-banner">{error}</div>}
 
-      <div className="documents-chat-container">
+      <div
+        className={`documents-chat-container${wideViewer ? " stage-wide-viewer" : ""}${
+          wideViewer && !chatOpen ? " chat-collapsed" : ""
+        }`}
+      >
         {/* COLUNA ESQUERDA: origem + configuração */}
         <div className="documents-sidebar">
           <div className="sidebar-header">
@@ -142,11 +156,21 @@ const StagePageLayout: React.FC<StagePageLayoutProps> = ({
                 {reviewing ? "⏳ Revisando..." : "🔍 Revisar"}
               </button>
             )}
+
+            {wideViewer && (
+              <button
+                className="btn-chat-toggle"
+                onClick={() => setChatOpen((v) => !v)}
+                title="Mostrar/ocultar o chat de refino"
+              >
+                {chatOpen ? "💬 Ocultar chat" : "💬 Refinar com o agente"}
+              </button>
+            )}
           </div>
         </div>
 
-        {/* COLUNA DO MEIO: chat */}
-        <div className="chat-area">{chat}</div>
+        {/* COLUNA DO MEIO: chat (recolhível em modo viewer-largo) */}
+        {showChat && <div className="chat-area">{chat}</div>}
 
         {/* COLUNA DIREITA / PRINCIPAL: miolo (visualizador do artefato) */}
         <div className="actions-panel">{children}</div>

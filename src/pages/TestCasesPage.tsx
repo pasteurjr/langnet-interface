@@ -566,6 +566,7 @@ const TestCasesPage: React.FC = () => {
       title="🧪 Casos de Teste & Validação"
       subtitle="Casos de teste derivados dos casos de uso pela técnica do Grafo de Causa-Efeito (causas = ações do ator, efeitos = respostas do sistema). Cada coluna da tabela de decisão é um caso de teste."
       sidebarTitle="📋 Casos de Uso"
+      wideViewer
       sourceButtons={sourceButtons}
       sourceBanner={sourceBanner}
       instructions={instructions}
