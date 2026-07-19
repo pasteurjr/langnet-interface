@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "react-toastify";
+import DataModelHistoryModal from "../components/datamodel/DataModelHistoryModal";
 import "./DataModelPage.css";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api";
@@ -37,6 +38,19 @@ interface ChatMessage {
   content: string;
   at: string;
 }
+interface ViewingVersion {
+  version: number;
+  change_type?: string;
+  change_description?: string;
+  created_at?: string;
+  data_model_yaml?: string;
+  schema_sql?: string;
+  models_py?: string;
+  alembic_migration?: string;
+  entities_json?: string;
+  validation_report?: string;
+  tables: Table[];
+}
 
 type Tab = "entities" | "sql" | "models" | "alembic" | "yaml";
 
@@ -55,8 +69,11 @@ const DataModelPage: React.FC = () => {
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
   const [availableSpecs, setAvailableSpecs] = useState<{ id: string; version: number }[]>([]);
   const [selectedSpec, setSelectedSpec] = useState<string>("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [viewingData, setViewingData] = useState<ViewingVersion | null>(null);
 
   const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  const viewingPast = viewingData !== null;
 
   const loadLatest = useCallback(async () => {
     if (!effectiveProjectId) return;
@@ -185,6 +202,55 @@ const DataModelPage: React.FC = () => {
     }
   };
 
+  const loadVersion = async (version: number) => {
+    if (!session?.session_id) return;
+    try {
+      const r = await fetch(`${API_BASE}/data-model/${session.session_id}/versions/${version}`, { headers });
+      if (r.status === 401) {
+        toast.error("Sua sessão expirou. Faça login novamente.");
+        localStorage.clear();
+        setTimeout(() => (window.location.href = "/login"), 800);
+        return;
+      }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      let vtables: Table[] = [];
+      if (d.entities_json) {
+        try {
+          vtables = JSON.parse(d.entities_json).tables || [];
+        } catch {
+          vtables = [];
+        }
+      }
+      setViewingData({
+        version: d.version ?? version,
+        change_type: d.change_type,
+        change_description: d.change_description,
+        created_at: d.created_at,
+        data_model_yaml: d.data_model_yaml,
+        schema_sql: d.schema_sql,
+        models_py: d.models_py,
+        alembic_migration: d.alembic_migration,
+        entities_json: d.entities_json,
+        validation_report: d.validation_report,
+        tables: vtables,
+      });
+    } catch (e: any) {
+      toast.error(`Falha ao carregar versão: ${e.message}`);
+    }
+  };
+
+  const backToCurrent = () => {
+    setViewingData(null);
+  };
+
+  // Artefatos exibidos: versão passada (somente leitura) OU sessão ao vivo
+  const displayTables = viewingPast ? viewingData!.tables : tables;
+  const displaySchemaSql = viewingPast ? viewingData!.schema_sql : session?.schema_sql;
+  const displayModelsPy = viewingPast ? viewingData!.models_py : session?.models_py;
+  const displayAlembic = viewingPast ? viewingData!.alembic_migration : session?.alembic_migration;
+  const displayYaml = viewingPast ? viewingData!.data_model_yaml : session?.data_model_yaml;
+
   const renderValidation = () => {
     if (!session?.validation_report) return null;
     try {
@@ -251,15 +317,23 @@ const DataModelPage: React.FC = () => {
             <span>DBMS: <strong>{(session.target_dbms || "").toUpperCase()}</strong></span>
             <span>Tabelas: <strong>{tables.length}</strong></span>
             <span>Versão: <strong>v{session.version}</strong></span>
-            <button className="dm-btn-primary" onClick={handleGenerate} disabled={generating}>
+            <button className="dm-btn-primary" onClick={handleGenerate} disabled={generating || viewingPast}>
               {generating ? "Regenerando…" : "↻ Regenerar do zero"}
             </button>
+            <button className="dm-btn-ghost" onClick={() => setHistoryOpen(true)}>📜 Histórico</button>
             {session.status !== "approved" && (
-              <button className="dm-btn-approve" onClick={handleApprove}>✓ Aprovar</button>
+              <button className="dm-btn-approve" onClick={handleApprove} disabled={viewingPast}>✓ Aprovar</button>
             )}
           </>
         )}
       </div>
+
+      {viewingPast && (
+        <div className="dm-viewing-banner">
+          <span>🕘 Visualizando versão <b>{viewingData!.version}</b> (somente leitura)</span>
+          <button className="dm-btn-ghost" onClick={backToCurrent}>Voltar à versão atual</button>
+        </div>
+      )}
 
       {renderValidation()}
 
@@ -284,8 +358,8 @@ const DataModelPage: React.FC = () => {
             <div className="dm-tab-body">
               {tab === "entities" && (
                 <div className="dm-tables-list">
-                  {tables.length === 0 && <div className="dm-loading">Nenhuma tabela extraída ainda.</div>}
-                  {tables.map((t) => (
+                  {displayTables.length === 0 && <div className="dm-loading">Nenhuma tabela extraída ainda.</div>}
+                  {displayTables.map((t) => (
                     <div key={t.name} className="dm-table-card">
                       <h3>📊 {t.name}</h3>
                       {t.description && <div style={{ color: "#64748b", fontSize: 12, marginBottom: 6 }}>{t.description}</div>}
@@ -307,13 +381,14 @@ const DataModelPage: React.FC = () => {
                   ))}
                 </div>
               )}
-              {tab === "sql" && <pre>{session.schema_sql || "—"}</pre>}
-              {tab === "models" && <pre>{session.models_py || "—"}</pre>}
-              {tab === "alembic" && <pre>{session.alembic_migration || "—"}</pre>}
-              {tab === "yaml" && <pre>{session.data_model_yaml || "—"}</pre>}
+              {tab === "sql" && <pre>{displaySchemaSql || "—"}</pre>}
+              {tab === "models" && <pre>{displayModelsPy || "—"}</pre>}
+              {tab === "alembic" && <pre>{displayAlembic || "—"}</pre>}
+              {tab === "yaml" && <pre>{displayYaml || "—"}</pre>}
             </div>
           </div>
 
+          {!viewingPast && (
           <div className="dm-chat">
             <h3>💬 Refinar via chat</h3>
             <div className="dm-chat-messages">
@@ -338,8 +413,17 @@ const DataModelPage: React.FC = () => {
               <button onClick={handleChatSend} disabled={chatSending || !chatMsg.trim()}>Enviar</button>
             </div>
           </div>
+          )}
         </div>
       )}
+
+      <DataModelHistoryModal
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        sessionId={session?.session_id || null}
+        currentVersion={session?.version}
+        onSelectVersion={loadVersion}
+      />
     </div>
   );
 };

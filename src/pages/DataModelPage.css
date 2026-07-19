@@ -13,6 +13,18 @@
 .dm-btn-primary:disabled { background: #9ca3af; cursor: not-allowed; }
 .dm-btn-approve { background: #10b981; color: white; }
 .dm-btn-approve:hover { background: #059669; }
+.dm-btn-approve:disabled { background: #9ca3af; cursor: not-allowed; }
+.dm-btn-ghost { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0 !important; }
+.dm-btn-ghost:hover { background: #e2e8f0; }
+
+.dm-viewing-banner {
+  display: flex; align-items: center; gap: 16px;
+  padding: 10px 16px; background: #fffbeb;
+  border: 1px solid #fcd34d; border-radius: 10px;
+  font-size: 13px; color: #92400e;
+}
+.dm-viewing-banner b { color: #b45309; }
+.dm-viewing-banner .dm-btn-ghost { margin-left: auto; padding: 7px 13px; font-size: 12.5px; cursor: pointer; border-radius: 6px; font-weight: 500; }
 
 .dm-main { flex: 1; display: grid; grid-template-columns: 1fr 320px; gap: 16px; overflow: hidden; }
 
