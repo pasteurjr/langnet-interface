@@ -13,11 +13,15 @@ from app.database import (
     create_task_execution_flow_session, get_task_execution_flow_session,
     update_task_execution_flow_session, list_task_execution_flow_sessions,
     get_agent_task_spec_session, get_tasks_yaml_session,
-    get_specification_session, get_document
+    get_specification_session, get_document, get_db_connection
 )
 from app.routers.auth import get_current_user
 from app.llm import get_llm_response_async
-from prompts.generate_task_execution_flow import get_task_execution_flow_prompt
+from prompts.generate_task_execution_flow import (
+    get_task_execution_flow_prompt,
+    get_task_execution_flow_refine_prompt,
+    get_task_execution_flow_review_prompt,
+)
 
 router = APIRouter(prefix="/task-execution-flow", tags=["task-execution-flow"])
 
@@ -32,6 +36,109 @@ class GenerateFlowRequest(BaseModel):
     tasks_yaml_session_id: str
     uploaded_document_ids: Optional[List[str]] = None
     custom_instructions: Optional[str] = None
+
+
+class UpdateFlowRequest(BaseModel):
+    content: str
+
+
+class RefineFlowRequest(BaseModel):
+    message: str
+    action_type: Optional[str] = "refine"
+
+
+# ═══════════════════════════════════════════════════════════
+# HELPERS: VERSIONING + CHAT
+# ═══════════════════════════════════════════════════════════
+
+def _save_version(
+    session_id: str,
+    flow_document: str,
+    change_type: str,
+    change_description: str,
+    user_id: Optional[str] = None,
+    is_approved_version: int = 0
+) -> int:
+    """
+    Salva uma nova versão do fluxo no histórico e atualiza o documento da sessão.
+
+    - Calcula a próxima versão como MAX(version)+1 (não há coluna de versão na sessão).
+    - Insere a linha no histórico com doc_size = len(flow_document).
+    - Atualiza flow_document da sessão.
+
+    Retorna o número da nova versão.
+    """
+    doc_size = len(flow_document or "")
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT COALESCE(MAX(version), 0) + 1 AS next_version
+            FROM task_execution_flow_version_history
+            WHERE session_id = %s
+        """, (session_id,))
+        row = cursor.fetchone()
+        new_version = row['next_version'] if row and row.get('next_version') else 1
+
+        cursor.execute("""
+            INSERT INTO task_execution_flow_version_history
+                (session_id, version, flow_document, created_at, created_by,
+                 change_type, change_description, doc_size, is_approved_version)
+            VALUES (%s, %s, %s, NOW(), %s, %s, %s, %s, %s)
+        """, (
+            session_id,
+            new_version,
+            flow_document,
+            user_id,
+            change_type,
+            change_description[:500] if change_description else None,
+            doc_size,
+            is_approved_version,
+        ))
+
+        cursor.execute("""
+            UPDATE task_execution_flow_sessions
+            SET flow_document = %s, updated_at = NOW()
+            WHERE id = %s
+        """, (flow_document, session_id))
+
+        conn.commit()
+        cursor.close()
+
+    return new_version
+
+
+def _save_chat_message(
+    session_id: str,
+    sender_type: str,
+    message_text: str,
+    message_type: str = "chat",
+    sender_name: Optional[str] = None,
+    parent_message_id: Optional[str] = None,
+    metadata: Optional[str] = None
+) -> str:
+    """Insere uma mensagem no chat da sessão e retorna o id gerado."""
+    message_id = str(uuid.uuid4())
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            INSERT INTO task_execution_flow_chat_messages
+                (id, session_id, sender_type, sender_name, message_text,
+                 message_type, timestamp, parent_message_id, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s, NOW(3), %s, %s)
+        """, (
+            message_id,
+            session_id,
+            sender_type,
+            sender_name,
+            message_text,
+            message_type,
+            parent_message_id,
+            metadata,
+        ))
+        conn.commit()
+        cursor.close()
+    return message_id
 
 
 # ═══════════════════════════════════════════════════════════
@@ -192,6 +299,19 @@ async def execute_flow_generation(
             "finished_at": datetime.now()
         })
 
+        # Registrar versão 1 no histórico (geração inicial)
+        try:
+            _save_version(
+                session_id=session_id,
+                flow_document=flow_document,
+                change_type="initial_generation",
+                change_description="Geração inicial do fluxo de execução",
+                user_id=user_id,
+            )
+            print(f"[TASK_FLOW] ✅ Version 1 recorded in history")
+        except Exception as ve:
+            print(f"[TASK_FLOW] ⚠️ Failed to record initial version: {ve}")
+
         print(f"[TASK_FLOW] ✅ Session completed: {total_tasks} tasks, parallelism={has_parallelism}")
 
     except Exception as e:
@@ -236,3 +356,320 @@ async def list_sessions(project_id: str):
         "sessions": sessions,
         "total": len(sessions)
     }
+
+
+# ═══════════════════════════════════════════════════════════
+# VERSIONING
+# ═══════════════════════════════════════════════════════════
+
+@router.get("/{session_id}/versions")
+async def list_versions(session_id: str):
+    """Lista todas as versões de um fluxo de execução (mais recente primeiro)."""
+    session = get_task_execution_flow_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT version, created_at, change_description, change_type, doc_size
+            FROM task_execution_flow_version_history
+            WHERE session_id = %s
+            ORDER BY version DESC
+        """, (session_id,))
+        versions = cursor.fetchall()
+        cursor.close()
+
+    return {"versions": versions}
+
+
+@router.get("/{session_id}/versions/{version}")
+async def get_version(session_id: str, version: int):
+    """Retorna o documento completo de uma versão específica."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT * FROM task_execution_flow_version_history
+            WHERE session_id = %s AND version = %s
+        """, (session_id, version))
+        version_data = cursor.fetchone()
+        cursor.close()
+
+    if not version_data:
+        raise HTTPException(status_code=404, detail=f"Versão {version} não encontrada")
+
+    return version_data
+
+
+# ═══════════════════════════════════════════════════════════
+# EDIÇÃO MANUAL (nova versão)
+# ═══════════════════════════════════════════════════════════
+
+@router.put("/{session_id}")
+async def update_task_execution_flow(
+    session_id: str,
+    request: UpdateFlowRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Edição manual do documento → cria nova versão (manual_edit)."""
+    session = get_task_execution_flow_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+
+    new_version = _save_version(
+        session_id=session_id,
+        flow_document=request.content,
+        change_type="manual_edit",
+        change_description="Edição manual do documento",
+        user_id=current_user['id'],
+    )
+
+    return {"message": "Fluxo de execução atualizado", "version": new_version}
+
+
+# ═══════════════════════════════════════════════════════════
+# REFINAMENTO (LLM → nova versão)
+# ═══════════════════════════════════════════════════════════
+
+@router.post("/{session_id}/refine")
+async def refine_task_execution_flow(
+    session_id: str,
+    request: RefineFlowRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Refina o documento de fluxo via LLM aplicando a instrução do usuário.
+    - action_type='refine' (padrão): modifica o documento e cria nova versão (ai_refinement)
+    - action_type='chat': apenas responde/analisa sem modificar o documento
+    Registra as mensagens (usuário + assistente) no chat da sessão.
+    """
+    session = get_task_execution_flow_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+
+    current_document = session.get("flow_document", "")
+    if not current_document:
+        raise HTTPException(status_code=400, detail="Documento de fluxo vazio")
+
+    user_id = current_user['id']
+    action_type = request.action_type or "refine"
+
+    # Registrar mensagem do usuário
+    user_message_id = _save_chat_message(
+        session_id=session_id,
+        sender_type="user",
+        message_text=request.message,
+        message_type="chat",
+        sender_name="Você",
+    )
+
+    try:
+        if action_type == "chat":
+            # Modo análise: não modifica o documento
+            prompt = get_task_execution_flow_review_prompt(current_document)
+            analysis = await get_llm_response_async(
+                prompt=(
+                    f"{prompt}\n\nPERGUNTA/INSTRUÇÃO DO USUÁRIO:\n{request.message}\n"
+                    "Responda de forma direta à instrução do usuário sobre o documento acima."
+                ),
+                system="Você é especialista em design de workflows e state management (LangGraph).",
+                temperature=0.3,
+                max_tokens=8000,
+            )
+
+            assistant_message_id = _save_chat_message(
+                session_id=session_id,
+                sender_type="assistant",
+                message_text=analysis,
+                message_type="chat",
+                sender_name="Agente Fluxo de Execução",
+                parent_message_id=user_message_id,
+            )
+
+            return {
+                "user_message_id": user_message_id,
+                "assistant_message_id": assistant_message_id,
+                "action_type": action_type,
+                "status": "completed",
+                "message": analysis,
+            }
+
+        # Modo refinamento: modifica o documento
+        prompt = get_task_execution_flow_refine_prompt(current_document, request.message)
+        refined_document = await get_llm_response_async(
+            prompt=prompt,
+            system="Você é especialista em design de workflows e state management (LangGraph).",
+            temperature=0.3,
+            max_tokens=32000,
+        )
+
+        # Recontar tasks e paralelismo
+        import re
+        task_sections = re.findall(r'^### Task \d+:', refined_document, re.MULTILINE)
+        total_tasks = len(task_sections)
+        has_parallelism = "paralel" in refined_document.lower() or "parallel" in refined_document.lower()
+
+        new_version = _save_version(
+            session_id=session_id,
+            flow_document=refined_document,
+            change_type="ai_refinement",
+            change_description=request.message[:500],
+            user_id=user_id,
+        )
+
+        update_task_execution_flow_session(session_id, {
+            "total_tasks": total_tasks,
+            "has_parallelism": has_parallelism,
+        })
+
+        assistant_message_id = _save_chat_message(
+            session_id=session_id,
+            sender_type="assistant",
+            message_text=f"✅ Fluxo refinado com sucesso (versão {new_version}).",
+            message_type="chat",
+            sender_name="Agente Fluxo de Execução",
+            parent_message_id=user_message_id,
+        )
+
+        return {
+            "user_message_id": user_message_id,
+            "assistant_message_id": assistant_message_id,
+            "action_type": action_type,
+            "status": "completed",
+            "version": new_version,
+            "flow_document": refined_document,
+            "message": f"Fluxo refinado (v{new_version})",
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        _save_chat_message(
+            session_id=session_id,
+            sender_type="system",
+            message_text=f"❌ Erro ao processar: {str(e)}",
+            message_type="error",
+            parent_message_id=user_message_id,
+        )
+        raise HTTPException(status_code=500, detail=f"Falha ao refinar fluxo: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════
+# REVISÃO (LLM → sugestões, NÃO modifica)
+# ═══════════════════════════════════════════════════════════
+
+@router.post("/{session_id}/review")
+async def review_task_execution_flow(
+    session_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Revisão automática do fluxo — gera sugestões de melhoria.
+    NÃO modifica o documento nem cria nova versão.
+    """
+    session = get_task_execution_flow_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+
+    current_document = session.get("flow_document", "")
+    if not current_document:
+        raise HTTPException(status_code=400, detail="Documento de fluxo vazio")
+
+    try:
+        prompt = get_task_execution_flow_review_prompt(current_document)
+        suggestions = await get_llm_response_async(
+            prompt=prompt,
+            system="Você é especialista em design de workflows e state management (LangGraph).",
+            temperature=0.3,
+            max_tokens=8000,
+        )
+
+        review_message_id = _save_chat_message(
+            session_id=session_id,
+            sender_type="assistant",
+            message_text=suggestions,
+            message_type="info",
+            sender_name="Agente Fluxo de Execução",
+            metadata='{"type": "review"}',
+        )
+
+        return {"suggestions": suggestions, "review_message_id": review_message_id}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Falha ao revisar fluxo: {str(e)}")
+
+
+# ═══════════════════════════════════════════════════════════
+# HISTÓRICO DE CHAT
+# ═══════════════════════════════════════════════════════════
+
+@router.get("/{session_id}/chat-history")
+async def get_chat_history(session_id: str):
+    """Retorna as mensagens de chat da sessão."""
+    session = get_task_execution_flow_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT id, session_id, sender_type, sender_name, message_text,
+                   message_type, timestamp, parent_message_id, metadata
+            FROM task_execution_flow_chat_messages
+            WHERE session_id = %s
+            ORDER BY timestamp ASC
+            LIMIT 200
+        """, (session_id,))
+        messages = cursor.fetchall()
+        cursor.close()
+
+    return {"messages": messages, "total": len(messages)}
+
+
+# ═══════════════════════════════════════════════════════════
+# APROVAÇÃO
+# ═══════════════════════════════════════════════════════════
+
+@router.post("/{session_id}/approve")
+async def approve_task_execution_flow(
+    session_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Marca a versão atual (mais recente) como aprovada."""
+    session = get_task_execution_flow_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+
+    user_id = current_user['id']
+
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+
+        cursor.execute("""
+            SELECT COALESCE(MAX(version), 0) AS current_version
+            FROM task_execution_flow_version_history
+            WHERE session_id = %s
+        """, (session_id,))
+        row = cursor.fetchone()
+        current_version = row['current_version'] if row else 0
+
+        if not current_version:
+            cursor.close()
+            raise HTTPException(status_code=400, detail="Nenhuma versão para aprovar")
+
+        cursor.execute("""
+            UPDATE task_execution_flow_version_history
+            SET is_approved_version = 1, reviewed_by = %s, reviewed_at = NOW()
+            WHERE session_id = %s AND version = %s
+        """, (user_id, session_id, current_version))
+
+        conn.commit()
+        cursor.close()
+
+    return {"message": "Fluxo de execução aprovado", "version": current_version, "status": "approved"}

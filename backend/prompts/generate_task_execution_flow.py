@@ -440,3 +440,84 @@ OUTPUT: Retorne APENAS o documento Markdown. Sem explicações externas.
 
 Gere agora:
 """
+
+
+def get_task_execution_flow_refine_prompt(current_document: str, instruction: str) -> str:
+    """
+    Gera prompt para refinar um documento de fluxo de execução existente.
+
+    Args:
+        current_document: Documento de fluxo de execução atual (Markdown)
+        instruction: Instrução de refinamento fornecida pelo usuário
+
+    Returns:
+        Prompt formatado para o LLM. A resposta deve ser o documento COMPLETO refinado.
+    """
+    return f"""Você é especialista em design de workflows e state management (LangGraph).
+
+TAREFA: Refinar o documento de FLUXO DE EXECUÇÃO DE TAREFAS abaixo aplicando a instrução do usuário.
+
+═══════════════════════════════════════════════════════════════
+DOCUMENTO ATUAL (Markdown)
+═══════════════════════════════════════════════════════════════
+{current_document}
+
+═══════════════════════════════════════════════════════════════
+INSTRUÇÃO DE REFINAMENTO DO USUÁRIO
+═══════════════════════════════════════════════════════════════
+{instruction}
+
+═══════════════════════════════════════════════════════════════
+REGRAS DO REFINAMENTO
+═══════════════════════════════════════════════════════════════
+1. Aplique APENAS as mudanças pedidas pelo usuário. Preserve todo o resto do documento intacto.
+2. Mantenha a estrutura e a formatação Markdown do documento original.
+3. Mantenha IDs sequenciais únicos (T-001, T-002, ...) consistentes em todas as seções.
+4. Cada task deve aparecer exatamente uma vez no grafo (DAG válido).
+5. Todo campo em "requires" deve estar na seção 2.1 ou no "produces" de uma task anterior.
+6. Código Python (TASK_REGISTRY / StateGraph) deve permanecer válido e executável.
+7. Não adicione comentários explicativos fora do documento.
+
+OUTPUT: Retorne APENAS o documento Markdown COMPLETO já refinado. Sem explicações externas, sem blocos de código cercando o documento inteiro.
+
+Gere agora:
+"""
+
+
+def get_task_execution_flow_review_prompt(current_document: str) -> str:
+    """
+    Gera prompt para revisar um documento de fluxo de execução e sugerir melhorias.
+    NÃO modifica o documento — apenas retorna sugestões.
+
+    Args:
+        current_document: Documento de fluxo de execução atual (Markdown)
+
+    Returns:
+        Prompt formatado para o LLM. A resposta deve ser um texto com sugestões.
+    """
+    return f"""Você é especialista em design de workflows e state management (LangGraph).
+
+TAREFA: Revisar o documento de FLUXO DE EXECUÇÃO DE TAREFAS abaixo e listar SUGESTÕES DE MELHORIA.
+Você NÃO deve reescrever o documento. Apenas aponte problemas e melhorias possíveis.
+
+═══════════════════════════════════════════════════════════════
+DOCUMENTO A REVISAR (Markdown)
+═══════════════════════════════════════════════════════════════
+{current_document}
+
+═══════════════════════════════════════════════════════════════
+CRITÉRIOS DE REVISÃO
+═══════════════════════════════════════════════════════════════
+1. Completude: todas as tasks têm input/output definidos?
+2. Consistência do State: todo campo em "requires" está na seção 2.1 ou no "produces" de outra task?
+3. Grafo: é um DAG válido? Cada task aparece exatamente uma vez? Há ciclos?
+4. IDs: sequenciais e únicos (T-001, T-002...) consistentes em todas as seções?
+5. Código: TASK_REGISTRY usa strings para agentes? StateGraph tem node/edge para cada task?
+6. Paralelismo: há oportunidades de paralelização não exploradas?
+7. Clareza: process steps são acionáveis? Schemas JSON são realistas?
+
+OUTPUT: Retorne um texto em Markdown com uma lista numerada de sugestões concretas e priorizadas.
+Se o documento estiver bom, diga isso e sugira melhorias menores. Não retorne o documento reescrito.
+
+Gere agora:
+"""
