@@ -19,7 +19,7 @@ import datetime
 from app.database import get_db_connection
 from app.dependencies import get_current_user
 
-from agents.langnettest import parse_use_cases, ceg_for_uc, refine_ceg
+from agents.langnettest import parse_use_cases, ceg_for_uc, refine_ceg, review_test_cases
 from agents.ceg_engine import generate_test_cases
 from agents.ceg_render import ceg_to_svg
 from agents.langnetvalidation import build_validation_html
@@ -42,6 +42,12 @@ class ChatMessageRequest(BaseModel):
 
 class ApprovalRequest(BaseModel):
     approve: bool = True
+
+
+class UpdateRequest(BaseModel):
+    results_json: Optional[Dict[str, Any]] = Field(None, description="Objeto completo dos resultados {'results':[...]} editado")
+    validation_document: Optional[str] = Field(None, description="HTML do documento de validação (opcional; se ausente é regerado)")
+    change_description: Optional[str] = Field(None, description="Descrição da alteração manual")
 
 
 # ─────────────────── Helpers ───────────────────
@@ -131,6 +137,49 @@ def _regen_validation_document(session_id: str) -> None:
             cur.close()
 
 
+def _save_version(session_id: str, results_json_str: str, validation_document: Optional[str],
+                  change_type: str, change_description: Optional[str],
+                  user_id: Optional[str]) -> int:
+    """Grava um snapshot no histórico (test_case_version_history) e retorna a nova versão.
+
+    A próxima versão = COALESCE(MAX(version),0)+1 do histórico dessa sessão. A coluna
+    version da própria sessão é mantida em sincronia com esse número (fonte única de
+    verdade), para evitar dupla contagem em fluxos que também mexem em version.
+    """
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute(
+                "SELECT COALESCE(MAX(version),0)+1 AS next_version "
+                "FROM test_case_version_history WHERE session_id=%s",
+                (session_id,),
+            )
+            row = cur.fetchone()
+            new_version = row["next_version"] if row and row.get("next_version") else 1
+        finally:
+            cur.close()
+
+    doc_size = len(results_json_str or "")
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                """INSERT INTO test_case_version_history
+                   (session_id, version, results_json, validation_document, created_by,
+                    change_type, change_description, doc_size)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
+                (session_id, new_version, results_json_str, validation_document, user_id,
+                 change_type, (change_description or "")[:500] or None, doc_size),
+            )
+            # mantém test_case_sessions.version em sincronia com o histórico
+            cur.execute("UPDATE test_case_sessions SET version=%s WHERE id=%s",
+                        (new_version, session_id))
+            conn.commit()
+        finally:
+            cur.close()
+    return new_version
+
+
 def _serialize(row: Dict[str, Any], with_svg: bool = True) -> Dict[str, Any]:
     data = json.loads(row["results_json"]) if row.get("results_json") else {"results": []}
     results = data.get("results", [])
@@ -186,6 +235,19 @@ def _run_generation(session_id: str, spec_doc: str, only: Optional[List[str]]) -
     # ao concluir, gera e persiste o Documento de Validação no banco
     try:
         _regen_validation_document(session_id)
+    except Exception:
+        pass
+    # registra a versão inicial no histórico (snapshot dos resultados + doc de validação)
+    try:
+        final = _fetch_session(session_id)
+        _save_version(
+            session_id,
+            final.get("results_json") or json.dumps({"results": results}, ensure_ascii=False),
+            final.get("validation_document"),
+            change_type="initial_generation",
+            change_description="Geração inicial dos casos de teste",
+            user_id=final.get("user_id"),
+        )
     except Exception:
         pass
 
@@ -291,13 +353,15 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
     total_ucs = len([r for r in results if not r.get("error")])
     reply = f"{target['uc']} ajustado: {tc['n_causes']} causas, {tc['n_effects']} efeitos, {tc['n_cases']} casos."
 
+    results_json_str = json.dumps({"results": results}, ensure_ascii=False)
     with get_db_connection() as conn:
         cur = conn.cursor()
         try:
+            # NÃO incrementa version aqui — _save_version é a fonte única da verdade
             cur.execute(
-                """UPDATE test_case_sessions SET results_json=%s, total_ucs=%s, total_cases=%s,
-                   version=version+1 WHERE id=%s""",
-                (json.dumps({"results": results}, ensure_ascii=False), total_ucs, total_cases, session_id),
+                """UPDATE test_case_sessions SET results_json=%s, total_ucs=%s, total_cases=%s
+                   WHERE id=%s""",
+                (results_json_str, total_ucs, total_cases, session_id),
             )
             cur.execute(
                 "INSERT INTO test_case_chat_messages (id, test_case_session_id, role, content, uc_id) VALUES (%s,%s,%s,%s,%s)",
@@ -314,6 +378,20 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
     # regenera e persiste o Documento de Validação (reflete o refino)
     try:
         _regen_validation_document(session_id)
+    except Exception:
+        pass
+
+    # registra a nova versão no histórico (fonte única — também sincroniza version da sessão)
+    try:
+        refreshed = _fetch_session(session_id)
+        _save_version(
+            session_id,
+            refreshed.get("results_json") or results_json_str,
+            refreshed.get("validation_document"),
+            change_type="ai_refinement",
+            change_description=req.content,
+            user_id=current_user.get("id"),
+        )
     except Exception:
         pass
 
@@ -366,3 +444,132 @@ def get_validation_document(session_id: str, current_user=Depends(get_current_us
     _regen_validation_document(session_id)
     row = _fetch_session(session_id)
     return HTMLResponse(content=row.get("validation_document") or "<h1>Documento indisponível</h1>")
+
+
+# ─────────────────── Histórico de versões ───────────────────
+
+@router.get("/{session_id}/versions")
+def list_versions(session_id: str, current_user=Depends(get_current_user)):
+    """Lista as versões da sessão (mais recente primeiro)."""
+    _fetch_session(session_id)
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute(
+                """SELECT version, created_at, change_description, change_type, doc_size
+                   FROM test_case_version_history WHERE session_id=%s
+                   ORDER BY version DESC""",
+                (session_id,),
+            )
+            rows = cur.fetchall()
+        finally:
+            cur.close()
+    return {"versions": [
+        {"version": r["version"], "created_at": str(r["created_at"]),
+         "change_description": r["change_description"], "change_type": r["change_type"],
+         "doc_size": r["doc_size"]}
+        for r in rows
+    ]}
+
+
+@router.get("/{session_id}/versions/{version}")
+def get_version(session_id: str, version: int, current_user=Depends(get_current_user)):
+    """Retorna o snapshot completo de uma versão: results (com svg por UC) + doc de validação."""
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute(
+                "SELECT * FROM test_case_version_history WHERE session_id=%s AND version=%s",
+                (session_id, version),
+            )
+            row = cur.fetchone()
+        finally:
+            cur.close()
+    if not row:
+        raise HTTPException(404, f"Versão {version} não encontrada")
+
+    data = json.loads(row["results_json"]) if row.get("results_json") else {"results": []}
+    results = data.get("results", [])
+    for r in results:
+        if r.get("ceg") and "svg" not in r:
+            try:
+                r["svg"] = ceg_to_svg(r["ceg"])
+            except Exception:
+                r["svg"] = None
+    return {
+        "session_id": session_id,
+        "version": row["version"],
+        "change_type": row["change_type"],
+        "change_description": row["change_description"],
+        "created_at": str(row.get("created_at")),
+        "results": results,
+        "validation_document": row.get("validation_document"),
+    }
+
+
+@router.put("/{session_id}")
+def update_session(session_id: str, req: UpdateRequest, current_user=Depends(get_current_user)):
+    """Edição manual: persiste um results_json editado, regenera o documento de
+    validação e registra uma versão manual_edit."""
+    row = _fetch_session(session_id)
+
+    if req.results_json is not None:
+        data = req.results_json
+        results = data.get("results", []) if isinstance(data, dict) else []
+        results_json_str = json.dumps({"results": results}, ensure_ascii=False)
+        total_cases = sum(r.get("n_cases", 0) for r in results if not r.get("error"))
+        total_ucs = len([r for r in results if not r.get("error")])
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    """UPDATE test_case_sessions SET results_json=%s, total_ucs=%s, total_cases=%s
+                       WHERE id=%s""",
+                    (results_json_str, total_ucs, total_cases, session_id),
+                )
+                conn.commit()
+            finally:
+                cur.close()
+    else:
+        results_json_str = row.get("results_json") or json.dumps({"results": []}, ensure_ascii=False)
+
+    # documento de validação: usa o enviado, senão regenera a partir dos resultados
+    if req.validation_document is not None:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            try:
+                cur.execute("UPDATE test_case_sessions SET validation_document=%s WHERE id=%s",
+                            (req.validation_document, session_id))
+                conn.commit()
+            finally:
+                cur.close()
+    else:
+        try:
+            _regen_validation_document(session_id)
+        except Exception:
+            pass
+
+    refreshed = _fetch_session(session_id)
+    new_version = _save_version(
+        session_id,
+        refreshed.get("results_json") or results_json_str,
+        refreshed.get("validation_document"),
+        change_type="manual_edit",
+        change_description=req.change_description or "Edição manual dos casos de teste",
+        user_id=current_user.get("id"),
+    )
+    return {"message": "Casos de teste atualizados", "version": new_version}
+
+
+@router.post("/{session_id}/review")
+def review_session(session_id: str, current_user=Depends(get_current_user)):
+    """Revisão automática (LLM): retorna sugestões de melhoria dos casos de teste.
+    NÃO modifica os resultados nem cria versão."""
+    row = _fetch_session(session_id)
+    data = json.loads(row["results_json"]) if row.get("results_json") else {"results": []}
+    results = data.get("results", [])
+    try:
+        suggestions = review_test_cases(results)
+    except Exception as e:
+        suggestions = f"Não foi possível gerar sugestões automáticas no momento ({e})."
+    return {"suggestions": suggestions}

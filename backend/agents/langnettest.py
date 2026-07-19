@@ -142,6 +142,41 @@ def refine_ceg(ceg: dict, instruction: str) -> Optional[dict]:
     return None
 
 
+def review_test_cases(results: List[dict]) -> str:
+    """Usa o LLM para sugerir melhorias nos casos de teste (NÃO modifica nada).
+
+    Recebe a lista de resultados (cada item: uc/name/ceg/decision_table/test_cases/...)
+    e devolve um texto com sugestões de melhoria. Robusto a falhas: em erro, retorna
+    uma mensagem útil ao invés de estourar.
+    """
+    try:
+        resumo = []
+        for r in results or []:
+            if r.get("error"):
+                resumo.append(f"- {r.get('uc')} {r.get('name','')}: ERRO — {r.get('error')}")
+                continue
+            resumo.append(
+                f"- {r.get('uc')} {r.get('name','')}: "
+                f"{r.get('n_causes', 0)} causas, {r.get('n_effects', 0)} efeitos, "
+                f"{r.get('n_cases', 0)} casos de teste."
+            )
+        if not resumo:
+            return "Não há casos de teste para revisar."
+        prompt = (
+            "Você é um especialista em teste de software pelo método do Grafo de "
+            "Causa-Efeito (CEG). Abaixo está o resumo dos casos de teste gerados para "
+            "os casos de uso de um sistema. Analise criticamente e liste sugestões "
+            "objetivas de melhoria: cobertura de causas/efeitos faltantes, restrições "
+            "(constraints) ausentes, casos de exceção não cobertos, redundâncias e "
+            "clareza dos resultados esperados. Responda em português, em tópicos.\n\n"
+            "RESUMO DOS CASOS DE TESTE:\n" + "\n".join(resumo)
+        )
+        out = _call_llm(prompt)
+        return (out or "").strip() or "O agente não retornou sugestões."
+    except Exception as e:
+        return f"Não foi possível gerar sugestões automáticas no momento ({e}). Revise manualmente a cobertura de causas, efeitos e restrições."
+
+
 def generate_ceg_test_cases(spec_document: str, only: Optional[List[str]] = None) -> dict:
     """Gera CEG + tabela de decisão + casos de teste para todos os UCs (ou só `only`)."""
     ucs = parse_use_cases(spec_document)
