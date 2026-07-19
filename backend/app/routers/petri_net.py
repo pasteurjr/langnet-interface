@@ -3,6 +3,7 @@ API Router: Petri Net (geração via LLM, leitura e atualização)
 Persiste em projects.project_data.
 """
 
+import json
 import yaml
 from typing import Optional
 
@@ -15,6 +16,7 @@ from app.database import (
     get_agents_yaml_session,
     get_tasks_yaml_session,
     get_task_execution_flow_session,
+    get_db_connection,
 )
 from app.routers.auth import get_current_user
 
@@ -33,6 +35,60 @@ class GeneratePetriNetRequest(BaseModel):
 
 class UpdatePetriNetRequest(BaseModel):
     petri_net: dict
+
+
+class ApprovePetriNetRequest(BaseModel):
+    version: Optional[int] = None
+
+
+# ═══════════════════════════════════════════════════════════
+# VERSION HISTORY (camada ADITIVA — não altera project_data)
+# ═══════════════════════════════════════════════════════════
+
+def _save_petri_version(
+    project_id: str,
+    petri_net: dict,
+    change_type: str,
+    change_description: str,
+    user_id: Optional[str],
+) -> Optional[int]:
+    """Registra um snapshot da Rede de Petri em petri_net_version_history.
+
+    Camada aditiva: NUNCA levanta exceção (envolve o INSERT em try/except) para que
+    uma falha de versionamento jamais quebre generate/save. Retorna a nova versão ou None.
+    """
+    try:
+        petri_json = json.dumps(petri_net, ensure_ascii=False)
+        doc_size = len(petri_json)
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COALESCE(MAX(version), 0) + 1 FROM petri_net_version_history "
+                "WHERE project_id = %s",
+                (project_id,),
+            )
+            new_version = int(cursor.fetchone()[0])
+            cursor.execute(
+                "INSERT INTO petri_net_version_history "
+                "(project_id, version, petri_net_json, created_by, change_type, "
+                " change_description, doc_size) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                (
+                    project_id,
+                    new_version,
+                    petri_json,
+                    user_id,
+                    change_type,
+                    change_description,
+                    doc_size,
+                ),
+            )
+            conn.commit()
+            cursor.close()
+        return new_version
+    except Exception as exc:  # noqa: BLE001 — versionamento nunca quebra o fluxo principal
+        print(f"⚠️  Falha ao salvar versão da Rede de Petri (ignorada): {exc}")
+        return None
 
 
 # ═══════════════════════════════════════════════════════════
@@ -194,6 +250,15 @@ async def generate_petri_net(
     if affected == 0:
         raise HTTPException(status_code=404, detail="Projeto não encontrado para gravar a rede")
 
+    # ADITIVO: registrar snapshot no histórico (não bloqueia se falhar)
+    _save_petri_version(
+        project_id,
+        petri_net,
+        "initial_generation",
+        "Geração da rede via agente",
+        current_user["id"],
+    )
+
     return {"petri_net": petri_net}
 
 
@@ -219,4 +284,154 @@ def update_petri_net(
     affected = update_project_data(project_id, request.petri_net)
     if affected == 0:
         raise HTTPException(status_code=404, detail="Projeto não encontrado")
+
+    # ADITIVO: registrar snapshot no histórico (não bloqueia se falhar)
+    _save_petri_version(
+        project_id,
+        request.petri_net,
+        "manual_edit",
+        "Edição manual no editor",
+        current_user["id"],
+    )
+
     return {"status": "ok"}
+
+
+# ═══════════════════════════════════════════════════════════
+# ENDPOINTS — VERSION HISTORY (aditivo)
+# ═══════════════════════════════════════════════════════════
+
+@router.get("/{project_id}/versions")
+def list_petri_versions(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Lista as versões (snapshots) da Rede de Petri para o projeto, mais recentes primeiro."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT version, created_at, change_description, change_type, doc_size, "
+            "       is_approved_version "
+            "FROM petri_net_version_history WHERE project_id = %s "
+            "ORDER BY version DESC",
+            (project_id,),
+        )
+        rows = cursor.fetchall()
+        cursor.close()
+    versions = [
+        {
+            "version": r["version"],
+            "created_at": r["created_at"].isoformat() if r.get("created_at") else None,
+            "change_description": r["change_description"],
+            "change_type": r["change_type"],
+            "doc_size": r["doc_size"],
+            "is_approved_version": bool(r["is_approved_version"]),
+        }
+        for r in rows
+    ]
+    return {"versions": versions}
+
+
+@router.get("/{project_id}/versions/{version}")
+def get_petri_version(
+    project_id: str,
+    version: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Retorna o snapshot completo de uma versão específica (petri_net parseado)."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT version, petri_net_json, change_type, change_description, created_at, "
+            "       is_approved_version "
+            "FROM petri_net_version_history WHERE project_id = %s AND version = %s LIMIT 1",
+            (project_id, version),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Versão não encontrada")
+    try:
+        petri_net = json.loads(row["petri_net_json"])
+    except (json.JSONDecodeError, TypeError):
+        petri_net = None
+    return {
+        "project_id": project_id,
+        "version": row["version"],
+        "change_type": row["change_type"],
+        "change_description": row["change_description"],
+        "created_at": row["created_at"].isoformat() if row.get("created_at") else None,
+        "is_approved_version": bool(row["is_approved_version"]),
+        "petri_net": petri_net,
+    }
+
+
+@router.post("/{project_id}/restore/{version}")
+def restore_petri_version(
+    project_id: str,
+    version: int,
+    current_user: dict = Depends(get_current_user),
+):
+    """Restaura uma versão passada para a rede viva (project_data) e registra novo snapshot."""
+    with get_db_connection() as conn:
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT petri_net_json FROM petri_net_version_history "
+            "WHERE project_id = %s AND version = %s LIMIT 1",
+            (project_id, version),
+        )
+        row = cursor.fetchone()
+        cursor.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Versão não encontrada")
+    try:
+        petri_net = json.loads(row["petri_net_json"])
+    except (json.JSONDecodeError, TypeError):
+        raise HTTPException(status_code=500, detail="Snapshot da versão está corrompido")
+
+    affected = update_project_data(project_id, petri_net)
+    if affected == 0:
+        raise HTTPException(status_code=404, detail="Projeto não encontrado")
+
+    _save_petri_version(
+        project_id,
+        petri_net,
+        "manual_edit",
+        f"Restaurada versão {version}",
+        current_user["id"],
+    )
+
+    return {"petri_net": petri_net}
+
+
+@router.post("/{project_id}/approve")
+def approve_petri_version(
+    project_id: str,
+    request: Optional[ApprovePetriNetRequest] = None,
+    current_user: dict = Depends(get_current_user),
+):
+    """Marca uma versão (ou a mais recente) como aprovada."""
+    target_version = request.version if request else None
+    with get_db_connection() as conn:
+        cursor = conn.cursor()
+        if target_version is None:
+            cursor.execute(
+                "SELECT MAX(version) FROM petri_net_version_history WHERE project_id = %s",
+                (project_id,),
+            )
+            result = cursor.fetchone()
+            target_version = result[0] if result else None
+        if target_version is None:
+            cursor.close()
+            raise HTTPException(status_code=404, detail="Nenhuma versão encontrada para aprovar")
+        cursor.execute(
+            "UPDATE petri_net_version_history SET is_approved_version = 1 "
+            "WHERE project_id = %s AND version = %s",
+            (project_id, target_version),
+        )
+        affected = cursor.rowcount
+        conn.commit()
+        cursor.close()
+    if affected == 0:
+        raise HTTPException(status_code=404, detail="Versão não encontrada")
+    return {"status": "approved", "version": int(target_version)}
