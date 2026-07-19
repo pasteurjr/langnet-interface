@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "react-toastify";
+import TestCaseHistoryModal from "../components/testcases/TestCaseHistoryModal";
 import "./TestCasesPage.css";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api";
@@ -69,6 +70,9 @@ const TestCasesPage: React.FC = () => {
   const [chatSending, setChatSending] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ role: string; content: string; uc_id?: string }[]>([]);
   const [approving, setApproving] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [viewingResults, setViewingResults] = useState<UCResult[] | null>(null);
+  const [viewingVersion, setViewingVersion] = useState<number | null>(null);
   const pollRef = useRef<any>(null);
 
   // Documentos de casos de uso (specs) disponíveis, com versão — para escolher a origem
@@ -218,7 +222,44 @@ const TestCasesPage: React.FC = () => {
       .catch((e) => toast.error(`Falha ao abrir documento: ${e.message}`));
   };
 
-  const results = session?.results || [];
+  const viewingPast = viewingResults !== null;
+
+  const loadVersion = async (version: number) => {
+    if (!session?.session_id) return;
+    try {
+      const r = await fetch(`${API_BASE}/test-cases/${session.session_id}/versions/${version}`, {
+        headers,
+      });
+      if (r.status === 401 || r.status === 403) {
+        setAuthExpired(true);
+        toast.error("Sessão expirada. Faça login novamente.");
+        return;
+      }
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      const res: UCResult[] = d.results || [];
+      setViewingResults(res);
+      setViewingVersion(d.version ?? version);
+      setSelected((prev) => {
+        if (prev && res.some((x) => x.uc === prev)) return prev;
+        return res[0] ? res[0].uc : null;
+      });
+    } catch (e: any) {
+      toast.error(`Falha ao carregar versão: ${e.message}`);
+    }
+  };
+
+  const backToCurrent = () => {
+    setViewingResults(null);
+    setViewingVersion(null);
+    setSelected((prev) => {
+      const live = session?.results || [];
+      if (prev && live.some((x) => x.uc === prev)) return prev;
+      return live[0] ? live[0].uc : null;
+    });
+  };
+
+  const results = viewingPast ? viewingResults! : session?.results || [];
   const current = results.find((r) => r.uc === selected) || null;
 
   return (
@@ -256,12 +297,20 @@ const TestCasesPage: React.FC = () => {
           {generating && <span className="tc-spin">↻ atualizando…</span>}
           <div className="tc-summary-actions">
             <button className="tc-btn ghost" onClick={openDocument} disabled={generating}>📄 Documento de validação</button>
+            <button className="tc-btn ghost" onClick={() => setHistoryOpen(true)} disabled={generating}>📜 Histórico</button>
             {session.status !== "approved" && (
-              <button className="tc-btn approve" onClick={approve} disabled={approving || generating}>
+              <button className="tc-btn approve" onClick={approve} disabled={approving || generating || viewingPast}>
                 {approving ? "…" : "✓ Aprovar"}
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {viewingPast && (
+        <div className="tc-viewing-banner">
+          <span>🕘 Visualizando versão <b>{viewingVersion}</b> (somente leitura)</span>
+          <button className="tc-btn ghost" onClick={backToCurrent}>Voltar à versão atual</button>
         </div>
       )}
 
@@ -393,6 +442,7 @@ const TestCasesPage: React.FC = () => {
                   </div>
                 )}
 
+                {!viewingPast && (
                 <div className="tc-card tc-refine">
                   <h3>Refinar com o agente — {current.uc}</h3>
                   <p className="tc-refine-hint">
@@ -428,11 +478,20 @@ const TestCasesPage: React.FC = () => {
                     </button>
                   </div>
                 </div>
+                )}
               </>
             )}
           </section>
         </div>
       )}
+
+      <TestCaseHistoryModal
+        isOpen={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        sessionId={session?.session_id || null}
+        currentVersion={session?.version}
+        onSelectVersion={loadVersion}
+      />
     </div>
   );
 };
