@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams } from "react-router-dom";
 import { toast } from "react-toastify";
 import TestCaseHistoryModal from "../components/testcases/TestCaseHistoryModal";
+import StagePageLayout from "../components/stage/StagePageLayout";
 import "./TestCasesPage.css";
 
 const API_BASE = process.env.REACT_APP_API_BASE_URL || "http://127.0.0.1:8000/api";
@@ -66,6 +67,7 @@ const TestCasesPage: React.FC = () => {
   const [authExpired, setAuthExpired] = useState(false);
   const [availableSpecs, setAvailableSpecs] = useState<{ id: string; version: number }[]>([]);
   const [selectedSpec, setSelectedSpec] = useState<string>("");
+  const [instructions, setInstructions] = useState("");
   const [chatMsg, setChatMsg] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const [chatMessages, setChatMessages] = useState<{ role: string; content: string; uc_id?: string }[]>([]);
@@ -73,6 +75,8 @@ const TestCasesPage: React.FC = () => {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [viewingResults, setViewingResults] = useState<UCResult[] | null>(null);
   const [viewingVersion, setViewingVersion] = useState<number | null>(null);
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewSuggestions, setReviewSuggestions] = useState<string[] | null>(null);
   const pollRef = useRef<any>(null);
 
   // Documentos de casos de uso (specs) disponíveis, com versão — para escolher a origem
@@ -156,7 +160,10 @@ const TestCasesPage: React.FC = () => {
     }
     setGenerating(true);
     try {
-      const body = JSON.stringify({ specification_session_id: selectedSpec });
+      const body = JSON.stringify({
+        specification_session_id: selectedSpec,
+        instructions: instructions || undefined,
+      });
       const r = await fetch(`${API_BASE}/test-cases/${effectiveProjectId}/generate`, { method: "POST", headers, body });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       toast.success("Geração iniciada a partir da Especificação selecionada.");
@@ -189,6 +196,32 @@ const TestCasesPage: React.FC = () => {
       setChatMessages((m) => [...m, { role: "assistant", content: `⚠️ ${e.message}` }]);
     } finally {
       setChatSending(false);
+    }
+  };
+
+  const review = async () => {
+    if (!session?.session_id) {
+      toast.error("Gere os casos de teste antes de revisar.");
+      return;
+    }
+    setReviewing(true);
+    try {
+      const r = await fetch(`${API_BASE}/test-cases/${session.session_id}/review`, {
+        method: "POST", headers, body: JSON.stringify({}),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.detail || `HTTP ${r.status}`);
+      const sugs: string[] = Array.isArray(d.suggestions)
+        ? d.suggestions.map((s: any) => (typeof s === "string" ? s : s.text || s.description || JSON.stringify(s)))
+        : d.suggestions
+        ? [String(d.suggestions)]
+        : [];
+      setReviewSuggestions(sugs);
+      toast.success(`Revisão concluída: ${sugs.length} sugestão(ões).`);
+    } catch (e: any) {
+      toast.error(`Falha na revisão: ${e.message}`);
+    } finally {
+      setReviewing(false);
     }
   };
 
@@ -262,32 +295,94 @@ const TestCasesPage: React.FC = () => {
   const results = viewingPast ? viewingResults! : session?.results || [];
   const current = results.find((r) => r.uc === selected) || null;
 
-  return (
-    <div className="tc-page">
-      <header className="tc-header">
-        <div>
-          <h1>🧪 Casos de Teste &amp; Validação</h1>
-          <p className="tc-sub">
-            Casos de teste derivados dos casos de uso pela técnica do <b>Grafo de Causa-Efeito</b> (causas = ações do
-            ator, efeitos = respostas do sistema). Cada coluna da tabela de decisão é um caso de teste.
-          </p>
-        </div>
-        <div className="tc-actions">
-          <label className="tc-src">
-            <span>Documento de casos de uso</span>
-            <select value={selectedSpec} onChange={(e) => setSelectedSpec(e.target.value)} disabled={generating}>
-              {availableSpecs.length === 0 && <option value="">— nenhuma Especificação —</option>}
-              {availableSpecs.map((s) => (
-                <option key={s.id} value={s.id}>Spec v{s.version} ({s.id.slice(0, 8)}…)</option>
-              ))}
-            </select>
-          </label>
-          <button className="tc-btn primary" onClick={generate} disabled={generating || !selectedSpec}>
-            {generating ? "Gerando…" : "⚙️ Gerar casos de teste"}
-          </button>
-        </div>
-      </header>
+  // ---- Botões de origem da sidebar: seleção da Especificação de origem ----
+  const sourceButtons = (
+    <select
+      className="tc-src-compact"
+      value={selectedSpec}
+      onChange={(e) => setSelectedSpec(e.target.value)}
+      disabled={generating}
+      title="Documento de casos de uso (Especificação) de origem"
+    >
+      {availableSpecs.length === 0 && <option value="">— nenhuma Especificação —</option>}
+      {availableSpecs.map((s) => (
+        <option key={s.id} value={s.id}>
+          📋 Spec v{s.version} ({s.id.slice(0, 8)}…)
+        </option>
+      ))}
+    </select>
+  );
 
+  const sourceBanner = selectedSpec ? (
+    <div
+      style={{
+        padding: "8px 12px",
+        backgroundColor: "#d4edda",
+        borderBottom: "1px solid #c3e6cb",
+        fontSize: "12px",
+      }}
+    >
+      <strong>📋 Origem:</strong> Especificação {selectedSpec.slice(0, 8)}…
+    </div>
+  ) : null;
+
+  // ---- Chat de refino (coluna do meio) ----
+  const chatPanel = (
+    <div className="tc-chat-panel">
+      <div className="tc-chat-panel-header">
+        <h2>💬 Refinar com o agente {current ? `— ${current.uc}` : ""}</h2>
+      </div>
+      <div className="tc-chat-panel-body">
+        {!current && (
+          <div className="tc-chat-empty">
+            <p>Selecione um caso de uso para refinar seu grafo de causa-efeito.</p>
+          </div>
+        )}
+        {current && (
+          <p className="tc-refine-hint">
+            Peça ajustes no grafo causa-efeito deste caso de uso (ex.: "separe o e-mail numa causa
+            própria", "adicione o efeito de e-mail inválido"). O agente reajusta o grafo, regenera os
+            casos e sobe a versão — o documento de validação reflete automaticamente.
+          </p>
+        )}
+        {chatMessages.filter((m) => !current || !m.uc_id || m.uc_id === current.uc).length > 0 && (
+          <div className="tc-chat-log">
+            {chatMessages
+              .filter((m) => !current || !m.uc_id || m.uc_id === current.uc)
+              .map((m, i) => (
+                <div key={i} className={`tc-chat-msg ${m.role}`}>
+                  <span className="tc-chat-role">{m.role === "user" ? "Você" : "Agente"}</span>
+                  {m.content}
+                </div>
+              ))}
+          </div>
+        )}
+      </div>
+      <div className="tc-chat-input">
+        <textarea
+          value={chatMsg}
+          onChange={(e) => setChatMsg(e.target.value)}
+          placeholder={current ? `Ajuste o grafo de ${current.uc}…` : "Selecione um caso de uso…"}
+          rows={2}
+          disabled={chatSending || !current || viewingPast}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendRefine();
+          }}
+        />
+        <button
+          className="tc-btn primary"
+          onClick={sendRefine}
+          disabled={chatSending || !chatMsg.trim() || !current || viewingPast}
+        >
+          {chatSending ? "Refinando…" : "Enviar"}
+        </button>
+      </div>
+    </div>
+  );
+
+  // ---- Miolo (coluna direita): visualizador CEG ----
+  const cegViewer = (
+    <div className="tc-viewer">
       {session && session.session_id && (
         <div className="tc-summary">
           <span className={`tc-badge ${session.status}`}>{session.status}</span>
@@ -296,8 +391,7 @@ const TestCasesPage: React.FC = () => {
           <span><b>{session.total_cases || 0}</b> casos de teste</span>
           {generating && <span className="tc-spin">↻ atualizando…</span>}
           <div className="tc-summary-actions">
-            <button className="tc-btn ghost" onClick={openDocument} disabled={generating}>📄 Documento de validação</button>
-            <button className="tc-btn ghost" onClick={() => setHistoryOpen(true)} disabled={generating}>📜 Histórico</button>
+            <button className="tc-btn ghost" onClick={openDocument} disabled={generating}>📄 Documento</button>
             {session.status !== "approved" && (
               <button className="tc-btn approve" onClick={approve} disabled={approving || generating || viewingPast}>
                 {approving ? "…" : "✓ Aprovar"}
@@ -314,6 +408,24 @@ const TestCasesPage: React.FC = () => {
         </div>
       )}
 
+      {reviewSuggestions && (
+        <div className="tc-review-panel">
+          <div className="tc-review-head">
+            <b>🔍 Sugestões de revisão ({reviewSuggestions.length})</b>
+            <button className="tc-btn ghost" onClick={() => setReviewSuggestions(null)}>Fechar</button>
+          </div>
+          {reviewSuggestions.length === 0 ? (
+            <p>Nenhuma sugestão — os casos de teste parecem consistentes.</p>
+          ) : (
+            <ul>
+              {reviewSuggestions.map((s, i) => (
+                <li key={i}>{s}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {authExpired && (
         <div className="tc-empty tc-auth">
           <p>🔒 <b>Sua sessão expirou.</b></p>
@@ -324,7 +436,7 @@ const TestCasesPage: React.FC = () => {
       {!authExpired && (!session || !session.session_id) && (
         <div className="tc-empty">
           <p>Nenhum caso de teste gerado ainda.</p>
-          <p>Clique em <b>Gerar casos de teste</b> para extrair o grafo causa-efeito de cada caso de uso da especificação.</p>
+          <p>Escolha a Especificação de origem na barra lateral e clique em <b>Gerar</b> para extrair o grafo causa-efeito de cada caso de uso.</p>
         </div>
       )}
 
@@ -441,58 +553,44 @@ const TestCasesPage: React.FC = () => {
                     </div>
                   </div>
                 )}
-
-                {!viewingPast && (
-                <div className="tc-card tc-refine">
-                  <h3>Refinar com o agente — {current.uc}</h3>
-                  <p className="tc-refine-hint">
-                    Peça ajustes no grafo causa-efeito deste caso de uso (ex.: "separe o e-mail numa causa
-                    própria", "adicione o efeito de e-mail inválido"). O agente reajusta o grafo, regenera os
-                    casos e sobe a versão — o documento de validação reflete automaticamente.
-                  </p>
-                  {chatMessages.filter((m) => !m.uc_id || m.uc_id === current.uc).length > 0 && (
-                    <div className="tc-chat-log">
-                      {chatMessages
-                        .filter((m) => !m.uc_id || m.uc_id === current.uc)
-                        .map((m, i) => (
-                          <div key={i} className={`tc-chat-msg ${m.role}`}>
-                            <span className="tc-chat-role">{m.role === "user" ? "Você" : "Agente"}</span>
-                            {m.content}
-                          </div>
-                        ))}
-                    </div>
-                  )}
-                  <div className="tc-chat-input">
-                    <textarea
-                      value={chatMsg}
-                      onChange={(e) => setChatMsg(e.target.value)}
-                      placeholder={`Ajuste o grafo de ${current.uc}…`}
-                      rows={2}
-                      disabled={chatSending}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) sendRefine();
-                      }}
-                    />
-                    <button className="tc-btn primary" onClick={sendRefine} disabled={chatSending || !chatMsg.trim()}>
-                      {chatSending ? "Refinando…" : "Enviar"}
-                    </button>
-                  </div>
-                </div>
-                )}
               </>
             )}
           </section>
         </div>
       )}
-
-      <TestCaseHistoryModal
-        isOpen={historyOpen}
-        onClose={() => setHistoryOpen(false)}
-        sessionId={session?.session_id || null}
-        currentVersion={session?.version}
-        onSelectVersion={loadVersion}
-      />
     </div>
+  );
+
+  return (
+    <StagePageLayout
+      title="🧪 Casos de Teste & Validação"
+      subtitle="Casos de teste derivados dos casos de uso pela técnica do Grafo de Causa-Efeito (causas = ações do ator, efeitos = respostas do sistema). Cada coluna da tabela de decisão é um caso de teste."
+      sidebarTitle="📋 Casos de Uso"
+      sourceButtons={sourceButtons}
+      sourceBanner={sourceBanner}
+      instructions={instructions}
+      onInstructionsChange={setInstructions}
+      onGenerate={generate}
+      generating={generating}
+      generateLabel="🚀 Gerar casos de teste"
+      canGenerate={!!selectedSpec}
+      onReview={review}
+      reviewing={reviewing}
+      canReview={!!session?.session_id && !generating}
+      onHistory={() => setHistoryOpen(true)}
+      chat={chatPanel}
+      modals={
+        <TestCaseHistoryModal
+          isOpen={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          sessionId={session?.session_id || null}
+          currentVersion={session?.version}
+          onSelectVersion={loadVersion}
+        />
+      }
+    >
+      {cegViewer}
+    </StagePageLayout>
   );
 };
 
