@@ -9052,8 +9052,10 @@ const PetriNetEditor = ({ projectId, autoconnectUrl }) => {
           id="paper-container"
           style={{
             border: "1px solid black",
-            width: "1550px",
+            width: "100%",
+            maxWidth: "100%",
             height: "780px",
+            overflow: "auto",
           }}
         />
         {/* Modals */}

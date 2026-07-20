@@ -27,10 +27,12 @@
 /* Neutraliza wrappers antigos (ex.: .tc-page max-width+margin:auto) que
    centralizariam/estreitariam o miolo dentro da casca — o viewer usa a largura toda. */
 .documents-chat-container.stage-wide-viewer .actions-panel > * {
-  max-width: none !important;
+  max-width: 100% !important;   /* miolo nunca ultrapassa a coluna */
   width: 100%;
   margin-left: 0 !important;
   margin-right: 0 !important;
+  overflow: auto;               /* conteúdo largo fixo (editor Petri 1550px) rola dentro, não vaza */
+  min-width: 0;
 }
 .documents-chat-container.stage-wide-viewer .chat-area {
   min-width: 0;
@@ -63,4 +65,44 @@
     grid-column: 1 / -1;
     max-height: 320px;
   }
+}
+
+/* ── Sidebar de config recolhível (editores de tela cheia, ex.: Petri) ── */
+.documents-page-chat { position: relative; }
+.btn-sidebar-toggle {
+  position: absolute;
+  top: 8px; left: 12px;
+  z-index: 30;
+  padding: 7px 14px;
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 13px; font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,.12);
+}
+.btn-sidebar-toggle:hover { background: #e0e7ff; }
+/* miolo ocupa tudo; a sidebar vira overlay que desliza */
+.documents-chat-container.sidebar-collapsible {
+  grid-template-columns: 1fr !important;
+  position: relative;
+}
+.documents-chat-container.sidebar-collapsible .documents-sidebar {
+  position: absolute;
+  top: 0; left: 0;
+  height: 100%;
+  width: 340px;
+  z-index: 25;
+  background: #fff;
+  box-shadow: 4px 0 16px rgba(0,0,0,.18);
+  transition: transform .2s ease;
+  overflow-y: auto;
+  padding-top: 44px;   /* espaço pro botão de fechar */
+}
+.documents-chat-container.sidebar-collapsible.sidebar-off .documents-sidebar {
+  transform: translateX(-110%);
+}
+.documents-chat-container.sidebar-collapsible .actions-panel {
+  grid-column: 1 / -1;
 }

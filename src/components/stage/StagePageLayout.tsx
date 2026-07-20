@@ -54,6 +54,10 @@ export interface StagePageLayoutProps {
   /** Miolo largo (grafo/editor/mockups): chat vira coluna estreita e o
    *  visualizador ocupa a área principal. Default false (etapas de documento). */
   wideViewer?: boolean;
+
+  /** Sidebar de config recolhível: começa recolhida e o miolo usa a largura TOTAL;
+   *  a config abre como painel sobreposto (para editores de tela cheia, ex.: Petri). */
+  collapsibleSidebar?: boolean;
 }
 
 /**
@@ -86,11 +90,14 @@ const StagePageLayout: React.FC<StagePageLayoutProps> = ({
   sidebarTitle = "📁 Origem",
   error,
   wideViewer = false,
+  collapsibleSidebar = false,
 }) => {
   // Em modo viewer-largo o chat começa recolhido (o miolo/grafo usa a largura toda);
   // nas etapas de documento o chat fica sempre visível.
   const [chatOpen, setChatOpen] = React.useState(!wideViewer);
   const showChat = !wideViewer || chatOpen;
+  // Sidebar recolhível: começa fechada; o miolo usa a largura toda e a config abre sobreposta.
+  const [sidebarOpen, setSidebarOpen] = React.useState(!collapsibleSidebar);
   return (
     <div className="documents-page-chat">
       <div className="page-header">
@@ -102,9 +109,20 @@ const StagePageLayout: React.FC<StagePageLayoutProps> = ({
 
       {error && <div className="error-banner">{error}</div>}
 
+      {collapsibleSidebar && (
+        <button
+          className="btn-sidebar-toggle"
+          onClick={() => setSidebarOpen((v) => !v)}
+          title="Mostrar/ocultar configuração"
+        >
+          {sidebarOpen ? "✕ Fechar config" : "⚙️ Configuração"}
+        </button>
+      )}
       <div
         className={`documents-chat-container${wideViewer ? " stage-wide-viewer" : ""}${
           wideViewer && !chatOpen ? " chat-collapsed" : ""
+        }${collapsibleSidebar ? " sidebar-collapsible" : ""}${
+          collapsibleSidebar && !sidebarOpen ? " sidebar-off" : ""
         }`}
       >
         {/* COLUNA ESQUERDA: origem + configuração */}

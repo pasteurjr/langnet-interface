@@ -36,6 +36,7 @@ const PetriNetPage: React.FC = () => {
       subtitle="Editor visual da rede de Petri gerada a partir de agents.yaml + tasks.yaml + Sequência de Tarefas."
       sidebarTitle="🔗 Rede"
       wideViewer
+      collapsibleSidebar
       sourceButtons={
         <button
           className="btn-history-compact"
