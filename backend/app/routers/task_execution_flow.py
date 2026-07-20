@@ -48,6 +48,86 @@ class RefineFlowRequest(BaseModel):
 
 
 # ═══════════════════════════════════════════════════════════
+# HELPERS: RASTREABILIDADE (versões das fontes consumidas)
+# ═══════════════════════════════════════════════════════════
+
+def _current_specification_version(spec_session_id: str) -> Optional[int]:
+    """Versão CURRENT da Especificação Funcional-fonte.
+
+    A fonte confiável é MAX(version) do histórico. Retorna None se
+    indeterminável (nunca lança — rastreabilidade é aditiva/best-effort)."""
+    if not spec_session_id:
+        return None
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            try:
+                cur.execute(
+                    "SELECT MAX(version) AS v FROM specification_version_history "
+                    "WHERE specification_session_id=%s",
+                    (spec_session_id,),
+                )
+                r = cur.fetchone()
+            finally:
+                cur.close()
+        return int(r["v"]) if r and r.get("v") is not None else None
+    except Exception:
+        return None
+
+
+def _current_agent_task_spec_version(ats_session_id: str) -> Optional[int]:
+    """Versão CURRENT da Especificação de Agentes/Tarefas-fonte.
+
+    agent_task_specification_sessions não tem coluna version própria
+    (specification_version guarda a versão da fonte anterior), então a
+    fonte confiável é MAX(version) de agent_task_spec_version_history.
+    Nunca lança."""
+    if not ats_session_id:
+        return None
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            try:
+                cur.execute(
+                    "SELECT MAX(version) AS v FROM agent_task_spec_version_history "
+                    "WHERE session_id=%s",
+                    (ats_session_id,),
+                )
+                r = cur.fetchone()
+            finally:
+                cur.close()
+        return int(r["v"]) if r and r.get("v") is not None else None
+    except Exception:
+        return None
+
+
+def _current_tasks_yaml_version(tasks_yaml_session_id: str) -> Optional[int]:
+    """Versão CURRENT do tasks.yaml-fonte.
+
+    tasks_yaml_sessions não tem coluna version própria
+    (agent_task_spec_version guarda a versão da fonte anterior), então a
+    fonte confiável é MAX(version) de tasks_yaml_version_history.
+    Nunca lança."""
+    if not tasks_yaml_session_id:
+        return None
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            try:
+                cur.execute(
+                    "SELECT MAX(version) AS v FROM tasks_yaml_version_history "
+                    "WHERE session_id=%s",
+                    (tasks_yaml_session_id,),
+                )
+                r = cur.fetchone()
+            finally:
+                cur.close()
+        return int(r["v"]) if r and r.get("v") is not None else None
+    except Exception:
+        return None
+
+
+# ═══════════════════════════════════════════════════════════
 # HELPERS: VERSIONING + CHAT
 # ═══════════════════════════════════════════════════════════
 
@@ -204,6 +284,11 @@ async def generate_task_execution_flow(
                 filename = doc.get("filename", "documento_sem_nome")
                 additional_docs_text += f"\n\n### Documento Externo: {filename}\n{doc.get('extracted_text')[:5000]}"
 
+    # Rastreabilidade (ETAPA 2): capturar a versão CURRENT de cada fonte consumida
+    specification_version = _current_specification_version(request.specification_session_id)
+    agent_task_spec_version = _current_agent_task_spec_version(request.agent_task_spec_session_id)
+    tasks_yaml_version = _current_tasks_yaml_version(request.tasks_yaml_session_id)
+
     # Criar sessão
     session_data = {
         "id": session_id,
@@ -212,6 +297,9 @@ async def generate_task_execution_flow(
         "specification_session_id": request.specification_session_id,
         "agent_task_spec_session_id": request.agent_task_spec_session_id,
         "tasks_yaml_session_id": request.tasks_yaml_session_id,
+        "specification_version": specification_version,
+        "agent_task_spec_version": agent_task_spec_version,
+        "tasks_yaml_version": tasks_yaml_version,
         "uploaded_document_ids": request.uploaded_document_ids or [],
         "session_name": f"task_flow_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         "status": "generating",

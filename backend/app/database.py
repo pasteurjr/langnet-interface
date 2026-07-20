@@ -1131,10 +1131,12 @@ def create_task_execution_flow_session(session_data: dict) -> str:
     query = """
         INSERT INTO task_execution_flow_sessions (
             id, project_id, user_id, specification_session_id, agent_task_spec_session_id,
-            tasks_yaml_session_id, session_name, status, execution_metadata
+            tasks_yaml_session_id, specification_version, agent_task_spec_version, tasks_yaml_version,
+            session_name, status, execution_metadata
         ) VALUES (
             %(id)s, %(project_id)s, %(user_id)s, %(specification_session_id)s, %(agent_task_spec_session_id)s,
-            %(tasks_yaml_session_id)s, %(session_name)s, %(status)s, %(execution_metadata)s
+            %(tasks_yaml_session_id)s, %(specification_version)s, %(agent_task_spec_version)s, %(tasks_yaml_version)s,
+            %(session_name)s, %(status)s, %(execution_metadata)s
         )
     """
     params = {
@@ -1144,6 +1146,9 @@ def create_task_execution_flow_session(session_data: dict) -> str:
         'specification_session_id': session_data.get('specification_session_id'),
         'agent_task_spec_session_id': session_data.get('agent_task_spec_session_id'),
         'tasks_yaml_session_id': session_data.get('tasks_yaml_session_id'),
+        'specification_version': session_data.get('specification_version'),
+        'agent_task_spec_version': session_data.get('agent_task_spec_version'),
+        'tasks_yaml_version': session_data.get('tasks_yaml_version'),
         'session_name': session_data.get('session_name'),
         'status': session_data.get('status', 'generating'),
         'execution_metadata': session_data.get('execution_metadata'),
