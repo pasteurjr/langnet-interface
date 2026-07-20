@@ -71,6 +71,36 @@ class RefineRequest(BaseModel):
 _FILES_KEY = "generated_files"
 
 
+def _current_version(table: str, session_id: Optional[str], id_col: str = "session_id") -> Optional[int]:
+    """Versão atual (MAX) de uma sessão-fonte numa *_version_history.
+
+    Usado para carimbar, na sessão de geração de código, QUAL versão de cada fonte
+    (agents.yaml, tasks.yaml, Sequência de Tarefas, agent_task_spec, ui_spec, Petri)
+    entrou no código. Tolerante a falha — proveniência nunca quebra a geração.
+    """
+    if not session_id:
+        return None
+    try:
+        from app.database import get_db_connection
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                f"SELECT COALESCE(MAX(version), 0) FROM {table} WHERE {id_col} = %s",
+                (session_id,),
+            )
+            v = int(cur.fetchone()[0])
+            cur.close()
+        return v or None
+    except Exception as exc:  # noqa: BLE001
+        print(f"[CODE-GEN] falha ao ler versão de {table} (ignorada): {exc}")
+        return None
+
+
+def _current_petri_version(project_id: str) -> Optional[int]:
+    """Versão corrente da Rede de Petri do projeto (petri_net_version_history por project_id)."""
+    return _current_version("petri_net_version_history", project_id, id_col="project_id")
+
+
 def _safe_path(path: str) -> str:
     """Slug-safe path inside the ZIP — no leading slashes or '..'."""
     return re.sub(r"\.{2,}", ".", (path or "").lstrip("/").replace("\\", "/"))
@@ -236,11 +266,13 @@ async def generate_code(
 
     # Carrega ui_spec (telas de negócio) mais recente do projeto — permite ao
     # code gen construir a UI real (Cara A) além do executor de Petri (Cara B).
+    # Guarda qual sessão de ui_spec entrou no código (rastreabilidade).
+    ui_spec_session_id = None
     try:
         with get_db_connection() as _conn:
             _cur = _conn.cursor(dictionary=True)
             _cur.execute(
-                "SELECT ui_spec_json FROM ui_spec_sessions "
+                "SELECT id, ui_spec_json FROM ui_spec_sessions "
                 "WHERE project_id=%s AND ui_spec_json IS NOT NULL "
                 "ORDER BY created_at DESC LIMIT 1",
                 (project_id,),
@@ -250,8 +282,9 @@ async def generate_code(
             if _uirow and _uirow.get("ui_spec_json"):
                 import json as _json
                 state["ui_spec"] = _json.loads(_uirow["ui_spec_json"])
+                ui_spec_session_id = _uirow["id"]
                 _n = len(state["ui_spec"].get("screens", []))
-                print(f"[CODE-GEN] ui_spec carregado: {_n} telas de negócio")
+                print(f"[CODE-GEN] ui_spec carregado: {_n} telas de negócio (session {ui_spec_session_id})")
     except Exception as _e:
         print(f"[CODE-GEN] falha ao carregar ui_spec: {_e}")
 
@@ -266,11 +299,30 @@ async def generate_code(
             "agents_yaml_session_id": request.agents_yaml_session_id,
             "tasks_yaml_session_id": request.tasks_yaml_session_id,
             "task_execution_flow_session_id": request.task_execution_flow_session_id,
-            "agent_task_spec_session_id": request.agent_task_spec_session_id,
+            # ats_id efetivo (pode ter sido auto-descoberto quando o front não passou)
+            "agent_task_spec_session_id": ats_id,
             "websocket_port": request.websocket_port,
             "session_name": session_name,
             "status": "generating",
             "execution_metadata": {},
+            # Rastreabilidade: versão de cada fonte + Petri/telas efetivamente usadas
+            "agents_yaml_version": _current_version(
+                "agents_yaml_version_history", request.agents_yaml_session_id
+            ),
+            "tasks_yaml_version": _current_version(
+                "tasks_yaml_version_history", request.tasks_yaml_session_id
+            ),
+            "task_execution_flow_version": _current_version(
+                "task_execution_flow_version_history", request.task_execution_flow_session_id
+            ),
+            "agent_task_spec_version": _current_version(
+                "agent_task_spec_version_history", ats_id
+            ),
+            "petri_net_version": _current_petri_version(project_id),
+            "ui_spec_session_id": ui_spec_session_id,
+            "ui_spec_version": _current_version(
+                "ui_spec_version_history", ui_spec_session_id, id_col="ui_spec_session_id"
+            ),
         }
     )
 

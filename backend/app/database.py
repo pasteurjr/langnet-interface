@@ -1273,18 +1273,30 @@ def create_code_generation_session(session_data: dict) -> str:
         "session_name": session_data.get("session_name"),
         "status": session_data.get("status", "generating"),
         "execution_metadata": json.dumps(session_data.get("execution_metadata", {})),
+        # Rastreabilidade: versão de cada fonte + Petri/telas efetivamente usadas
+        "agents_yaml_version": session_data.get("agents_yaml_version"),
+        "tasks_yaml_version": session_data.get("tasks_yaml_version"),
+        "task_execution_flow_version": session_data.get("task_execution_flow_version"),
+        "agent_task_spec_version": session_data.get("agent_task_spec_version"),
+        "petri_net_version": session_data.get("petri_net_version"),
+        "ui_spec_session_id": session_data.get("ui_spec_session_id"),
+        "ui_spec_version": session_data.get("ui_spec_version"),
     }
     query = """
         INSERT INTO code_generation_sessions (
             id, project_id, user_id,
             agents_yaml_session_id, tasks_yaml_session_id, task_execution_flow_session_id,
             agent_task_spec_session_id,
-            websocket_port, session_name, status, execution_metadata
+            websocket_port, session_name, status, execution_metadata,
+            agents_yaml_version, tasks_yaml_version, task_execution_flow_version,
+            agent_task_spec_version, petri_net_version, ui_spec_session_id, ui_spec_version
         ) VALUES (
             %(id)s, %(project_id)s, %(user_id)s,
             %(agents_yaml_session_id)s, %(tasks_yaml_session_id)s, %(task_execution_flow_session_id)s,
             %(agent_task_spec_session_id)s,
-            %(websocket_port)s, %(session_name)s, %(status)s, %(execution_metadata)s
+            %(websocket_port)s, %(session_name)s, %(status)s, %(execution_metadata)s,
+            %(agents_yaml_version)s, %(tasks_yaml_version)s, %(task_execution_flow_version)s,
+            %(agent_task_spec_version)s, %(petri_net_version)s, %(ui_spec_session_id)s, %(ui_spec_version)s
         )
     """
     with get_db_cursor() as cursor:
