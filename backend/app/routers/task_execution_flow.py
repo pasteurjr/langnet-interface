@@ -357,11 +357,13 @@ async def execute_flow_generation(
         start_time = datetime.now()
 
         # LLM call
+        # max_tokens=12000: um documento de fluxo tem poucos KB; reservar 32K de saída
+        # somado a specs grandes (~34K de entrada) estourava a janela de 64K do LLM local.
         flow_document = await get_llm_response_async(
             prompt=prompt,
             system="Você é especialista em design de workflows e state management (LangGraph).",
             temperature=0.3,
-            max_tokens=32000
+            max_tokens=12000
         )
 
         end_time = datetime.now()
@@ -588,7 +590,7 @@ async def refine_task_execution_flow(
             prompt=prompt,
             system="Você é especialista em design de workflows e state management (LangGraph).",
             temperature=0.3,
-            max_tokens=32000,
+            max_tokens=12000,
         )
 
         # Recontar tasks e paralelismo
