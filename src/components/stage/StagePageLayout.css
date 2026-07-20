@@ -1,3 +1,10 @@
+/* O page-header da casca não deve ser sticky: em páginas com autofocus (chat) o
+   scroll faz o header grudado sobrepor o topo do conteúdo. Fica estático (rola junto). */
+.documents-page-chat .page-header {
+  position: static !important;
+  z-index: auto !important;
+}
+
 /* Modo "viewer largo": para etapas com visualização especial (grafo causa-efeito,
    editor de Petri, mockups de interface). Inverte a proporção do layout base
    (350px 1fr 400px): o chat vira uma coluna estreita e o miolo ocupa o principal. */
