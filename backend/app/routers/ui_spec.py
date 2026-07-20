@@ -111,6 +111,45 @@ def _current_specification_version(spec_session_id: str) -> Optional[int]:
         return None
 
 
+def _save_ui_spec_version(
+    session_id: str,
+    ui_spec_json: str,
+    change_type: str,
+    change_description: str,
+    user_id: Optional[str],
+) -> Optional[int]:
+    """Registra um snapshot da UI Spec em ui_spec_version_history.
+
+    Camada ADITIVA e tolerante a falha (nunca lança) — versionamento jamais quebra
+    generate/refine. Alinha a etapa de Interface ao padrão das demais etapas, que
+    gravam cada geração/refino no seu próprio *_version_history. Retorna a nova versão.
+    """
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "SELECT COALESCE(MAX(version), 0) + 1 FROM ui_spec_version_history "
+                    "WHERE ui_spec_session_id=%s",
+                    (session_id,),
+                )
+                new_v = int(cur.fetchone()[0])
+                cur.execute(
+                    "INSERT INTO ui_spec_version_history "
+                    "(id, ui_spec_session_id, version, ui_spec_json, change_type, "
+                    " change_description, created_by) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                    (str(uuid.uuid4()), session_id, new_v, ui_spec_json,
+                     change_type, change_description, user_id),
+                )
+                conn.commit()
+            finally:
+                cur.close()
+        return new_v
+    except Exception as exc:  # noqa: BLE001 — versionamento nunca quebra o fluxo
+        print(f"[UI-SPEC] falha ao salvar versão (ignorada): {exc}")
+        return None
+
+
 def _fetch_session(session_id: str) -> Dict[str, Any]:
     with get_db_connection() as conn:
         cur = conn.cursor(dictionary=True)
@@ -184,6 +223,15 @@ def generate_ui_spec(project_id: str, req: GenerateRequest, current_user=Depends
             conn.commit()
         finally:
             cur.close()
+
+    # ADITIVO: registra a versão 1 no histórico (mesmo padrão das demais etapas)
+    _save_ui_spec_version(
+        session_id,
+        json.dumps(result["ui_spec"], ensure_ascii=False),
+        "initial_generation",
+        "Geração inicial da UI Spec",
+        current_user["id"],
+    )
 
     return {
         "session_id": session_id,
@@ -262,6 +310,16 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
             conn.commit()
         finally:
             cur.close()
+
+    # ADITIVO: registra o refino no histórico de versões
+    _save_ui_spec_version(
+        session_id,
+        json.dumps(new_spec, ensure_ascii=False),
+        "ai_refinement",
+        f"Refino por chat — tela '{refined}'" if refined else "Refino por chat",
+        current_user["id"],
+    )
+
     return {"status": "ok", "refined_screen": refined, "ui_spec": new_spec,
             "mockup_update": mockup_update}
 
