@@ -79,6 +79,29 @@ def _fetch_specification_content(spec_session_id: str) -> str:
         cur.close()
 
 
+def _current_specification_version(spec_session_id: str) -> Optional[int]:
+    """Versão CURRENT da Especificação-fonte.
+
+    execution_specification_sessions não tem coluna version própria; a fonte
+    confiável é MAX(version) do histórico. Retorna None se indeterminável
+    (nunca lança — rastreabilidade é aditiva/best-effort)."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            try:
+                cur.execute(
+                    "SELECT MAX(version) AS v FROM specification_version_history "
+                    "WHERE specification_session_id=%s",
+                    (spec_session_id,),
+                )
+                r = cur.fetchone()
+            finally:
+                cur.close()
+        return int(r["v"]) if r and r.get("v") is not None else None
+    except Exception:
+        return None
+
+
 def _fetch_session(session_id: str) -> Dict[str, Any]:
     with get_db_connection() as conn:
       cur = conn.cursor(dictionary=True)
@@ -168,6 +191,7 @@ def _save_version(session_id: str, artifacts: Dict[str, Any], change_type: str,
 def generate_data_model(project_id: str, req: GenerateRequest, current_user=Depends(get_current_user)):
     """Executa o pipeline completo de Data Model para um projeto."""
     spec_content = _fetch_specification_content(req.specification_session_id)
+    spec_version = _current_specification_version(req.specification_session_id)
     try:
         result = execute_data_model_workflow(
             specification_document=spec_content,
@@ -182,15 +206,17 @@ def generate_data_model(project_id: str, req: GenerateRequest, current_user=Depe
       try:
         cur.execute(
             """INSERT INTO data_model_sessions
-               (id, project_id, user_id, specification_session_id, version, status,
+               (id, project_id, user_id, specification_session_id, specification_version,
+                version, status,
                 target_dbms, data_model_yaml, schema_sql, models_py, alembic_migration,
                 entities_json, validation_report)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 session_id,
                 project_id,
                 current_user["id"],
                 req.specification_session_id,
+                spec_version,
                 1,
                 "draft",
                 req.target_dbms,

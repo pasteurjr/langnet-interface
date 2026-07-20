@@ -100,6 +100,29 @@ def _update_results(session_id: str, results: List[dict], status: str, log: str)
             cur.close()
 
 
+def _current_specification_version(spec_session_id: str) -> Optional[int]:
+    """Versão CURRENT da Especificação-fonte.
+
+    execution_specification_sessions não tem coluna version própria; a fonte
+    confiável é MAX(version) do histórico. Retorna None se indeterminável
+    (nunca lança — rastreabilidade é aditiva/best-effort)."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            try:
+                cur.execute(
+                    "SELECT MAX(version) AS v FROM specification_version_history "
+                    "WHERE specification_session_id=%s",
+                    (spec_session_id,),
+                )
+                r = cur.fetchone()
+            finally:
+                cur.close()
+        return int(r["v"]) if r and r.get("v") is not None else None
+    except Exception:
+        return None
+
+
 def _project_name(project_id: str) -> str:
     with get_db_connection() as conn:
         cur = conn.cursor(dictionary=True)
@@ -260,6 +283,7 @@ def generate_test_cases_ep(project_id: str, req: GenerateRequest,
     """Dispara a geração dos casos de teste (CEG) de todos os UCs (ou só `only`).
     Roda em background e persiste progressivamente; use GET latest p/ acompanhar."""
     spec_doc, _ = _fetch_spec_content(req.specification_session_id)
+    spec_version = _current_specification_version(req.specification_session_id)
 
     session_id = str(uuid.uuid4())
     with get_db_connection() as conn:
@@ -267,11 +291,12 @@ def generate_test_cases_ep(project_id: str, req: GenerateRequest,
         try:
             cur.execute(
                 """INSERT INTO test_case_sessions
-                   (id, project_id, user_id, specification_session_id, version, status,
+                   (id, project_id, user_id, specification_session_id, specification_version,
+                    version, status,
                     results_json, total_ucs, total_cases, generation_log)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (session_id, project_id, current_user["id"], req.specification_session_id,
-                 1, "generating", json.dumps({"results": []}), 0, 0, "Iniciando…"),
+                 spec_version, 1, "generating", json.dumps({"results": []}), 0, 0, "Iniciando…"),
             )
             conn.commit()
         finally:

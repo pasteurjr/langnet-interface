@@ -57,15 +57,22 @@ def _fetch_spec_content(spec_session_id: str) -> tuple[str, str]:
     return row["specification_document"], row["project_id"]
 
 
-def _fetch_schema_sql(project_id: str, data_model_session_id: Optional[str]) -> str:
+def _fetch_schema_sql(project_id: str, data_model_session_id: Optional[str]) -> tuple[str, Optional[str], Optional[int]]:
+    """Retorna (schema_sql, data_model_session_id_efetivo, data_model_version_efetiva).
+
+    Quando data_model_session_id vem vazio, auto-descobre o Data Model mais recente
+    do projeto e retorna o ID/versão EFETIVAMENTE usados (não o None recebido)."""
     with get_db_connection() as conn:
         cur = conn.cursor(dictionary=True)
         try:
             if data_model_session_id:
-                cur.execute("SELECT schema_sql FROM data_model_sessions WHERE id=%s", (data_model_session_id,))
+                cur.execute(
+                    "SELECT id, schema_sql, version FROM data_model_sessions WHERE id=%s",
+                    (data_model_session_id,),
+                )
             else:
                 cur.execute(
-                    """SELECT schema_sql FROM data_model_sessions
+                    """SELECT id, schema_sql, version FROM data_model_sessions
                        WHERE project_id=%s AND schema_sql IS NOT NULL AND CHAR_LENGTH(schema_sql)>0
                        ORDER BY created_at DESC LIMIT 1""",
                     (project_id,),
@@ -73,7 +80,35 @@ def _fetch_schema_sql(project_id: str, data_model_session_id: Optional[str]) -> 
             row = cur.fetchone()
         finally:
             cur.close()
-    return (row or {}).get("schema_sql") or ""
+    row = row or {}
+    return (
+        row.get("schema_sql") or "",
+        row.get("id"),
+        int(row["version"]) if row.get("version") is not None else None,
+    )
+
+
+def _current_specification_version(spec_session_id: str) -> Optional[int]:
+    """Versão CURRENT da Especificação-fonte.
+
+    execution_specification_sessions não tem coluna version própria; a fonte
+    confiável é MAX(version) do histórico. Retorna None se indeterminável
+    (nunca lança — rastreabilidade é aditiva/best-effort)."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            try:
+                cur.execute(
+                    "SELECT MAX(version) AS v FROM specification_version_history "
+                    "WHERE specification_session_id=%s",
+                    (spec_session_id,),
+                )
+                r = cur.fetchone()
+            finally:
+                cur.close()
+        return int(r["v"]) if r and r.get("v") is not None else None
+    except Exception:
+        return None
 
 
 def _fetch_session(session_id: str) -> Dict[str, Any]:
@@ -113,7 +148,8 @@ def _serialize(row: Dict[str, Any], include_mockups: bool = True) -> Dict[str, A
 def generate_ui_spec(project_id: str, req: GenerateRequest, current_user=Depends(get_current_user)):
     """Gera a UI Spec completa (todas as telas + mockups PNG)."""
     spec_doc, spec_project = _fetch_spec_content(req.specification_session_id)
-    schema_sql = _fetch_schema_sql(project_id, req.data_model_session_id)
+    schema_sql, used_dm_session_id, dm_version = _fetch_schema_sql(project_id, req.data_model_session_id)
+    spec_version = _current_specification_version(req.specification_session_id)
 
     try:
         result = execute_ui_spec_workflow(
@@ -130,12 +166,14 @@ def generate_ui_spec(project_id: str, req: GenerateRequest, current_user=Depends
         try:
             cur.execute(
                 """INSERT INTO ui_spec_sessions
-                   (id, project_id, user_id, specification_session_id, data_model_session_id,
+                   (id, project_id, user_id, specification_session_id, specification_version,
+                    data_model_session_id, data_model_version,
                     version, status, ui_spec_json, mockups_json, screens_count, generation_log)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     session_id, project_id, current_user["id"],
-                    req.specification_session_id, req.data_model_session_id,
+                    req.specification_session_id, spec_version,
+                    used_dm_session_id, dm_version,
                     1, "draft",
                     json.dumps(result["ui_spec"], ensure_ascii=False),
                     json.dumps(result["mockups"], ensure_ascii=False),
