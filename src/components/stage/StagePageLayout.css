@@ -16,6 +16,13 @@
   max-width: none !important;
   min-width: 0;
   overflow: auto;
+  position: relative;       /* contém viewers de tamanho fixo (ex.: canvas Petri 1550px) */
+}
+/* Sidebar opaca e por cima, pra viewers largos (canvas JointJS) não passarem por baixo dela */
+.documents-chat-container.stage-wide-viewer .documents-sidebar {
+  position: relative;
+  z-index: 3;
+  background: #fff;
 }
 /* Neutraliza wrappers antigos (ex.: .tc-page max-width+margin:auto) que
    centralizariam/estreitariam o miolo dentro da casca — o viewer usa a largura toda. */
