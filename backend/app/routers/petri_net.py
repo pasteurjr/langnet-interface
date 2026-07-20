@@ -45,18 +45,47 @@ class ApprovePetriNetRequest(BaseModel):
 # VERSION HISTORY (camada ADITIVA — não altera project_data)
 # ═══════════════════════════════════════════════════════════
 
+def _current_version(table: str, session_id: Optional[str]) -> Optional[int]:
+    """Versão atual (MAX) de uma sessão-fonte numa *_version_history.
+
+    Usado para carimbar, na versão da Rede de Petri, qual VERSÃO de cada fonte a
+    produziu. Tolerante a falha (retorna None) — proveniência nunca quebra o fluxo.
+    """
+    if not session_id:
+        return None
+    try:
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"SELECT COALESCE(MAX(version), 0) FROM {table} WHERE session_id = %s",
+                (session_id,),
+            )
+            v = int(cursor.fetchone()[0])
+            cursor.close()
+        return v or None
+    except Exception as exc:  # noqa: BLE001
+        print(f"⚠️  Falha ao ler versão de {table} (ignorada): {exc}")
+        return None
+
+
 def _save_petri_version(
     project_id: str,
     petri_net: dict,
     change_type: str,
     change_description: str,
     user_id: Optional[str],
+    sources: Optional[dict] = None,
 ) -> Optional[int]:
     """Registra um snapshot da Rede de Petri em petri_net_version_history.
 
     Camada aditiva: NUNCA levanta exceção (envolve o INSERT em try/except) para que
     uma falha de versionamento jamais quebre generate/save. Retorna a nova versão ou None.
+
+    `sources` (opcional) carimba a proveniência — sessão+versão de agents.yaml,
+    tasks.yaml e Sequência de Tarefas que produziram esta versão. Em edições manuais
+    não há fonte (fica NULL).
     """
+    s = sources or {}
     try:
         petri_json = json.dumps(petri_net, ensure_ascii=False)
         doc_size = len(petri_json)
@@ -71,8 +100,11 @@ def _save_petri_version(
             cursor.execute(
                 "INSERT INTO petri_net_version_history "
                 "(project_id, version, petri_net_json, created_by, change_type, "
-                " change_description, doc_size) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                " change_description, doc_size, "
+                " agents_yaml_session_id, agents_yaml_version, "
+                " tasks_yaml_session_id, tasks_yaml_version, "
+                " task_execution_flow_session_id, task_execution_flow_version) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     project_id,
                     new_version,
@@ -81,6 +113,12 @@ def _save_petri_version(
                     change_type,
                     change_description,
                     doc_size,
+                    s.get("agents_yaml_session_id"),
+                    s.get("agents_yaml_version"),
+                    s.get("tasks_yaml_session_id"),
+                    s.get("tasks_yaml_version"),
+                    s.get("task_execution_flow_session_id"),
+                    s.get("task_execution_flow_version"),
                 ),
             )
             conn.commit()
@@ -250,13 +288,29 @@ async def generate_petri_net(
     if affected == 0:
         raise HTTPException(status_code=404, detail="Projeto não encontrado para gravar a rede")
 
-    # ADITIVO: registrar snapshot no histórico (não bloqueia se falhar)
+    # ADITIVO: registrar snapshot no histórico (não bloqueia se falhar).
+    # Carimba a proveniência: sessão+versão de cada fonte que produziu esta rede.
+    sources = {
+        "agents_yaml_session_id": request.agents_yaml_session_id,
+        "agents_yaml_version": _current_version(
+            "agents_yaml_version_history", request.agents_yaml_session_id
+        ),
+        "tasks_yaml_session_id": request.tasks_yaml_session_id,
+        "tasks_yaml_version": _current_version(
+            "tasks_yaml_version_history", request.tasks_yaml_session_id
+        ),
+        "task_execution_flow_session_id": request.task_execution_flow_session_id,
+        "task_execution_flow_version": _current_version(
+            "task_execution_flow_version_history", request.task_execution_flow_session_id
+        ),
+    }
     _save_petri_version(
         project_id,
         petri_net,
         "initial_generation",
         "Geração da rede via agente",
         current_user["id"],
+        sources,
     )
 
     return {"petri_net": petri_net}
