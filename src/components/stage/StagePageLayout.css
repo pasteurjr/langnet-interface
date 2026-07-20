@@ -5,7 +5,8 @@
   grid-template-columns: 320px 340px minmax(0, 1fr) !important;
 }
 .documents-chat-container.stage-wide-viewer .actions-panel {
-  max-width: none;
+  width: auto !important;   /* base define width:320px fixo; aqui deixa o grid mandar */
+  max-width: none !important;
   min-width: 0;
   overflow: auto;
 }
