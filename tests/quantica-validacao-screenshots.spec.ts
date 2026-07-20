@@ -4,7 +4,7 @@ import * as fs from 'fs';
 const PID = 'b55ef718-0073-44d4-b279-11df89403e92';
 const BASE = 'http://localhost:3000';
 const TOK = fs.readFileSync('/tmp/uso-solo-pipeline/tok.txt', 'utf8').trim();
-const OUT = '/tmp/uso-solo-pipeline/shots';
+const OUT = '/tmp/uso-solo-pipeline/shots2';
 
 const STAGES: [string, string][] = [
   ['00-documentos', `/project/${PID}/documents`],
@@ -34,8 +34,8 @@ test('captura telas Quântica', async ({ page }) => {
 
   for (const [name, path] of STAGES) {
     await page.goto(BASE + path, { waitUntil: 'networkidle', timeout: 45000 }).catch(() => {});
-    // dá tempo pro fetch da etapa preencher o viewer
-    await page.waitForTimeout(4500);
+    // dá tempo pro fetch da etapa preencher o viewer; Petri (JointJS) carrega mais devagar
+    await page.waitForTimeout(name.includes('petri') ? 9000 : 5000);
     await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: true }).catch(async () => {
       await page.screenshot({ path: `${OUT}/${name}.png` });
     });
