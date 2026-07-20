@@ -8862,13 +8862,14 @@ const PetriNetEditor = ({ projectId, autoconnectUrl }) => {
     <div
       style={{
         display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        height: "100vh",
+        justifyContent: "flex-start",
+        alignItems: "flex-start",
+        width: "100%",
+        maxWidth: "100%",
       }}
     >
-      <div>
-        <div style={{ textAlign: "center", marginBottom: "10px" }}>
+      <div style={{ width: "100%", maxWidth: "100%" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", marginBottom: "10px" }}>
           {/* LangNet integration: generate via LLM + persist to projects.project_data */}
           <button
             style={{

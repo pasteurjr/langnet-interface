@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import PetriNetEditor from '../components/petri-net/PetriNetEditor';
 import PetriNetHistoryModal from '../components/petri-net/PetriNetHistoryModal';
@@ -20,6 +20,25 @@ const PetriNetPage: React.FC = () => {
   // Instruções adicionais: a etapa da Rede não usa (refino é por regeneração),
   // mas o shell exige as props; mantidas para uniformidade visual.
   const [instructions, setInstructions] = useState('');
+
+  // O editor JointJS renderiza a rede com base no tamanho do container. Como o
+  // container ganha o tamanho final só depois do layout da casca, disparamos
+  // alguns eventos de resize para forçar o redesenho na largura correta.
+  useEffect(() => {
+    // A rede carrega de forma assíncrona (fetch) e só então o JointJS desenha;
+    // disparamos resize em vários momentos (inclusive tardios) e por um intervalo
+    // curto para garantir o redesenho na largura correta após o carregamento.
+    const ts = [400, 1200, 2500, 4000, 6000].map((d) =>
+      setTimeout(() => window.dispatchEvent(new Event('resize')), d)
+    );
+    const iv = setInterval(() => window.dispatchEvent(new Event('resize')), 1000);
+    const stop = setTimeout(() => clearInterval(iv), 8000);
+    return () => {
+      ts.forEach(clearTimeout);
+      clearInterval(iv);
+      clearTimeout(stop);
+    };
+  }, []);
 
   if (!projectId) {
     return (
