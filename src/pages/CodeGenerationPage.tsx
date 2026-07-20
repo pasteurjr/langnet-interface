@@ -13,30 +13,14 @@ import {
   updateCodeFiles,
   downloadZip,
   downloadCheck,
+  listVersions,
   CodeChatMessage,
 } from '../services/codeGenerationService';
 import GenerateCodeModal from '../components/code-generation/GenerateCodeModal';
 import RunConsole from '../components/code-generation/RunConsole';
 import { useCodeRun } from '../components/code-generation/useCodeRun';
+import StagePageLayout from '../components/stage/StagePageLayout';
 
-const headerStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  padding: '12px 20px', borderBottom: '1px solid #e0e0e0', background: '#fafafa',
-};
-const layoutStyle: React.CSSProperties = {
-  display: 'flex', flex: 1, minHeight: 0,
-};
-const leftStyle: React.CSSProperties = {
-  width: 280, borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column',
-  background: '#fafafa', overflow: 'hidden',
-};
-const centerStyle: React.CSSProperties = {
-  flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0,
-};
-const rightStyle: React.CSSProperties = {
-  width: 360, borderLeft: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column',
-  background: '#fff', overflow: 'hidden',
-};
 const sectionTitle: React.CSSProperties = {
   fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
   padding: '10px 12px 6px', color: '#666',
@@ -71,6 +55,7 @@ const CodeGenerationPage: React.FC = () => {
   const [selectedPath, setSelectedPath] = useState<string>('');
   const [chat, setChat] = useState<CodeChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [instructions, setInstructions] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -79,6 +64,8 @@ const CodeGenerationPage: React.FC = () => {
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [warningsCollapsed, setWarningsCollapsed] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [versions, setVersions] = useState<any[]>([]);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const codeRun = useCodeRun(currentSession?.id);
@@ -359,6 +346,22 @@ const CodeGenerationPage: React.FC = () => {
     }
   }, [currentSession]);
 
+  // Abre o histórico de versões da sessão atual.
+  const openHistory = useCallback(async () => {
+    setHistoryOpen(true);
+    if (!currentSession) {
+      setVersions([]);
+      return;
+    }
+    try {
+      const vs = await listVersions(currentSession.id);
+      setVersions(vs);
+    } catch (err: any) {
+      console.error(err);
+      setVersions([]);
+    }
+  }, [currentSession]);
+
   const fileTree = useMemo(() => files.map((f) => f.path), [files]);
 
   if (!projectId) {
@@ -370,73 +373,95 @@ const CodeGenerationPage: React.FC = () => {
     );
   }
 
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={headerStyle}>
-        <h1 style={{ margin: 0, fontSize: 20 }}>💻 Geração de Código Python</h1>
-        <div>
-          <button
-            onClick={() => setIsModalOpen(true)}
-            disabled={isGenerating}
-            style={btn(isGenerating ? '#888' : '#1976d2')}
+  // ---- Botões de origem da sidebar: abrir modal de geração + selecionar sessão ----
+  const sourceButtons = (
+    <button
+      className="btn-history-compact"
+      onClick={() => setIsModalOpen(true)}
+      disabled={isGenerating}
+      title="Escolher agents.yaml/tasks.yaml/spec de origem e gerar"
+    >
+      ⚡ Nova geração
+    </button>
+  );
+
+  // ---- Banner da origem: sessão selecionada + bindings usados ----
+  const sourceBanner = currentSession ? (
+    <div
+      style={{
+        padding: '8px 12px',
+        backgroundColor: '#d4edda',
+        borderBottom: '1px solid #c3e6cb',
+        fontSize: 12,
+      }}
+    >
+      <strong>💻 Sessão:</strong> {currentSession.session_name}{' '}
+      <span style={{ color: '#555' }}>
+        (v{currentSession.current_version} · {currentSession.total_files} arquivos · {currentSession.status})
+      </span>
+      {currentSession.agent_task_spec_session_id && (
+        <span title="agent_task_spec usado (bindings de tools deterministic)" style={{ marginLeft: 6, color: '#1976d2' }}>🔗</span>
+      )}
+    </div>
+  ) : null;
+
+  // ---- configExtras: seletor de sessão + painel de warnings ----
+  const configExtras = (
+    <div style={{ marginBottom: 10 }}>
+      <div style={sectionTitle}>Sessões ({sessions.length})</div>
+      <div style={{ maxHeight: 180, overflowY: 'auto', border: '1px solid #e0e0e0', borderRadius: 4 }}>
+        {sessions.map((s) => (
+          <div
+            key={s.id}
+            style={itemStyle(currentSession?.id === s.id)}
+            onClick={() => loadSession(s.id)}
+            title={`session ${s.id}\nagents.yaml: ${s.agents_yaml_session_id || '—'}\ntasks.yaml: ${s.tasks_yaml_session_id || '—'}\nagent_task_spec: ${s.agent_task_spec_session_id || '—'}\ntask_execution_flow: ${s.task_execution_flow_session_id || '—'}`}
           >
-            {isGenerating ? '⏳ Gerando...' : '⚡ Gerar Código'}
-          </button>
-          <button onClick={handleSaveFile} disabled={!dirty} style={btn(dirty ? '#2e7d32' : '#888')}>
-            💾 Salvar Arquivo
-          </button>
-          <button onClick={handleDownload} disabled={!currentSession} style={btn('#ff9800')}>
-            📦 Baixar ZIP
-          </button>
-          <button
-            onClick={() => {
-              setConsoleOpen(true);
-              codeRun.start();
-            }}
-            disabled={!currentSession || codeRun.isStarting || codeRun.run?.status === 'running' || codeRun.run?.status === 'installing'}
-            style={btn(codeRun.run?.status === 'running' ? '#888' : '#7b1fa2')}
-            title="Cria venv, instala deps e sobe python main.py em /tmp/langnet-runs"
-          >
-            {codeRun.isStarting ? '⏳ Iniciando...' :
-             codeRun.run?.status === 'running' ? '▶ Executando' :
-             codeRun.run?.status === 'installing' ? '📦 Instalando' :
-             '▶ Executar'}
-          </button>
-        </div>
+            <div style={{ fontWeight: 600 }}>{s.session_name}</div>
+            <div style={{ fontSize: 11, color: '#666' }}>
+              v{s.current_version} · {s.total_files} arquivos · {s.status}
+              {s.agent_task_spec_session_id && <span title="agent_task_spec usado (bindings de tools deterministic)" style={{ marginLeft: 4, color: '#1976d2' }}>🔗</span>}
+            </div>
+          </div>
+        ))}
+        {sessions.length === 0 && (
+          <div style={{ padding: 12, color: '#888', fontSize: 12 }}>
+            Nenhuma sessão. Clique em ⚡ Nova geração.
+          </div>
+        )}
       </div>
 
       {warnings.length > 0 && (
         <div
           style={{
-            background: '#fff8e1', borderBottom: '1px solid #ffc107',
-            padding: warningsCollapsed ? '8px 16px' : '12px 16px',
-            display: 'flex', alignItems: 'flex-start', gap: 12,
+            background: '#fff8e1', border: '1px solid #ffc107', borderRadius: 4,
+            padding: warningsCollapsed ? '8px 10px' : '10px', marginTop: 10,
+            fontSize: 12,
           }}
         >
-          <span style={{ fontSize: 18, marginTop: 2 }}>⚠️</span>
-          <div style={{ flex: 1, fontSize: 12 }}>
-            <div style={{ fontWeight: 700, marginBottom: warningsCollapsed ? 0 : 6 }}>
-              {warnings.length} validation warning(s)
-              <button
-                onClick={() => setWarningsCollapsed(v => !v)}
-                style={{ marginLeft: 8, background: 'none', border: 'none', color: '#1976d2', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}
-              >
-                {warningsCollapsed ? 'expandir' : 'recolher'}
-              </button>
-            </div>
-            {!warningsCollapsed && (
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {warnings.map((w, i) => {
-                  const [category, ...rest] = w.split(': ');
-                  return (
-                    <li key={i} style={{ marginBottom: 6 }}>
-                      <code style={{ background: '#fff', padding: '1px 6px', borderRadius: 3, fontSize: 11 }}>{category}</code>
-                      <span style={{ marginLeft: 6 }}>{rest.join(': ')}</span>
+          <div style={{ fontWeight: 700, marginBottom: warningsCollapsed ? 0 : 6 }}>
+            ⚠️ {warnings.length} validation warning(s)
+            <button
+              onClick={() => setWarningsCollapsed(v => !v)}
+              style={{ marginLeft: 8, background: 'none', border: 'none', color: '#1976d2', cursor: 'pointer', fontSize: 11, textDecoration: 'underline' }}
+            >
+              {warningsCollapsed ? 'expandir' : 'recolher'}
+            </button>
+          </div>
+          {!warningsCollapsed && (
+            <ul style={{ margin: 0, paddingLeft: 18 }}>
+              {warnings.map((w, i) => {
+                const [category, ...rest] = w.split(': ');
+                return (
+                  <li key={i} style={{ marginBottom: 6 }}>
+                    <code style={{ background: '#fff', padding: '1px 6px', borderRadius: 3, fontSize: 11 }}>{category}</code>
+                    <span style={{ marginLeft: 6 }}>{rest.join(': ')}</span>
+                    <div style={{ marginTop: 4 }}>
                       <button
                         onClick={() => handleFixWarning(w)}
                         title="Pré-preenche o chat com instrução — revise antes de enviar"
                         style={{
-                          marginLeft: 8, padding: '1px 8px', fontSize: 10,
+                          padding: '1px 8px', fontSize: 10,
                           background: '#1976d2', color: '#fff',
                           border: 'none', borderRadius: 3, cursor: 'pointer',
                         }}
@@ -455,49 +480,116 @@ const CodeGenerationPage: React.FC = () => {
                       >
                         🚀 Corrigir e enviar
                       </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-            {!warningsCollapsed && (
-              <div style={{ marginTop: 6, fontSize: 11, color: '#666' }}>
-                💡 Clique em <strong>🔧 Corrigir</strong> para preencher o chat com a instrução adequada — revise e envie. O loop spec → código → validate → fix → revalidate fecha automaticamente.
-              </div>
-            )}
-          </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          {!warningsCollapsed && (
+            <div style={{ marginTop: 6, fontSize: 11, color: '#666' }}>
+              💡 Clique em <strong>🔧 Corrigir</strong> para preencher o chat com a instrução adequada — revise e envie. O loop spec → código → validate → fix → revalidate fecha automaticamente.
+            </div>
+          )}
         </div>
       )}
+    </div>
+  );
 
-      <div style={layoutStyle}>
-        {/* LEFT — sessions + file tree */}
-        <div style={leftStyle}>
-          <div style={sectionTitle}>Sessões ({sessions.length})</div>
-          <div style={{ maxHeight: '40%', overflowY: 'auto' }}>
-            {sessions.map((s) => (
-              <div
-                key={s.id}
-                style={itemStyle(currentSession?.id === s.id)}
-                onClick={() => loadSession(s.id)}
-                title={`session ${s.id}\nagents.yaml: ${s.agents_yaml_session_id || '—'}\ntasks.yaml: ${s.tasks_yaml_session_id || '—'}\nagent_task_spec: ${s.agent_task_spec_session_id || '—'}\ntask_execution_flow: ${s.task_execution_flow_session_id || '—'}`}
-              >
-                <div style={{ fontWeight: 600 }}>{s.session_name}</div>
-                <div style={{ fontSize: 11, color: '#666' }}>
-                  v{s.current_version} · {s.total_files} arquivos · {s.status}
-                  {s.agent_task_spec_session_id && <span title="agent_task_spec usado (bindings de tools deterministic)" style={{ marginLeft: 4, color: '#1976d2' }}>🔗</span>}
-                </div>
-              </div>
-            ))}
-            {sessions.length === 0 && (
-              <div style={{ padding: 12, color: '#888', fontSize: 12 }}>
-                Nenhuma sessão. Clique em ⚡ Gerar Código.
+  // ---- Chat de refino (coluna do meio) ----
+  const chatPanel = (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div style={sectionTitle}>💬 Refinamento</div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px' }}>
+        {chat.length === 0 && (
+          <div style={{ fontSize: 12, color: '#888', padding: 12 }}>
+            Selecione uma sessão e mande uma instrução (ex: "use gpt-4o no agente X" ou
+            "adicione retry com backoff em tools.py").
+          </div>
+        )}
+        {chat.map((m) => (
+          <div
+            key={m.id}
+            style={{
+              margin: '8px 0', padding: 10, borderRadius: 6,
+              background: m.sender_type === 'user' ? '#e3f2fd' : '#f5f5f5',
+              fontSize: 13,
+            }}
+          >
+            <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>
+              {m.sender_type === 'user' ? 'Você' : 'LangNet'} · {new Date(m.timestamp).toLocaleTimeString('pt-BR')}
+            </div>
+            <div style={{ whiteSpace: 'pre-wrap' }}>{m.message_text}</div>
+            {m.message_data?.has_diff && m.message_data.affected_paths && (
+              <div style={{ marginTop: 6, fontSize: 11, color: '#1976d2' }}>
+                ✏️ Alterados: {m.message_data.affected_paths.join(', ')}
               </div>
             )}
           </div>
+        ))}
+        <div ref={chatEndRef} />
+      </div>
+      <div style={{ padding: 8, borderTop: '1px solid #e0e0e0', display: 'flex', gap: 4 }}>
+        <textarea
+          style={{ flex: 1, resize: 'none', padding: 6, fontSize: 13, border: '1px solid #ccc', borderRadius: 4 }}
+          rows={2}
+          placeholder={currentSession ? 'Refinar projeto...' : 'Selecione uma sessão primeiro'}
+          value={chatInput}
+          onChange={(e) => setChatInput(e.target.value)}
+          disabled={!currentSession || isRefining}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendRefine(); }
+          }}
+        />
+        <button
+          onClick={handleSendRefine}
+          disabled={!currentSession || isRefining || !chatInput.trim()}
+          style={btn(isRefining ? '#888' : '#1976d2')}
+        >
+          {isRefining ? '⏳' : '↵'}
+        </button>
+      </div>
+    </div>
+  );
 
-          <div style={{ ...sectionTitle, borderTop: '1px solid #e0e0e0', marginTop: 4 }}>
-            Arquivos ({fileTree.length})
-          </div>
+  // ---- Miolo (coluna principal): árvore de arquivos + editor Monaco + toolbar ----
+  const codeViewer = (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      {/* Toolbar de ações da sessão */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+        padding: '8px 12px', borderBottom: '1px solid #e0e0e0', background: '#fafafa',
+        gap: 0, flexWrap: 'wrap',
+      }}>
+        <button onClick={handleSaveFile} disabled={!dirty} style={btn(dirty ? '#2e7d32' : '#888')}>
+          💾 Salvar Arquivo
+        </button>
+        <button onClick={handleDownload} disabled={!currentSession} style={btn('#ff9800')}>
+          📦 Baixar ZIP
+        </button>
+        <button
+          onClick={() => {
+            setConsoleOpen(true);
+            codeRun.start();
+          }}
+          disabled={!currentSession || codeRun.isStarting || codeRun.run?.status === 'running' || codeRun.run?.status === 'installing'}
+          style={btn(codeRun.run?.status === 'running' ? '#888' : '#7b1fa2')}
+          title="Cria venv, instala deps e sobe python main.py em /tmp/langnet-runs"
+        >
+          {codeRun.isStarting ? '⏳ Iniciando...' :
+           codeRun.run?.status === 'running' ? '▶ Executando' :
+           codeRun.run?.status === 'installing' ? '📦 Instalando' :
+           '▶ Executar'}
+        </button>
+      </div>
+
+      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+        {/* Árvore de arquivos */}
+        <div style={{
+          width: 240, borderRight: '1px solid #e0e0e0', display: 'flex', flexDirection: 'column',
+          background: '#fafafa', overflow: 'hidden',
+        }}>
+          <div style={sectionTitle}>Arquivos ({fileTree.length})</div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {fileTree.map((path) => (
               <div
@@ -508,14 +600,19 @@ const CodeGenerationPage: React.FC = () => {
                 {path}
               </div>
             ))}
+            {fileTree.length === 0 && (
+              <div style={{ padding: 12, color: '#888', fontSize: 12 }}>
+                Nenhum arquivo. Clique em ⚡ Nova geração.
+              </div>
+            )}
           </div>
         </div>
 
-        {/* CENTER — Monaco editor */}
-        <div style={centerStyle}>
+        {/* Editor Monaco */}
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
           {!selectedPath ? (
             <div style={{ padding: 40, color: '#666', textAlign: 'center' }}>
-              Selecione um arquivo à esquerda, ou clique em <strong>⚡ Gerar Código</strong> para começar.
+              Selecione um arquivo à esquerda, ou clique em <strong>⚡ Nova geração</strong> para começar.
             </div>
           ) : (
             <>
@@ -525,95 +622,110 @@ const CodeGenerationPage: React.FC = () => {
               }}>
                 {selectedPath} {dirty && <span style={{ color: '#c80', fontWeight: 700 }}>● modificado</span>}
               </div>
-              <Editor
-                height="100%"
-                language={langOf(selectedPath)}
-                value={editorBuffer}
-                onChange={(v) => { setEditorBuffer(v || ''); setDirty(true); }}
-                options={{
-                  minimap: { enabled: false },
-                  fontSize: 13,
-                  wordWrap: 'on',
-                  scrollBeyondLastLine: false,
-                }}
-              />
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <Editor
+                  height="100%"
+                  language={langOf(selectedPath)}
+                  value={editorBuffer}
+                  onChange={(v) => { setEditorBuffer(v || ''); setDirty(true); }}
+                  options={{
+                    minimap: { enabled: false },
+                    fontSize: 13,
+                    wordWrap: 'on',
+                    scrollBeyondLastLine: false,
+                  }}
+                />
+              </div>
             </>
           )}
         </div>
+      </div>
+    </div>
+  );
 
-        {/* RIGHT — chat */}
-        <div style={rightStyle}>
-          <div style={sectionTitle}>💬 Refinamento</div>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px' }}>
-            {chat.length === 0 && (
-              <div style={{ fontSize: 12, color: '#888', padding: 12 }}>
-                Selecione uma sessão e mande uma instrução (ex: "use gpt-4o no agente X" ou
-                "adicione retry com backoff em tools.py").
-              </div>
-            )}
-            {chat.map((m) => (
+  return (
+    <StagePageLayout
+      title="💻 Geração de Código"
+      subtitle="Geração do sistema agêntico Python (agents.yaml, tasks.yaml, tools.py, adapters.py, petri_net.json…) a partir das especificações. Refine com o agente, corrija warnings e execute o servidor."
+      sidebarTitle="💻 Geração"
+      wideViewer
+      sourceButtons={sourceButtons}
+      sourceBanner={sourceBanner}
+      configExtras={configExtras}
+      instructions={instructions}
+      onInstructionsChange={setInstructions}
+      onGenerate={() => setIsModalOpen(true)}
+      generating={isGenerating}
+      generateLabel="⚡ Gerar Código"
+      canGenerate={!isGenerating}
+      onHistory={openHistory}
+      chat={chatPanel}
+      modals={
+        <>
+          <RunConsole
+            visible={consoleOpen}
+            run={codeRun.run}
+            lines={codeRun.lines}
+            isStarting={codeRun.isStarting}
+            error={codeRun.error}
+            onStop={codeRun.stop}
+            onClose={() => setConsoleOpen(false)}
+            onClear={codeRun.clear}
+          />
+
+          <GenerateCodeModal
+            isOpen={isModalOpen}
+            projectId={projectId}
+            onClose={() => setIsModalOpen(false)}
+            onConfirm={handleGenerate}
+          />
+
+          {historyOpen && (
+            <div
+              style={{
+                position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000,
+              }}
+              onClick={() => setHistoryOpen(false)}
+            >
               <div
-                key={m.id}
                 style={{
-                  margin: '8px 0', padding: 10, borderRadius: 6,
-                  background: m.sender_type === 'user' ? '#e3f2fd' : '#f5f5f5',
-                  fontSize: 13,
+                  background: '#fff', borderRadius: 8, padding: 20, minWidth: 360,
+                  maxWidth: 520, maxHeight: '70vh', overflowY: 'auto',
                 }}
+                onClick={(e) => e.stopPropagation()}
               >
-                <div style={{ fontSize: 10, color: '#666', marginBottom: 4 }}>
-                  {m.sender_type === 'user' ? 'Você' : 'LangNet'} · {new Date(m.timestamp).toLocaleTimeString('pt-BR')}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <h3 style={{ margin: 0 }}>📜 Histórico de versões</h3>
+                  <button onClick={() => setHistoryOpen(false)} style={btn('#888')}>Fechar</button>
                 </div>
-                <div style={{ whiteSpace: 'pre-wrap' }}>{m.message_text}</div>
-                {m.message_data?.has_diff && m.message_data.affected_paths && (
-                  <div style={{ marginTop: 6, fontSize: 11, color: '#1976d2' }}>
-                    ✏️ Alterados: {m.message_data.affected_paths.join(', ')}
-                  </div>
+                {!currentSession ? (
+                  <p style={{ color: '#888' }}>Selecione uma sessão para ver o histórico.</p>
+                ) : versions.length === 0 ? (
+                  <p style={{ color: '#888' }}>Nenhuma versão anterior registrada nesta sessão.</p>
+                ) : (
+                  <ul style={{ margin: 0, paddingLeft: 18 }}>
+                    {versions.map((v: any, i: number) => (
+                      <li key={v.version ?? i} style={{ marginBottom: 6, fontSize: 13 }}>
+                        <b>v{v.version ?? i + 1}</b>
+                        {v.change_description ? ` — ${v.change_description}` : ''}
+                        {v.created_at && (
+                          <span style={{ color: '#888', marginLeft: 6 }}>
+                            ({new Date(v.created_at).toLocaleString('pt-BR')})
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
                 )}
               </div>
-            ))}
-            <div ref={chatEndRef} />
-          </div>
-          <div style={{ padding: 8, borderTop: '1px solid #e0e0e0', display: 'flex', gap: 4 }}>
-            <textarea
-              style={{ flex: 1, resize: 'none', padding: 6, fontSize: 13, border: '1px solid #ccc', borderRadius: 4 }}
-              rows={2}
-              placeholder={currentSession ? 'Refinar projeto...' : 'Selecione uma sessão primeiro'}
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              disabled={!currentSession || isRefining}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendRefine(); }
-              }}
-            />
-            <button
-              onClick={handleSendRefine}
-              disabled={!currentSession || isRefining || !chatInput.trim()}
-              style={btn(isRefining ? '#888' : '#1976d2')}
-            >
-              {isRefining ? '⏳' : '↵'}
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <RunConsole
-        visible={consoleOpen}
-        run={codeRun.run}
-        lines={codeRun.lines}
-        isStarting={codeRun.isStarting}
-        error={codeRun.error}
-        onStop={codeRun.stop}
-        onClose={() => setConsoleOpen(false)}
-        onClear={codeRun.clear}
-      />
-
-      <GenerateCodeModal
-        isOpen={isModalOpen}
-        projectId={projectId}
-        onClose={() => setIsModalOpen(false)}
-        onConfirm={handleGenerate}
-      />
-    </div>
+            </div>
+          )}
+        </>
+      }
+    >
+      {codeViewer}
+    </StagePageLayout>
   );
 };
 

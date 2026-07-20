@@ -8,15 +8,17 @@ import DocumentActionsCard from '../../components/documents/DocumentActionsCard'
 import YamlViewerModal from '../../components/yaml/YamlViewerModal';
 import MarkdownEditorModal from '../../components/documents/MarkdownEditorModal';
 import DiffViewerModal from '../../components/documents/DiffViewerModal';
+import StagePageLayout from '../../components/stage/StagePageLayout';
 import { toast } from 'react-toastify';
 import '../DocumentsPage.css'; // USA O MESMO CSS
 import * as agentsYamlService from '../../services/agentsYamlService';
 
 interface AgentsYamlTabProps {
   projectId?: string;
+  tabSwitcher?: React.ReactNode;
 }
 
-const AgentsYamlTab: React.FC<AgentsYamlTabProps> = ({ projectId }) => {
+const AgentsYamlTab: React.FC<AgentsYamlTabProps> = ({ projectId, tabSwitcher }) => {
 
   // Specification selection states
   const [isSpecModalOpen, setIsSpecModalOpen] = useState(false);
@@ -574,230 +576,206 @@ const AgentsYamlTab: React.FC<AgentsYamlTabProps> = ({ projectId }) => {
     toast.success('agents.yaml editado localmente. Use "Download" para salvar.');
   };
 
-  return (
-    <div className="documents-page-chat">
-      <div className="documents-chat-container">
-        {/* LEFT SIDEBAR: Configuration */}
-        <div className="documents-sidebar">
-          <div className="sidebar-header">
-            <h3>📋 Configuração</h3>
-            <div className="header-buttons">
-              <button
-                className="btn-history-compact"
-                onClick={() => setIsHistoryModalOpen(true)}
-                title="Histórico de Gerações de agents.yaml"
-              >
-                📜 Histórico
-              </button>
-              <button
-                className={`btn-requirements-compact ${selectedSpecSessionId ? 'selected' : ''}`}
-                onClick={() => setIsSpecModalOpen(true)}
-                title="Selecionar Documento de Agentes/Tarefas Base"
-              >
-                📝 {selectedSpecSessionId ? 'Doc MD ✓' : 'Doc MD'}
-              </button>
-            </div>
-          </div>
+  // ---- Botões de origem da sidebar: seleção do documento MD de agentes/tarefas ----
+  const sourceButtons = (
+    <button
+      className={`btn-requirements-compact ${selectedSpecSessionId ? 'selected' : ''}`}
+      onClick={() => setIsSpecModalOpen(true)}
+      title="Selecionar Documento de Agentes/Tarefas Base"
+    >
+      📝 {selectedSpecSessionId ? 'Doc MD ✓' : 'Doc MD'}
+    </button>
+  );
 
-          {/* Mostrar documento selecionado */}
-          {selectedSpecSessionId && (
-            <div style={{
-              padding: '8px 12px',
-              backgroundColor: '#d4edda',
-              borderBottom: '1px solid #c3e6cb',
-              fontSize: '12px'
-            }}>
-              <strong>📝 Base:</strong> {selectedSpecName} (v{selectedSpecVersion})
-            </div>
-          )}
-
-          {/* Empty state quando sem documento */}
-          {!selectedSpecSessionId && (
-            <div className="documents-compact-list">
-              <div className="empty-sidebar">
-                <p>Selecione um documento de especificação de agentes/tarefas</p>
-                <button onClick={() => setIsSpecModalOpen(true)}>
-                  📝 Selecionar Documento MD
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Configuration Options */}
-          <div className="analysis-config">
-            <h4>⚙️ Opções de Geração</h4>
-
-            <label>Nível de Detalhamento</label>
-            <select
-              value={detailLevel}
-              onChange={(e) => setDetailLevel(e.target.value as any)}
-              style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                fontSize: '13px',
-                marginBottom: '12px'
-              }}
-            >
-              <option value="concise">Conciso</option>
-              <option value="balanced">Balanceado</option>
-              <option value="detailed">Detalhado</option>
-            </select>
-
-            <label>Frameworks Suportados</label>
-            <div style={{ marginBottom: '12px' }}>
-              {['CrewAI', 'AutoGen', 'LangChain', 'Custom'].map(fw => (
-                <label key={fw} className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={selectedFrameworks.includes(fw)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedFrameworks([...selectedFrameworks, fw]);
-                      } else {
-                        setSelectedFrameworks(selectedFrameworks.filter(f => f !== fw));
-                      }
-                    }}
-                  />
-                  <span>{fw}</span>
-                </label>
-              ))}
-            </div>
-
-            <label>Instruções Adicionais</label>
-            <textarea
-              value={customInstructions}
-              onChange={(e) => setCustomInstructions(e.target.value)}
-              placeholder="Ex: Priorizar agentes especializados, incluir validações..."
-              rows={3}
-            />
-
-            <button
-              className="btn-start-analysis"
-              onClick={startGeneration}
-              disabled={isGenerating || !selectedSpecSessionId}
-            >
-              {isGenerating ? '⏳ Gerando...' : '🚀 Gerar agents.yaml'}
-            </button>
-
-            <button
-              className="btn-review"
-              onClick={handleReview}
-              disabled={isReviewing || !generatedYaml}
-              title="Revisar agents.yaml e obter sugestões de melhoria"
-              style={{ marginTop: '12px' }}
-            >
-              {isReviewing ? '⏳ Revisando...' : '🔍 Revisar agents.yaml'}
-            </button>
-
-            {!selectedSpecSessionId && (
-              <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
-                ⚠️ Selecione um documento MD de especificação primeiro
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* MIDDLE AREA: Chat Interface */}
-        <div className="chat-area">
-          {isChatProcessing && (
-            <div className="generating-indicator">
-              <div className="indicator-content">
-                <span className="spinner">⏳</span>
-                <strong>🚀 GERANDO AGENTS.YAML...</strong>
-                <span className="blink">Aguarde, isso pode levar 1-2 minutos</span>
-              </div>
-            </div>
-          )}
-
-          <ChatInterface
-            messages={chatMessages}
-            onSendMessage={handleChatSend}
-            isProcessing={isChatProcessing}
-          />
-        </div>
-
-        {/* RIGHT PANEL: Document Actions */}
-        <div className="actions-panel">
-          {generatedYaml ? (
-            <DocumentActionsCard
-              filename={yamlFilename}
-              content={generatedYaml}
-              executionId={currentSessionId}
-              projectId={projectId}
-              hasDiff={showDiff && !!oldYaml}
-              version={currentLoadedVersion}
-              onViewDiff={() => setIsDiffModalOpen(true)}
-              onEdit={() => setIsEditorOpen(true)}
-              onView={() => setIsViewerOpen(true)}
-              onExportPDF={async () => {
-                const { exportMarkdownToPDF } = await import('../../services/pdfExportService');
-                await exportMarkdownToPDF(generatedYaml, yamlFilename.replace('.yaml', '.pdf'));
-              }}
-            />
-          ) : (
-            <div className="no-document-placeholder">
-              <div className="placeholder-icon">🤖</div>
-              <h3>Nenhum agents.yaml Gerado</h3>
-              <p>Selecione um documento MD de especificação e clique em "Gerar agents.yaml"</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Modal for Agent/Task Spec Document Selection */}
-      <AgentTaskSpecHistoryModal
-        isOpen={isSpecModalOpen}
-        onClose={() => setIsSpecModalOpen(false)}
-        projectId={projectId || ''}
-        onSelectSession={handleSpecSessionSelect}
-        onSelectVersion={handleSpecVersionSelect}
-      />
-
-      {/* Modal for agents.yaml History */}
-      <AgentsYamlHistoryModal
-        isOpen={isHistoryModalOpen}
-        onClose={() => setIsHistoryModalOpen(false)}
-        projectId={projectId || ''}
-        onSelectSession={handleHistorySessionSelect}
-        onSelectVersion={handleHistoryVersionSelect}
-      />
-
-      {/* YAML Viewer Modal */}
-      <YamlViewerModal
-        isOpen={isViewerOpen}
-        content={generatedYaml}
-        filename={yamlFilename}
-        onClose={() => setIsViewerOpen(false)}
-      />
-
-      {/* Markdown Editor Modal */}
-      <MarkdownEditorModal
-        isOpen={isEditorOpen}
-        content={generatedYaml}
-        filename={yamlFilename}
-        onSave={handleSaveEdit}
-        onClose={() => setIsEditorOpen(false)}
-      />
-
-      {/* Diff Viewer Modal */}
-      <DiffViewerModal
-        isOpen={isDiffModalOpen}
-        oldDocument={oldYaml}
-        newDocument={generatedYaml}
-        onClose={() => setIsDiffModalOpen(false)}
-      />
-
-      {/* Review Suggestions Modal */}
-      <ReviewSuggestionsModal
-        isOpen={isReviewModalOpen}
-        suggestions={reviewSuggestions}
-        onClose={() => setIsReviewModalOpen(false)}
-        onApply={handleApplySuggestions}
-        isApplying={isApplyingSuggestions}
-      />
+  const sourceBanner = selectedSpecSessionId ? (
+    <div style={{
+      padding: '8px 12px',
+      backgroundColor: '#d4edda',
+      borderBottom: '1px solid #c3e6cb',
+      fontSize: '12px'
+    }}>
+      <strong>📝 Base:</strong> {selectedSpecName} (v{selectedSpecVersion})
     </div>
+  ) : (
+    <div className="documents-compact-list">
+      <div className="empty-sidebar">
+        <p>Selecione um documento de especificação de agentes/tarefas</p>
+        <button onClick={() => setIsSpecModalOpen(true)}>
+          📝 Selecionar Documento MD
+        </button>
+      </div>
+    </div>
+  );
+
+  // ---- Controles de configuração específicos (alternador de abas + opções) ----
+  const configExtras = (
+    <>
+      {tabSwitcher}
+
+      <label>Nível de Detalhamento</label>
+      <select
+        value={detailLevel}
+        onChange={(e) => setDetailLevel(e.target.value as any)}
+        style={{
+          width: '100%',
+          padding: '10px',
+          border: '1px solid #e5e7eb',
+          borderRadius: '6px',
+          fontSize: '13px',
+          marginBottom: '12px'
+        }}
+      >
+        <option value="concise">Conciso</option>
+        <option value="balanced">Balanceado</option>
+        <option value="detailed">Detalhado</option>
+      </select>
+
+      <label>Frameworks Suportados</label>
+      <div style={{ marginBottom: '12px' }}>
+        {['CrewAI', 'AutoGen', 'LangChain', 'Custom'].map(fw => (
+          <label key={fw} className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={selectedFrameworks.includes(fw)}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setSelectedFrameworks([...selectedFrameworks, fw]);
+                } else {
+                  setSelectedFrameworks(selectedFrameworks.filter(f => f !== fw));
+                }
+              }}
+            />
+            <span>{fw}</span>
+          </label>
+        ))}
+      </div>
+    </>
+  );
+
+  // ---- Chat de refino (coluna do meio) ----
+  const chatPanel = (
+    <>
+      {isChatProcessing && (
+        <div className="generating-indicator">
+          <div className="indicator-content">
+            <span className="spinner">⏳</span>
+            <strong>🚀 GERANDO AGENTS.YAML...</strong>
+            <span className="blink">Aguarde, isso pode levar 1-2 minutos</span>
+          </div>
+        </div>
+      )}
+
+      <ChatInterface
+        messages={chatMessages}
+        onSendMessage={handleChatSend}
+        isProcessing={isChatProcessing}
+      />
+    </>
+  );
+
+  // ---- Miolo (coluna principal): visualizador do agents.yaml ----
+  const yamlViewer = generatedYaml ? (
+    <DocumentActionsCard
+      filename={yamlFilename}
+      content={generatedYaml}
+      executionId={currentSessionId}
+      projectId={projectId}
+      hasDiff={showDiff && !!oldYaml}
+      version={currentLoadedVersion}
+      onViewDiff={() => setIsDiffModalOpen(true)}
+      onEdit={() => setIsEditorOpen(true)}
+      onView={() => setIsViewerOpen(true)}
+      onExportPDF={async () => {
+        const { exportMarkdownToPDF } = await import('../../services/pdfExportService');
+        await exportMarkdownToPDF(generatedYaml, yamlFilename.replace('.yaml', '.pdf'));
+      }}
+    />
+  ) : (
+    <div className="no-document-placeholder">
+      <div className="placeholder-icon">🤖</div>
+      <h3>Nenhum agents.yaml Gerado</h3>
+      <p>Selecione um documento MD de especificação e clique em "Gerar agents.yaml"</p>
+    </div>
+  );
+
+  return (
+    <StagePageLayout
+      title="📦 YAML de Agentes e Tarefas"
+      subtitle="Gere agents.yaml e tasks.yaml a partir de documentos de especificação"
+      sidebarTitle="📋 Configuração"
+      wideViewer
+      sourceButtons={sourceButtons}
+      sourceBanner={sourceBanner}
+      configExtras={configExtras}
+      instructions={customInstructions}
+      onInstructionsChange={setCustomInstructions}
+      onGenerate={startGeneration}
+      generating={isGenerating}
+      generateLabel="🚀 Gerar agents.yaml"
+      canGenerate={!!selectedSpecSessionId}
+      onReview={handleReview}
+      reviewing={isReviewing}
+      canReview={!!generatedYaml}
+      onHistory={() => setIsHistoryModalOpen(true)}
+      chat={chatPanel}
+      modals={
+        <>
+          {/* Modal for Agent/Task Spec Document Selection */}
+          <AgentTaskSpecHistoryModal
+            isOpen={isSpecModalOpen}
+            onClose={() => setIsSpecModalOpen(false)}
+            projectId={projectId || ''}
+            onSelectSession={handleSpecSessionSelect}
+            onSelectVersion={handleSpecVersionSelect}
+          />
+
+          {/* Modal for agents.yaml History */}
+          <AgentsYamlHistoryModal
+            isOpen={isHistoryModalOpen}
+            onClose={() => setIsHistoryModalOpen(false)}
+            projectId={projectId || ''}
+            onSelectSession={handleHistorySessionSelect}
+            onSelectVersion={handleHistoryVersionSelect}
+          />
+
+          {/* YAML Viewer Modal */}
+          <YamlViewerModal
+            isOpen={isViewerOpen}
+            content={generatedYaml}
+            filename={yamlFilename}
+            onClose={() => setIsViewerOpen(false)}
+          />
+
+          {/* Markdown Editor Modal */}
+          <MarkdownEditorModal
+            isOpen={isEditorOpen}
+            content={generatedYaml}
+            filename={yamlFilename}
+            onSave={handleSaveEdit}
+            onClose={() => setIsEditorOpen(false)}
+          />
+
+          {/* Diff Viewer Modal */}
+          <DiffViewerModal
+            isOpen={isDiffModalOpen}
+            oldDocument={oldYaml}
+            newDocument={generatedYaml}
+            onClose={() => setIsDiffModalOpen(false)}
+          />
+
+          {/* Review Suggestions Modal */}
+          <ReviewSuggestionsModal
+            isOpen={isReviewModalOpen}
+            suggestions={reviewSuggestions}
+            onClose={() => setIsReviewModalOpen(false)}
+            onApply={handleApplySuggestions}
+            isApplying={isApplyingSuggestions}
+          />
+        </>
+      }
+    >
+      {yamlViewer}
+    </StagePageLayout>
   );
 };
 

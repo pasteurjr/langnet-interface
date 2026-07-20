@@ -11,33 +11,29 @@ const YamlGenerationPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TabType>('agents');
   const { projectId } = useParams<{ projectId: string }>();
 
-  return (
-    <div className="yaml-generation-page">
-      <div className="yaml-generation-header">
-        <h1>📦 Geração de YAML de Agentes e Tarefas</h1>
-        <p>Gere agents.yaml e tasks.yaml a partir de documentos de especificação</p>
-
-        <div className="yaml-tabs">
-          <button
-            className={`tab-button ${activeTab === 'agents' ? 'active' : ''}`}
-            onClick={() => setActiveTab('agents')}
-          >
-            🤖 Agents YAML
-          </button>
-          <button
-            className={`tab-button ${activeTab === 'tasks' ? 'active' : ''}`}
-            onClick={() => setActiveTab('tasks')}
-          >
-            📋 Tasks YAML
-          </button>
-        </div>
-      </div>
-
-      <div className="yaml-tab-content">
-        {activeTab === 'agents' && <AgentsYamlTab projectId={projectId} />}
-        {activeTab === 'tasks' && <TasksYamlTab projectId={projectId} />}
-      </div>
+  // Alternador de abas (agents.yaml / tasks.yaml) injetado no shell de cada aba,
+  // logo acima das opções de configuração, para preservar a navegação entre os dois artefatos.
+  const tabSwitcher = (
+    <div className="yaml-tabs" style={{ marginBottom: '12px' }}>
+      <button
+        className={`tab-button ${activeTab === 'agents' ? 'active' : ''}`}
+        onClick={() => setActiveTab('agents')}
+      >
+        🤖 Agents YAML
+      </button>
+      <button
+        className={`tab-button ${activeTab === 'tasks' ? 'active' : ''}`}
+        onClick={() => setActiveTab('tasks')}
+      >
+        📋 Tasks YAML
+      </button>
     </div>
+  );
+
+  return activeTab === 'agents' ? (
+    <AgentsYamlTab projectId={projectId} tabSwitcher={tabSwitcher} />
+  ) : (
+    <TasksYamlTab projectId={projectId} tabSwitcher={tabSwitcher} />
   );
 };
 

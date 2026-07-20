@@ -9,6 +9,7 @@ import DocumentActionsCard from '../components/documents/DocumentActionsCard';
 import MarkdownViewerModal from '../components/documents/MarkdownViewerModal';
 import MarkdownEditorModal from '../components/documents/MarkdownEditorModal';
 import DiffViewerModal from '../components/documents/DiffViewerModal';
+import StagePageLayout from '../components/stage/StagePageLayout';
 import { useNavigation } from '../contexts/NavigationContext';
 import { toast } from 'react-toastify';
 import './DocumentsPage.css'; // USA O MESMO CSS
@@ -583,241 +584,207 @@ const AgentTaskPage: React.FC = () => {
     toast.success('Documento editado localmente. Use "Download" para salvar.');
   };
 
-  return (
-    <div className="documents-page-chat">
-      <div className="page-header">
-        <div className="header-content">
-          <h1>📋 Especificação de Agentes & Tarefas {projectContext.isInProject && `- ${projectContext.projectName}`}</h1>
-          <p>Gere documento estruturado de agentes e tarefas a partir de especificação funcional</p>
-        </div>
-      </div>
+  // ---- Botões de origem da sidebar: seleção da Especificação Funcional ----
+  const sourceButtons = (
+    <button
+      className={`btn-requirements-compact ${selectedSpecSessionId ? 'selected' : ''}`}
+      onClick={() => setIsSpecModalOpen(true)}
+      title="Selecionar Especificação Funcional Base"
+    >
+      📝 {selectedSpecSessionId ? 'Espec ✓' : 'Especificação'}
+    </button>
+  );
 
-      <div className="documents-chat-container">
-        {/* LEFT SIDEBAR: Configuration */}
-        <div className="documents-sidebar">
-          <div className="sidebar-header">
-            <h3>📋 Configuração</h3>
-            <div className="header-buttons">
-              <button
-                className="btn-history-compact"
-                onClick={() => setIsHistoryModalOpen(true)}
-                title="Histórico de Gerações"
-              >
-                📜 Histórico
-              </button>
-              <button
-                className={`btn-requirements-compact ${selectedSpecSessionId ? 'selected' : ''}`}
-                onClick={() => setIsSpecModalOpen(true)}
-                title="Selecionar Especificação Funcional Base"
-              >
-                📝 {selectedSpecSessionId ? 'Espec ✓' : 'Especificação'}
-              </button>
-            </div>
-          </div>
-
-          {/* Mostrar especificação selecionada */}
-          {selectedSpecSessionId && (
-            <div style={{
-              padding: '8px 12px',
-              backgroundColor: '#d4edda',
-              borderBottom: '1px solid #c3e6cb',
-              fontSize: '12px'
-            }}>
-              <strong>📝 Base:</strong> {selectedSpecName} (v{selectedSpecVersion})
-            </div>
-          )}
-
-          {/* Empty state quando sem especificação */}
-          {!selectedSpecSessionId && (
-            <div className="documents-compact-list">
-              <div className="empty-sidebar">
-                <p>Selecione uma especificação funcional</p>
-                <button onClick={() => setIsSpecModalOpen(true)}>
-                  📝 Selecionar Especificação
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Configuration Options */}
-          <div className="analysis-config">
-            <h4>⚙️ Opções de Geração</h4>
-
-            <label>Nível de Detalhamento</label>
-            <select
-              value={detailLevel}
-              onChange={(e) => setDetailLevel(e.target.value as any)}
-              style={{
-                width: '100%',
-                padding: '10px',
-                border: '1px solid #e5e7eb',
-                borderRadius: '6px',
-                fontSize: '13px',
-                marginBottom: '12px'
-              }}
-            >
-              <option value="concise">Conciso</option>
-              <option value="balanced">Balanceado</option>
-              <option value="detailed">Detalhado</option>
-            </select>
-
-            <label>Frameworks Suportados</label>
-            <div style={{ marginBottom: '12px' }}>
-              {['CrewAI', 'AutoGen', 'LangChain', 'Custom'].map(fw => (
-                <label key={fw} className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={selectedFrameworks.includes(fw)}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedFrameworks([...selectedFrameworks, fw]);
-                      } else {
-                        setSelectedFrameworks(selectedFrameworks.filter(f => f !== fw));
-                      }
-                    }}
-                  />
-                  <span>{fw}</span>
-                </label>
-              ))}
-            </div>
-
-            <label>Instruções Adicionais</label>
-            <textarea
-              value={customInstructions}
-              onChange={(e) => setCustomInstructions(e.target.value)}
-              placeholder="Ex: Priorizar agentes especializados, incluir validações..."
-              rows={3}
-            />
-
-            <button
-              className="btn-start-analysis"
-              onClick={startGeneration}
-              disabled={isGenerating || !selectedSpecSessionId}
-            >
-              {isGenerating ? '⏳ Gerando...' : '🚀 Gerar Agentes & Tarefas'}
-            </button>
-
-            <button
-              className="btn-review"
-              onClick={handleReview}
-              disabled={isReviewing || !generatedDocument}
-              title="Revisar documento e obter sugestões de melhoria"
-              style={{ marginTop: '12px' }}
-            >
-              {isReviewing ? '⏳ Revisando...' : '🔍 Revisar Especificação'}
-            </button>
-
-            {!selectedSpecSessionId && (
-              <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
-                ⚠️ Selecione uma especificação funcional primeiro
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* MIDDLE AREA: Chat Interface */}
-        <div className="chat-area">
-          {isChatProcessing && (
-            <div className="generating-indicator">
-              <div className="indicator-content">
-                <span className="spinner">⏳</span>
-                <strong>🚀 GERANDO DOCUMENTO DE ESPECIFICAÇÃO...</strong>
-                <span className="blink">Aguarde, isso pode levar 1-3 minutos</span>
-              </div>
-            </div>
-          )}
-
-          <ChatInterface
-            messages={chatMessages}
-            onSendMessage={handleChatSend}
-            isProcessing={isChatProcessing}
-          />
-        </div>
-
-        {/* RIGHT PANEL: Document Actions */}
-        <div className="actions-panel">
-          {generatedDocument ? (
-            <DocumentActionsCard
-              filename={documentFilename}
-              content={generatedDocument}
-              executionId={currentSessionId}
-              projectId={projectId}
-              hasDiff={showDiff && !!oldDocument}
-              version={currentLoadedVersion}
-              onViewDiff={() => setIsDiffModalOpen(true)}
-              onEdit={() => setIsEditorOpen(true)}
-              onView={() => setIsViewerOpen(true)}
-              onExportPDF={async () => {
-                const { exportMarkdownToPDF } = await import('../services/pdfExportService');
-                await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
-              }}
-            />
-          ) : (
-            <div className="no-document-placeholder">
-              <div className="placeholder-icon">📋</div>
-              <h3>Nenhum Documento Gerado</h3>
-              <p>Selecione uma especificação funcional e clique em "Gerar Especificação de Agentes & Tarefas"</p>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Modal for Specification Selection */}
-      <SpecificationHistoryModal
-        isOpen={isSpecModalOpen}
-        onClose={() => setIsSpecModalOpen(false)}
-        projectId={projectId}
-        onSelectSession={handleSpecSessionSelect}
-        onSelectVersion={handleSpecVersionSelect}
-      />
-
-      {/* Markdown Viewer Modal */}
-      <MarkdownViewerModal
-        isOpen={isViewerOpen}
-        content={generatedDocument}
-        filename={documentFilename}
-        onClose={() => setIsViewerOpen(false)}
-        onDownload={async () => {
-          const { exportMarkdownToPDF } = await import('../services/pdfExportService');
-          await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
-        }}
-      />
-
-      {/* Markdown Editor Modal */}
-      <MarkdownEditorModal
-        isOpen={isEditorOpen}
-        content={generatedDocument}
-        filename={documentFilename}
-        onSave={handleSaveEdit}
-        onClose={() => setIsEditorOpen(false)}
-      />
-
-      {/* Modal for Agent/Task Spec History */}
-      <AgentTaskSpecHistoryModal
-        isOpen={isHistoryModalOpen}
-        onClose={() => setIsHistoryModalOpen(false)}
-        projectId={projectId || ''}
-        onSelectSession={handleHistorySessionSelect}
-        onSelectVersion={handleHistoryVersionSelect}
-      />
-
-      {/* Diff Viewer Modal */}
-      <DiffViewerModal
-        isOpen={isDiffModalOpen}
-        oldDocument={oldDocument}
-        newDocument={generatedDocument}
-        onClose={() => setIsDiffModalOpen(false)}
-      />
-
-      {/* Review Suggestions Modal */}
-      <ReviewSuggestionsModal
-        isOpen={isReviewModalOpen}
-        suggestions={reviewSuggestions}
-        onClose={() => setIsReviewModalOpen(false)}
-        onApply={handleApplySuggestions}
-        isApplying={isApplyingSuggestions}
-      />
+  const sourceBanner = selectedSpecSessionId ? (
+    <div style={{
+      padding: '8px 12px',
+      backgroundColor: '#d4edda',
+      borderBottom: '1px solid #c3e6cb',
+      fontSize: '12px'
+    }}>
+      <strong>📝 Base:</strong> {selectedSpecName} (v{selectedSpecVersion})
     </div>
+  ) : (
+    <div className="documents-compact-list">
+      <div className="empty-sidebar">
+        <p>Selecione uma especificação funcional</p>
+        <button onClick={() => setIsSpecModalOpen(true)}>
+          📝 Selecionar Especificação
+        </button>
+      </div>
+    </div>
+  );
+
+  // ---- Controles de configuração específicos (acima do textarea de instruções) ----
+  const configExtras = (
+    <>
+      <label>Nível de Detalhamento</label>
+      <select
+        value={detailLevel}
+        onChange={(e) => setDetailLevel(e.target.value as any)}
+        style={{
+          width: '100%',
+          padding: '10px',
+          border: '1px solid #e5e7eb',
+          borderRadius: '6px',
+          fontSize: '13px',
+          marginBottom: '12px'
+        }}
+      >
+        <option value="concise">Conciso</option>
+        <option value="balanced">Balanceado</option>
+        <option value="detailed">Detalhado</option>
+      </select>
+
+      <label>Frameworks Suportados</label>
+      <div style={{ marginBottom: '12px' }}>
+        {['CrewAI', 'AutoGen', 'LangChain', 'Custom'].map(fw => (
+          <label key={fw} className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={selectedFrameworks.includes(fw)}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setSelectedFrameworks([...selectedFrameworks, fw]);
+                } else {
+                  setSelectedFrameworks(selectedFrameworks.filter(f => f !== fw));
+                }
+              }}
+            />
+            <span>{fw}</span>
+          </label>
+        ))}
+      </div>
+    </>
+  );
+
+  // ---- Chat de refino (coluna do meio) ----
+  const chatPanel = (
+    <>
+      {isChatProcessing && (
+        <div className="generating-indicator">
+          <div className="indicator-content">
+            <span className="spinner">⏳</span>
+            <strong>🚀 GERANDO DOCUMENTO DE ESPECIFICAÇÃO...</strong>
+            <span className="blink">Aguarde, isso pode levar 1-3 minutos</span>
+          </div>
+        </div>
+      )}
+
+      <ChatInterface
+        messages={chatMessages}
+        onSendMessage={handleChatSend}
+        isProcessing={isChatProcessing}
+      />
+    </>
+  );
+
+  // ---- Miolo (coluna direita): ações do documento gerado ----
+  const documentViewer = generatedDocument ? (
+    <DocumentActionsCard
+      filename={documentFilename}
+      content={generatedDocument}
+      executionId={currentSessionId}
+      projectId={projectId}
+      hasDiff={showDiff && !!oldDocument}
+      version={currentLoadedVersion}
+      onViewDiff={() => setIsDiffModalOpen(true)}
+      onEdit={() => setIsEditorOpen(true)}
+      onView={() => setIsViewerOpen(true)}
+      onExportPDF={async () => {
+        const { exportMarkdownToPDF } = await import('../services/pdfExportService');
+        await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
+      }}
+    />
+  ) : (
+    <div className="no-document-placeholder">
+      <div className="placeholder-icon">📋</div>
+      <h3>Nenhum Documento Gerado</h3>
+      <p>Selecione uma especificação funcional e clique em "Gerar Agentes & Tarefas"</p>
+    </div>
+  );
+
+  return (
+    <StagePageLayout
+      title={`⚙️ Agentes & Tarefas${projectContext.isInProject ? ` — ${projectContext.projectName}` : ''}`}
+      subtitle="Gere documento estruturado de agentes e tarefas a partir de especificação funcional"
+      sidebarTitle="📋 Configuração"
+      sourceButtons={sourceButtons}
+      sourceBanner={sourceBanner}
+      configExtras={configExtras}
+      instructions={customInstructions}
+      onInstructionsChange={setCustomInstructions}
+      onGenerate={startGeneration}
+      generating={isGenerating}
+      generateLabel="🚀 Gerar Agentes & Tarefas"
+      canGenerate={!!selectedSpecSessionId}
+      onReview={handleReview}
+      reviewing={isReviewing}
+      canReview={!!generatedDocument}
+      onHistory={() => setIsHistoryModalOpen(true)}
+      chat={chatPanel}
+      modals={
+        <>
+          {/* Modal for Specification Selection */}
+          <SpecificationHistoryModal
+            isOpen={isSpecModalOpen}
+            onClose={() => setIsSpecModalOpen(false)}
+            projectId={projectId}
+            onSelectSession={handleSpecSessionSelect}
+            onSelectVersion={handleSpecVersionSelect}
+          />
+
+          {/* Markdown Viewer Modal */}
+          <MarkdownViewerModal
+            isOpen={isViewerOpen}
+            content={generatedDocument}
+            filename={documentFilename}
+            onClose={() => setIsViewerOpen(false)}
+            onDownload={async () => {
+              const { exportMarkdownToPDF } = await import('../services/pdfExportService');
+              await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
+            }}
+          />
+
+          {/* Markdown Editor Modal */}
+          <MarkdownEditorModal
+            isOpen={isEditorOpen}
+            content={generatedDocument}
+            filename={documentFilename}
+            onSave={handleSaveEdit}
+            onClose={() => setIsEditorOpen(false)}
+          />
+
+          {/* Modal for Agent/Task Spec History */}
+          <AgentTaskSpecHistoryModal
+            isOpen={isHistoryModalOpen}
+            onClose={() => setIsHistoryModalOpen(false)}
+            projectId={projectId || ''}
+            onSelectSession={handleHistorySessionSelect}
+            onSelectVersion={handleHistoryVersionSelect}
+          />
+
+          {/* Diff Viewer Modal */}
+          <DiffViewerModal
+            isOpen={isDiffModalOpen}
+            oldDocument={oldDocument}
+            newDocument={generatedDocument}
+            onClose={() => setIsDiffModalOpen(false)}
+          />
+
+          {/* Review Suggestions Modal */}
+          <ReviewSuggestionsModal
+            isOpen={isReviewModalOpen}
+            suggestions={reviewSuggestions}
+            onClose={() => setIsReviewModalOpen(false)}
+            onApply={handleApplySuggestions}
+            isApplying={isApplyingSuggestions}
+          />
+        </>
+      }
+    >
+      {documentViewer}
+    </StagePageLayout>
   );
 };
 
