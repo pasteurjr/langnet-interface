@@ -14,6 +14,7 @@ import TaskExecutionFlowHistoryModal from '../components/task-execution-flow/Tas
 import DiffViewerModal from '../components/documents/DiffViewerModal';
 import ReviewSuggestionsModal from '../components/specification/ReviewSuggestionsModal';
 import YamlSelectionModal from '../components/task-execution-flow/YamlSelectionModal';
+import StagePageLayout from '../components/stage/StagePageLayout';
 import * as documentService from '../services/documentService';
 import * as chatService from '../services/chatService';
 import {
@@ -555,214 +556,156 @@ const SequenciaTarefasPage: React.FC = () => {
     }
   };
 
-  return (
-    <div className="documents-page-chat">
-      <div className="page-header">
-        <div className="header-content">
-          <h1>🔄 Sequência de Tarefas {projectContext.isInProject && `- ${projectContext.projectName}`}</h1>
-          <p>Gere o fluxo de execução de tarefas a partir de agents.yaml e tasks.yaml</p>
-        </div>
+  const allSourcesSelected = !!(selectedSpecificationSessionId && selectedAgentTaskSpecSessionId && selectedTasksYamlSessionId);
+
+  // ---- Botões de origem da sidebar (upload + Specs & Docs) ----
+  const sourceButtons = (
+    <>
+      <button className="btn-upload-compact" onClick={() => setIsUploadModalOpen(true)}>
+        + Upload
+      </button>
+      <button
+        className={`btn-yamls-compact ${allSourcesSelected ? 'selected' : ''}`}
+        onClick={() => setIsYamlsModalOpen(true)}
+        title="Selecionar Documentos Base (Specification, Agent/Task Spec, Tasks YAML)"
+      >
+        📋 {allSourcesSelected ? 'Specs ✓' : 'Specs & Docs'}
+      </button>
+    </>
+  );
+
+  // ---- Banner da origem selecionada ----
+  const sourceBanner = (selectedSpecificationSessionId || selectedAgentTaskSpecSessionId || selectedTasksYamlSessionId) ? (
+    <div style={{
+      padding: '8px 12px',
+      backgroundColor: '#d4edda',
+      borderBottom: '1px solid #c3e6cb',
+      fontSize: '11px',
+      lineHeight: '1.6'
+    }}>
+      <strong>📋 Documentos Selecionados:</strong><br/>
+      {selectedSpecificationSessionId && '✓ Especificação Funcional'}<br/>
+      {selectedAgentTaskSpecSessionId && '✓ Especificação de Agentes/Tarefas'}<br/>
+      {selectedTasksYamlSessionId && '✓ Tasks YAML'}<br/>
+      {documents.length > 0 && `✓ + ${documents.length} documento(s) externo(s)`}
+    </div>
+  ) : null;
+
+  // ---- Extras de configuração: lista de docs complementares + avisos ----
+  const configExtras = (
+    <>
+      <div className="documents-compact-list">
+        {documents.length === 0 ? (
+          <div className="empty-sidebar">
+            <p>Nenhum doc complementar</p>
+            <button onClick={() => setIsUploadModalOpen(true)}>
+              📤 Adicionar
+            </button>
+          </div>
+        ) : (
+          documents.map(doc => (
+            <div key={doc.id} className={`document-item ${doc.status}`}>
+              <div className="doc-icon">📄</div>
+              <div className="doc-info">
+                <div className="doc-name" title={doc.name}>{doc.name}</div>
+                <div className="doc-status">
+                  {doc.status === DocumentStatus.UPLOADED && '📎 Complementar'}
+                  {doc.status === DocumentStatus.ANALYZING && '🔄 Processando'}
+                  {doc.status === DocumentStatus.ANALYZED && '✅ Incluído'}
+                  {doc.status === DocumentStatus.ERROR && '❌ Erro'}
+                </div>
+              </div>
+              <button className="btn-delete-small" onClick={() => handleDelete(doc.id)}>×</button>
+            </div>
+          ))
+        )}
       </div>
-
-      {error && (
-        <div className="error-banner">{error}</div>
+      {!allSourcesSelected && (
+        <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
+          ⚠️ Selecione os 3 documentos obrigatórios primeiro (📋 Specs & Docs)
+        </p>
       )}
+    </>
+  );
 
-      {isLoading ? (
-        <div className="loading-container">
-          <span className="spinner"></span> Carregando...
-        </div>
-      ) : (
-        <div className="documents-chat-container">
-          {/* LEFT SIDEBAR: Documents List + Configuration */}
-          <div className="documents-sidebar">
-            <div className="sidebar-header">
-              <h3>📁 Docs Complementares ({documents.length})</h3>
-              <div className="header-buttons">
-                <button className="btn-upload-compact" onClick={() => setIsUploadModalOpen(true)}>
-                  + Upload
-                </button>
-                <button className="btn-history-compact" onClick={() => setIsHistoryModalOpen(true)} title="Histórico de Fluxos de Tarefas">
-                  📜 Histórico
-                </button>
-                {/* BOTÃO: Specs & Docs */}
-                <button
-                  className={`btn-yamls-compact ${(selectedSpecificationSessionId && selectedAgentTaskSpecSessionId && selectedTasksYamlSessionId) ? 'selected' : ''}`}
-                  onClick={() => setIsYamlsModalOpen(true)}
-                  title="Selecionar Documentos Base (Specification, Agent/Task Spec, Tasks YAML)"
-                >
-                  📋 {(selectedSpecificationSessionId && selectedAgentTaskSpecSessionId && selectedTasksYamlSessionId) ? 'Specs ✓' : 'Specs & Docs'}
-                </button>
-              </div>
-            </div>
-
-            {/* Mostrar Documentos selecionados */}
-            {(selectedSpecificationSessionId || selectedAgentTaskSpecSessionId || selectedTasksYamlSessionId) && (
-              <div style={{
-                padding: '8px 12px',
-                backgroundColor: '#d4edda',
-                borderBottom: '1px solid #c3e6cb',
-                fontSize: '11px',
-                lineHeight: '1.6'
-              }}>
-                <strong>📋 Documentos Selecionados:</strong><br/>
-                {selectedSpecificationSessionId && '✓ Especificação Funcional'}<br/>
-                {selectedAgentTaskSpecSessionId && '✓ Especificação de Agentes/Tarefas'}<br/>
-                {selectedTasksYamlSessionId && '✓ Tasks YAML'}<br/>
-                {documents.length > 0 && `✓ + ${documents.length} documento(s) externo(s)`}
-              </div>
-            )}
-
-            {/* Compact Documents List (complementares) */}
-            <div className="documents-compact-list">
-              {documents.length === 0 ? (
-                <div className="empty-sidebar">
-                  <p>Nenhum doc complementar</p>
-                  <button onClick={() => setIsUploadModalOpen(true)}>
-                    📤 Adicionar
-                  </button>
-                </div>
-              ) : (
-                documents.map(doc => (
-                  <div key={doc.id} className={`document-item ${doc.status}`}>
-                    <div className="doc-icon">📄</div>
-                    <div className="doc-info">
-                      <div className="doc-name" title={doc.name}>{doc.name}</div>
-                      <div className="doc-status">
-                        {doc.status === DocumentStatus.UPLOADED && '📎 Complementar'}
-                        {doc.status === DocumentStatus.ANALYZING && '🔄 Processando'}
-                        {doc.status === DocumentStatus.ANALYZED && '✅ Incluído'}
-                        {doc.status === DocumentStatus.ERROR && '❌ Erro'}
-                      </div>
-                    </div>
-                    <button className="btn-delete-small" onClick={() => handleDelete(doc.id)}>×</button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Configuration */}
-            <div className="analysis-config">
-              <h4>⚙️ Configuração</h4>
-
-              <label>Instruções Customizadas (Opcional)</label>
-              <textarea
-                value={customInstructions}
-                onChange={(e) => setCustomInstructions(e.target.value)}
-                placeholder="Ex: Enfatizar dependências entre tasks, detalhar input/output formats, etc..."
-                rows={3}
-              />
-
-              <button
-                className="btn-start-analysis"
-                onClick={startGeneration}
-                disabled={isAnalyzing || !selectedSpecificationSessionId || !selectedAgentTaskSpecSessionId || !selectedTasksYamlSessionId}
-              >
-                {isAnalyzing ? '⏳ Gerando...' : '🚀 Gerar Sequência de Tarefas'}
-              </button>
-
-              {(!selectedSpecificationSessionId || !selectedAgentTaskSpecSessionId || !selectedTasksYamlSessionId) && (
-                <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
-                  ⚠️ Selecione os 3 documentos obrigatórios primeiro (📋 Specs & Docs)
-                </p>
-              )}
-
-              <button
-                className="btn-review"
-                onClick={handleReview}
-                disabled={isReviewing || !generatedDocument}
-                title="Revisar fluxo de execução e obter sugestões de melhoria"
-              >
-                {isReviewing ? '⏳ Revisando...' : '🔍 Revisar Fluxo de Tarefas'}
-              </button>
-
-              {!generatedDocument && (
-                <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
-                  💡 Gere um fluxo de execução primeiro para revisar
-                </p>
-              )}
-            </div>
-          </div>
-
-          {/* MIDDLE AREA: Chat Interface with Progress Bar */}
-          <div className="chat-area">
-            {isChatProcessing && (
-              <div className="generating-indicator">
-                <div className="indicator-content">
-                  {isInitialGeneration ? (
-                    <>
-                      <span className="spinner">⏳</span>
-                      <strong>🚀 GERANDO FLUXO DE TAREFAS INICIAL...</strong>
-                      <span className="blink">Aguarde, isso pode levar 1-3 minutos</span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="spinner">⏳</span>
-                      <strong>✏️ GERANDO REFINAMENTO...</strong>
-                      <span className="blink">Processando com IA...</span>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {isChatProcessing && (
-              <ProgressBar
-                percentage={progressPercentage}
-                currentTask={currentTask}
-                currentPhase={currentPhase}
-                completedTasks={completedTasks}
-                totalTasks={totalTasks}
-              />
-            )}
-
-            <ChatInterface
-              messages={chatMessages}
-              onSendMessage={(msg) => handleSendChatMessage(msg, 'refine')}
-              onAnalyze={(msg) => handleSendChatMessage(msg, 'chat')}
-              isProcessing={false}
-              executionId={currentExecutionId}
-              sessionId={currentSessionId}
-            />
-          </div>
-
-          {/* RIGHT PANEL: Document Actions */}
-          <div className="actions-panel">
-            {generatedDocument ? (
-              <DocumentActionsCard
-                filename={documentFilename}
-                content={generatedDocument}
-                executionId={currentExecutionId}
-                projectId={projectId}
-                hasDiff={showDiff && !!oldDocument}
-                version={currentLoadedVersion}
-                onViewDiff={() => setIsDiffModalOpen(true)}
-                onEdit={() => setIsEditorOpen(true)}
-                onView={() => setIsViewerOpen(true)}
-                onExportPDF={async () => {
-                  const { exportMarkdownToPDF } = await import('../services/pdfExportService');
-                  await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
-                }}
-              />
+  // ---- Chat de refino (coluna do meio) ----
+  const chatPanel = (
+    <>
+      {isChatProcessing && (
+        <div className="generating-indicator">
+          <div className="indicator-content">
+            {isInitialGeneration ? (
+              <>
+                <span className="spinner">⏳</span>
+                <strong>🚀 GERANDO FLUXO DE TAREFAS INICIAL...</strong>
+                <span className="blink">Aguarde, isso pode levar 1-3 minutos</span>
+              </>
             ) : (
-              <div className="no-document-placeholder">
-                <div className="placeholder-icon">🔄</div>
-                <h3>Sequência de Tarefas não gerada</h3>
-                <p>
-                  1. Selecione YAMLs de configuração (⚙️ YAMLs Config):<br/>
-                  &nbsp;&nbsp;&nbsp;• Agent/Task Spec (especificação de agentes e tarefas)<br/>
-                  &nbsp;&nbsp;&nbsp;• Agents YAML (configuração de agentes)<br/>
-                  &nbsp;&nbsp;&nbsp;• Tasks YAML (configuração de tarefas)<br/>
-                  2. Opcionalmente adicione instruções customizadas<br/>
-                  3. Clique em "🚀 Gerar Sequência de Tarefas"
-                </p>
-              </div>
+              <>
+                <span className="spinner">⏳</span>
+                <strong>✏️ GERANDO REFINAMENTO...</strong>
+                <span className="blink">Processando com IA...</span>
+              </>
             )}
           </div>
         </div>
       )}
 
-      {/* Modals */}
+      {isChatProcessing && (
+        <ProgressBar
+          percentage={progressPercentage}
+          currentTask={currentTask}
+          currentPhase={currentPhase}
+          completedTasks={completedTasks}
+          totalTasks={totalTasks}
+        />
+      )}
+
+      <ChatInterface
+        messages={chatMessages}
+        onSendMessage={(msg) => handleSendChatMessage(msg, 'refine')}
+        onAnalyze={(msg) => handleSendChatMessage(msg, 'chat')}
+        isProcessing={false}
+        executionId={currentExecutionId}
+        sessionId={currentSessionId}
+      />
+    </>
+  );
+
+  // ---- Miolo (coluna direita): documento gerado ou placeholder ----
+  const documentViewer = generatedDocument ? (
+    <DocumentActionsCard
+      filename={documentFilename}
+      content={generatedDocument}
+      executionId={currentExecutionId}
+      projectId={projectId}
+      hasDiff={showDiff && !!oldDocument}
+      version={currentLoadedVersion}
+      onViewDiff={() => setIsDiffModalOpen(true)}
+      onEdit={() => setIsEditorOpen(true)}
+      onView={() => setIsViewerOpen(true)}
+      onExportPDF={async () => {
+        const { exportMarkdownToPDF } = await import('../services/pdfExportService');
+        await exportMarkdownToPDF(generatedDocument, documentFilename.replace('.md', '.pdf'));
+      }}
+    />
+  ) : (
+    <div className="no-document-placeholder">
+      <div className="placeholder-icon">🔄</div>
+      <h3>Sequência de Tarefas não gerada</h3>
+      <p>
+        1. Selecione os documentos base (📋 Specs & Docs):<br/>
+        &nbsp;&nbsp;&nbsp;• Especificação Funcional<br/>
+        &nbsp;&nbsp;&nbsp;• Agent/Task Spec (especificação de agentes e tarefas)<br/>
+        &nbsp;&nbsp;&nbsp;• Tasks YAML (configuração de tarefas)<br/>
+        2. Opcionalmente adicione instruções customizadas<br/>
+        3. Clique em "🚀 Gerar Sequência de Tarefas"
+      </p>
+    </div>
+  );
+
+  const stageModals = (
+    <>
       <DocumentUploadModal
         isOpen={isUploadModalOpen}
         onClose={() => setIsUploadModalOpen(false)}
@@ -833,7 +776,33 @@ const SequenciaTarefasPage: React.FC = () => {
         onApply={handleApplySuggestions}
         isApplying={isApplyingSuggestions}
       />
-    </div>
+    </>
+  );
+
+  return (
+    <StagePageLayout
+      title={`🔄 Sequência de Tarefas${projectContext.isInProject ? ` - ${projectContext.projectName}` : ''}`}
+      subtitle="Gere o fluxo de execução de tarefas a partir da Especificação Funcional, Agent/Task Spec e tasks.yaml."
+      sidebarTitle={`📁 Docs Complementares (${documents.length})`}
+      sourceButtons={sourceButtons}
+      sourceBanner={sourceBanner}
+      configExtras={configExtras}
+      instructions={customInstructions}
+      onInstructionsChange={setCustomInstructions}
+      onGenerate={startGeneration}
+      generating={isAnalyzing}
+      generateLabel="🚀 Gerar Sequência de Tarefas"
+      canGenerate={allSourcesSelected}
+      onReview={handleReview}
+      reviewing={isReviewing}
+      canReview={!!generatedDocument}
+      onHistory={() => setIsHistoryModalOpen(true)}
+      chat={chatPanel}
+      error={error}
+      modals={stageModals}
+    >
+      {documentViewer}
+    </StagePageLayout>
   );
 };
 
