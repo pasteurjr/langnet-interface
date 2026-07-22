@@ -1,0 +1,354 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>
+@page{size:A4;margin:16mm 14mm}
+body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;font-size:10.5px;color:#1e293b;line-height:1.5}
+h1{font-size:18px;color:#312e81;border-bottom:3px solid #4338ca;padding-bottom:5px;margin-top:24px}
+h2{font-size:14px;color:#fff;background:#4338ca;padding:5px 11px;border-radius:5px;margin-top:20px;page-break-after:avoid}
+h3{font-size:12px;color:#312e81;margin-top:14px}
+table{border-collapse:collapse;width:100%;font-size:8.8px;margin:8px 0}
+th,td{border:1px solid #cbd5e1;padding:3px 6px;text-align:left;vertical-align:top}
+th{background:#eef2ff}
+code{background:#eef2ff;color:#3730a3;padding:1px 4px;border-radius:3px;font-size:9px}
+pre{background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:8.4px;line-height:1.35;white-space:pre;overflow:auto}
+pre code{background:none;color:inherit}
+blockquote{border-left:3px solid #fca5a5;margin:8px 0;padding:5px 12px;background:#fef2f2;color:#7f1d1d;font-size:9.5px}
+strong{color:#0f172a}
+</style></head><body><div style="text-align:center;padding-top:75mm;page-break-after:always"><div style="font-size:27px;color:#312e81;font-weight:700">Auditoria do Sistema + Plano de Implementação</div><div style="font-size:17px;color:#6366f1;margin-top:6px">LangNet Interface</div><div style="font-size:11px;color:#64748b;margin-top:34px">Estado de cada etapa · Interface↔Código · Fluxo dos agentes<br/>Plano das funções faltantes + testes — 22/07/2026</div></div><h1>Auditoria do Sistema + Plano de Implementação — LangNet Interface</h1>
+<p><strong>Data:</strong> 22/07/2026 · <strong>Base:</strong> código real (backend, frontend e o app efetivamente gerado pela Quântica)
+<strong>Escopo:</strong> (1) auditoria de cada etapa do pipeline, com foco na conexão <strong>Interface↔Código</strong> e no
+<strong>fluxo dos agentes</strong>; (2) plano detalhado para implementar as funções faltantes (Parte B da especificação
+de casos de uso), com sugestões de teste.</p>
+<hr />
+<h1>PARTE 1 — AUDITORIA DO SISTEMA</h1>
+<h2>1.1 Sumário executivo</h2>
+<p>A auditoria trouxe uma <strong>boa surpresa</strong>: o pipeline de geração está <strong>mais completo do que se supunha</strong>.
+A partir do código realmente gerado para a Quântica (sessão <code>af4708e5</code>, <strong>55 arquivos</strong>), confirmou-se que
+a Geração de Código produz um <strong>aplicativo full-stack coerente e executável</strong>, não apenas o executor da
+Rede de Petri:</p>
+<ul>
+<li><strong>Frontend (Cara A):</strong> 18 telas de negócio React (<code>frontend/src/screens/*.jsx</code>), uma por caso de uso,
+  agrupadas por módulo, cada uma disparando a tarefa do agente via WebSocket.</li>
+<li><strong>Servidor de execução (Cara B + agentes):</strong> <code>ws-server/</code> com executor real —
+  <strong>determinístico primeiro</strong> (SQL direto nas tabelas do Modelo de Dados) <strong>ou CrewAI</strong> (<code>crew.kickoff()</code>).</li>
+<li><strong>Infra:</strong> <code>backend/</code>, <code>docker-compose.yml</code>, Dockerfiles, <code>petri_net.json</code>, <code>agents.yaml</code>, <code>tasks.yaml</code>.</li>
+</ul>
+<p>Ou seja: <strong>a conexão Interface→Código EXISTE e funciona</strong>, e <strong>os agentes são realmente executados</strong> no
+código gerado. O gargalo não é a geração — é a <strong>validação em tempo de execução</strong> do app gerado e a
+<strong>ausência das funções de configuração/operação</strong> (todas mock).</p>
+<blockquote>
+<p>⚠️ <strong>Correção de um mal-entendido comum:</strong> os arquivos em <code>framework/</code> (ex.: <code>websocket_api_tropical.py</code>)
+são o <strong>framework legado</strong> (visualtasksexec) e <strong>não</strong> representam o que o code gen produz hoje. A
+auditoria da execução deve olhar o <strong>código gerado</strong> (<code>ws-server/…</code>), que é auto-contido e real.</p>
+</blockquote>
+<h2>1.2 Estado de cada etapa do pipeline</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Etapa</th>
+<th>Estado</th>
+<th>Output é consumido adiante?</th>
+<th>Gaps</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>Documentos → Requisitos</td>
+<td>✅ Real</td>
+<td>Sim → Especificação</td>
+<td>Nenhum crítico</td>
+</tr>
+<tr>
+<td>1</td>
+<td>Especificação Funcional</td>
+<td>✅ Real</td>
+<td>Sim → 4 consumidores</td>
+<td>Página não auto-carrega última sessão</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Modelo de Dados</td>
+<td>✅ Real</td>
+<td>Sim → Interface, adapters SQL</td>
+<td>—</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Interface &amp; Protótipo (ui_spec)</td>
+<td>✅ Real</td>
+<td><strong>Sim → telas React no código</strong></td>
+<td>Casamento tela→task é heurístico</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Casos de Teste (CEG)</td>
+<td>✅ Real</td>
+<td>Terminal (validação)</td>
+<td>Não realimenta o código ainda</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Agent-Task Spec</td>
+<td>✅ Real</td>
+<td>Sim → agents.yaml, tasks.yaml</td>
+<td>—</td>
+</tr>
+<tr>
+<td>6</td>
+<td>agents.yaml / tasks.yaml</td>
+<td>✅ Real</td>
+<td>Sim → Petri e Código</td>
+<td>Tools nem sempre reais nos agentes</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Sequência de Tarefas</td>
+<td>✅ Real</td>
+<td>Sim → Petri e Código</td>
+<td>Página não auto-carrega; custo de contexto</td>
+</tr>
+<tr>
+<td>8</td>
+<td>Rede de Petri</td>
+<td>✅ Real</td>
+<td>Sim → orquestração no código</td>
+<td><code>task_name</code> vazio nos lugares (vínculo na lógica)</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Geração de Código</td>
+<td>✅ Real</td>
+<td><strong>Produto final (app full-stack)</strong></td>
+<td><strong>Nunca validado em runtime</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Leitura:</strong> as 10 etapas estão implementadas e <strong>encadeadas</strong> (proveniência já garantida na sessão
+anterior). O que falta não é "gerar" — é <strong>rodar e validar</strong> o que se gera, e <strong>cobrir as áreas mock</strong>.</p>
+<h2>1.3 Deep-dive A — Conexão Interface → Código (CONFIRMADA)</h2>
+<p><strong>Como funciona (verificado no código gerado):</strong>
+1. A etapa de Interface produz o <code>ui_spec</code> (JSON: telas, componentes com <code>bindTo</code> campo↔coluna, ações).
+2. Na Geração de Código, <code>_generate_business_screens()</code> (<code>langnetagents.py:~4132</code>) transforma o <code>ui_spec</code>
+   em componentes React <strong>por template determinístico</strong> (o <code>ui_spec</code> <strong>não</strong> vai ao prompt do LLM —
+   <code>code_generation.py</code> o carrega e versiona, e a montagem das telas é 100% Python).
+3. Cada tela gera um <code>.jsx</code> de um dos 4 tipos: <strong>form / agent / report / crud</strong>.
+4. <code>App.jsx</code> é substituído por um shell com as telas agrupadas por módulo + aba "Admin" (executor de Petri).
+5. Cada tela chama <code>runTask(task_name, payload)</code> → <code>wsClient.js</code> → WebSocket <code>:5002</code> → <code>ws-server</code>.</p>
+<p><strong>Evidência (Quântica):</strong> 18 telas geradas (CadastrarPersonaAlvo, CalendarioMensal, GerarConteúdo…),
+<code>App.jsx</code> com registro de telas por módulo (Cadastros, Conteúdo, Publicação, Engajamento, Relatórios,
+Integrações), <code>wsClient.js</code> com o protocolo <code>{type:"execute_task", data:{task_name, input_data}}</code>.</p>
+<p><strong>Veredito:</strong> conexão <strong>funcional (~90%)</strong>. Gaps: (a) o nome da task na tela é casado por <strong>similaridade
+de tokens</strong> com a task real — pode errar; (b) telas geradas são bons protótipos, mas faltam validação de
+formulário mais rica, acessibilidade e testes visuais para "produção".</p>
+<h2>1.4 Deep-dive B — Fluxo dos agentes e execução (CONFIRMADO real no código gerado)</h2>
+<p><strong>Cadeia de geração (toda real):</strong>
+Agent-Task Spec (markdown de agentes/tarefas) → <code>agents.yaml</code> + <code>tasks.yaml</code> (LLM, com validação de SQL
+nas tasks que persistem) → Rede de Petri (lugares com lógica WebSocket) → Código.</p>
+<p><strong>Execução no app gerado (<code>ws-server/websocket_server.py</code>):</strong>
+- Recebe <code>execute_task</code> via WebSocket.
+- <strong>Deterministic-first:</strong> se existe <code>&lt;task&gt;_deterministic</code> em <code>adapters.py</code>, roda <strong>SQL direto</strong> (ex.:
+  <code>INSERT INTO personas/canais/problemas</code> — as tabelas do Modelo de Dados). Sem LLM. Rápido e confiável.
+- <strong>Senão:</strong> monta <code>Agent</code> + <code>Task</code> CrewAI a partir de <code>agents.yaml</code>/<code>tasks.yaml</code> e executa
+  <code>result = crew.kickoff()</code> (linha ~225). Aplica <code>input_func</code>/<code>output_func</code> dos adapters.</p>
+<p><strong>Veredito:</strong> os agentes <strong>são executáveis de verdade</strong> no código gerado — tanto o caminho determinístico
+(CRUD → banco) quanto o caminho CrewAI (tarefas cognitivas). O que <strong>não</strong> foi comprovado é o
+<strong>funcionamento ponta-a-ponta em runtime</strong> (subir o ws-server + frontend e disparar tarefas reais).</p>
+<p><strong>Telas de agentes no LangNet (não confundir com o app gerado):</strong>
+- <code>AgentTaskPage</code> (Agentes &amp; Tarefas) — ✅ real (gera o Agent-Task Spec).
+- <code>AgentsPage</code>, <code>AgentDesignerPage</code>, <code>AgentChatPage</code> — ⚠️ mock (dados fixos, sem backend).</p>
+<h2>1.5 Gaps reais, priorizados</h2>
+<table>
+<thead>
+<tr>
+<th>Prio</th>
+<th>Gap</th>
+<th>Área</th>
+<th>Impacto</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🔴 P0</td>
+<td>App gerado <strong>nunca validado em runtime</strong> (build do frontend, subir ws-server, disparar 1 task real E2E)</td>
+<td>Código/Agentes</td>
+<td>Não se sabe se o produto final roda</td>
+</tr>
+<tr>
+<td>🔴 P0</td>
+<td>Funções de <strong>Configuração</strong> (banco, LLM, integrações) são <strong>mock</strong> — config só via <code>.env</code></td>
+<td>Config</td>
+<td>Usuário não configura pela UI</td>
+</tr>
+<tr>
+<td>🟠 P1</td>
+<td>Casamento <strong>tela→task</strong> por similaridade de tokens pode errar</td>
+<td>Interface↔Código</td>
+<td>Botão pode chamar task errada</td>
+</tr>
+<tr>
+<td>🟠 P1</td>
+<td><strong>Tools</strong> dos agentes nem sempre reais (tasks "agent" dependem disso; CRUD é sólido)</td>
+<td>Agentes</td>
+<td>Tarefas cognitivas podem falhar</td>
+</tr>
+<tr>
+<td>🟠 P1</td>
+<td><strong>MCP</strong> (config global, descoberta, sync) todo mock</td>
+<td>Config/Integração</td>
+<td>Sem integração MCP real</td>
+</tr>
+<tr>
+<td>🟡 P2</td>
+<td><code>task_name</code> vazio nos lugares da Petri (vínculo só na lógica WS)</td>
+<td>Petri</td>
+<td>Fragilidade de manutenção</td>
+</tr>
+<tr>
+<td>🟡 P2</td>
+<td>Páginas que <strong>não auto-carregam</strong> a última sessão (Especificação, Sequência)</td>
+<td>UX</td>
+<td>Confunde o usuário</td>
+</tr>
+<tr>
+<td>🟡 P2</td>
+<td><strong>Deploy</strong>, <strong>Monitoramento</strong>, <strong>Interação</strong> (5 telas) mock</td>
+<td>Operação</td>
+<td>Sem operação real</td>
+</tr>
+<tr>
+<td>🟢 P3</td>
+<td>Casos de Teste não <strong>realimentam</strong> a geração (testes não viram testes no código)</td>
+<td>Qualidade</td>
+<td>Oportunidade</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h1>PARTE 2 — PLANO DE IMPLEMENTAÇÃO</h1>
+<h2>2.1 Estratégia e priorização</h2>
+<p>O plano ataca duas frentes em paralelo:
+- <strong>Frente A — Fechar o núcleo (validar o que já se gera):</strong> provar que o app gerado roda (P0 técnico).
+- <strong>Frente B — Implementar as funções faltantes (Parte B dos casos de uso):</strong> começando pela
+  <strong>Configuração</strong> (a que o usuário mais sente falta), depois MCP, Operação e Interação.</p>
+<p>Ordem sugerida (fases): <strong>F0 → F1 → F2 → F3 → F4 → F5</strong> (detalhadas em 2.2–2.7). Cada fase termina com
+<strong>backup + commit + push + testes</strong> (padrão já adotado no projeto).</p>
+<h2>2.2 F0 — Validar o app gerado em runtime (Frente A, P0)  ·  esforço: M</h2>
+<p><strong>Objetivo:</strong> provar que o código gerado da Quântica <strong>roda de ponta a ponta</strong>.
+<strong>Tarefas:</strong>
+1. Extrair o ZIP do <code>af4708e5</code>; <code>docker-compose up</code> (ou rodar <code>ws-server</code> + <code>frontend</code> manualmente).
+2. Subir o <code>ws-server</code> (porta 5002) e o frontend; abrir uma tela (ex.: Cadastrar Persona).
+3. Disparar uma <strong>task determinística</strong> (CRUD) → conferir <code>INSERT</code> real no banco do app.
+4. Disparar uma <strong>task CrewAI</strong> (cognitiva) → conferir <code>crew.kickoff()</code> retornando resultado.
+5. Corrigir o que travar (imports, env, task matching) <strong>no gerador</strong> (não no artefato).</p>
+<p><strong>Testes de verificação:</strong>
+- <strong>T-F0.1</strong> <code>docker-compose up</code> sobe os 3 serviços sem erro.
+- <strong>T-F0.2</strong> POST WS <code>execute_task cadastrar_persona_alvo</code> → linha nova em <code>personas</code> (assert no banco).
+- <strong>T-F0.3</strong> Uma task "agent" retorna <code>task_completed</code> com <code>result</code> não-vazio.
+- <strong>T-F0.4</strong> <code>npm run build</code> do frontend gerado conclui sem erro.</p>
+<h2>2.3 F1 — Configurações do Sistema reais (UC-P01, Frente B, P0)  ·  esforço: M/G</h2>
+<p><strong>Objetivo:</strong> tornar a tela <strong>Configurações</strong> funcional: banco de dados, provedor LLM e integrações, com
+persistência e validação. (Hoje tudo em <code>backend/.env</code> e a tela é mock.)</p>
+<p><strong>Backend:</strong>
+- Novo router <code>app/routers/settings.py</code>: <code>GET /api/settings</code>, <code>PUT /api/settings</code>,
+  <code>POST /api/settings/test-db</code>, <code>POST /api/settings/test-llm</code>.
+- Tabela <code>system_settings</code> (chave/valor por seção; segredos cifrados). Ou arquivo de config gerenciado +
+  reload. <strong>Segredos nunca retornam em claro</strong> (RN-P01.1).
+- <code>test-db</code>: tenta conectar com as credenciais informadas e retorna status real (nº de tabelas, tamanho).
+- <code>test-llm</code>: consulta <code>/v1/models</code> do endpoint informado (LM Studio/DeepSeek/OpenAI) e valida o modelo.</p>
+<p><strong>Frontend:</strong>
+- Ligar <code>SettingsPage</code> às novas APIs (abas Geral / LLMs / <strong>Banco de Dados</strong> / Integrações).
+- Botões <em>Testar conexão</em> (banco e LLM) com feedback real; <em>Salvar</em> só habilita após teste OK (RN-P01.2).</p>
+<p><strong>Testes:</strong>
+- <strong>T-F1.1</strong> <em>Testar conexão</em> com credenciais corretas → "conectado, 19 tabelas".
+- <strong>T-F1.2</strong> <em>Testar conexão</em> com senha errada → erro do driver, sem salvar.
+- <strong>T-F1.3</strong> Salvar provedor LLM → nova geração passa a usar o modelo salvo (sem editar <code>.env</code>).
+- <strong>T-F1.4</strong> <code>GET /api/settings</code> nunca retorna senha/API key em claro.</p>
+<h2>2.4 F2 — MCP real (UC-P02/P03/P04, Frente B, P1)  ·  esforço: G</h2>
+<p><strong>Objetivo:</strong> transformar as 3 telas MCP (mock) em integração real.</p>
+<p><strong>Backend:</strong>
+- Router <code>app/routers/mcp.py</code> + tabelas <code>mcp_servers</code>, <code>mcp_services</code>, <code>mcp_sync_jobs</code>.
+- <code>POST /mcp/servers</code> (registrar), <code>POST /mcp/servers/{id}/test</code> (handshake real → capacidades),
+  <code>GET /mcp/services</code> (descoberta a partir dos servidores ativos), <code>POST /mcp/sync</code> (+ resolução de conflito).
+- Um servidor só fica "ativo" após teste OK (RN-P02.1); credenciais protegidas.</p>
+<p><strong>Frontend:</strong> ligar <code>McpGlobalConfigPage</code>, <code>McpServiceDiscoveryPage</code>, <code>McpStateSyncPage</code> às APIs.</p>
+<p><strong>Testes:</strong>
+- <strong>T-F2.1</strong> Registrar servidor + testar → status "ativo" e capacidades listadas.
+- <strong>T-F2.2</strong> Descoberta só lista serviços de servidores ativos.
+- <strong>T-F2.3</strong> Sync com conflito → escolha local/remoto/merge aplicada e auditada.</p>
+<h2>2.5 F3 — Robustez do núcleo (P1)  ·  esforço: M</h2>
+<p><strong>Objetivo:</strong> endurecer os pontos frágeis achados na auditoria.
+- <strong>Casamento tela→task determinístico:</strong> gravar no <code>ui_spec</code> o <code>task_name</code> canônico escolhido na etapa de
+  Interface (em vez de recasar por similaridade no code gen). Teste: <strong>T-F3.1</strong> toda ação de tela aponta
+  para uma task existente em <code>tasks.yaml</code> (assert 100%).
+- <strong>Tools dos agentes:</strong> validar, na geração de <code>agents.yaml</code>, que agentes de tasks "agent" têm tools
+  reais; senão, marcar aviso. Teste: <strong>T-F3.2</strong> relatório de agentes sem tools.
+- <strong><code>task_name</code> nos lugares da Petri:</strong> preencher o campo além da lógica. Teste: <strong>T-F3.3</strong> todo lugar com
+  lógica WS tem <code>task_name</code> coerente.</p>
+<h2>2.6 F4 — Operação: Deploy + Monitoramento (UC-P05/P06, P2)  ·  esforço: G</h2>
+<ul>
+<li><strong>Deploy:</strong> router que empacota o app gerado e publica (Docker/local); pré-requisito = geração concluída.
+  Teste: <strong>T-F4.1</strong> deploy local sobe o app; <strong>T-F4.2</strong> deploy bloqueado sem código gerado.</li>
+<li><strong>Monitoramento:</strong> mover a config do Langfuse para as Configurações (UC-P01) e persistir; consumir traces.
+  Teste: <strong>T-F4.3</strong> conectar Langfuse via config salva e listar traces.</li>
+</ul>
+<h2>2.7 F5 — Interação em tempo real (UC-P07, P2/P3)  ·  esforço: G</h2>
+<p>Tornar reais as 5 telas de Interação, conectando-as ao <strong>app gerado em execução</strong> (WebSocket :5002):
+Chat com Agentes, Estado do Sistema, Gestão de Artefatos, Formulários Dinâmicos, Designer.
+Dependem de <strong>F0</strong> (app rodando). Teste: <strong>T-F5.1</strong> Chat envia mensagem a um agente vivo e recebe resposta.</p>
+<h2>2.8 Roadmap sugerido</h2>
+<pre><code>F0 Validar app gerado (P0) ─┐
+F1 Configurações reais (P0) ─┼─ paralelizáveis
+                             │
+F3 Robustez do núcleo (P1) ──┘  (depende de F0)
+F2 MCP real (P1)
+F4 Operação: Deploy+Monitoramento (P2)   (Deploy depende de F0)
+F5 Interação em tempo real (P2/P3)        (depende de F0)
+</code></pre>
+<p><strong>Sugestão de ordem prática:</strong> F0 e F1 primeiro (destravam validação e configuração), depois F3 (corrige
+o que F0 revelar), então F2, F4 e F5.</p>
+<h2>2.9 Estratégia de testes (transversal)</h2>
+<table>
+<thead>
+<tr>
+<th>Nível</th>
+<th>O que</th>
+<th>Ferramenta</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Unit (backend)</td>
+<td>routers novos (settings, mcp): validação, cifragem de segredos, test-db/test-llm</td>
+<td>pytest</td>
+</tr>
+<tr>
+<td>Integração</td>
+<td>geração → app roda → task real grava no banco (F0)</td>
+<td>script E2E + assert no MySQL</td>
+</tr>
+<tr>
+<td>Contrato</td>
+<td><code>GET /settings</code> nunca vaza segredo; ação de tela → task existente</td>
+<td>pytest + checagem de schema</td>
+</tr>
+<tr>
+<td>E2E UI</td>
+<td>fluxos das telas de config (testar conexão, salvar)</td>
+<td>Playwright (já usado no projeto)</td>
+</tr>
+<tr>
+<td>Regressão</td>
+<td>rastreabilidade continua gravando proveniência a cada geração</td>
+<td>script de verificação (já existe)</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Princípio (do projeto):</strong> correções vêm de <strong>features do LangNet</strong>, nunca de edição manual dos
+artefatos da Quântica; cada fase com <strong>backup + commit + push + teste</strong> antes de avançar.</p>
+<hr />
+<h2>Anexos</h2>
+<ul>
+<li>Especificação de casos de uso: <code>docs/spec-langnet/especificacao-casos-de-uso.pdf</code></li>
+<li>Rastreabilidade entre artefatos: <code>docs/validacao-quantica/validacao-quantica.pdf</code></li>
+<li>Manual do usuário do pipeline: <code>docs/validacao-quantica/manual-langnet.pdf</code></li>
+</ul></body></html>
