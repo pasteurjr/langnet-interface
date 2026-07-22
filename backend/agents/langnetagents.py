@@ -2671,49 +2671,54 @@ database_tool = DatabaseTool()
 
 
 def _template_env_example(detected_tools: List[str]) -> str:
+    # .env.example é um TEMPLATE versionável/baixável: NUNCA embute segredos reais
+    # (senha de banco, API keys) — apenas placeholders. O modelo/endpoint do LM Studio
+    # não são segredos e refletem a configuração do ambiente (ajudam o dev a rodar local).
+    lm_model = os.getenv("LMSTUDIO_MODEL_NAME") or "qwen2.5-coder-32b-instruct"
+    lm_base = os.getenv("LMSTUDIO_API_BASE") or "http://localhost:1234/v1"
     lines = [
         "# Configurações do servidor WebSocket",
         "WEBSOCKET_HOST=localhost",
         "WEBSOCKET_PORT=5002",
         "",
-        "# LLM — escolha um (DeepSeek é o padrão; deixe vazio para usar OpenAI)",
-        "LLM_PROVIDER=deepseek",
-        "DEEPSEEK_API_KEY=sk-...",
+        "# LLM — padrão: LM Studio local (sem custo, sem chave real). Para nuvem, veja abaixo.",
+        "LLM_PROVIDER=lmstudio",
+        "",
+        "# LM Studio local (API OpenAI-compatible)",
+        f"LMSTUDIO_API_BASE={lm_base}",
+        f"LMSTUDIO_MODEL_NAME={lm_model}",
+        "LMSTUDIO_API_KEY=lm-studio",
+        "LMSTUDIO_MAX_TOKENS=8000",
+        "LMSTUDIO_MAX_TOKENS_PRO=12000",
+        "",
+        "# Alternativa DeepSeek (nuvem): troque LLM_PROVIDER=deepseek e informe SUA chave",
+        "# LLM_PROVIDER=deepseek",
+        "DEEPSEEK_API_KEY=",
         "DEEPSEEK_API_BASE=https://api.deepseek.com",
         "DEEPSEEK_MODEL_NAME=deepseek/deepseek-v4-flash",
-        "# Reasoning OFF por padrão (libera o budget de output só pra content).",
-        "# Ligue (=true) só em tasks que precisam de raciocínio explícito.",
         "DEEPSEEK_REASONING=false",
         "DEEPSEEK_MAX_TOKENS=32768",
         "",
-        "# Alternativa OpenAI",
-        "OPENAI_API_KEY=sk-...",
+        "# Alternativa OpenAI: troque LLM_PROVIDER=openai e informe SUA chave",
+        "OPENAI_API_KEY=",
         "OPENAI_MODEL_NAME=gpt-4o-mini",
         "",
         "# Desabilita telemetria/banner interativo do CrewAI (essencial em background)",
         "CREWAI_TESTING=true",
         "OTEL_SDK_DISABLED=true",
         "",
-        "# Banco de dados (usado por database_tool)",
-        "DB_HOST=camerascasas.no-ip.info",
-        "DB_PORT=3308",
-        "DB_USER=producao",
-        "DB_PASSWORD=112358123",
-        "DB_NAME=quantica_ops",
-        "",
-        "# LM Studio local (economia total em dev — troque LLM_PROVIDER=lmstudio)",
-        "# LLM_PROVIDER=lmstudio",
-        "LMSTUDIO_API_BASE=http://192.168.1.115:1234/v1",
-        "LMSTUDIO_MODEL_NAME=openai/deepseek-r1-distill-qwen-32b",
-        "LMSTUDIO_API_KEY=lm-studio",
-        "LMSTUDIO_MAX_TOKENS=16000",
-        "LMSTUDIO_MAX_TOKENS_PRO=24000",
+        "# Banco de dados (usado por database_tool) — PREENCHA com SUAS credenciais",
+        "DB_HOST=localhost",
+        "DB_PORT=3306",
+        "DB_USER=",
+        "DB_PASSWORD=",
+        "DB_NAME=app_db",
         "",
     ]
     tools_lower = " ".join(detected_tools).lower()
     if "email" in tools_lower or "imap" in tools_lower or "smtp" in tools_lower:
         lines.extend([
-            "# Email",
+            "# Email — preencha com SUAS credenciais",
             "SMTP_HOST=smtp.gmail.com",
             "SMTP_PORT=465",
             "IMAP_HOST=imap.gmail.com",
@@ -2724,11 +2729,11 @@ def _template_env_example(detected_tools: List[str]) -> str:
         ])
     if "mindsdb" in tools_lower:
         lines.extend([
-            "# MindsDB",
+            "# MindsDB — preencha com SUAS credenciais",
             "MINDSDB_HOST=localhost",
             "MINDSDB_PORT=47334",
-            "MINDSDB_USER=admin",
-            "MINDSDB_PASSWORD=password123",
+            "MINDSDB_USER=",
+            "MINDSDB_PASSWORD=",
             "",
         ])
     return "\n".join(lines)
