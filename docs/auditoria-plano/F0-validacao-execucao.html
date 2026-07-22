@@ -1,0 +1,141 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>@page{size:A4;margin:16mm 14mm}body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;font-size:10.5px;color:#1e293b;line-height:1.5}h1{font-size:18px;color:#312e81;border-bottom:3px solid #4338ca;padding-bottom:5px;margin-top:22px}h2{font-size:14px;color:#fff;background:#4338ca;padding:5px 11px;border-radius:5px;margin-top:18px;page-break-after:avoid}table{border-collapse:collapse;width:100%;font-size:9px;margin:8px 0}th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left;vertical-align:top}th{background:#eef2ff}code{background:#eef2ff;color:#3730a3;padding:1px 4px;border-radius:3px;font-size:9px}strong{color:#0f172a}</style></head><body><h1>F0 — Validação de Execução do App Gerado (Quântica Comercial)</h1>
+<p><strong>Data:</strong> 22/07/2026 · <strong>Sessão de código:</strong> <code>af4708e5</code> (55 arquivos)
+<strong>LLM:</strong> qwen2.5-coder-32b-instruct (LM Studio local, 192.168.1.115) · <strong>Banco do app:</strong> <code>quantica_ops</code></p>
+<h2>Veredito</h2>
+<p>✅ <strong>O aplicativo gerado RODA de verdade, ponta a ponta.</strong> Os dois caminhos de execução
+funcionam e o frontend compila. A geração do LangNet produz um sistema <strong>executável</strong>, não apenas
+arquivos plausíveis.</p>
+<h2>Ambiente montado</h2>
+<table>
+<thead>
+<tr>
+<th>Item</th>
+<th>Ação</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Extração</td>
+<td>55 arquivos da sessão <code>af4708e5</code> gravados em <code>~/quantica-app-gerada/</code></td>
+</tr>
+<tr>
+<td>Banco do app</td>
+<td><code>quantica_ops</code> (banco <strong>separado</strong> do <code>langnet</code> — sem risco ao LangNet); 20 tabelas já existentes</td>
+</tr>
+<tr>
+<td><code>.env</code> do ws-server</td>
+<td><code>LLM_PROVIDER=lmstudio</code>, modelo <code>qwen2.5-coder-32b-instruct</code>, <code>DB_NAME=quantica_ops</code></td>
+</tr>
+<tr>
+<td>Dependências</td>
+<td>crewai, websockets, mysql-connector, litellm, pyyaml, dotenv — todas presentes</td>
+</tr>
+</tbody>
+</table>
+<h2>Testes executados e resultados</h2>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Teste</th>
+<th>Resultado</th>
+<th>Evidência</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>T-F0.1</td>
+<td>Subir <code>ws-server</code> (main.py) na porta 5002</td>
+<td>✅ <strong>PASSOU</strong></td>
+<td>Porta 5002 ativa; handshake <code>connected</code> lista 18 tasks</td>
+</tr>
+<tr>
+<td>T-F0.2</td>
+<td>Task <strong>determinística</strong> <code>cadastrar_persona_alvo</code> → INSERT real</td>
+<td>✅ <strong>PASSOU</strong></td>
+<td><code>task_completed {status:sucesso, persona_id:UUID}</code>; no banco: persona + 2 canais + 2 problemas + gatilhos/objeções/palavras corretos</td>
+</tr>
+<tr>
+<td>T-F0.3</td>
+<td>Task <strong>CrewAI</strong> <code>verificar_fatos_revisor</code> → <code>crew.kickoff()</code> no LLM local</td>
+<td>✅ <strong>PASSOU</strong></td>
+<td>~30s; <code>task_completed</code> com <code>{"status":"falha"}</code> (o verificador julgou "300% em 2 dias" como não-comprovável — avaliação correta). Zero exceptions no log.</td>
+</tr>
+<tr>
+<td>T-F0.4</td>
+<td><code>npm install</code> + <code>npm run build</code> do frontend</td>
+<td>✅ <strong>PASSOU</strong></td>
+<td>1302 pacotes; "The build folder is ready to be deployed"; bundle 228 KB; só warnings <code>no-unused-vars</code></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Conclusão dos testes:</strong> a cadeia <strong>tela → <code>runTask</code> → WebSocket :5002 → ws-server → (SQL determinístico
+OU CrewAI+LLM) → resultado</strong> está <strong>funcional</strong>. O banco recebe escritas reais; o LLM local executa
+tarefas cognitivas; o frontend compila para produção.</p>
+<h2>Achados / problemas (com severidade)</h2>
+<table>
+<thead>
+<tr>
+<th>Sev.</th>
+<th>Achado</th>
+<th>Detalhe</th>
+<th>Onde corrigir</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🟠 Média</td>
+<td><strong><code>.env.example</code> vaza a senha real do banco</strong></td>
+<td>Vem com <code>DB_PASSWORD=112358123</code> (produção) e default <code>LLM_PROVIDER=deepseek</code> (nuvem, que o usuário rejeita)</td>
+<td>Gerador: usar placeholders (<code>DB_PASSWORD=</code>) e default local/seguro</td>
+</tr>
+<tr>
+<td>🟠 Média</td>
+<td><strong>Nome do modelo LM Studio errado no template</strong></td>
+<td><code>.env.example</code> traz <code>LMSTUDIO_MODEL_NAME=openai/deepseek-r1-distill-qwen-32b</code>, não o modelo carregado</td>
+<td>Gerador: parametrizar pelo modelo real do projeto</td>
+</tr>
+<tr>
+<td>🟡 Baixa</td>
+<td><strong>Adapter determinístico não trata input string</strong></td>
+<td>Se <code>canais</code> chega como <code>"a, b"</code> (string), o INSERT itera <strong>caractere a caractere</strong>. No fluxo real a tela usa <code>splitList</code> (envia lista) e funciona; falta defesa</td>
+<td><code>ws-server/adapters.py</code> (gerador): normalizar string→lista no <code>_deterministic</code></td>
+</tr>
+<tr>
+<td>🟡 Baixa</td>
+<td><strong>Algumas telas não disparam task</strong></td>
+<td>Ex.: <code>GerenciarPermissoesUsuarios.jsx</code> importa <code>runTask</code>/<code>onPrimary</code> mas não os usa (form estático)</td>
+<td>Gerador <code>_generate_business_screens</code>: garantir binding ação→task em todos os tipos</td>
+</tr>
+<tr>
+<td>🟡 Baixa</td>
+<td><strong>Saída de task cognitiva é enxuta</strong></td>
+<td><code>verificar_fatos_revisor</code> devolveu só <code>{"status":"falha"}</code>; poderia trazer justificativa/campos</td>
+<td>Prompt da task / <code>output_func</code> no gerador</td>
+</tr>
+<tr>
+<td>🟢 Info</td>
+<td><strong>Schema real não está em <code>data_model_sessions.schema_sql</code></strong></td>
+<td>A coluna trazia stub "teste"; as tabelas vêm de <code>entities_json</code>. O <code>quantica_ops</code> já tinha o schema completo de uma execução anterior</td>
+<td>Verificar por que <code>schema_sql</code> ficou stub nessa sessão</td>
+</tr>
+</tbody>
+</table>
+<h2>Correções recomendadas no GERADOR (não no artefato)</h2>
+<ol>
+<li><strong>Segurança do <code>.env</code></strong> (🟠): emitir placeholders para segredos e default de LLM local; nunca embutir
+   a senha real do banco. <em>Teste:</em> grep no <code>.env.example</code> gerado não encontra senha real.</li>
+<li><strong>Parametrizar o modelo LM Studio</strong> (🟠) pelo modelo configurado no projeto. <em>Teste:</em> <code>.env.example</code>
+   traz o modelo correto.</li>
+<li><strong>Robustez do adapter determinístico</strong> (🟡): normalizar campos de lista (<code>splitList</code> no servidor).
+   <em>Teste:</em> <code>cadastrar_persona_alvo</code> com <code>canais</code> string cria 1 canal "a, b" (ou 2), nunca N caracteres.</li>
+<li><strong>Binding ação→task em todas as telas</strong> (🟡). <em>Teste:</em> nenhuma tela gerada tem <code>runTask</code> importado e
+   não usado.</li>
+</ol>
+<h2>Conclusão</h2>
+<p>O <strong>F0 confirma a hipótese central da auditoria</strong>: o pipeline do LangNet gera um app <strong>que executa</strong> —
+telas React reais, persistência SQL real e agentes CrewAI reais rodando no LLM local. Os problemas
+encontrados são <strong>de polimento do gerador</strong> (segurança do <code>.env</code>, defesa de input, binding de telas),
+não falhas estruturais. O caminho está aberto para as próximas fases (F1 — Configurações reais, etc.).</p>
+<p><strong>Como reproduzir:</strong> <code>cd ~/quantica-app-gerada/ws-server &amp;&amp; python3 main.py</code> (porta 5002) e disparar
+<code>execute_task</code> via WebSocket; frontend em <code>~/quantica-app-gerada/frontend</code> com <code>npm start</code> (porta 3001).</p></body></html>
