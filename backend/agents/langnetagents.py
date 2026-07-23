@@ -3634,6 +3634,52 @@ def _fix_pydantic_type_hint_typos(tools_py: str) -> str:
     return "\n".join(lines)
 
 
+def _ensure_tools_have_args_schema(tools_py: str) -> str:
+    """Robustez de startup: o LLM às vezes emite tools BaseTool com
+    ``args_schema ... = None`` (às vezes até definindo um schema aninhado sem ligá-lo).
+    CrewAI quebra no import quando args_schema é None (``_generate_description`` acessa
+    ``args_schema.model_fields``), derrubando o ws-server INTEIRO no startup.
+
+    Aqui injetamos um schema default permissivo (``extra='allow'``) e trocamos toda
+    atribuição ``args_schema=None`` por ele — assim uma tool malformada não impede a
+    aplicação de subir. (Correção de robustez; o casamento fino de args da tool cognitiva
+    fica para trabalho futuro.)
+    """
+    import re as _re
+    if not tools_py or "BaseTool" not in tools_py:
+        return tools_py
+    if not _re.search(r"args_schema\s*[:=][^\n]*None", tools_py):
+        return tools_py  # nenhuma tool com args_schema None
+    if "_DefaultToolSchema" not in tools_py:
+        helper = (
+            "\n# ─── schema default (auto-injetado pelo LangNet p/ tools sem args_schema) ───\n"
+            "try:\n"
+            "    from pydantic import ConfigDict as _ConfigDict\n"
+            "    class _DefaultToolSchema(BaseModel):\n"
+            "        model_config = _ConfigDict(extra='allow')\n"
+            "except Exception:\n"
+            "    class _DefaultToolSchema(BaseModel):\n"
+            "        pass\n\n"
+        )
+        idx = tools_py.find("\nclass ")
+        if idx >= 0:
+            tools_py = tools_py[:idx] + "\n" + helper + tools_py[idx:]
+    # com type hint: "args_schema: type[BaseModel] | None = None" → default
+    tools_py = _re.sub(
+        r"args_schema\s*:[^\n=]*=\s*None",
+        "args_schema: type[BaseModel] = _DefaultToolSchema",
+        tools_py,
+    )
+    # sem type hint: "args_schema = None" → default
+    tools_py = _re.sub(
+        r"(^\s*)args_schema\s*=\s*None",
+        r"\1args_schema = _DefaultToolSchema",
+        tools_py,
+        flags=_re.MULTILINE,
+    )
+    return tools_py
+
+
 def _inject_real_database_tool(tools_py: str) -> str:
     """Substitui a classe DatabaseTool stub (se existir) por reexport do módulo real.
 
@@ -3933,6 +3979,8 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Corrige typo comum do LLM: ``field: "string"`` sem ``str = `` (quebra Pydantic).
     tools_py = _fix_common_tool_imports(tools_py)
     tools_py = _fix_pydantic_type_hint_typos(tools_py)
+    # Robustez: garante args_schema válido em toda tool (senão CrewAI quebra o startup).
+    tools_py = _ensure_tools_have_args_schema(tools_py)
 
     # Injeta TOOL_REGISTRY no tools.py (se LLM não incluiu) e AGENT_TOOLS/TASK_TOOLS no adapters.py
     tools_py = _inject_tool_registry_stub(tools_py, all_tool_names)
@@ -3959,19 +4007,29 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # das telas — permite telas ricas de cadastro (lista + novo + editar + excluir),
     # não só "salvar". Só gera pra entidades que existem no schema.
     _schema_sql_cg = state.get("data_model_schema_sql") or ""
-    if not _schema_sql_cg:
-        # tenta do ui_spec/state ou busca a mais recente do projeto
+    # Um schema_sql "real" precisa ter DDL de verdade. Sessões de Modelo de Dados podem
+    # conter um stub (ex.: schema_sql="teste") que quebraria/emudeceria o CRUD por
+    # entidade. Se o schema em mãos não parece real, busca a sessão mais recente que
+    # tenha um schema com CREATE TABLE e tamanho substancial.
+    def _schema_looks_real(_s: str) -> bool:
+        return bool(_s) and "CREATE TABLE" in _s.upper() and len(_s) > 200
+    if not _schema_looks_real(_schema_sql_cg):
+        _schema_sql_cg = ""
         try:
             from app.database import get_db_connection as _gdb2
             with _gdb2() as _c2:
                 _cur2 = _c2.cursor(dictionary=True)
                 _cur2.execute(
                     "SELECT schema_sql FROM data_model_sessions WHERE project_id=%s "
-                    "AND schema_sql IS NOT NULL AND CHAR_LENGTH(schema_sql)>0 "
-                    "ORDER BY created_at DESC LIMIT 1", (str(state.get('project_id') or ''),))
+                    "AND schema_sql IS NOT NULL AND CHAR_LENGTH(schema_sql) > 200 "
+                    "AND UPPER(schema_sql) LIKE %s "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    (str(state.get('project_id') or ''), '%CREATE TABLE%'))
                 _r2 = _cur2.fetchone()
-                if _r2:
+                if _r2 and _schema_looks_real(_r2["schema_sql"]):
                     _schema_sql_cg = _r2["schema_sql"]
+                    print(f"[CODE-GEN] schema_sql da sessão corrente era stub; "
+                          f"usando o schema real mais recente ({len(_schema_sql_cg)} chars)")
                 _cur2.close()
         except Exception:
             pass
