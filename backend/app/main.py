@@ -18,6 +18,7 @@ from app.routers.task_execution_flow import router as task_execution_flow_router
 from app.routers.petri_net import router as petri_net_router
 from app.routers.code_generation import router as code_generation_router
 from app.routers.test_cases import router as test_cases_router
+from app.routers.settings import router as settings_router, apply_settings_to_env
 from api.langnetapi import router as langnet_router
 from api.langnetwebsocket import websocket_endpoint
 from app.utils import decode_access_token
@@ -58,7 +59,17 @@ app.include_router(task_execution_flow_router, prefix="/api")  # Task execution 
 app.include_router(petri_net_router, prefix="/api")  # Petri Net generation/get/update (project_data)
 app.include_router(code_generation_router, prefix="/api")  # Code generation: Python multi-file
 app.include_router(test_cases_router)  # Casos de Teste por Grafo de Causa-Efeito (prefix já inclui /api/test-cases)
+app.include_router(settings_router, prefix="/api")  # Configurações do Sistema (banco, LLM, integrações)
 app.include_router(langnet_router, prefix="/api")  # LangNet multi-agent system
+
+# Aplica configurações salvas (system_settings) em os.environ no startup, para os
+# consumidores que leem via os.getenv por chamada (ex.: builder de LLM) pegarem ao vivo.
+try:
+    _applied = apply_settings_to_env()
+    if _applied:
+        print(f"[SETTINGS] {_applied} configuração(ões) aplicada(s) de system_settings ao ambiente")
+except Exception as _exc:  # noqa: BLE001
+    print(f"[SETTINGS] falha ao aplicar system_settings no startup: {_exc}")
 
 
 # WebSocket endpoint for real-time execution streaming
