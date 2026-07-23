@@ -32,6 +32,7 @@ import {
 } from "../types/settings";
 import { GeneralSettings } from "../components/settings/GeneralSettings";
 import { LLMSettings } from "../components/settings/LLMSettings";
+import SystemConfigSettings from "../components/settings/SystemConfigSettings";
 import UserManagement from "../components/settings/UserManagement";
 import IntegrationsSettings from "../components/settings/IntegrationsSettings";
 import SecuritySettings from "../components/settings/SecuritySettings";
@@ -42,6 +43,7 @@ import "./SettingsPage.css";
 
 const SettingsPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
+    | "system"
     | "general"
     | "llms"
     | "users"
@@ -50,7 +52,7 @@ const SettingsPage: React.FC = () => {
     | "analytics"
     | "backup"
     | "notifications"
-  >("general");
+  >("system");
 
   // Mock data - seria obtido via API
   const systemSettings: SystemSettings = {
@@ -481,6 +483,15 @@ const SettingsPage: React.FC = () => {
             <nav className="sidebar-nav">
               <button
                 className={`nav-item ${
+                  activeTab === "system" ? "active" : ""
+                }`}
+                onClick={() => setActiveTab("system")}
+              >
+                <Database size={16} />
+                Sistema (Banco &amp; LLM)
+              </button>
+              <button
+                className={`nav-item ${
                   activeTab === "general" ? "active" : ""
                 }`}
                 onClick={() => setActiveTab("general")}
@@ -552,6 +563,7 @@ const SettingsPage: React.FC = () => {
         <div className="page-main">
           <div className="main-header">
             <h2>
+              {activeTab === "system" && "Sistema — Banco de Dados & LLM"}
               {activeTab === "general" && "Configurações Gerais"}
               {activeTab === "llms" && "Configuração de LLMs"}
               {activeTab === "users" && "Gerenciamento de Usuários"}
@@ -564,6 +576,8 @@ const SettingsPage: React.FC = () => {
           </div>
 
           <div className="main-content">
+            {activeTab === "system" && <SystemConfigSettings />}
+
             {activeTab === "general" && (
               <GeneralSettings
                 settings={systemSettings}
