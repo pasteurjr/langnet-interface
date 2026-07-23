@@ -4039,6 +4039,15 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         _e = _s.get("entity")
         if _e and _e not in _entities:
             _entities.append(_e)
+    # Estende para TODAS as tabelas do schema — o app gera uma tela de CRUD por
+    # entidade, então cada uma precisa dos adapters criar_/listar_/obter_/atualizar_/excluir_.
+    if _schema_sql_cg:
+        try:
+            for _t in _schema_model(_schema_sql_cg).keys():
+                if _t not in _entities:
+                    _entities.append(_t)
+        except Exception:
+            pass
     if _entities and _schema_sql_cg:
         _crud_snippet = _generate_crud_adapters(_entities, _schema_sql_cg)
         if _crud_snippet:
@@ -4247,11 +4256,14 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
     add("frontend/src/screens/wsClient.js", _template_ws_client(ws_port))
 
     comp_meta = []  # (id, name, comp_name, route, kind, module)
+    covered_entities = set()  # entidades que já ganharam tela de CRUD via ui_spec
     for s in screens:
         comp_name = _pascal_case(s.get("id") or s.get("name") or "Screen")
         entity = s.get("entity")
         entity_exists = bool(entity and entity in model)
         kind = _classify_screen(s, entity_exists)
+        if kind == "crud" and entity:
+            covered_entities.add(entity)
         # módulo: pela task alvo → módulo do agent_task_spec, senão heurística
         target = None
         for a in (s.get("actions") or []):
@@ -4272,6 +4284,26 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
             src = _react_component_for_screen(s, comp_name, task_fields)
         add(f"frontend/src/screens/{comp_name}.jsx", src)
         comp_meta.append((s.get("id"), s.get("name", comp_name), comp_name, s.get("route", "/"), kind, module))
+
+    # ── CRUD convencional para TODA entidade do schema que ainda não tem tela ──
+    # Garante que cada tabela do Modelo de Dados tenha uma tela de gestão completa
+    # (lista + busca + Novo/Editar/Salvar/Excluir com confirmação), não só as poucas
+    # que o ui_spec classificou como CRUD. Assim o app cobre todas as entidades.
+    def _humanize(e):
+        return (e or "").replace("_", " ").strip().title() or e
+    for ent in sorted(model.keys()):
+        if ent in covered_entities:
+            continue
+        cn = _pascal_case(ent) + "Crud"
+        syn = {"id": ent, "name": _humanize(ent), "entity": ent, "layout": "table", "uc": []}
+        try:
+            src = _crud_screen(syn, cn, ent, model.get(ent, {}))
+        except Exception as _exc:  # noqa: BLE001
+            print(f"[CODE-GEN] CRUD auto de '{ent}' pulado: {_exc}")
+            continue
+        add(f"frontend/src/screens/{cn}.jsx", src)
+        comp_meta.append((ent, _humanize(ent), cn, "/", "crud", "Cadastros"))
+        covered_entities.add(ent)
 
     idx_lines = [f'export {{ default as {c} }} from "./{c}";' for _, _, c, _, _, _ in comp_meta]
     add("frontend/src/screens/index.js", "\n".join(idx_lines))
@@ -4426,6 +4458,7 @@ export default function %COMP%() {
   const [confirmId, setConfirmId] = useState(null);
   const [detail, setDetail] = useState(null);
   const [err, setErr] = useState(null);
+  const [q, setQ] = useState("");
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
   const load = async () => {
@@ -4466,6 +4499,11 @@ export default function %COMP%() {
 
   const IN = "w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none";
 
+  // Busca client-side: filtra as linhas por qualquer coluna exibida.
+  const filtered = q.trim()
+    ? rows.filter((row) => COLS.some((c) => String(row[c] == null ? "" : row[c]).toLowerCase().includes(q.trim().toLowerCase())))
+    : rows;
+
   return (
     <div className="max-w-6xl">
       <div className="flex items-center justify-between mb-6">
@@ -4481,7 +4519,14 @@ export default function %COMP%() {
 
       {mode === "list" && (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="px-4 py-2.5 text-xs text-slate-500 border-b border-slate-100 bg-slate-50/50">{rows.length} registro(s)</div>
+          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">🔎</span>
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar…"
+                className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-1.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" />
+            </div>
+            <span className="text-xs text-slate-500 whitespace-nowrap">{filtered.length} de {rows.length} registro(s)</span>
+          </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-slate-500 uppercase bg-slate-50 border-b border-slate-200">
@@ -4490,10 +4535,10 @@ export default function %COMP%() {
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && (
-                <tr><td colSpan={COLS.length + 1} className="px-4 py-8 text-center text-slate-400">Nenhum registro. Clique em “＋ Novo”.</td></tr>
+              {filtered.length === 0 && (
+                <tr><td colSpan={COLS.length + 1} className="px-4 py-8 text-center text-slate-400">{q.trim() ? "Nenhum registro encontrado para a busca." : "Nenhum registro. Clique em “＋ Novo”."}</td></tr>
               )}
-              {rows.map((row, i) => (
+              {filtered.map((row, i) => (
                 <tr key={row.id || i} className="border-b border-slate-100 hover:bg-slate-50">
                   {COLS.map((c) => <td key={c} className="px-4 py-2.5 text-slate-700">{String(row[c] ?? "")}</td>)}
                   <td className="px-4 py-2 text-center whitespace-nowrap">
