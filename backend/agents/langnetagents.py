@@ -3059,6 +3059,21 @@ def _rewrite_input_funcs_pass_input_data(adapters_py: str) -> str:
     return new_txt
 
 
+_LIST_HELPER = (
+    "\n\n# ─── helper de normalização de campos de lista (auto-gerado pelo LangNet) ───\n"
+    "def _as_list(v):\n"
+    "    \"\"\"Normaliza um campo de lista: string 'a, b' -> ['a','b']; lista -> lista; None -> [].\n"
+    "    Torna os adapters determinísticos robustos a input string (evita iterar caractere).\"\"\"\n"
+    "    if v is None:\n"
+    "        return []\n"
+    "    if isinstance(v, list):\n"
+    "        return v\n"
+    "    if isinstance(v, str):\n"
+    "        return [x.strip() for x in v.split(',') if x.strip()]\n"
+    "    return [v]\n"
+)
+
+
 def _generate_deterministic_adapters(tasks_yaml: str) -> str:
     """Parse each task's `description` (which by v4 convention embeds SQL steps
     of the form ``query="..."`` / ``params=[...]``) and emit a Python function
@@ -3257,7 +3272,7 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str) -> str:
         for ch, fk, val in children:
             if not val: continue
             child_ins += (
-                f"        for _v in (input_data.get('{ch}') or []):\n"
+                f"        for _v in _as_list(input_data.get('{ch}')):\n"
                 f"            cur.execute(\"INSERT INTO {ch}({fk}, {val}) VALUES(%s,%s)\", [_new_id, _v])\n"
             )
         criar = (
@@ -3471,7 +3486,9 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
 
     lines: List[str] = []
     if in_loop and loop_list:
-        lines.append(f"for {loop_item} in (input_data.get({loop_list!r}) or []):")
+        # _as_list normaliza string "a, b" -> ["a","b"] (o frontend já envia lista via
+        # splitList, mas isso torna o adapter robusto a chamadas diretas com string).
+        lines.append(f"for {loop_item} in _as_list(input_data.get({loop_list!r})):")
         indent = "    "
     else:
         indent = ""
@@ -3932,8 +3949,11 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # cadeia, então CRUD determinístico em Python é a única forma robusta
     # de executar tasks de persistência em cascata.
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)
+    _list_helper_added = False
     if _det_snippet:
-        adapters_py = (adapters_py.rstrip() + "\n" + _det_snippet)
+        # injeta o helper _as_list UMA vez, antes do primeiro snippet que o usa
+        adapters_py = (adapters_py.rstrip() + "\n" + _LIST_HELPER + _det_snippet)
+        _list_helper_added = True
 
     # CRUD determinístico completo (listar/obter/atualizar/excluir) por entidade
     # das telas — permite telas ricas de cadastro (lista + novo + editar + excluir),
@@ -3964,6 +3984,9 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     if _entities and _schema_sql_cg:
         _crud_snippet = _generate_crud_adapters(_entities, _schema_sql_cg)
         if _crud_snippet:
+            if not _list_helper_added:
+                adapters_py = adapters_py.rstrip() + "\n" + _LIST_HELPER
+                _list_helper_added = True
             adapters_py = adapters_py.rstrip() + "\n" + _crud_snippet
 
     # Injeta a lista de tools no agents.yaml — o LLM comumente deixa `tools: []`,
@@ -4757,6 +4780,19 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
                 best, best_score = real, score
         return best if best_score >= 2 else target
 
+    # Fallback: se o ui_spec não amarrou uma ação a uma task, tenta resolver pelo
+    # NOME/título/entidade da tela contra as tasks reais. Evita telas "mortas"
+    # (form sem botão) quando a task existe mas o ui_spec não a referenciou.
+    if primary is None and task_fields:
+        for _cand in (screen.get("name"), screen.get("title"), screen.get("entity"), comp_name):
+            if not _cand:
+                continue
+            _resolved = _resolve_task(_cand)
+            if _resolved and _resolved in task_fields:
+                primary = {"kind": "task", "target": _resolved,
+                           "label": screen.get("primary_label") or "Salvar"}
+                break
+
     payload_lines = []
     raw_target = primary.get("target") if primary else None
     target_task = _resolve_task(raw_target)
@@ -4847,8 +4883,16 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
             '        </div>'
         )
     else:
+        # Nenhuma task vinculável (nem por ação do ui_spec nem por fallback de nome):
+        # renderiza um botão DESABILITADO em vez de um form silenciosamente morto.
         action_fn = '  const onPrimary = () => {};\n'
-        primary_btn = ''
+        primary_btn = (
+            '        <div className="mt-6 pt-5 border-t border-slate-100 flex justify-end">\n'
+            '          <button disabled title="Esta tela ainda não tem uma ação vinculada a uma task" '
+            'className="px-5 py-2.5 rounded-lg bg-slate-200 text-slate-500 text-sm font-medium cursor-not-allowed">'
+            'Ação indisponível</button>\n'
+            '        </div>'
+        )
 
     subtitle = f"{'/'.join(screen.get('uc', []))} · {layout}"
 
