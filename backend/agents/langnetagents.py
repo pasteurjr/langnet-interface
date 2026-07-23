@@ -4007,30 +4007,39 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # das telas — permite telas ricas de cadastro (lista + novo + editar + excluir),
     # não só "salvar". Só gera pra entidades que existem no schema.
     _schema_sql_cg = state.get("data_model_schema_sql") or ""
-    # Um schema_sql "real" precisa ter DDL de verdade. Sessões de Modelo de Dados podem
-    # conter um stub (ex.: schema_sql="teste") que quebraria/emudeceria o CRUD por
-    # entidade. Se o schema em mãos não parece real, busca a sessão mais recente que
-    # tenha um schema com CREATE TABLE e tamanho substancial.
     def _schema_looks_real(_s: str) -> bool:
         return bool(_s) and "CREATE TABLE" in _s.upper() and len(_s) > 200
     if not _schema_looks_real(_schema_sql_cg):
+        # COERÊNCIA (schema↔entidades): usa a sessão de Modelo de Dados mais recente do
+        # projeto como fonte ÚNICA. Se o schema_sql dela estiver íntegro, usa; senão
+        # (ex.: corrompido por edição manual = "CREATE TABLE teste"), DERIVA o DDL do
+        # entities_json (o modelo lógico) da MESMA sessão. Assim o schema do código sempre
+        # corresponde às entidades do data model corrente — sem misturar sessões diferentes.
         _schema_sql_cg = ""
         try:
             from app.database import get_db_connection as _gdb2
             with _gdb2() as _c2:
                 _cur2 = _c2.cursor(dictionary=True)
                 _cur2.execute(
-                    "SELECT schema_sql FROM data_model_sessions WHERE project_id=%s "
-                    "AND schema_sql IS NOT NULL AND CHAR_LENGTH(schema_sql) > 200 "
-                    "AND UPPER(schema_sql) LIKE %s "
+                    "SELECT schema_sql, entities_json, target_dbms FROM data_model_sessions "
+                    "WHERE project_id=%s AND status IN ('completed','approved') "
                     "ORDER BY created_at DESC LIMIT 1",
-                    (str(state.get('project_id') or ''), '%CREATE TABLE%'))
+                    (str(state.get('project_id') or ''),))
                 _r2 = _cur2.fetchone()
-                if _r2 and _schema_looks_real(_r2["schema_sql"]):
-                    _schema_sql_cg = _r2["schema_sql"]
-                    print(f"[CODE-GEN] schema_sql da sessão corrente era stub; "
-                          f"usando o schema real mais recente ({len(_schema_sql_cg)} chars)")
                 _cur2.close()
+            if _r2 and _schema_looks_real(_r2.get("schema_sql")):
+                _schema_sql_cg = _r2["schema_sql"]
+                print(f"[CODE-GEN] usando schema_sql da sessão de data model mais recente "
+                      f"({len(_schema_sql_cg)} chars)")
+            elif _r2 and _r2.get("entities_json"):
+                try:
+                    from agents.langnetdatamodel import generate_ddl as _gen_ddl
+                    _logical = json.loads(_r2["entities_json"])
+                    _schema_sql_cg = _gen_ddl(_logical, dbms=(_r2.get("target_dbms") or "mysql"))
+                    print(f"[CODE-GEN] schema_sql corrompido/stub; DDL DERIVADO do entities_json "
+                          f"da sessão atual ({len(_schema_sql_cg)} chars) — mantém coerência")
+                except Exception as _de:
+                    print(f"[CODE-GEN] falha ao derivar DDL do entities_json: {_de}")
         except Exception:
             pass
     _ui_spec_cg = state.get("ui_spec") or {}
@@ -4132,6 +4141,20 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         # Remove o App.jsx do template (vamos sobrescrever)
         files = [f for f in files if f["path"] != "frontend/src/App.jsx"]
         files.extend(screen_files)
+
+    # === COERÊNCIA: o app carrega o PRÓPRIO schema (DDL) ===
+    # Sem isso, o app assumia um banco pré-existente com o schema certo — se não batesse,
+    # as telas ficavam vazias/erro. Agora o schema viaja com o código: db/schema.sql pode
+    # ser rodado à mão OU inicializa o MySQL do docker-compose automaticamente.
+    if _schema_looks_real(_schema_sql_cg):
+        _init_sql = (
+            "-- Schema do banco gerado pelo LangNet — coerente com o código deste app.\n"
+            "-- Uso: crie o banco (DB_NAME do .env) e rode este arquivo, ou deixe o\n"
+            "-- docker-compose inicializar (montado em /docker-entrypoint-initdb.d/).\n\n"
+            + _schema_sql_cg.strip() + "\n"
+        )
+        files = [f for f in files if f["path"] != "db/schema.sql"]
+        files.append({"path": "db/schema.sql", "content": _init_sql, "language": "sql"})
 
     return files
 
