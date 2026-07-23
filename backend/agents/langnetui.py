@@ -107,6 +107,60 @@ def render_html_to_png_b64(html: str, width: int = 960) -> Optional[str]:
 # ────────────────────────────────────────────────────────────────────────
 # Geração de UMA tela (com retry)
 # ────────────────────────────────────────────────────────────────────────
+def _crud_cols(ddl: str) -> List[str]:
+    """Extrai colunas exibíveis do DDL (ignora id/técnicas), no máx. 5."""
+    import re as _re
+    cols = []
+    for m in _re.finditer(
+        r'^\s*[`"]?(\w+)[`"]?\s+(?:CHAR|VARCHAR|TEXT|LONGTEXT|INT|BIGINT|TINYINT|DECIMAL|FLOAT|DOUBLE|DATE|DATETIME|TIMESTAMP|ENUM|BOOLEAN|JSON)',
+        ddl or "", _re.I | _re.M):
+        c = m.group(1)
+        if c.lower() in ("id", "created_at", "updated_at"):
+            continue
+        cols.append(c)
+    return cols[:5]
+
+
+def _crud_mockup_html(title: str, entity: str, ddl: str) -> str:
+    """Mockup HTML autocontido (inline CSS) de uma tela de CRUD CONVENCIONAL:
+    lista com BUSCA, ＋ Novo, e Ver/Editar/Excluir por linha. Determinístico —
+    garante que o protótipo reflita o CRUD rico que o código gera (consistência)."""
+    cols = _crud_cols(ddl) or ["nome", "descricao"]
+    ths = "".join(f'<th>{c.replace("_"," ").title()}</th>' for c in cols)
+    sample = ["Exemplo A", "Exemplo B", "Exemplo C"]
+    rows = ""
+    for i in range(3):
+        tds = "".join(f'<td>{(sample[i] if j==0 else "—")}</td>' for j, _c in enumerate(cols))
+        rows += (
+            f'<tr>{tds}<td class="acts">'
+            '<span class="b b-ver">👁 Ver</span>'
+            '<span class="b b-edit">✎ Editar</span>'
+            '<span class="b b-del">🗑 Excluir</span></td></tr>'
+        )
+    return f'''<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;background:#f1f5f9;padding:28px;color:#1e293b}}
+.top{{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}}
+.top h1{{font-size:20px;color:#1e293b}}.top .sub{{font-size:11px;color:#94a3b8;margin-top:2px}}
+.novo{{background:#4f46e5;color:#fff;padding:9px 16px;border-radius:9px;font-size:13px;font-weight:600}}
+.card{{background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.05)}}
+.bar{{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #f1f5f9;background:#f8fafc}}
+.search{{flex:1;max-width:360px;border:1px solid #cbd5e1;border-radius:9px;padding:8px 12px 8px 32px;font-size:13px;color:#94a3b8;position:relative;background:#fff}}
+.search::before{{content:"🔎";position:absolute;left:10px}}
+.cnt{{font-size:12px;color:#64748b}}
+table{{width:100%;border-collapse:collapse;font-size:13px}}
+th{{text-align:left;padding:11px 16px;font-size:11px;text-transform:uppercase;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0}}
+td{{padding:11px 16px;border-bottom:1px solid #f1f5f9;color:#334155}}
+.acts{{text-align:right;white-space:nowrap}}
+.b{{display:inline-block;padding:4px 9px;border-radius:7px;font-size:11px;font-weight:500;margin-left:6px;border:1px solid}}
+.b-ver{{color:#475569;border-color:#e2e8f0}}.b-edit{{color:#4f46e5;border-color:#c7d2fe;background:#eef2ff}}.b-del{{color:#dc2626;border-color:#fecaca;background:#fef2f2}}
+</style></head><body>
+<div class="top"><div><h1>{title}</h1><div class="sub">{entity} · CRUD</div></div><div class="novo">＋ Novo</div></div>
+<div class="card"><div class="bar"><div class="search">Buscar…</div><div class="cnt">3 de 3 registro(s)</div></div>
+<table><thead><tr>{ths}<th style="text-align:right">Ações</th></tr></thead><tbody>{rows}</tbody></table></div>
+</body></html>'''
+
+
 def _generate_one_screen(uc: Dict[str, str], sub_schema: str) -> Optional[Dict[str, Any]]:
     prompt = build_single_screen_prompt(uc, sub_schema)
     raw = _call_llm(prompt)
@@ -176,6 +230,15 @@ def execute_ui_spec_workflow(
             log_lines.append(f"[{idx}/{len(ucs)}] {uc.get('id')} FALHOU")
             print(f"[UI_SPEC] [{idx}/{len(ucs)}] {uc.get('id')} falhou")
             continue
+
+        # CONSISTÊNCIA protótipo↔código: telas de ENTIDADE (não-agênticas) recebem um
+        # mockup de CRUD CONVENCIONAL (lista+busca+Novo/Editar/Excluir) determinístico,
+        # em vez do form pobre que o LLM às vezes gera. Reflete o que o código gera.
+        _ent = screen.get("entity")
+        if _ent and _ent in tables and not is_agentic_screen(uc):
+            screen["layout"] = "table"
+            screen["mockup_html"] = _crud_mockup_html(
+                screen.get("name") or _ent, _ent, tables[_ent])
 
         # Separa o HTML pesado do PNG
         html = screen.get("mockup_html", "")
