@@ -2150,6 +2150,9 @@ def _build_petri_net_with_real_logica(
         timeout_ms = 180000 if any(k in task_name for k in ("classif", "analy", "search", "extrac")) else 60000
 
         new_lugar = {**lugar}
+        # Grava o task_name RESOLVIDO no campo do lugar (não só dentro da logica) —
+        # torna o vínculo lugar↔task explícito e inspecionável (manutenção/rastreabilidade).
+        new_lugar["task_name"] = task_name
         new_lugar["logica"] = _PLACE_LOGICA_TEMPLATE.format(
             task_name=task_name,
             ws_port=websocket_port,
@@ -3551,14 +3554,25 @@ def _inject_tools_into_agents_yaml(agents_yaml: str, agents_map: dict) -> str:
         return agents_yaml
 
     changed = 0
-    for agent_id, tools in agents_map.items():
-        if agent_id in parsed and isinstance(parsed[agent_id], dict):
-            # Só sobrescreve se yaml estava vazio ou com tools genéricas.
-            current = parsed[agent_id].get("tools") or []
-            new_tools = sorted(set(tools))
-            if list(current) != new_tools:
-                parsed[agent_id]["tools"] = new_tools
-                changed += 1
+    toolless = []
+    # Percorre TODOS os agentes do YAML (não só os do mapping) para garantir que
+    # nenhum fique sem tool real — um agente cognitivo sem tool só "conversa" com o
+    # LLM (sem acesso a dados/ações), o que gera saídas pobres. Fallback: database_tool
+    # (sempre presente no app), que permite consultar/gravar no banco.
+    for agent_id, adef in parsed.items():
+        if not isinstance(adef, dict):
+            continue
+        mapped = sorted(set(agents_map.get(agent_id) or []))
+        current = [t for t in (adef.get("tools") or []) if isinstance(t, str)]
+        new_tools = mapped if mapped else current
+        if not new_tools:
+            new_tools = ["database_tool"]
+            toolless.append(agent_id)
+        if list(current) != new_tools:
+            adef["tools"] = new_tools
+            changed += 1
+    if toolless:
+        print(f"[CODE-GEN] agentes sem tools no agent_task_spec — default database_tool aplicado: {toolless}")
 
     if changed == 0:
         return agents_yaml
