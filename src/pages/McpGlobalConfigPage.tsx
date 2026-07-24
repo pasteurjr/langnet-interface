@@ -1,6 +1,7 @@
 // src/pages/McpGlobalConfigPage.tsx
 import React, { useState, useEffect } from 'react';
 import { McpServer, McpService, McpGlobalConfig, McpHealthStatus, McpDiscoveryResult } from '../types';
+import McpServersManager from '../components/mcp/McpServersManager';
 import './McpGlobalConfigPage.css';
 
 const McpGlobalConfigPage: React.FC = () => {
@@ -197,7 +198,12 @@ const McpGlobalConfigPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Status Overview */}
+      {/* ── Gestão REAL de servidores MCP (F2 Fase 1) ── */}
+      <section style={{ padding: '0 24px 8px' }}>
+        <McpServersManager />
+      </section>
+
+      {/* Status Overview (visão ilustrativa) */}
       <section className="status-overview">
         <div className="status-cards">
           <div className="status-card">
