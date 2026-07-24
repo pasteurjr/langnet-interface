@@ -2368,6 +2368,15 @@ TASKS_CONFIG = _load_yaml("tasks.yaml")
 
 
 TOOL_REGISTRY = getattr(tools_module, "TOOL_REGISTRY", {{}})
+# F2 Fase 3: mescla as tools MCP (mcp_tools.py) no registry — agentes com tools MCP
+# atribuídas as resolvem por nome, igual às tools embutidas.
+try:
+    import mcp_tools as _mcp_mod
+    TOOL_REGISTRY.update(getattr(_mcp_mod, "MCP_TOOLS", {{}}))
+    if getattr(_mcp_mod, "MCP_TOOLS", None):
+        print(f"[ws] {{len(_mcp_mod.MCP_TOOLS)}} tool(s) MCP carregada(s)")
+except Exception as _mcp_e:
+    pass
 TASK_TOOLS = getattr(adapters_module, "TASK_TOOLS", {{}})
 AGENT_TOOLS = getattr(adapters_module, "AGENT_TOOLS", {{}})
 
@@ -2546,6 +2555,8 @@ def _template_requirements_txt(_extra_pkgs: List[str] = None) -> str:
         "pyyaml>=6.0",
         # Database (para database_tool real)
         "mysql-connector-python>=8.0.0",
+        # MCP (tools externas via Model Context Protocol — mcp_tools.py)
+        "mcp>=1.0.0",
     ]
     if _extra_pkgs:
         for p in _extra_pkgs:
@@ -3648,6 +3659,103 @@ def _fix_pydantic_type_hint_typos(tools_py: str) -> str:
     return "\n".join(lines)
 
 
+def _fetch_mcp_assignments(project_id: str):
+    """Lê as tools MCP atribuídas aos agentes do projeto (F2 Fase 2) + dados do servidor.
+    Retorna lista de dicts {agent_id, tool_name, description, url, transport, server_id, server_name}."""
+    if not project_id:
+        return []
+    try:
+        from app.database import get_db_connection as _gdb
+        with _gdb() as conn:
+            cur = conn.cursor(dictionary=True)
+            cur.execute(
+                "SELECT at.agent_id, at.tool_name, s.id AS server_id, s.name AS server_name, "
+                "       s.url, s.transport, s.capabilities_json "
+                "FROM mcp_agent_tools at "
+                "JOIN mcp_servers s ON s.id = at.mcp_server_id "
+                "JOIN mcp_project_servers ps ON ps.mcp_server_id = s.id AND ps.project_id = at.project_id "
+                "WHERE at.project_id = %s AND ps.enabled = 1",
+                (project_id,))
+            rows = cur.fetchall(); cur.close()
+        out = []
+        for r in rows:
+            desc = ""
+            try:
+                for t in (json.loads(r["capabilities_json"]) or []):
+                    if t.get("name") == r["tool_name"]:
+                        desc = t.get("description", ""); break
+            except Exception:
+                pass
+            out.append({"agent_id": r["agent_id"], "tool_name": r["tool_name"], "description": desc,
+                        "url": r["url"], "transport": r["transport"] or "sse",
+                        "server_id": r["server_id"], "server_name": r["server_name"]})
+        return out
+    except Exception as exc:  # noqa: BLE001
+        print(f"[CODE-GEN] falha ao ler atribuições MCP: {exc}")
+        return []
+
+
+def _generate_mcp_tools_py(assignments: list) -> str:
+    """Emite ws-server/mcp_tools.py: um BaseTool CrewAI por tool MCP atribuída, que chama
+    a ferramenta no servidor MCP via cliente `mcp` (SSE/HTTP). Registra em MCP_TOOLS."""
+    tools = {}  # tool_name -> (url, transport, description, server_id)
+    for a in assignments:
+        tools.setdefault(a["tool_name"], (a["url"], a["transport"], a.get("description", ""), a["server_id"]))
+    if not tools:
+        return ""
+    classes, registry = [], []
+    for i, (tname, (url, transport, desc, sid)) in enumerate(tools.items()):
+        cls = f"MCPTool_{i}"
+        classes.append(
+            f'class {cls}(BaseTool):\n'
+            f'    name: str = {json.dumps(tname)}\n'
+            f'    description: str = {json.dumps(desc or f"Ferramenta MCP {tname}")}\n'
+            f'    args_schema: type[BaseModel] = _MCPArgs\n'
+            f'    def _run(self, **kwargs):\n'
+            f'        return _mcp_call({json.dumps(url)}, {json.dumps(transport)}, {json.dumps(tname)}, '
+            f'{json.dumps("MCP_CRED_" + sid.replace("-", "")[:12])}, kwargs)\n'
+        )
+        registry.append(f'    {json.dumps(tname)}: {cls}(),')
+    return (
+        '"""Tools MCP (Model Context Protocol) — auto-gerado pelo LangNet (F2 Fase 3).\n'
+        'Cada tool chama uma ferramenta de um servidor MCP via cliente `mcp` (SSE/HTTP).\n'
+        'Credenciais (se houver) vêm de variáveis de ambiente MCP_CRED_<id> (JSON de headers)."""\n'
+        'import os, json, asyncio\n'
+        'from pydantic import BaseModel, ConfigDict\n'
+        'from crewai.tools import BaseTool\n\n'
+        'class _MCPArgs(BaseModel):\n'
+        '    model_config = ConfigDict(extra="allow")\n\n'
+        'def _mcp_call(url, transport, tool, cred_env, args):\n'
+        '    """Chama uma tool MCP e devolve o texto do resultado."""\n'
+        '    headers = None\n'
+        '    raw = os.getenv(cred_env)\n'
+        '    if raw:\n'
+        '        try: headers = json.loads(raw)\n'
+        '        except Exception: headers = None\n'
+        '    async def _c():\n'
+        '        from mcp import ClientSession\n'
+        '        if (transport or "sse") == "http":\n'
+        '            from mcp.client.streamable_http import streamablehttp_client as _cli\n'
+        '            async with _cli(url, headers=headers) as (r, w, _):\n'
+        '                return await _run_call(r, w, tool, args)\n'
+        '        from mcp.client.sse import sse_client\n'
+        '        async with sse_client(url, headers=headers) as (r, w):\n'
+        '            return await _run_call(r, w, tool, args)\n'
+        '    try:\n'
+        '        return asyncio.run(_c())\n'
+        '    except Exception as e:\n'
+        '        return json.dumps({"mcp_error": str(e)})\n\n'
+        'async def _run_call(read, write, tool, args):\n'
+        '    from mcp import ClientSession\n'
+        '    async with ClientSession(read, write) as s:\n'
+        '        await s.initialize()\n'
+        '        res = await s.call_tool(tool, args or {})\n'
+        '        return "\\n".join(getattr(c, "text", None) or str(c) for c in res.content)\n\n'
+        + "\n".join(classes) + "\n\n"
+        + "MCP_TOOLS = {\n" + "\n".join(registry) + "\n}\n"
+    )
+
+
 def _ensure_tools_have_args_schema(tools_py: str) -> str:
     """Robustez de startup: o LLM às vezes emite tools BaseTool com
     ``args_schema ... = None`` (às vezes até definindo um schema aninhado sem ligá-lo).
@@ -4079,6 +4187,16 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
                 _list_helper_added = True
             adapters_py = adapters_py.rstrip() + "\n" + _crud_snippet
 
+    # F2 Fase 3: tools MCP atribuídas aos agentes (etapa MCP do Projeto) entram no
+    # agents_map ANTES da injeção — assim os agentes ganham as tools MCP no agents.yaml.
+    _mcp_assign = _fetch_mcp_assignments(str(state.get("project_id") or ""))
+    if _mcp_assign:
+        for _a in _mcp_assign:
+            agents_map.setdefault(_a["agent_id"], [])
+            if _a["tool_name"] not in agents_map[_a["agent_id"]]:
+                agents_map[_a["agent_id"]].append(_a["tool_name"])
+        print(f"[CODE-GEN] {len(_mcp_assign)} tool(s) MCP atribuída(s) a agentes")
+
     # Injeta a lista de tools no agents.yaml — o LLM comumente deixa `tools: []`,
     # matando qualquer capacidade real do agente. Bindings vêm do agent_task_spec.
     agents_yaml = _inject_tools_into_agents_yaml(agents_yaml, agents_map)
@@ -4114,6 +4232,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Injeta import do database_tool real e substitui classe stub se existir
     tools_py = _inject_real_database_tool(tools_py)
     add("ws-server/tools.py", tools_py if tools_py.endswith("\n") else tools_py + "\n")
+    # F2 Fase 3: emite mcp_tools.py (wrappers CrewAI das tools MCP atribuídas)
+    _mcp_py = _generate_mcp_tools_py(_mcp_assign)
+    if _mcp_py:
+        add("ws-server/mcp_tools.py", _mcp_py)
     add("ws-server/adapters.py", adapters_py if adapters_py.endswith("\n") else adapters_py + "\n")
     if agents_yaml:
         add("ws-server/agents.yaml", agents_yaml if agents_yaml.endswith("\n") else agents_yaml + "\n", "yaml")
