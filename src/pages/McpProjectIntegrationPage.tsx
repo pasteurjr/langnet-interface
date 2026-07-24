@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { McpService, McpProjectConfig, McpServiceMapping, McpCustomEndpoint } from '../types';
+import McpProjectManager from '../components/mcp/McpProjectManager';
 import './McpProjectIntegrationPage.css';
 
 const McpProjectIntegrationPage: React.FC = () => {
@@ -280,7 +281,12 @@ const McpProjectIntegrationPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Project Overview */}
+      {/* ── Gestão REAL MCP do projeto (F2 Fase 2) ── */}
+      <section style={{ padding: '0 24px 8px' }}>
+        <McpProjectManager projectId={projectId || ''} />
+      </section>
+
+      {/* Project Overview (ilustrativo) */}
       <section className="project-overview">
         <div className="overview-cards">
           <div className="overview-card">
