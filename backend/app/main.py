@@ -19,6 +19,7 @@ from app.routers.petri_net import router as petri_net_router
 from app.routers.code_generation import router as code_generation_router
 from app.routers.test_cases import router as test_cases_router
 from app.routers.settings import router as settings_router, apply_settings_to_env
+from app.routers.mcp import router as mcp_router
 from api.langnetapi import router as langnet_router
 from api.langnetwebsocket import websocket_endpoint
 from app.utils import decode_access_token
@@ -60,6 +61,7 @@ app.include_router(petri_net_router, prefix="/api")  # Petri Net generation/get/
 app.include_router(code_generation_router, prefix="/api")  # Code generation: Python multi-file
 app.include_router(test_cases_router)  # Casos de Teste por Grafo de Causa-Efeito (prefix já inclui /api/test-cases)
 app.include_router(settings_router, prefix="/api")  # Configurações do Sistema (banco, LLM, integrações)
+app.include_router(mcp_router, prefix="/api")  # Servidores MCP (registro global + descoberta de tools)
 app.include_router(langnet_router, prefix="/api")  # LangNet multi-agent system
 
 # Aplica configurações salvas (system_settings) em os.environ no startup, para os

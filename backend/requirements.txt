@@ -45,3 +45,5 @@ pytest-asyncio==0.24.0
 pytest-cov==6.0.0
 pytest-mock==3.14.0
 httpx==0.26.0  # For TestClient
+starlette==0.41.3  # F2: compat FastAPI 0.115 + mcp SDK (mcp tenta subir p/ 1.x e quebra on_startup)
+mcp  # F2: cliente MCP (descoberta de tools)
