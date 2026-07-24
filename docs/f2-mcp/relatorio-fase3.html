@@ -1,0 +1,75 @@
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><style>@page{size:A4;margin:16mm 14mm}body{font-family:-apple-system,"Segoe UI",Roboto,sans-serif;font-size:10.5px;color:#1e293b;line-height:1.5}h1{font-size:19px;color:#312e81;border-bottom:3px solid #4338ca;padding-bottom:5px}h2{font-size:14px;color:#fff;background:#4338ca;padding:5px 11px;border-radius:5px;margin-top:20px;page-break-after:avoid}h3{font-size:12px;color:#312e81;margin-top:14px}code{background:#eef2ff;color:#3730a3;padding:1px 4px;border-radius:3px;font-size:9px}pre{background:#0f172a;color:#e2e8f0;padding:10px;border-radius:6px;font-size:8.6px;line-height:1.35;white-space:pre-wrap;overflow:auto}pre code{background:none;color:inherit}strong{color:#0f172a}figure{margin:8px 0;page-break-inside:avoid}figure img{width:100%;border:1px solid #cbd5e1;border-radius:5px}blockquote{border-left:3px solid #a5b4fc;margin:8px 0;padding:5px 12px;background:#f5f3ff;color:#475569;font-size:9.5px}</style></head><body><h1>F2 (Integração MCP) — Relatório da Fase 3</h1>
+<p><strong>Geração de Código: o app gerado usa as ferramentas MCP de verdade</strong>
+<strong>Data:</strong> 24/07/2026 · <strong>Commit:</strong> <code>28aef3c</code></p>
+<hr />
+<h2>1. Objetivo</h2>
+<p>Fechar a ponta: o <strong>app gerado</strong> pelo LangNet deve, em runtime, <strong>chamar as ferramentas MCP</strong>
+atribuídas aos seus agentes (Fase 2) — no mesmo mecanismo de tools que já existe (CrewAI + TOOL_REGISTRY).</p>
+<h2>2. O que foi implementado (no gerador)</h2>
+<ul>
+<li><strong><code>_fetch_mcp_assignments(project_id)</code></strong> — lê as tools MCP atribuídas aos agentes (tabela
+  <code>mcp_agent_tools</code>) + dados do servidor (URL, transporte, descrição), só de servidores habilitados.</li>
+<li><strong>Injeção no <code>agents.yaml</code></strong> — os nomes das tools MCP entram no <code>agents_map</code> <strong>antes</strong> da injeção,
+  então cada agente ganha suas tools MCP na lista <code>tools:</code>.</li>
+<li><strong><code>ws-server/mcp_tools.py</code></strong> (emitido) — um <code>BaseTool</code> do CrewAI por tool MCP, cujo <code>_run</code> chama a
+  ferramenta no servidor MCP via <strong>cliente <code>mcp</code> cru</strong> (SSE/HTTP); credenciais vêm de <code>MCP_CRED_&lt;id&gt;</code>
+  (env). Exporta <code>MCP_TOOLS</code>.</li>
+<li><strong>ws-server</strong> — mescla <code>MCP_TOOLS</code> no <code>TOOL_REGISTRY</code>, então os agentes resolvem as tools MCP por nome.</li>
+<li><strong><code>requirements.txt</code></strong> — ganha <code>mcp&gt;=1.0.0</code>.</li>
+</ul>
+<blockquote>
+<p><strong>Decisão técnica:</strong> NÃO uso o <code>MCPServerAdapter</code> do <code>crewai_tools</code> — sua detecção do pacote <code>mcp</code>
+está quebrada e dispara um <strong>prompt interativo</strong> ("missing 'mcp' package? [y/N]"), inaceitável num
+servidor. Usei um <strong>wrapper próprio</strong> com o cliente <code>mcp</code> cru, que é robusto e testado.</p>
+</blockquote>
+<h2>3. Testes de validação (todos executados)</h2>
+<h3>T1 — Unit test do gerador de <code>mcp_tools.py</code></h3>
+<pre><code>mcp_tools.py gerado: 1891 chars | tem MCP_TOOLS? True | tem enriquecer_lead? True | compila OK
+</code></pre>
+<p>✅</p>
+<h3>T2 — Regeneração completa do código (com atribuições da Fase 2)</h3>
+<pre><code>sessão: 2630fd53-... | arquivos: 74
+[CODE-GEN] 2 tool(s) MCP atribuída(s) a agentes
+</code></pre>
+<p>✅ (74 arquivos = 1 a mais, o <code>mcp_tools.py</code>.)</p>
+<h3>T3 — Verificação dos artefatos gerados</h3>
+<pre><code>1. ws-server/mcp_tools.py presente? True | tools: ['enriquecer_lead', 'buscar_conta']
+2. lead_identifier_agent tools: ['database_tool','embedding_tool','enriquecer_lead','vector_search_tool']
+   persona_manager_agent tools: ['buscar_conta','database_tool']
+3. ws-server mescla MCP_TOOLS? True
+4. requirements.txt: mcp&gt;=1.0.0
+</code></pre>
+<p>✅ Cada agente recebeu exatamente a tool MCP que lhe foi atribuída na Fase 2.</p>
+<h3>T4 — TESTE DEFINITIVO: invocar a tool MCP GERADA (chama o servidor MCP real)</h3>
+<p>Extraído o app e invocado o wrapper gerado diretamente:</p>
+<pre><code class="language-python">import mcp_tools
+tool = mcp_tools.MCP_TOOLS['enriquecer_lead']
+tool._run(email='ana@medai.com.br')
+</code></pre>
+<p>Resultado:</p>
+<pre><code class="language-json">{
+  &quot;email&quot;: &quot;ana@medai.com.br&quot;,
+  &quot;empresa&quot;: &quot;MedAI Diagnósticos&quot;,
+  &quot;cargo&quot;: &quot;CTO&quot;,
+  &quot;porte&quot;: &quot;120 func.&quot;
+}
+</code></pre>
+<p>✅ <strong>A ferramenta MCP gerada pelo LangNet chamou o servidor MCP real e retornou o dado enriquecido.</strong>
+Este é o fechamento do ciclo: registrar (F1) → atribuir ao agente (F2) → o app gerado usa de verdade (F3).</p>
+<h3>T5 — ws-server sobe com MCP</h3>
+<p>O ws-server do app gerado sobe (porta 5002) com o <code>mcp_tools.py</code> presente, sem prompt interativo
+nem erro de import.
+✅</p>
+<h2>4. Conclusão</h2>
+<p>Fase 3 <strong>completa e validada ponta a ponta</strong>. O pipeline do LangNet agora gera apps cujos agentes
+usam <strong>ferramentas MCP reais</strong> — plugando em sistemas externos do cliente sem programação manual,
+que é exatamente o negócio da Quântica (consultoria/dev que incorpora IA aos sistemas do cliente).</p>
+<p><strong>Ciclo MCP completo (F1→F2→F3):</strong>
+registrar servidor global → descobrir tools → habilitar no projeto → atribuir aos agentes
+(sugerido/manual) → Geração de Código emite <code>mcp_tools.py</code> + injeta nos agentes → <strong>app gerado chama
+a ferramenta MCP real</strong>.</p>
+<h2>Pendências (fora do escopo destas 3 fases)</h2>
+<ul>
+<li>Transporte <strong>stdio</strong> (processo local) — hoje sse/http.</li>
+<li>Fase 4 (opcional): Sincronização de Estados MCP.</li>
+</ul></body></html>
