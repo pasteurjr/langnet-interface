@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
-  listServers, registerServer, testServer, testAdhoc, deleteServer,
-  McpServer, McpTestResult,
+  listServers, registerServer, testServer, testAdhoc, deleteServer, getCatalog,
+  McpServer, McpTestResult, CatalogItem,
 } from '../../services/mcpService';
 
 // Gestão REAL de servidores MCP (F2 Fase 1): registrar, testar conexão (descobre as
@@ -16,17 +16,28 @@ const badge = (s: string): React.CSSProperties => ({
   background: s === 'ativo' ? '#dcfce7' : s === 'erro' ? '#fee2e2' : '#e2e8f0',
   color: s === 'ativo' ? '#166534' : s === 'erro' ? '#991b1b' : '#475569',
 });
+const chip = (bg: string, col: string): React.CSSProperties => ({ fontSize: 11, background: bg, color: col, borderRadius: 6, padding: '2px 8px', marginRight: 5 });
 
 const McpServersManager: React.FC = () => {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [form, setForm] = useState({ name: '', transport: 'sse', url: '', category: '', cred: '' });
+  const [form, setForm] = useState({ name: '', transport: 'sse', url: '', command: '', category: '', cred: '' });
   const [adhoc, setAdhoc] = useState<McpTestResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [cat, setCat] = useState<CatalogItem[]>([]);
 
   const reload = () => listServers().then(setServers).catch((e) => setMsg(e.message)).finally(() => setLoading(false));
-  useEffect(() => { reload(); }, []);
+  useEffect(() => { reload(); getCatalog().then(setCat).catch(() => {}); }, []);
+
+  const registerFromCatalog = async (c: CatalogItem) => {
+    setBusy(true); setMsg(null);
+    try {
+      await registerServer({ name: c.name, transport: c.transport, url: c.url, command: c.command, category: c.category });
+      setMsg(`"${c.name}" registrado. Clique em Testar para descobrir as ferramentas${c.needs_key ? ` (precisa de credencial ${c.key_env})` : ''}.`);
+      reload();
+    } catch (e: any) { setMsg(e.message); } finally { setBusy(false); }
+  };
 
   const credObj = () => {
     const c = form.cred.trim();
@@ -39,14 +50,14 @@ const McpServersManager: React.FC = () => {
 
   const doTestAdhoc = async () => {
     setBusy(true); setAdhoc(null);
-    try { setAdhoc(await testAdhoc({ transport: form.transport, url: form.url, credentials: credObj() })); }
+    try { setAdhoc(await testAdhoc({ transport: form.transport, url: form.url, command: form.command, credentials: credObj() } as any)); }
     finally { setBusy(false); }
   };
   const doRegister = async () => {
     setBusy(true); setMsg(null);
     try {
-      await registerServer({ name: form.name, transport: form.transport, url: form.url, category: form.category, credentials: credObj() });
-      setForm({ name: '', transport: 'sse', url: '', category: '', cred: '' }); setAdhoc(null);
+      await registerServer({ name: form.name, transport: form.transport, url: form.url, command: form.command, category: form.category, credentials: credObj() });
+      setForm({ name: '', transport: 'sse', url: '', command: '', category: '', cred: '' }); setAdhoc(null);
       setMsg('Servidor registrado.'); reload();
     } catch (e: any) { setMsg(e.message); } finally { setBusy(false); }
   };
@@ -66,7 +77,29 @@ const McpServersManager: React.FC = () => {
       </p>
       {msg && <div style={{ ...box, background: '#eef2ff', color: '#3730a3', padding: 12 }}>{msg}</div>}
 
-      {/* ── Registrar novo ── */}
+      {/* ── Catálogo de recomendados (1-clique) ── */}
+      {cat.length > 0 && (
+        <div style={box}>
+          <h3 style={{ marginTop: 0, fontSize: 15, color: '#312e81' }}>⭐ Servidores recomendados</h3>
+          <p style={{ color: '#94a3b8', fontSize: 12, marginTop: 0 }}>Cadastre com 1 clique. Depois clique em <b>Testar</b> na lista abaixo para descobrir as ferramentas. 🔑 = precisa de credencial.</p>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+            {cat.map((c) => (
+              <div key={c.name} style={{ border: '1px solid #e2e8f0', borderRadius: 9, padding: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <b style={{ fontSize: 13 }}>{c.name}</b>
+                  {c.needs_key && <span title={`precisa de ${c.key_env}`}>🔑</span>}
+                  <span style={chip('#f1f5f9', '#64748b')}>{c.category}</span>
+                  <button style={{ ...btn('#4338ca'), marginLeft: 'auto' }} onClick={() => registerFromCatalog(c)} disabled={busy}>+ cadastrar</button>
+                </div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 4 }}>{c.description}</div>
+                <code style={{ fontSize: 10.5, color: '#7c3aed' }}>{c.command || c.url}</code>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Registrar novo (manual) ── */}
       <div style={box}>
         <h3 style={{ marginTop: 0, fontSize: 15, color: '#312e81' }}>➕ Registrar servidor MCP</h3>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -74,9 +107,13 @@ const McpServersManager: React.FC = () => {
           <div><label style={lbl}>Categoria</label><input style={inp} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="crm, email, dados…" /></div>
           <div><label style={lbl}>Transporte</label>
             <select style={inp} value={form.transport} onChange={(e) => setForm({ ...form, transport: e.target.value })}>
-              <option value="sse">SSE</option><option value="http">HTTP (streamable)</option>
+              <option value="sse">SSE</option><option value="http">HTTP (streamable)</option><option value="stdio">stdio (comando)</option>
             </select></div>
-          <div><label style={lbl}>URL</label><input style={inp} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="http://host:porta/sse" /></div>
+          {form.transport === 'stdio' ? (
+            <div><label style={lbl}>Comando</label><input style={inp} value={form.command} onChange={(e) => setForm({ ...form, command: e.target.value })} placeholder="uvx mcp-server-fetch" /></div>
+          ) : (
+            <div><label style={lbl}>URL</label><input style={inp} value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} placeholder="http://host:porta/sse" /></div>
+          )}
         </div>
         <label style={lbl}>Credenciais (opcional — uma por linha, "Header: valor")</label>
         <textarea style={{ ...inp, fontFamily: 'monospace' }} rows={2} value={form.cred} onChange={(e) => setForm({ ...form, cred: e.target.value })} placeholder="Authorization: Bearer ..." />
@@ -86,8 +123,8 @@ const McpServersManager: React.FC = () => {
             {adhoc.ok ? `✓ ${adhoc.message} — ${(adhoc.tools || []).map((t) => t.name).join(', ')}` : `⚠ ${adhoc.error}`}
           </div>
         )}
-        <button style={btn('#0ea5e9')} onClick={doTestAdhoc} disabled={busy || !form.url}>🔌 Testar Conexão</button>
-        <button style={{ ...btn('#4338ca'), opacity: form.name && form.url ? 1 : 0.5 }} onClick={doRegister} disabled={busy || !form.name || !form.url}>💾 Registrar</button>
+        <button style={btn('#0ea5e9')} onClick={doTestAdhoc} disabled={busy || (!form.url && !form.command)}>🔌 Testar Conexão</button>
+        <button style={{ ...btn('#4338ca'), opacity: form.name && (form.url || form.command) ? 1 : 0.5 }} onClick={doRegister} disabled={busy || !form.name || (!form.url && !form.command)}>💾 Registrar</button>
       </div>
 
       {/* ── Lista ── */}

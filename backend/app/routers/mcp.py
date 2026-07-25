@@ -22,12 +22,12 @@ router = APIRouter(prefix="/mcp", tags=["mcp"])
 
 
 # ── Descoberta via cliente MCP ──
-async def _discover_tools(transport: str, url: str, headers: Optional[dict]) -> List[Dict[str, Any]]:
-    """Conecta ao servidor MCP e lista suas ferramentas. Levanta em caso de falha."""
+async def _discover_tools(transport: str, url: str, headers: Optional[dict],
+                          command: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Conecta ao servidor MCP e lista suas ferramentas. Suporta sse/http (url) e
+    stdio (command). Levanta em caso de falha."""
     from mcp import ClientSession
     transport = (transport or "sse").lower()
-    if not url:
-        raise ValueError("url do servidor MCP é obrigatória para sse/http")
 
     async def _list(read, write):
         async with ClientSession(read, write) as session:
@@ -39,6 +39,18 @@ async def _discover_tools(transport: str, url: str, headers: Optional[dict]) -> 
                 "input_schema": getattr(t, "inputSchema", None),
             } for t in res.tools]
 
+    if transport == "stdio":
+        import shlex
+        from mcp import StdioServerParameters
+        from mcp.client.stdio import stdio_client
+        if not command:
+            raise ValueError("command é obrigatório para transporte stdio")
+        parts = shlex.split(command)
+        params = StdioServerParameters(command=parts[0], args=parts[1:], env=headers or None)
+        async with stdio_client(params) as (read, write):
+            return await _list(read, write)
+    if not url:
+        raise ValueError("url do servidor MCP é obrigatória para sse/http")
     if transport == "sse":
         from mcp.client.sse import sse_client
         async with sse_client(url, headers=headers or None) as (read, write):
@@ -48,7 +60,7 @@ async def _discover_tools(transport: str, url: str, headers: Optional[dict]) -> 
         async with streamablehttp_client(url, headers=headers or None) as (read, write, _):
             return await _list(read, write)
     else:
-        raise ValueError(f"transporte '{transport}' não suportado na Fase 1 (use sse ou http)")
+        raise ValueError(f"transporte '{transport}' não suportado (use sse, http ou stdio)")
 
 
 def _row_public(row: dict) -> dict:
@@ -88,6 +100,7 @@ class ServerIn(BaseModel):
 class TestIn(BaseModel):
     transport: str = "sse"
     url: Optional[str] = None
+    command: Optional[str] = None
     credentials: Optional[Dict[str, str]] = None
 
 
@@ -95,7 +108,7 @@ class TestIn(BaseModel):
 @router.post("/test")
 async def test_connection(req: TestIn, current_user: dict = Depends(get_current_user)):
     try:
-        tools = await _discover_tools(req.transport, req.url or "", req.credentials)
+        tools = await _discover_tools(req.transport, req.url or "", req.credentials, req.command)
         return {"ok": True, "tools_count": len(tools),
                 "tools": [{"name": t["name"], "description": t["description"]} for t in tools],
                 "message": f"Conectado — {len(tools)} ferramenta(s) descoberta(s)."}
@@ -165,7 +178,7 @@ async def test_server(server_id: str, current_user: dict = Depends(get_current_u
         except Exception:
             headers = {}
     try:
-        tools = await _discover_tools(row["transport"], row.get("url") or "", headers)
+        tools = await _discover_tools(row["transport"], row.get("url") or "", headers, row.get("command"))
         with get_db_connection() as conn:
             cur = conn.cursor()
             cur.execute(
@@ -369,3 +382,42 @@ def suggest_agent_tools(project_id: str, current_user: dict = Depends(get_curren
                     "score": len(shared), "match": sorted(shared)})
     suggestions.sort(key=lambda s: -s["score"])
     return {"suggestions": suggestions}
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Catálogo de servidores MCP recomendados (pré-cadastro em 1 clique)
+# ═══════════════════════════════════════════════════════════════════════
+_MCP_CATALOG = [
+    {"name": "Fetch (web)", "category": "Prospecção/Busca", "transport": "stdio",
+     "command": "uvx mcp-server-fetch", "needs_key": False,
+     "description": "Busca e converte o conteúdo de uma URL — puxar o site da empresa-alvo."},
+    {"name": "Brave Search", "category": "Prospecção/Busca", "transport": "stdio",
+     "command": "npx -y @modelcontextprotocol/server-brave-search",
+     "needs_key": True, "key_env": "BRAVE_API_KEY",
+     "description": "Busca na web (Brave) — descobrir e qualificar empresas/leads."},
+    {"name": "Sequential Thinking", "category": "Raciocínio", "transport": "stdio",
+     "command": "npx -y @modelcontextprotocol/server-sequential-thinking", "needs_key": False,
+     "description": "Raciocínio passo-a-passo estruturado para os agentes."},
+    {"name": "Memory (grafo)", "category": "Memória", "transport": "stdio",
+     "command": "npx -y @modelcontextprotocol/server-memory", "needs_key": False,
+     "description": "Grafo de conhecimento persistente entre execuções."},
+    {"name": "Time", "category": "Utilidades", "transport": "stdio",
+     "command": "uvx mcp-server-time", "needs_key": False,
+     "description": "Data/hora e fusos horários."},
+    {"name": "Git", "category": "Dados/Dev", "transport": "stdio",
+     "command": "uvx mcp-server-git", "needs_key": False,
+     "description": "Operações em repositórios Git (para clientes de tecnologia)."},
+    {"name": "GitHub", "category": "Dados/Dev", "transport": "stdio",
+     "command": "npx -y @modelcontextprotocol/server-github",
+     "needs_key": True, "key_env": "GITHUB_PERSONAL_ACCESS_TOKEN",
+     "description": "Issues, PRs e código no GitHub."},
+    {"name": "Everything (teste)", "category": "Utilidades", "transport": "stdio",
+     "command": "npx -y @modelcontextprotocol/server-everything", "needs_key": False,
+     "description": "Servidor de teste com várias tools de exemplo."},
+]
+
+
+@router.get("/catalog")
+def catalog(current_user: dict = Depends(get_current_user)):
+    """Catálogo curado de servidores MCP recomendados (pré-preenche o cadastro)."""
+    return {"catalog": _MCP_CATALOG}

@@ -35,7 +35,7 @@ export async function listServers(): Promise<McpServer[]> {
 }
 
 export async function registerServer(payload: {
-  name: string; transport: string; url?: string; category?: string; credentials?: Record<string, string>;
+  name: string; transport: string; url?: string; command?: string; category?: string; credentials?: Record<string, string>;
 }): Promise<{ id: string }> {
   const r = await fetch(`${API_BASE_URL}/mcp/servers`, {
     method: 'POST', headers: headers(), body: JSON.stringify(payload),
@@ -100,4 +100,11 @@ export async function unassignTool(pid: string, agent_id: string, tool_name: str
 export async function suggestTools(pid: string): Promise<Suggestion[]> {
   const r = await fetch(`${API_BASE_URL}/mcp/project/${pid}/suggest`, { method: 'POST', headers: headers() });
   return (await r.json()).suggestions;
+}
+
+// ── Catálogo de servidores MCP recomendados (pré-cadastro 1-clique) ──
+export interface CatalogItem { name: string; category: string; transport: string; command?: string; url?: string; description: string; needs_key: boolean; key_env?: string; }
+export async function getCatalog(): Promise<CatalogItem[]> {
+  const r = await fetch(`${API_BASE_URL}/mcp/catalog`, { headers: headers() });
+  return (await r.json()).catalog;
 }
