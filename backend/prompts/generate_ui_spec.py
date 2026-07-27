@@ -30,6 +30,47 @@ _AGENTIC_HINTS = (
 # PARSING DA SPEC
 # ─────────────────────────────────────────────────────────────────────
 
+# Cada UC começa em **UC-NNN: título** e vai até o próximo **UC- ou fim.
+_UC_BLOCK_RE = re.compile(
+    r'\*\*(UC-\d+):\s*(.+?)\*\*(.*?)(?=\*\*UC-\d+:|\Z)',
+    re.S,
+)
+
+
+def _parse_uc_body(uc_id: str, uc_name: str, body: str) -> Dict[str, str]:
+    """Extrai os campos estruturados de UM bloco de UC (cabeçalho, fluxo, wireframe)."""
+    uc = {"id": uc_id, "name": uc_name, "raw": body}
+
+    # Campos da tabela de cabeçalho
+    for fm in re.finditer(r'\|\s*\*\*(.+?)\*\*\s*\|\s*(.+?)\s*\|', body):
+        key = fm.group(1).strip().lower()
+        val = fm.group(2).strip()
+        if "ator principal" in key:
+            uc["actor"] = val
+        elif "objetivo" in key:
+            uc["objetivo"] = val
+        elif key.startswith("rfs") or "rf relacionad" in key or "rfs relacionad" in key:
+            uc["rfs"] = val
+
+    # Fluxo principal (ações do ator → respostas) — texto bruto para o LLM.
+    # A lookahead exige o header em INÍCIO DE LINHA (\n#+\s), senão o '# ' do
+    # cabeçalho da tabela "| # | Ação |" truncava o fluxo prematuramente.
+    flow_m = re.search(r'#+\s*Fluxo Principal(.*?)(?=\n#+\s|\Z)', body, re.S)
+    if flow_m:
+        uc["flow"] = flow_m.group(1).strip()
+
+    # Wireframe ASCII
+    wf_m = re.search(r'#+\s*Wireframe.*?```(.*?)```', body, re.S)
+    if wf_m:
+        uc["wireframe"] = wf_m.group(1).strip()
+    # Nome da tela declarado no wireframe
+    tela_m = re.search(r'\*\*Tela:\*\*\s*(.+)', body)
+    if tela_m:
+        uc["screen_title"] = tela_m.group(1).strip()
+
+    return uc
+
+
 def parse_uc_blocks(specification_document: str) -> List[Dict[str, str]]:
     """Extrai blocos de caso de uso da spec.
 
@@ -49,45 +90,74 @@ def parse_uc_blocks(specification_document: str) -> List[Dict[str, str]]:
       ```
     """
     blocks: List[Dict[str, str]] = []
-    # Cada UC começa em **UC-NNN: título** e vai até o próximo **UC- ou fim.
-    pattern = re.compile(
-        r'\*\*(UC-\d+):\s*(.+?)\*\*(.*?)(?=\*\*UC-\d+:|\Z)',
-        re.S,
-    )
-    for m in pattern.finditer(specification_document):
-        uc_id = m.group(1).strip()
-        uc_name = m.group(2).strip()
-        body = m.group(3)
-
-        uc = {"id": uc_id, "name": uc_name, "raw": body}
-
-        # Campos da tabela de cabeçalho
-        for fm in re.finditer(r'\|\s*\*\*(.+?)\*\*\s*\|\s*(.+?)\s*\|', body):
-            key = fm.group(1).strip().lower()
-            val = fm.group(2).strip()
-            if "ator principal" in key:
-                uc["actor"] = val
-            elif "objetivo" in key:
-                uc["objetivo"] = val
-            elif key.startswith("rfs") or "rf relacionad" in key or "rfs relacionad" in key:
-                uc["rfs"] = val
-
-        # Fluxo principal (ações do ator → respostas) — texto bruto para o LLM
-        flow_m = re.search(r'#+\s*Fluxo Principal(.*?)(?=#+\s|\Z)', body, re.S)
-        if flow_m:
-            uc["flow"] = flow_m.group(1).strip()
-
-        # Wireframe ASCII
-        wf_m = re.search(r'#+\s*Wireframe.*?```(.*?)```', body, re.S)
-        if wf_m:
-            uc["wireframe"] = wf_m.group(1).strip()
-        # Nome da tela declarado no wireframe
-        tela_m = re.search(r'\*\*Tela:\*\*\s*(.+)', body)
-        if tela_m:
-            uc["screen_title"] = tela_m.group(1).strip()
-
-        blocks.append(uc)
+    for m in _UC_BLOCK_RE.finditer(specification_document):
+        blocks.append(_parse_uc_body(m.group(1).strip(), m.group(2).strip(), m.group(3)))
     return blocks
+
+
+# ─────────────────────────────────────────────────────────────────────
+# AMARRAÇÃO Spec ⟷ Protótipo — localizar e reescrever UM UC no doc
+# ─────────────────────────────────────────────────────────────────────
+
+def find_uc_block(specification_document: str, uc_id: str) -> Optional[Dict]:
+    """Localiza UM caso de uso pelo id. Retorna dict com o UC parseado + o span
+    (start,end) do bloco inteiro dentro do doc (para reescrita), ou None."""
+    for m in _UC_BLOCK_RE.finditer(specification_document):
+        if m.group(1).strip() == uc_id:
+            uc = _parse_uc_body(m.group(1).strip(), m.group(2).strip(), m.group(3))
+            return {
+                "uc": uc,
+                "start": m.start(),
+                "end": m.end(),
+                "uc_id": m.group(1).strip(),
+                "uc_name": m.group(2).strip(),
+                "body": m.group(3),
+            }
+    return None
+
+
+def _replace_section_body(body: str, header_regex: str, new_body: str) -> str:
+    """Substitui o conteúdo de uma sub-seção (após o header até a próxima sub-seção)
+    dentro do corpo de um UC. Se a sub-seção não existir, anexa ao final do corpo."""
+    m = re.search(header_regex + r'[^\n]*\n', body, re.I)
+    if not m:
+        return body  # header ausente — caller decide como anexar
+    header_end = m.end()
+    # fim do conteúdo = próxima sub-seção (#+ ...) ou fim do corpo
+    nxt = re.search(r'\n#+\s', body[header_end:])
+    content_end = header_end + nxt.start() if nxt else len(body)
+    return body[:m.start()] + m.group(0) + "\n" + new_body.strip() + "\n" + body[content_end:]
+
+
+def replace_uc_sections(
+    specification_document: str,
+    uc_id: str,
+    new_flow: Optional[str] = None,
+    new_wireframe: Optional[str] = None,
+    new_screen_title: Optional[str] = None,
+) -> Optional[str]:
+    """Reescreve, dentro do UC informado, as seções 'Fluxo Principal' e 'Wireframe'
+    (o esquema da tela). Preserva todo o resto do documento. Retorna o doc novo, ou
+    None se o UC não for encontrado."""
+    found = find_uc_block(specification_document, uc_id)
+    if not found:
+        return None
+    body = found["body"]
+
+    if new_flow is not None and new_flow.strip():
+        body = _replace_section_body(body, r'#+\s*Fluxo Principal', new_flow)
+
+    if new_wireframe is not None and new_wireframe.strip():
+        title = (new_screen_title or found["uc"].get("screen_title") or found["uc_name"]).strip()
+        wf_block = f"**Tela:** {title}\n\n```\n{new_wireframe.strip()}\n```"
+        new_body_wf = _replace_section_body(body, r'#+\s*Wireframe', wf_block)
+        if new_body_wf == body and "Wireframe" not in body:
+            # UC sem seção de wireframe: anexa uma
+            new_body_wf = body.rstrip() + f"\n\n#### Wireframe da Interface\n\n{wf_block}\n"
+        body = new_body_wf
+
+    new_block = f"**{found['uc_id']}: {found['uc_name']}**" + body
+    return specification_document[:found["start"]] + new_block + specification_document[found["end"]:]
 
 
 def parse_schema_tables(schema_sql: str) -> Dict[str, str]:

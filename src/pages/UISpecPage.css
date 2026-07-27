@@ -144,6 +144,98 @@
   cursor: pointer;
 }
 
+/* ── AMARRAÇÃO Spec ⟷ Protótipo: painel de origem (UC) ── */
+.uispec-source {
+  margin-top: 20px;
+  padding-top: 14px;
+  border-top: 2px dashed #dbe7f0;
+}
+.uispec-source-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.uispec-source-head h4 {
+  margin: 0;
+  color: #1976d2;
+  font-size: 14px;
+}
+.uispec-prov {
+  font-size: 11.5px;
+  color: #667;
+  background: #eef4fb;
+  border: 1px solid #dbe7f0;
+  padding: 2px 9px;
+  border-radius: 20px;
+}
+.uispec-source-hint {
+  font-size: 12px;
+  color: #667;
+  margin: 8px 0 12px;
+  line-height: 1.45;
+}
+.uispec-stale {
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: #fff7e6;
+  border: 1px solid #ffe0a3;
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: #8a5a00;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.uispec-source-block { margin: 10px 0; }
+.uispec-source-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #789;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.uispec-source-pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e6edf3;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #334;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}
+.uispec-source-pre.uispec-wf {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre;
+  overflow-x: auto;
+}
+.uispec-source-edit {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #223;
+  resize: vertical;
+}
+.uispec-source-edit.uispec-wf {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  white-space: pre;
+}
+.uispec-source-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
 /* Modal de histórico (placeholder) — usado pela etapa refatorada no shell. */
 .tc-modal-overlay {
   position: fixed;

@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 from prompts.generate_ui_spec import (
     parse_uc_blocks, parse_schema_tables, select_relevant_tables,
     build_sub_schema, is_agentic_screen, build_single_screen_prompt,
-    extract_json_object, validate_screen,
+    extract_json_object, validate_screen, find_uc_block,
 )
 
 _llm_cache: Dict[str, Any] = {}
@@ -273,6 +273,51 @@ def execute_ui_spec_workflow(
         "screens_count": len(screens),
         "generation_log": "\n".join(log_lines),
     }
+
+
+def regenerate_one_screen_from_spec(
+    specification_document: str,
+    uc_id: str,
+    schema_sql: str = "",
+    render_png: bool = True,
+) -> Dict[str, Any]:
+    """AMARRAÇÃO Spec→Protótipo: regenera UMA tela a partir do UC (fluxo + wireframe)
+    do documento de Especificação. Usado quando o usuário edita a interação da tela
+    no spec, OU quando o spec mudou e a tela precisa re-sincronizar.
+
+    Retorna {'screen': {...}, 'png': data_uri|None}. Lança se o UC não gerar tela.
+    """
+    found = find_uc_block(specification_document, uc_id)
+    if not found:
+        raise RuntimeError(f"UC '{uc_id}' não encontrado na Especificação")
+    uc = found["uc"]
+
+    tables = parse_schema_tables(schema_sql) if schema_sql else {}
+    picked = select_relevant_tables(uc, tables)
+    sub_schema = build_sub_schema(picked, tables)
+
+    screen = _generate_one_screen(uc, sub_schema)
+    if not screen:
+        raise RuntimeError(f"regeneração da tela do {uc_id} não retornou JSON válido")
+
+    # Mesma consistência protótipo↔código do workflow completo: telas de ENTIDADE
+    # não-agênticas recebem o mockup de CRUD convencional determinístico.
+    _ent = screen.get("entity")
+    if _ent and _ent in tables and not is_agentic_screen(uc):
+        screen["layout"] = "table"
+        screen["mockup_html"] = _crud_mockup_html(
+            screen.get("name") or _ent, _ent, tables[_ent])
+
+    # Garante o vínculo do UC de origem na tela regenerada.
+    ucs = screen.get("uc") or []
+    if uc_id not in ucs:
+        ucs = [uc_id] + [u for u in ucs if u != uc_id]
+    screen["uc"] = ucs
+
+    png = None
+    if render_png and screen.get("mockup_html"):
+        png = render_html_to_png_b64(screen["mockup_html"])
+    return {"screen": screen, "png": png}
 
 
 def _build_navigation(screens: List[Dict[str, Any]]) -> List[Dict[str, str]]:

@@ -49,6 +49,20 @@ interface ChatMessage {
   content: string;
   created_at?: string;
 }
+interface ScreenSource {
+  screen_id: string;
+  uc_id?: string | null;
+  spec_session_id?: string;
+  spec_version_used?: number | null;
+  spec_version_current?: number | null;
+  stale?: boolean;
+  found?: boolean;
+  actor?: string | null;
+  objetivo?: string | null;
+  screen_title?: string | null;
+  flow?: string | null;
+  wireframe?: string | null;
+}
 
 const UISpecPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -70,6 +84,14 @@ const UISpecPage: React.FC = () => {
   // Seleção da origem (Especificação Funcional). Vazio = auto-descobrir a mais recente.
   const [availableSpecs, setAvailableSpecs] = useState<{ id: string; version: number }[]>([]);
   const [selectedSpec, setSelectedSpec] = useState<string>("");
+  // AMARRAÇÃO Spec⟷Protótipo: origem (UC) da tela selecionada + edição da interação.
+  const [source, setSource] = useState<ScreenSource | null>(null);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [editingSource, setEditingSource] = useState(false);
+  const [editFlow, setEditFlow] = useState("");
+  const [editWireframe, setEditWireframe] = useState("");
+  const [savingSource, setSavingSource] = useState(false);
+  const [resyncing, setResyncing] = useState(false);
 
   const loadChat = useCallback(async (sid: string) => {
     try {
@@ -192,6 +214,78 @@ const UISpecPage: React.FC = () => {
       setChatMessages((m) => [...m, { role: "assistant", content: `⚠️ ${e.message}` }]);
     } finally {
       setChatSending(false);
+    }
+  };
+
+  // ── AMARRAÇÃO: carrega a origem (UC) da tela selecionada ──
+  const loadSource = useCallback(async (sid: string, screenId: string) => {
+    setSourceLoading(true);
+    setEditingSource(false);
+    try {
+      const r = await fetch(`${API_BASE}/ui-spec/${sid}/screen/${screenId}/source`, { headers });
+      if (!r.ok) { setSource(null); return; }
+      const d: ScreenSource = await r.json();
+      setSource(d);
+      setEditFlow(d.flow || "");
+      setEditWireframe(d.wireframe || "");
+    } catch {
+      setSource(null);
+    } finally {
+      setSourceLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Recarrega a origem quando muda a tela selecionada ou a sessão.
+  useEffect(() => {
+    if (session?.session_id && selected) loadSource(session.session_id, selected);
+    else setSource(null);
+  }, [session?.session_id, selected, loadSource]);
+
+  const applyUpdate = (d: any) => {
+    if (d.mockup_update) setMockups((m) => ({ ...m, ...d.mockup_update }));
+    if (d.ui_spec) setSession((s) => (s ? { ...s, ui_spec: d.ui_spec } : s));
+  };
+
+  // Salva a interação editada NO SPEC (nova versão) e regenera só esta tela.
+  const saveSource = async () => {
+    if (!session?.session_id || !selected) return;
+    setSavingSource(true);
+    try {
+      const r = await fetch(`${API_BASE}/ui-spec/${session.session_id}/screen/${selected}/edit-source`, {
+        method: "POST", headers,
+        body: JSON.stringify({ flow: editFlow, wireframe: editWireframe, screen_title: source?.screen_title }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      applyUpdate(d);
+      toast.success(`Interação salva no spec (v${d.new_spec_version}) e tela regenerada`);
+      setEditingSource(false);
+      loadSource(session.session_id, selected);
+    } catch (e: any) {
+      toast.error(`Falha ao salvar/propagar: ${e.message}`);
+    } finally {
+      setSavingSource(false);
+    }
+  };
+
+  // Re-sincroniza a tela com o spec atual (quando o spec mudou em outra etapa).
+  const resync = async () => {
+    if (!session?.session_id || !selected) return;
+    setResyncing(true);
+    try {
+      const r = await fetch(`${API_BASE}/ui-spec/${session.session_id}/screen/${selected}/resync`, {
+        method: "POST", headers,
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      applyUpdate(d);
+      toast.success("Tela re-sincronizada com a Especificação atual");
+      loadSource(session.session_id, selected);
+    } catch (e: any) {
+      toast.error(`Falha ao re-sincronizar: ${e.message}`);
+    } finally {
+      setResyncing(false);
     }
   };
 
@@ -375,6 +469,95 @@ const UISpecPage: React.FC = () => {
                       </li>
                     ))}
                   </ul>
+                </div>
+
+                {/* ── AMARRAÇÃO Spec ⟷ Protótipo ── */}
+                <div className="uispec-source">
+                  <div className="uispec-source-head">
+                    <h4>🔗 Origem na Especificação</h4>
+                    {source?.uc_id && (
+                      <span className="uispec-prov">
+                        gerado de <b>{source.uc_id}</b>
+                        {source.spec_version_used != null ? ` · Especificação v${source.spec_version_used}` : ""}
+                      </span>
+                    )}
+                  </div>
+
+                  {sourceLoading && <div className="uispec-nomock">Carregando origem…</div>}
+
+                  {!sourceLoading && source && !source.found && (
+                    <div className="uispec-nomock">
+                      Não foi possível localizar o caso de uso de origem ({source.uc_id || "sem UC"}) na Especificação.
+                    </div>
+                  )}
+
+                  {!sourceLoading && source?.stale && (
+                    <div className="uispec-stale">
+                      ⚠️ A Especificação foi atualizada (v{source.spec_version_current} &gt; v{source.spec_version_used}).
+                      Esta tela pode estar desatualizada.
+                      <button className="tc-btn" onClick={resync} disabled={resyncing}>
+                        {resyncing ? "Re-sincronizando…" : "🔄 Re-sincronizar com o spec"}
+                      </button>
+                    </div>
+                  )}
+
+                  {!sourceLoading && source?.found && (
+                    <>
+                      <p className="uispec-source-hint">
+                        Edite aqui a <b>interação da tela no caso de uso</b> (fluxo de eventos e o
+                        esquema/wireframe). Ao salvar, a mudança vira uma <b>nova versão da Especificação</b> e
+                        esta tela do protótipo é <b>regenerada</b> a partir dela.
+                      </p>
+
+                      {!editingSource ? (
+                        <>
+                          <div className="uispec-source-block">
+                            <div className="uispec-source-label">Fluxo de eventos (ator → sistema)</div>
+                            <pre className="uispec-source-pre">{source.flow || "(sem fluxo)"}</pre>
+                          </div>
+                          <div className="uispec-source-block">
+                            <div className="uispec-source-label">Esquema da tela (wireframe)</div>
+                            <pre className="uispec-source-pre uispec-wf">{source.wireframe || "(sem wireframe)"}</pre>
+                          </div>
+                          <button
+                            className="tc-btn primary"
+                            onClick={() => { setEditFlow(source.flow || ""); setEditWireframe(source.wireframe || ""); setEditingSource(true); }}
+                          >
+                            ✏️ Editar interação no spec
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="uispec-source-block">
+                            <div className="uispec-source-label">Fluxo de eventos (ator → sistema)</div>
+                            <textarea
+                              className="uispec-source-edit"
+                              rows={8}
+                              value={editFlow}
+                              onChange={(e) => setEditFlow(e.target.value)}
+                            />
+                          </div>
+                          <div className="uispec-source-block">
+                            <div className="uispec-source-label">Esquema da tela (wireframe)</div>
+                            <textarea
+                              className="uispec-source-edit uispec-wf"
+                              rows={10}
+                              value={editWireframe}
+                              onChange={(e) => setEditWireframe(e.target.value)}
+                            />
+                          </div>
+                          <div className="uispec-source-actions">
+                            <button className="tc-btn primary" onClick={saveSource} disabled={savingSource}>
+                              {savingSource ? "Salvando e regenerando…" : "💾 Salvar no spec e regenerar tela"}
+                            </button>
+                            <button className="tc-btn ghost" onClick={() => setEditingSource(false)} disabled={savingSource}>
+                              Cancelar
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
                 </div>
               </>
             )}

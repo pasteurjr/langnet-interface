@@ -15,7 +15,10 @@ from datetime import datetime
 
 from app.database import get_db_connection
 from app.dependencies import get_current_user
-from agents.langnetui import execute_ui_spec_workflow, refine_ui_spec
+from agents.langnetui import (
+    execute_ui_spec_workflow, refine_ui_spec, regenerate_one_screen_from_spec,
+)
+from prompts.generate_ui_spec import find_uc_block, replace_uc_sections
 
 
 router = APIRouter(prefix="/api/ui-spec", tags=["ui-spec"])
@@ -36,6 +39,15 @@ class ChatMessageRequest(BaseModel):
 
 class ApprovalRequest(BaseModel):
     approve: bool = True
+
+
+class EditSourceRequest(BaseModel):
+    """Edição da interação da tela DIRETAMENTE na Especificação de origem (UC).
+    Ao salvar, cria nova versão do spec E regenera só esta tela do protótipo."""
+    flow: Optional[str] = Field(None, description="Novo 'Fluxo Principal' (ação do ator / resposta do sistema)")
+    wireframe: Optional[str] = Field(None, description="Novo wireframe/esquema ASCII da tela")
+    screen_title: Optional[str] = Field(None, description="Nome da tela declarado no wireframe")
+    render_png: bool = True
 
 
 # ─────────────────── Helpers ───────────────────
@@ -337,6 +349,222 @@ def get_chat(session_id: str, current_user=Depends(get_current_user)):
         finally:
             cur.close()
     return {"messages": [{"role": r["role"], "content": r["content"], "created_at": str(r["created_at"])} for r in rows]}
+
+
+# ─────────────── AMARRAÇÃO Spec ⟷ Protótipo (por tela) ───────────────
+
+def _screen_from_session(row: Dict[str, Any], screen_id: str) -> tuple[Dict[str, Any], list, int]:
+    """Retorna (screen, screens_list, index) do ui_spec da sessão. 404 se não achar."""
+    ui_spec = json.loads(row["ui_spec_json"]) if row.get("ui_spec_json") else {}
+    screens = ui_spec.get("screens", [])
+    for i, s in enumerate(screens):
+        if s.get("id") == screen_id:
+            return s, screens, i
+    raise HTTPException(404, f"Tela '{screen_id}' não encontrada nesta UI Spec")
+
+
+def _uc_id_of_screen(screen: Dict[str, Any]) -> Optional[str]:
+    ucs = screen.get("uc") or []
+    return ucs[0] if ucs else None
+
+
+def _new_specification_version(spec_session_id: str, new_doc: str, user_id: Optional[str],
+                               change_description: str) -> Optional[int]:
+    """Grava uma NOVA versão da Especificação (manual_edit) e atualiza o documento
+    corrente. Mesmo padrão do PUT /specifications/{id}. Retorna a nova versão."""
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute(
+                "UPDATE execution_specification_sessions "
+                "SET specification_document=%s, updated_at=NOW() WHERE id=%s",
+                (new_doc, spec_session_id),
+            )
+            cur.execute(
+                "SELECT MAX(version) AS mv FROM specification_version_history "
+                "WHERE specification_session_id=%s", (spec_session_id,),
+            )
+            r = cur.fetchone()
+            new_v = int((r and r.get("mv")) or 0) + 1
+            cur.execute(
+                "INSERT INTO specification_version_history "
+                "(specification_session_id, version, specification_document, created_by, "
+                " change_description, change_type, doc_size) "
+                "VALUES (%s,%s,%s,%s,%s,'manual_edit',%s)",
+                (spec_session_id, new_v, new_doc, user_id, change_description, len(new_doc)),
+            )
+            conn.commit()
+        finally:
+            cur.close()
+    return new_v
+
+
+def _apply_regenerated_screen(session_id: str, row: Dict[str, Any], screens: list, idx: int,
+                              new_screen: Dict[str, Any], png: Optional[str],
+                              spec_version: Optional[int]) -> Dict[str, Any]:
+    """Substitui uma tela no ui_spec da sessão, atualiza mockup/versão/spec_version."""
+    # preserva id/rota/uc originais se o LLM os alterou
+    old = screens[idx]
+    new_screen.setdefault("id", old.get("id"))
+    new_screen.setdefault("route", old.get("route"))
+    if not new_screen.get("uc"):
+        new_screen["uc"] = old.get("uc")
+    screens[idx] = new_screen
+
+    ui_spec = json.loads(row["ui_spec_json"]) if row.get("ui_spec_json") else {}
+    ui_spec["screens"] = screens
+    mockups = json.loads(row["mockups_json"]) if row.get("mockups_json") else {}
+    if png:
+        mockups[new_screen["id"]] = png
+
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute(
+                "UPDATE ui_spec_sessions SET ui_spec_json=%s, mockups_json=%s, "
+                "version=version+1, specification_version=COALESCE(%s, specification_version) "
+                "WHERE id=%s",
+                (json.dumps(ui_spec, ensure_ascii=False),
+                 json.dumps(mockups, ensure_ascii=False), spec_version, session_id),
+            )
+            conn.commit()
+        finally:
+            cur.close()
+    return {"ui_spec": ui_spec, "mockup_update": {new_screen["id"]: png} if png else {}}
+
+
+@router.get("/{session_id}/screen/{screen_id}/source")
+def get_screen_source(session_id: str, screen_id: str, current_user=Depends(get_current_user)):
+    """Origem (Especificação) da tela: o UC que a gerou — fluxo + wireframe/esquema —
+    além do estado de sincronismo (versão do spec usada vs. atual)."""
+    row = _fetch_session(session_id)
+    screen, _screens, _idx = _screen_from_session(row, screen_id)
+    uc_id = _uc_id_of_screen(screen)
+    spec_session_id = row.get("specification_session_id")
+    if not spec_session_id:
+        raise HTTPException(404, "Sessão sem Especificação de origem vinculada")
+
+    spec_doc, _proj = _fetch_spec_content(spec_session_id)
+    spec_version_current = _current_specification_version(spec_session_id)
+    spec_version_used = row.get("specification_version")
+
+    uc = None
+    if uc_id:
+        found = find_uc_block(spec_doc, uc_id)
+        uc = found["uc"] if found else None
+
+    return {
+        "screen_id": screen_id,
+        "uc_id": uc_id,
+        "spec_session_id": spec_session_id,
+        "spec_version_used": spec_version_used,
+        "spec_version_current": spec_version_current,
+        "stale": bool(spec_version_current is not None and spec_version_used is not None
+                      and spec_version_current > spec_version_used),
+        "found": uc is not None,
+        "actor": (uc or {}).get("actor"),
+        "objetivo": (uc or {}).get("objetivo"),
+        "screen_title": (uc or {}).get("screen_title"),
+        "flow": (uc or {}).get("flow"),
+        "wireframe": (uc or {}).get("wireframe"),
+    }
+
+
+@router.post("/{session_id}/screen/{screen_id}/edit-source")
+def edit_screen_source(session_id: str, screen_id: str, req: EditSourceRequest,
+                       current_user=Depends(get_current_user)):
+    """Edita a interação da tela NA ESPECIFICAÇÃO (fluxo + wireframe/esquema) → grava
+    nova versão do spec → regenera SÓ esta tela do protótipo a partir do UC editado."""
+    row = _fetch_session(session_id)
+    screen, screens, idx = _screen_from_session(row, screen_id)
+    uc_id = _uc_id_of_screen(screen)
+    if not uc_id:
+        raise HTTPException(400, "Tela sem UC de origem — não há o que amarrar no spec")
+    spec_session_id = row.get("specification_session_id")
+    if not spec_session_id:
+        raise HTTPException(404, "Sessão sem Especificação de origem vinculada")
+
+    spec_doc, project_id = _fetch_spec_content(spec_session_id)
+    new_doc = replace_uc_sections(
+        spec_doc, uc_id,
+        new_flow=req.flow, new_wireframe=req.wireframe, new_screen_title=req.screen_title,
+    )
+    if new_doc is None:
+        raise HTTPException(404, f"UC '{uc_id}' não encontrado na Especificação")
+
+    # 1) grava nova versão do spec
+    new_spec_version = _new_specification_version(
+        spec_session_id, new_doc, current_user["id"],
+        f"Edição da interação da tela {uc_id} (via etapa de Protótipo)",
+    )
+
+    # 2) regenera só esta tela a partir do UC editado + schema da sessão
+    schema_sql, _dm_id, _dm_v = _fetch_schema_sql(project_id, row.get("data_model_session_id"))
+    try:
+        result = regenerate_one_screen_from_spec(new_doc, uc_id, schema_sql, req.render_png)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Falha ao regenerar a tela: {e}")
+
+    applied = _apply_regenerated_screen(
+        session_id, row, screens, idx, result["screen"], result.get("png"), new_spec_version)
+
+    _save_ui_spec_version(
+        session_id, json.dumps(applied["ui_spec"], ensure_ascii=False),
+        "spec_sync", f"Interação editada no spec ({uc_id}) → tela regenerada",
+        current_user["id"],
+    )
+    return {
+        "status": "ok", "screen_id": screen_id, "uc_id": uc_id,
+        "new_spec_version": new_spec_version,
+        "ui_spec": applied["ui_spec"], "mockup_update": applied["mockup_update"],
+    }
+
+
+@router.post("/{session_id}/screen/{screen_id}/resync")
+def resync_screen(session_id: str, screen_id: str, current_user=Depends(get_current_user)):
+    """Re-sincroniza a tela com a Especificação ATUAL (quando o spec foi editado em
+    outra etapa): regenera só esta tela a partir do UC corrente, sem alterar o spec."""
+    row = _fetch_session(session_id)
+    screen, screens, idx = _screen_from_session(row, screen_id)
+    uc_id = _uc_id_of_screen(screen)
+    if not uc_id:
+        raise HTTPException(400, "Tela sem UC de origem")
+    spec_session_id = row.get("specification_session_id")
+    if not spec_session_id:
+        raise HTTPException(404, "Sessão sem Especificação de origem vinculada")
+
+    spec_doc, project_id = _fetch_spec_content(spec_session_id)
+    spec_version_current = _current_specification_version(spec_session_id)
+    schema_sql, _dm_id, _dm_v = _fetch_schema_sql(project_id, row.get("data_model_session_id"))
+    try:
+        result = regenerate_one_screen_from_spec(spec_doc, uc_id, schema_sql, True)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Falha ao re-sincronizar: {e}")
+
+    applied = _apply_regenerated_screen(
+        session_id, row, screens, idx, result["screen"], result.get("png"), spec_version_current)
+    _save_ui_spec_version(
+        session_id, json.dumps(applied["ui_spec"], ensure_ascii=False),
+        "spec_sync", f"Re-sincronizada com o spec atual ({uc_id})",
+        current_user["id"],
+    )
+    return {"status": "ok", "screen_id": screen_id, "spec_version_current": spec_version_current,
+            "ui_spec": applied["ui_spec"], "mockup_update": applied["mockup_update"]}
+
+
+@router.get("/{session_id}/sync-status")
+def sync_status(session_id: str, current_user=Depends(get_current_user)):
+    """Estado de sincronismo da UI Spec com a Especificação de origem."""
+    row = _fetch_session(session_id)
+    spec_session_id = row.get("specification_session_id")
+    used = row.get("specification_version")
+    current = _current_specification_version(spec_session_id) if spec_session_id else None
+    return {
+        "spec_session_id": spec_session_id,
+        "spec_version_used": used,
+        "spec_version_current": current,
+        "stale": bool(current is not None and used is not None and current > used),
+    }
 
 
 @router.post("/{session_id}/approve")
