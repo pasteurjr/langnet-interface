@@ -22,6 +22,7 @@ from prompts.generate_ui_spec import (
     build_sub_schema, is_agentic_screen, build_single_screen_prompt,
     extract_json_object, validate_screen, find_uc_block,
 )
+from agents.langnetcoherence import derive_screen_kind
 
 _llm_cache: Dict[str, Any] = {}
 
@@ -231,11 +232,13 @@ def execute_ui_spec_workflow(
             print(f"[UI_SPEC] [{idx}/{len(ucs)}] {uc.get('id')} falhou")
             continue
 
-        # CONSISTÊNCIA protótipo↔código: telas de ENTIDADE (não-agênticas) recebem um
-        # mockup de CRUD CONVENCIONAL (lista+busca+Novo/Editar/Excluir) determinístico,
-        # em vez do form pobre que o LLM às vezes gera. Reflete o que o código gera.
+        # Tipo de tela derivado da INTENÇÃO do UC (fonte: comportamento).
+        screen["kind"] = derive_screen_kind(uc)
+        # CONSISTÊNCIA protótipo↔código: só telas de LISTAGEM de entidade recebem o
+        # mockup de CRUD CONVENCIONAL determinístico. Telas de criar/editar/aprovar
+        # NÃO são forçadas a tabela — respeitam o verbo do UC (evita over-CRUD).
         _ent = screen.get("entity")
-        if _ent and _ent in tables and not is_agentic_screen(uc):
+        if _ent and _ent in tables and screen["kind"] == "list":
             screen["layout"] = "table"
             screen["mockup_html"] = _crud_mockup_html(
                 screen.get("name") or _ent, _ent, tables[_ent])

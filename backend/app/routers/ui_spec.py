@@ -7,7 +7,7 @@ mockups HTML→PNG a partir da Especificação Funcional + Data Model.
 Espelha o padrão de routers/data_model.py.
 """
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 import uuid
 import json
@@ -18,6 +18,7 @@ from app.dependencies import get_current_user
 from agents.langnetui import (
     execute_ui_spec_workflow, refine_ui_spec, regenerate_one_screen_from_spec,
 )
+from agents.langnetcoherence import check_ui_spec_coherence, apply_dm_changes, apply_rebind
 from prompts.generate_ui_spec import find_uc_block, replace_uc_sections
 
 
@@ -48,6 +49,26 @@ class EditSourceRequest(BaseModel):
     wireframe: Optional[str] = Field(None, description="Novo wireframe/esquema ASCII da tela")
     screen_title: Optional[str] = Field(None, description="Nome da tela declarado no wireframe")
     render_png: bool = True
+
+
+class DMChange(BaseModel):
+    table: str
+    column: str
+    sql_type: str = "VARCHAR(255)"
+    new_table: bool = False
+
+
+class ApplyDMChangesRequest(BaseModel):
+    """Reconciliação lado-Modelo-de-Dados: adiciona colunas/tabelas aprovadas e grava
+    uma NOVA versão do Modelo de Dados (nada é alterado/removido)."""
+    changes: List[DMChange]
+
+
+class RebindRequest(BaseModel):
+    """Reconciliação lado-mockup: religa um campo a uma coluna que já existe no banco."""
+    screen_id: str
+    bind_old: str
+    bind_new: str
 
 
 # ─────────────────── Helpers ───────────────────
@@ -550,6 +571,132 @@ def resync_screen(session_id: str, screen_id: str, current_user=Depends(get_curr
     )
     return {"status": "ok", "screen_id": screen_id, "spec_version_current": spec_version_current,
             "ui_spec": applied["ui_spec"], "mockup_update": applied["mockup_update"]}
+
+
+@router.get("/{session_id}/coherence")
+def coherence_report(session_id: str, current_user=Depends(get_current_user)):
+    """Contrato de coerência UC ⟷ Mockup ⟷ Modelo de Dados: relatório de divergências
+    (bindTo quebrado, tipo de tela incompatível com o UC) + mudanças propostas ao
+    Modelo de Dados (agregadas). Read-only — não aplica nada."""
+    row = _fetch_session(session_id)
+    ui_spec = json.loads(row["ui_spec_json"]) if row.get("ui_spec_json") else {}
+    project_id = row["project_id"]
+    schema_sql, _dm_id, _dm_v = _fetch_schema_sql(project_id, row.get("data_model_session_id"))
+    spec_session_id = row.get("specification_session_id")
+    spec_doc = ""
+    if spec_session_id:
+        try:
+            spec_doc, _ = _fetch_spec_content(spec_session_id)
+        except Exception:
+            spec_doc = ""
+    report = check_ui_spec_coherence(ui_spec, schema_sql, spec_doc)
+    report["data_model_session_id"] = _dm_id
+    report["data_model_version"] = _dm_v
+    return report
+
+
+def _save_data_model_version(dm_session_id: str, artifacts: Dict[str, Any],
+                             change_description: str, user_id: Optional[str]) -> Optional[int]:
+    """Grava nova versão do Modelo de Dados (data_model_version_history) + UPDATE da
+    sessão. Espelha data_model._save_version. Retorna a nova versão."""
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute("SELECT COALESCE(MAX(version),0)+1 AS v FROM data_model_version_history "
+                        "WHERE session_id=%s", (dm_session_id,))
+            new_v = int(cur.fetchone()["v"])
+            cur.execute(
+                """INSERT INTO data_model_version_history
+                   (session_id, version, data_model_yaml, schema_sql, models_py,
+                    alembic_migration, entities_json, validation_report,
+                    created_by, change_type, change_description, doc_size)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'manual_edit',%s,%s)""",
+                (dm_session_id, new_v, artifacts.get("data_model_yaml"),
+                 artifacts.get("schema_sql"), artifacts.get("models_py"),
+                 artifacts.get("alembic_migration"), artifacts.get("entities_json"),
+                 artifacts.get("validation_report"), user_id,
+                 change_description[:500], len(artifacts.get("schema_sql") or "")),
+            )
+            cur.execute("UPDATE data_model_sessions SET version=%s, entities_json=%s, schema_sql=%s "
+                        "WHERE id=%s",
+                        (new_v, artifacts.get("entities_json"), artifacts.get("schema_sql"), dm_session_id))
+            conn.commit()
+        finally:
+            cur.close()
+    return new_v
+
+
+@router.post("/{session_id}/apply-dm-changes")
+def apply_dm_changes_endpoint(session_id: str, req: ApplyDMChangesRequest,
+                              current_user=Depends(get_current_user)):
+    """Aplica as mudanças aprovadas no Modelo de Dados (adiciona colunas/tabelas) como
+    NOVA versão do DM. Determinístico — não re-roda o LLM, não altera nada existente."""
+    row = _fetch_session(session_id)
+    dm_session_id = row.get("data_model_session_id")
+    if not dm_session_id:
+        # auto-descobre o DM mais recente do projeto
+        _sql, dm_session_id, _v = _fetch_schema_sql(row["project_id"], None)
+    if not dm_session_id:
+        raise HTTPException(404, "Nenhum Modelo de Dados vinculado ao projeto")
+
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        try:
+            cur.execute("SELECT * FROM data_model_sessions WHERE id=%s", (dm_session_id,))
+            dm = cur.fetchone()
+        finally:
+            cur.close()
+    if not dm:
+        raise HTTPException(404, "Sessão de Modelo de Dados não encontrada")
+
+    changes = [c.dict() for c in req.changes]
+    new_entities, new_schema, applied = apply_dm_changes(
+        dm.get("entities_json") or "", dm.get("schema_sql") or "", changes)
+    if not applied:
+        return {"status": "no-op", "applied": [], "message": "Nada a aplicar (colunas já existiam)."}
+
+    artifacts = dict(dm)
+    artifacts["entities_json"] = new_entities
+    artifacts["schema_sql"] = new_schema
+    new_v = _save_data_model_version(
+        dm_session_id, artifacts,
+        f"Reconciliação de coerência de telas: +{len(applied)} campo(s)/tabela(s)",
+        current_user["id"])
+
+    # aponta a UI Spec para a nova versão do DM (proveniência atualizada)
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute("UPDATE ui_spec_sessions SET data_model_session_id=%s, data_model_version=%s "
+                        "WHERE id=%s", (dm_session_id, new_v, session_id))
+            conn.commit()
+        finally:
+            cur.close()
+
+    return {"status": "ok", "data_model_session_id": dm_session_id,
+            "new_data_model_version": new_v, "applied": applied}
+
+
+@router.post("/{session_id}/screen/{screen_id}/rebind")
+def rebind_endpoint(session_id: str, screen_id: str, req: RebindRequest,
+                    current_user=Depends(get_current_user)):
+    """Reconciliação lado-mockup: religa um campo a uma coluna existente no banco."""
+    row = _fetch_session(session_id)
+    ui_spec = json.loads(row["ui_spec_json"]) if row.get("ui_spec_json") else {}
+    if not apply_rebind(ui_spec, screen_id, req.bind_old, req.bind_new):
+        raise HTTPException(404, f"Vínculo '{req.bind_old}' não encontrado na tela '{screen_id}'")
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute("UPDATE ui_spec_sessions SET ui_spec_json=%s, version=version+1 WHERE id=%s",
+                        (json.dumps(ui_spec, ensure_ascii=False), session_id))
+            conn.commit()
+        finally:
+            cur.close()
+    _save_ui_spec_version(session_id, json.dumps(ui_spec, ensure_ascii=False),
+                          "spec_sync", f"Religado {req.bind_old} → {req.bind_new} ({screen_id})",
+                          current_user["id"])
+    return {"status": "ok", "ui_spec": ui_spec}
 
 
 @router.get("/{session_id}/sync-status")

@@ -236,6 +236,89 @@
   margin-top: 6px;
 }
 
+/* ── Painel de Coerência UC ⟷ Mockup ⟷ Modelo de Dados ── */
+.coh-panel {
+  border: 1px solid #dbe7f0;
+  border-radius: 10px;
+  background: #fbfdff;
+  padding: 14px 16px;
+  margin: 12px 0 18px;
+}
+.coh-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 14px;
+  color: #234;
+  margin-bottom: 10px;
+}
+.coh-summary {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  margin-bottom: 10px;
+}
+.coh-ok { color: #2e7d32; font-weight: 600; }
+.coh-warn { color: #b26a00; font-weight: 600; }
+.coh-bad { color: #c62828; font-weight: 700; }
+.coh-dm {
+  background: #fff;
+  border: 1px solid #e6edf3;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+.coh-dm-title { font-size: 12.5px; color: #445; margin-bottom: 8px; line-height: 1.4; }
+.coh-dm-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.coh-dm-row code { background: #f4f6f8; padding: 1px 6px; border-radius: 4px; }
+.coh-chip {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: #eef4fb;
+  color: #4a6b8a;
+  border: 1px solid #dbe7f0;
+  padding: 1px 6px;
+  border-radius: 20px;
+  font-weight: 700;
+}
+.coh-chip-new { background: #fff1e6; color: #b2560a; border-color: #ffd8b8; }
+.coh-type { color: #7c3aed; font-size: 11.5px; }
+.coh-screens-count, .coh-screens .coh-screens { }
+.coh-dm-row .coh-screens { color: #94a3b8; font-size: 11px; }
+.coh-dm-actions { margin-top: 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.coh-hint { font-size: 11.5px; color: #789; }
+.coh-screen {
+  border-top: 1px solid #eef2f6;
+  padding: 8px 0;
+}
+.coh-screen-head { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
+.coh-meta { font-size: 11px; color: #94a3b8; }
+.coh-issue {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  padding: 4px 0 4px 10px;
+  flex-wrap: wrap;
+}
+.coh-issue.error { color: #b23; }
+.coh-issue.warning { color: #8a5a00; }
+.coh-issue-detail { flex: 1; min-width: 220px; }
+.coh-fixes { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.coh-note { font-size: 11px; color: #789; font-style: italic; }
+.coh-allok { color: #2e7d32; font-size: 13px; padding: 8px 0; }
+.tc-btn.tiny { padding: 2px 8px; font-size: 11px; }
+
 /* Modal de histórico (placeholder) — usado pela etapa refatorada no shell. */
 .tc-modal-overlay {
   position: fixed;

@@ -63,6 +63,51 @@ interface ScreenSource {
   flow?: string | null;
   wireframe?: string | null;
 }
+interface CoherenceFix {
+  action: string;
+  to?: string;
+  label: string;
+  table?: string;
+  column?: string;
+  sql_type?: string;
+  new_table?: boolean;
+}
+interface CoherenceIssue {
+  type: string;
+  severity: string;
+  detail: string;
+  bindTo?: string;
+  proposed_fixes: CoherenceFix[];
+}
+interface CoherenceScreen {
+  screen_id: string;
+  screen_name: string;
+  uc_id?: string | null;
+  kind?: string;
+  layout?: string;
+  entity?: string | null;
+  issues: CoherenceIssue[];
+  ok: boolean;
+}
+interface DMChange {
+  table: string;
+  column: string;
+  sql_type: string;
+  new_table: boolean;
+  screens: string[];
+}
+interface CoherenceReport {
+  summary: {
+    screens: number;
+    screens_with_issues: number;
+    broken_binds: number;
+    total_binds: number;
+    kind_mismatches: number;
+    proposed_dm_changes: number;
+  };
+  screens: CoherenceScreen[];
+  proposed_dm_changes: DMChange[];
+}
 
 const UISpecPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
@@ -92,6 +137,11 @@ const UISpecPage: React.FC = () => {
   const [editWireframe, setEditWireframe] = useState("");
   const [savingSource, setSavingSource] = useState(false);
   const [resyncing, setResyncing] = useState(false);
+  // Contrato de coerência UC ⟷ Mockup ⟷ Modelo de Dados.
+  const [coherence, setCoherence] = useState<CoherenceReport | null>(null);
+  const [cohLoading, setCohLoading] = useState(false);
+  const [applyingDm, setApplyingDm] = useState(false);
+  const [dmSel, setDmSel] = useState<Record<string, boolean>>({});
 
   const loadChat = useCallback(async (sid: string) => {
     try {
@@ -289,6 +339,62 @@ const UISpecPage: React.FC = () => {
     }
   };
 
+  // ── Contrato de coerência: relatório + reconciliação ──
+  const loadCoherence = useCallback(async (sid: string) => {
+    setCohLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/ui-spec/${sid}/coherence`, { headers });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d: CoherenceReport = await r.json();
+      setCoherence(d);
+      // por padrão, marca todas as mudanças propostas
+      const sel: Record<string, boolean> = {};
+      (d.proposed_dm_changes || []).forEach((c) => { sel[`${c.table}.${c.column}`] = true; });
+      setDmSel(sel);
+    } catch (e: any) {
+      toast.error(`Falha ao verificar coerência: ${e.message}`);
+    } finally {
+      setCohLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const applyDm = async () => {
+    if (!session?.session_id || !coherence) return;
+    const changes = (coherence.proposed_dm_changes || []).filter((c) => dmSel[`${c.table}.${c.column}`]);
+    if (changes.length === 0) { toast.info("Nenhuma mudança selecionada."); return; }
+    setApplyingDm(true);
+    try {
+      const r = await fetch(`${API_BASE}/ui-spec/${session.session_id}/apply-dm-changes`, {
+        method: "POST", headers, body: JSON.stringify({ changes }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      toast.success(`Modelo de Dados atualizado (v${d.new_data_model_version}) — ${(d.applied || []).length} adição(ões)`);
+      await loadCoherence(session.session_id);
+    } catch (e: any) {
+      toast.error(`Falha ao aplicar no Modelo de Dados: ${e.message}`);
+    } finally {
+      setApplyingDm(false);
+    }
+  };
+
+  const doRebind = async (screenId: string, bindOld: string, bindNew: string) => {
+    if (!session?.session_id) return;
+    try {
+      const r = await fetch(`${API_BASE}/ui-spec/${session.session_id}/screen/${screenId}/rebind`, {
+        method: "POST", headers, body: JSON.stringify({ screen_id: screenId, bind_old: bindOld, bind_new: bindNew }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      if (d.ui_spec) setSession((s) => (s ? { ...s, ui_spec: d.ui_spec } : s));
+      toast.success(`Religado para ${bindNew}`);
+      await loadCoherence(session.session_id);
+    } catch (e: any) {
+      toast.error(`Falha ao religar: ${e.message}`);
+    }
+  };
+
   const approve = async () => {
     if (!session?.session_id) return;
     setApproving(true);
@@ -400,10 +506,107 @@ const UISpecPage: React.FC = () => {
           <span>Versão <b>v{session.version || 1}</b></span>
           <span><b>{session.screens_count || screens.length}</b> telas</span>
           <div className="tc-summary-actions">
+            <button
+              className="tc-btn"
+              onClick={() => session.session_id && loadCoherence(session.session_id)}
+              disabled={cohLoading || generating}
+              title="Cruza casos de uso × mockups × Modelo de Dados e aponta divergências"
+            >
+              {cohLoading ? "Verificando…" : "🔎 Verificar coerência"}
+            </button>
             {session.status !== "approved" && (
               <button className="tc-btn approve" onClick={approve} disabled={approving || generating}>
                 {approving ? "…" : "✓ Aprovar"}
               </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {coherence && (
+        <div className="coh-panel">
+          <div className="coh-head">
+            <b>🔎 Coerência UC ⟷ Mockup ⟷ Modelo de Dados</b>
+            <button className="tc-btn ghost" onClick={() => setCoherence(null)}>Fechar</button>
+          </div>
+          <div className="coh-summary">
+            <span className={coherence.summary.broken_binds ? "coh-bad" : "coh-ok"}>
+              {coherence.summary.broken_binds}/{coherence.summary.total_binds} vínculos quebrados
+            </span>
+            <span className={coherence.summary.kind_mismatches ? "coh-warn" : "coh-ok"}>
+              {coherence.summary.kind_mismatches} tipo(s) de tela incompatível(is)
+            </span>
+            <span className={coherence.summary.screens_with_issues ? "coh-warn" : "coh-ok"}>
+              {coherence.summary.screens_with_issues}/{coherence.summary.screens} telas com pendência
+            </span>
+          </div>
+
+          {coherence.proposed_dm_changes.length > 0 && (
+            <div className="coh-dm">
+              <div className="coh-dm-title">
+                📦 Mudanças propostas ao <b>Modelo de Dados</b> (você aprova) — o mockup pede
+                campos/tabelas que o banco não tem:
+              </div>
+              {coherence.proposed_dm_changes.map((c) => {
+                const key = `${c.table}.${c.column}`;
+                return (
+                  <label key={key} className="coh-dm-row">
+                    <input
+                      type="checkbox"
+                      checked={!!dmSel[key]}
+                      onChange={(e) => setDmSel((s) => ({ ...s, [key]: e.target.checked }))}
+                    />
+                    <span className={c.new_table ? "coh-chip coh-chip-new" : "coh-chip"}>
+                      {c.new_table ? "NOVA TABELA" : "nova coluna"}
+                    </span>
+                    <code>{c.table}.{c.column}</code>
+                    <span className="coh-type">{c.sql_type}</span>
+                    <span className="coh-screens">({c.screens.length} tela)</span>
+                  </label>
+                );
+              })}
+              <div className="coh-dm-actions">
+                <button className="tc-btn primary" onClick={applyDm} disabled={applyingDm}>
+                  {applyingDm ? "Aplicando…" : "✔ Aplicar no Modelo de Dados (nova versão)"}
+                </button>
+                <span className="coh-hint">
+                  Só adiciona (nunca altera/remove). Se o nome for engano, prefira <b>religar</b> abaixo.
+                </span>
+              </div>
+            </div>
+          )}
+
+          <div className="coh-screens">
+            {coherence.screens.filter((s) => !s.ok).map((s) => (
+              <div key={s.screen_id} className="coh-screen">
+                <div className="coh-screen-head">
+                  <b>{s.screen_name}</b>
+                  <span className="coh-meta">{s.uc_id} · tipo={s.kind} · mockup={s.layout}</span>
+                </div>
+                {s.issues.map((iss, i) => (
+                  <div key={i} className={`coh-issue ${iss.severity}`}>
+                    <span className="coh-issue-detail">{iss.detail}</span>
+                    <span className="coh-fixes">
+                      {iss.proposed_fixes.filter((f) => f.action === "rebind_column" || f.action === "rebind_table").map((f, j) => (
+                        <button
+                          key={j}
+                          className="tc-btn tiny"
+                          onClick={() => iss.bindTo && f.to && doRebind(s.screen_id, iss.bindTo, f.to)}
+                          title={f.label}
+                        >
+                          🔗 religar → {f.to}
+                        </button>
+                      ))}
+                      {iss.type === "kind_mismatch" && (
+                        <span className="coh-note">→ regenere a tela ou ajuste a interação no spec</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+            {coherence.summary.screens_with_issues === 0 && (
+              <div className="coh-allok">✓ Todas as telas coerentes com o Modelo de Dados e com os casos de uso.</div>
             )}
           </div>
         </div>
