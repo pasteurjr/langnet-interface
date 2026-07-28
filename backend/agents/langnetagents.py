@@ -2382,12 +2382,22 @@ AGENT_TOOLS = getattr(adapters_module, "AGENT_TOOLS", {{}})
 
 
 def _resolve_tools(names):
-    """Converte lista de nomes em instâncias de tool via TOOL_REGISTRY."""
+    """Converte lista de nomes em instâncias de tool via TOOL_REGISTRY.
+
+    Tool referenciada mas AUSENTE do registry NÃO é descartada em silêncio (isso faria o
+    agente achar que a ação externa foi feita). Vira uma tool 'não configurada' que FALHA
+    EXPLÍCITO ao ser chamada — instruindo a configurar via MCP. Nunca finge sucesso."""
     out = []
     for name in names or []:
         inst = TOOL_REGISTRY.get(name)
-        if inst is not None:
-            out.append(inst)
+        if inst is None:
+            try:
+                from tools_std import make_unconfigured_tool
+                inst = make_unconfigured_tool(name)
+                print(f"[ws] tool '{{name}}' NÃO configurada → fail-loud (atribua um servidor MCP)")
+            except Exception:
+                continue
+        out.append(inst)
     return out
 
 
@@ -3921,6 +3931,29 @@ class EmailSenderTool(BaseTool):
                 s.login(user, pwd)
             s.send_message(msg)
         return {"status": "ok", "to": to}
+
+
+# ---------- Fail-loud para integração externa NÃO configurada ----------
+class _UnconfiguredToolSchema(BaseModel):
+    class Config:
+        extra = "allow"
+
+
+def make_unconfigured_tool(tool_name: str) -> BaseTool:
+    """Tool placeholder para integração externa NÃO configurada (ex.: instagram_graph_api_tool).
+    Em vez de sumir em silêncio — o que faria o agente ACHAR que a ação foi feita — ela FALHA
+    EXPLÍCITO ao ser chamada, instruindo a configurar via MCP ou credencial. Nunca finge sucesso."""
+    class _Unconfigured(BaseTool):
+        name: str = tool_name
+        description: str = (f"Integração '{tool_name}' NÃO configurada. Atribua um servidor MCP "
+                            "ou configure a credencial para habilitar esta ação externa.")
+        args_schema: type[BaseModel] = _UnconfiguredToolSchema
+
+        def _run(self, **kwargs) -> str:
+            raise RuntimeError(
+                f"Ferramenta '{tool_name}' não está configurada — NENHUMA ação externa foi "
+                "executada. Configure via MCP (servidor + credencial) ou implemente a integração.")
+    return _Unconfigured()
 
 
 # Registro das tools locais reais (o ws-server mescla isto no TOOL_REGISTRY, sobrepondo
