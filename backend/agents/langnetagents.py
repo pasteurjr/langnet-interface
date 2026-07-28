@@ -3496,7 +3496,7 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
     is_select = query_lower.startswith("select")
 
     # Build params Python expression list
-    py_params = _translate_params(params_str, captured_vars, loop_item)
+    py_params = _translate_params(params_str, captured_vars, loop_item, in_loop)
 
     lines: List[str] = []
     if in_loop and loop_list:
@@ -3522,9 +3522,19 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
     return lines
 
 
-def _translate_params(params_str: str, captured_vars: List[str], loop_item: str) -> str:
+def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
+                      in_loop: bool = False) -> str:
     """Turn ``{nome}, {descricao}, persona_id, canal`` into a Python list literal
-    ``[input_data.get('nome'), input_data.get('descricao'), persona_id, canal]``."""
+    ``[input_data.get('nome'), input_data.get('descricao'), persona_id, canal]``.
+
+    Robustez contra descrições inconsistentes do LLM: um identificador SOLTO que não
+    é uma variável conhecida (nem {campo}, nem capturada, nem o item do loop) NÃO pode
+    ser emitido cru — isso vira NameError em runtime. Nesse caso:
+      - dentro de um loop → é o item do loop (ex.: LLM escreveu `prob` para o loop
+        `for problema in ...` → emite `problema`);
+      - fora de loop → é um campo de entrada que o LLM esqueceu de chavear → `input_data.get('x')`.
+    Literais (números, strings entre aspas, None/True/False, expressões pontuadas) ficam como estão.
+    """
     if not params_str or not params_str.strip():
         return "[]"
     import re as _re
@@ -3533,14 +3543,16 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str)
     for p in parts:
         m = _re.match(r'^\{(\w+)\}$', p)
         if m:
-            key = m.group(1)
-            py_parts.append(f"input_data.get({key!r})")
+            py_parts.append(f"input_data.get({m.group(1)!r})")
             continue
         if p in captured_vars or p == loop_item:
             py_parts.append(p)
             continue
-        # Fallback: assume it's a python identifier already in scope; if it's
-        # a string literal or number, keep as-is.
+        # Identificador Python simples e não-resolvido → reconciliar (evita NameError).
+        if _re.match(r'^[A-Za-z_]\w*$', p) and p not in ("None", "True", "False"):
+            py_parts.append(loop_item if in_loop and loop_item else f"input_data.get({p!r})")
+            continue
+        # Literais / expressões (números, 'strings', a.b(...)) — mantém.
         py_parts.append(p)
     return "[" + ", ".join(py_parts) + "]"
 
@@ -4570,7 +4582,10 @@ def _resolve_task_target(target, task_fields):
         score = shared * 2 + contains
         if score > best_score:
             best, best_score = real, score
-    return best if best_score >= 2 else target
+    # Sem casamento com uma task REAL → None (o UI Spec inventou o alvo). O chamador
+    # desabilita o botão em vez de emitir runTask() para uma tarefa inexistente
+    # (que quebraria em runtime). NUNCA devolver o alvo inventado.
+    return best if best_score >= 2 else None
 
 
 def _humanize(col: str) -> str:
@@ -4803,6 +4818,7 @@ export default function %COMP%() {
   const IN = "w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none";
 
   const executar = async () => {
+    if (!TASK) { setErr("Ação indisponível: nenhuma tarefa definida para esta tela."); return; }
     setBusy(true); setResult(null); setErr(null);
     try { const r = await runTask(TASK, form); setResult(r); }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
@@ -4842,11 +4858,11 @@ export default function %COMP%() {
           </div>
         )}
         <div className="flex items-center gap-3">
-          <button className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60 inline-flex items-center gap-2" disabled={busy} onClick={executar}>
+          <button className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60 inline-flex items-center gap-2" disabled={busy || !TASK} onClick={executar}>
             {busy && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
             {busy ? "Executando com IA…" : "▷ Executar com IA"}
           </button>
-          <span className="text-xs text-slate-400">Dispara o agente <code>{TASK}</code></span>
+          <span className="text-xs text-slate-400">{TASK ? <>Dispara o agente <code>{TASK}</code></> : "Tarefa não definida para esta tela"}</span>
         </div>
       </div>
       {err && <div className="mt-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">⚠ {err}</div>}
@@ -4877,7 +4893,7 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
     header = (
         'import React, { useState } from "react";\n'
         'import { runTask } from "./wsClient";\n\n'
-        f'const TASK = {json.dumps(target or screen.get("id"))};\n'
+        f'const TASK = {json.dumps(target)};\n'  # null se o alvo não é uma task real → botão desabilita
         f'const INPUTS = {json.dumps(inp, ensure_ascii=False)};\n'
     )
     body = (_AGENT_BODY.replace("%COMP%", comp_name)
@@ -4896,6 +4912,7 @@ export default function %COMP%() {
   const IN = "rounded-lg border border-slate-300 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none";
 
   const gerar = async () => {
+    if (!TASK) { setErr("Relatório indisponível: nenhuma tarefa definida para esta tela."); return; }
     setBusy(true); setErr(null); setRows(null);
     try {
       const r = await runTask(TASK, filtros);
@@ -4929,7 +4946,7 @@ export default function %COMP%() {
             <input type={fd.type || "text"} className={IN} value={filtros[fd.key]} onChange={(e) => set(fd.key, e.target.value)} />
           </div>
         ))}
-        <button className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60" disabled={busy} onClick={gerar}>{busy ? "Gerando…" : "Gerar relatório"}</button>
+        <button className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60" disabled={busy || !TASK} onClick={gerar}>{busy ? "Gerando…" : (TASK ? "Gerar relatório" : "Tarefa não definida")}</button>
       </div>
       {err && <div className="mb-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">⚠ {err}</div>}
       {rows && (
@@ -4975,7 +4992,7 @@ def _report_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
     header = (
         'import React, { useState } from "react";\n'
         'import { runTask } from "./wsClient";\n\n'
-        f'const TASK = {json.dumps(target or screen.get("id"))};\n'
+        f'const TASK = {json.dumps(target)};\n'  # null se o alvo não é uma task real → botão desabilita
         f'const FILTROS = {json.dumps(filt, ensure_ascii=False)};\n'
     )
     body = (_REPORT_BODY.replace("%COMP%", comp_name)
@@ -5040,7 +5057,9 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
             score = shared * 2 + contains
             if score > best_score:
                 best, best_score = real, score
-        return best if best_score >= 2 else target
+        # Sem task real casada → None (alvo inventado pelo UI Spec). Não devolve o
+        # alvo inventado: o chamador desabilita o botão em vez de emitir runTask fantasma.
+        return best if best_score >= 2 else None
 
     # Fallback: se o ui_spec não amarrou uma ação a uma task, tenta resolver pelo
     # NOME/título/entidade da tela contra as tasks reais. Evita telas "mortas"
@@ -5060,6 +5079,13 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
     target_task = _resolve_task(raw_target)
     if primary and target_task:
         primary["target"] = target_task  # usa o nome real no runTask
+    elif primary and raw_target and task_fields and not target_task:
+        # O UI Spec inventou um alvo que não existe em nenhuma task real → não emitir
+        # runTask fantasma (quebraria em runtime). Trata como tela sem ação vinculável:
+        # cai no ramo do botão DESABILITADO abaixo.
+        print(f"[CODE-GEN] tela '{screen.get('id')}': alvo '{raw_target}' não casa com "
+              f"nenhuma task real → botão desabilitado")
+        primary = None
     tf = task_fields.get(target_task) if target_task else None
     if tf:
         for tfield, is_list in tf.items():
