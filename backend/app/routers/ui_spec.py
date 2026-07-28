@@ -183,6 +183,21 @@ def _save_ui_spec_version(
         return None
 
 
+def _project_name(project_id: str) -> str:
+    """Nome do projeto (para brandar as telas). 'Sistema' se indeterminável."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            try:
+                cur.execute("SELECT name FROM projects WHERE id=%s", (project_id,))
+                r = cur.fetchone()
+            finally:
+                cur.close()
+        return (r or {}).get("name") or "Sistema"
+    except Exception:
+        return "Sistema"
+
+
 def _fetch_session(session_id: str) -> Dict[str, Any]:
     with get_db_connection() as conn:
         cur = conn.cursor(dictionary=True)
@@ -228,6 +243,7 @@ def generate_ui_spec(project_id: str, req: GenerateRequest, current_user=Depends
             specification_document=spec_doc,
             schema_sql=schema_sql,
             render_png=req.render_png,
+            project_name=_project_name(project_id),
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Falha na geração: {e}")
@@ -522,7 +538,8 @@ def edit_screen_source(session_id: str, screen_id: str, req: EditSourceRequest,
     # 2) regenera só esta tela a partir do UC editado + schema da sessão
     schema_sql, _dm_id, _dm_v = _fetch_schema_sql(project_id, row.get("data_model_session_id"))
     try:
-        result = regenerate_one_screen_from_spec(new_doc, uc_id, schema_sql, req.render_png)
+        result = regenerate_one_screen_from_spec(new_doc, uc_id, schema_sql, req.render_png,
+                                                 project_name=_project_name(project_id))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Falha ao regenerar a tela: {e}")
 
@@ -558,7 +575,8 @@ def resync_screen(session_id: str, screen_id: str, current_user=Depends(get_curr
     spec_version_current = _current_specification_version(spec_session_id)
     schema_sql, _dm_id, _dm_v = _fetch_schema_sql(project_id, row.get("data_model_session_id"))
     try:
-        result = regenerate_one_screen_from_spec(spec_doc, uc_id, schema_sql, True)
+        result = regenerate_one_screen_from_spec(spec_doc, uc_id, schema_sql, True,
+                                                 project_name=_project_name(project_id))
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Falha ao re-sincronizar: {e}")
 

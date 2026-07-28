@@ -162,8 +162,10 @@ td{{padding:11px 16px;border-bottom:1px solid #f1f5f9;color:#334155}}
 </body></html>'''
 
 
-def _generate_one_screen(uc: Dict[str, str], sub_schema: str) -> Optional[Dict[str, Any]]:
-    prompt = build_single_screen_prompt(uc, sub_schema)
+def _generate_one_screen(uc: Dict[str, str], sub_schema: str,
+                         project_name: str = "Sistema",
+                         nav_items: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    prompt = build_single_screen_prompt(uc, sub_schema, project_name, nav_items)
     raw = _call_llm(prompt)
     obj_txt = extract_json_object(raw or "")
     screen = None
@@ -200,10 +202,49 @@ def _generate_one_screen(uc: Dict[str, str], sub_schema: str) -> Optional[Dict[s
 # ────────────────────────────────────────────────────────────────────────
 # Workflow completo
 # ────────────────────────────────────────────────────────────────────────
+def _derive_nav_items(ucs: List[Dict[str, str]], max_items: int = 6) -> str:
+    """Navegação lateral unificada (mesma em todas as telas): o OBJETO de cada tela
+    (substantivo após o verbo), deduplicado + Dashboard. Determinístico."""
+    import re
+    # verbos/ações e advérbios/preposições a pular para achar o objeto (substantivo)
+    skip = {
+        "cadastrar", "criar", "adicionar", "registrar", "novo", "nova", "editar", "alterar",
+        "atualizar", "atualizacao", "gerar", "geracao", "coletar", "coleta", "aprovar",
+        "aprovacao", "revisar", "verificar", "verificacao", "classificar", "classificacao",
+        "identificar", "identificacao", "publicar", "publicacao", "sugerir", "sugestao",
+        "sugestoes", "agendar", "agendamento", "sincronizar", "sincronizacao", "exportar",
+        "visualizar", "listar", "importar", "importacao", "processar", "de", "da", "do",
+        "das", "dos", "e", "para", "por", "com", "automatica", "automatico", "automaticamente",
+        "mensal", "semanal", "semanais", "diario", "warm", "inbound", "todos", "todas",
+    }
+    def norm(w):
+        for a, b in (("á","a"),("â","a"),("ã","a"),("é","e"),("ê","e"),("í","i"),
+                     ("ó","o"),("ô","o"),("õ","o"),("ú","u"),("ç","c")):
+            w = w.replace(a, b)
+        return w.lower()
+    labels: List[str] = ["Dashboard"]
+    seen = {"dashboard"}
+    for uc in ucs:
+        title = (uc.get("screen_title") or uc.get("name") or "").strip()
+        words = [w for w in re.sub(r'[^\wÀ-ú-]', ' ', title).split() if len(w) > 2]
+        obj = next((w for w in words if norm(w) not in skip), None)
+        if not obj:
+            continue
+        key = obj.strip("-").capitalize()
+        if norm(key) in seen:
+            continue
+        seen.add(norm(key))
+        labels.append(key)
+        if len(labels) >= max_items:
+            break
+    return ", ".join(labels)
+
+
 def execute_ui_spec_workflow(
     specification_document: str,
     schema_sql: str = "",
     render_png: bool = True,
+    project_name: str = "Sistema",
 ) -> Dict[str, Any]:
     """Gera a UI Spec inteira (todas as telas) a partir da spec + schema.
 
@@ -215,8 +256,10 @@ def execute_ui_spec_workflow(
         "generation_log": "..."
       }
     """
+    import re as _re  # noqa
     ucs = parse_uc_blocks(specification_document)
     tables = parse_schema_tables(schema_sql) if schema_sql else {}
+    nav_items = _derive_nav_items(ucs)
 
     log_lines: List[str] = [f"UCs: {len(ucs)}, tabelas: {len(tables)}"]
     screens: List[Dict[str, Any]] = []
@@ -226,7 +269,7 @@ def execute_ui_spec_workflow(
     for idx, uc in enumerate(ucs, 1):
         picked = select_relevant_tables(uc, tables)
         sub_schema = build_sub_schema(picked, tables)
-        screen = _generate_one_screen(uc, sub_schema)
+        screen = _generate_one_screen(uc, sub_schema, project_name, nav_items)
         if not screen:
             log_lines.append(f"[{idx}/{len(ucs)}] {uc.get('id')} FALHOU")
             print(f"[UI_SPEC] [{idx}/{len(ucs)}] {uc.get('id')} falhou")
@@ -283,6 +326,8 @@ def regenerate_one_screen_from_spec(
     uc_id: str,
     schema_sql: str = "",
     render_png: bool = True,
+    project_name: str = "Sistema",
+    nav_items: Optional[str] = None,
 ) -> Dict[str, Any]:
     """AMARRAÇÃO Spec→Protótipo: regenera UMA tela a partir do UC (fluxo + wireframe)
     do documento de Especificação. Usado quando o usuário edita a interação da tela
@@ -298,8 +343,10 @@ def regenerate_one_screen_from_spec(
     tables = parse_schema_tables(schema_sql) if schema_sql else {}
     picked = select_relevant_tables(uc, tables)
     sub_schema = build_sub_schema(picked, tables)
+    if nav_items is None:
+        nav_items = _derive_nav_items(parse_uc_blocks(specification_document))
 
-    screen = _generate_one_screen(uc, sub_schema)
+    screen = _generate_one_screen(uc, sub_schema, project_name, nav_items)
     if not screen:
         raise RuntimeError(f"regeneração da tela do {uc_id} não retornou JSON válido")
 

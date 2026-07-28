@@ -281,7 +281,11 @@ REGRAS:
      <body class="bg-slate-100">
    DESIGN SYSTEM obrigatório (use estas classes Tailwind consistentemente):
    - Layout: <div class="flex min-h-screen"> com <aside class="w-60 bg-slate-900 text-slate-300">
-     (menu lateral com o nome do produto no topo e 4-6 itens) + <main class="flex-1">.
+     (menu lateral) + <main class="flex-1">.
+   - 🔴 BRANDING: o topo do menu lateral DEVE exibir EXATAMENTE o nome do produto "{project_name}"
+     (não use "Nome do Produto", "MeuProduto" nem qualquer placeholder genérico).
+   - 🔴 NAVEGAÇÃO CONSISTENTE: use SEMPRE estes MESMOS itens de menu, nesta ordem, em TODA tela
+     (marque como ativo o item desta tela): {nav_items}. Não invente um menu diferente por tela.
    - Header do conteúdo: <header class="bg-white border-b border-slate-200 px-8 py-4
      flex items-center justify-between"> com título (text-lg font-semibold text-slate-800)
      + subtítulo cinza pequeno + botões de ação à direita.
@@ -338,11 +342,15 @@ _AGENTIC_NOTE = (
 )
 
 
-def build_single_screen_prompt(uc: Dict[str, str], sub_schema: str) -> str:
+def build_single_screen_prompt(uc: Dict[str, str], sub_schema: str,
+                               project_name: str = "Sistema",
+                               nav_items: Optional[str] = None) -> str:
     schema_block = ""
     if sub_schema:
         schema_block = f"## SCHEMA REAL DAS TABELAS RELEVANTES\n\n```sql\n{sub_schema}\n```"
     return _INSTRUCTIONS.format(
+        project_name=project_name or "Sistema",
+        nav_items=nav_items or "Dashboard, e os itens principais do produto",
         agentic_note=_AGENTIC_NOTE if is_agentic_screen(uc) else "",
         uc_id=uc.get("id", ""),
         uc_name=uc.get("name", ""),
