@@ -2557,6 +2557,9 @@ def _template_requirements_txt(_extra_pkgs: List[str] = None) -> str:
         "mysql-connector-python>=8.0.0",
         # MCP (tools externas via Model Context Protocol — mcp_tools.py)
         "mcp>=1.0.0",
+        # Tools locais REAIS (tools_std.py): PDF real + chamadas HTTP de embeddings
+        "reportlab>=4.0.0",
+        "requests>=2.28.0",
     ]
     if _extra_pkgs:
         for p in _extra_pkgs:
@@ -3707,6 +3710,265 @@ def _fetch_mcp_assignments(project_id: str):
         return []
 
 
+# Tools locais padrão que o LangNet passa a EMITIR DE VERDADE (nunca mock). Se o LLM
+# gerar classes com estes nomes no tools.py, elas são removidas e substituídas por estas.
+_STD_TOOL_NAMES = ("EmbeddingTool", "VectorSearchTool", "PdfGeneratorTool", "CsvExporterTool", "EmailSenderTool")
+_STD_TOOL_KEYS = ("embedding_tool", "vector_search_tool", "pdf_generator_tool", "csv_exporter_tool", "email_sender_tool")
+
+_TOOLS_STD_PY = r'''"""
+tools_std.py — biblioteca de ferramentas LOCAIS REAIS do LangNet.
+
+IMPLEMENTAÇÕES REAIS, sem mock: PDF (reportlab), CSV (csv), Embedding (endpoint
+OpenAI-compat, ex.: LM Studio) e VectorSearch (cosseno sobre uma tabela configurada).
+Quando algo não está configurado, a tool FALHA EXPLÍCITO — nunca devolve resultado falso.
+Ferramentas externas (e-mail, redes sociais, calendário, CMS) NÃO ficam aqui: vêm por MCP.
+"""
+import os
+import csv
+import math
+import logging
+from typing import Any, Dict, List, Optional
+
+from crewai.tools import BaseTool
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
+
+
+# ---------- PDF (real, reportlab) ----------
+class PdfGeneratorToolSchema(BaseModel):
+    data: Dict[str, Any] = Field(..., description="Dados a renderizar no PDF")
+    output_path: Optional[str] = Field(default="relatorio.pdf", description="Arquivo de saída")
+
+
+class PdfGeneratorTool(BaseTool):
+    name: str = "PdfGeneratorTool"
+    description: str = "Gera um arquivo PDF REAL a partir de dados (título + pares/linhas)."
+    args_schema: type[BaseModel] = PdfGeneratorToolSchema
+
+    def _run(self, data: Dict[str, Any], output_path: str = "relatorio.pdf") -> Dict[str, Any]:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        c = canvas.Canvas(output_path, pagesize=A4)
+        w, h = A4
+        y = h - 40
+        d = data or {}
+        title = str(d.get("titulo") or d.get("title") or "Relatório")
+        c.setFont("Helvetica-Bold", 16); c.drawString(30, y, title[:90]); y -= 26
+        c.setFont("Helvetica", 10)
+
+        def line(txt: str):
+            nonlocal y
+            if y < 40:
+                c.showPage(); c.setFont("Helvetica", 10); y = h - 40
+            c.drawString(30, y, str(txt)[:115]); y -= 14
+
+        def walk(obj, prefix=""):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if isinstance(v, (dict, list)):
+                        line(f"{prefix}{k}:"); walk(v, prefix + "  ")
+                    else:
+                        line(f"{prefix}{k}: {v}")
+            elif isinstance(obj, list):
+                for i, it in enumerate(obj):
+                    if isinstance(it, (dict, list)):
+                        line(f"{prefix}- item {i + 1}:"); walk(it, prefix + "  ")
+                    else:
+                        line(f"{prefix}- {it}")
+            else:
+                line(f"{prefix}{obj}")
+
+        walk(d)
+        c.save()
+        return {"status": "ok", "path": os.path.abspath(output_path)}
+
+
+# ---------- CSV (real) ----------
+class CsvExporterToolSchema(BaseModel):
+    data: List[Dict[str, Any]] = Field(..., description="Linhas (lista de dicts) a exportar")
+    output_path: Optional[str] = Field(default="export.csv", description="Arquivo de saída")
+
+
+class CsvExporterTool(BaseTool):
+    name: str = "CsvExporterTool"
+    description: str = "Exporta dados para um arquivo CSV REAL."
+    args_schema: type[BaseModel] = CsvExporterToolSchema
+
+    def _run(self, data: List[Dict[str, Any]], output_path: str = "export.csv") -> Dict[str, Any]:
+        rows = data if isinstance(data, list) else [data]
+        cols: List[str] = []
+        for r in rows:
+            if isinstance(r, dict):
+                for k in r:
+                    if k not in cols:
+                        cols.append(k)
+        with open(output_path, "w", newline="", encoding="utf-8") as f:
+            wtr = csv.DictWriter(f, fieldnames=cols or ["valor"])
+            wtr.writeheader()
+            for r in rows:
+                wtr.writerow(r if isinstance(r, dict) else {"valor": r})
+        return {"status": "ok", "path": os.path.abspath(output_path), "rows": len(rows)}
+
+
+# ---------- Embedding (real, endpoint OpenAI-compat / LM Studio) ----------
+def _embed(text: str) -> List[float]:
+    import requests
+    base = (os.getenv("EMBEDDINGS_API_BASE") or os.getenv("LMSTUDIO_API_BASE")
+            or os.getenv("OPENAI_API_BASE") or "http://localhost:1234/v1").rstrip("/")
+    model = os.getenv("EMBEDDINGS_MODEL", "text-embedding-nomic-embed-text-v1.5")
+    key = os.getenv("EMBEDDINGS_API_KEY") or os.getenv("LMSTUDIO_API_KEY") or "not-needed"
+    resp = requests.post(base + "/embeddings",
+                         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                         json={"model": model, "input": text}, timeout=60)
+    resp.raise_for_status()
+    return resp.json()["data"][0]["embedding"]
+
+
+class EmbeddingToolSchema(BaseModel):
+    text: str = Field(..., description="Texto para gerar embedding")
+
+
+class EmbeddingTool(BaseTool):
+    name: str = "EmbeddingTool"
+    description: str = "Gera embeddings REAIS de um texto via endpoint de embeddings (ex.: LM Studio)."
+    args_schema: type[BaseModel] = EmbeddingToolSchema
+
+    def _run(self, text: str) -> List[float]:
+        return _embed(str(text))
+
+
+# ---------- VectorSearch (real, cosseno sobre tabela configurada) ----------
+class VectorSearchToolSchema(BaseModel):
+    query: str = Field(..., description="Texto de consulta (ou embedding)")
+    top_k: int = Field(default=5, description="Número de resultados")
+
+
+class VectorSearchTool(BaseTool):
+    name: str = "VectorSearchTool"
+    description: str = "Busca semântica REAL: embeda a consulta e ranqueia por cosseno os textos de uma tabela."
+    args_schema: type[BaseModel] = VectorSearchToolSchema
+
+    def _run(self, query: Any, top_k: int = 5) -> List[Dict[str, Any]]:
+        table = os.getenv("VECTOR_TABLE")
+        text_col = os.getenv("VECTOR_TEXT_COL", "texto")
+        id_col = os.getenv("VECTOR_ID_COL", "id")
+        if not table:
+            raise RuntimeError(
+                "VectorSearchTool: busca vetorial não configurada. Defina VECTOR_TABLE "
+                "(+ VECTOR_TEXT_COL/VECTOR_ID_COL) para busca real. Sem mock.")
+        qv = query if isinstance(query, list) else _embed(str(query))
+        import mysql.connector
+        conn = mysql.connector.connect(
+            host=os.getenv('DB_HOST', 'localhost'), port=int(os.getenv('DB_PORT', '3306')),
+            user=os.getenv('DB_USER', 'root'), password=os.getenv('DB_PASSWORD', ''),
+            database=os.getenv('DB_NAME', ''))
+        try:
+            cur = conn.cursor(dictionary=True)
+            cur.execute(f"SELECT `{id_col}`, `{text_col}` FROM `{table}` LIMIT 500")
+            rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        def cos(a, b):
+            s = sum(x * y for x, y in zip(a, b))
+            na = math.sqrt(sum(x * x for x in a)); nb = math.sqrt(sum(y * y for y in b))
+            return s / (na * nb) if na and nb else 0.0
+
+        scored = []
+        for r in rows:
+            rv = _embed(str(r.get(text_col) or ""))
+            scored.append({"id": r.get(id_col), "similarity": round(cos(qv, rv), 4),
+                           "texto": r.get(text_col)})
+        scored.sort(key=lambda x: -x["similarity"])
+        return scored[:top_k]
+
+
+# ---------- Email (real, smtplib — falha explícito se SMTP não configurado) ----------
+class EmailSenderToolSchema(BaseModel):
+    to: str = Field(..., description="Destinatário")
+    subject: str = Field(..., description="Assunto")
+    body: str = Field(..., description="Corpo do e-mail")
+    attachment_path: Optional[str] = Field(default=None, description="Caminho de anexo (opcional)")
+
+
+class EmailSenderTool(BaseTool):
+    name: str = "EmailSenderTool"
+    description: str = "Envia e-mail REAL via SMTP. Requer SMTP configurado; sem config, falha explícito."
+    args_schema: type[BaseModel] = EmailSenderToolSchema
+
+    def _run(self, to: str, subject: str, body: str, attachment_path: Optional[str] = None) -> Dict[str, Any]:
+        import smtplib
+        from email.message import EmailMessage
+        host = os.getenv("SMTP_HOST")
+        if not host:
+            raise RuntimeError(
+                "EmailSenderTool: SMTP não configurado. Defina SMTP_HOST/SMTP_PORT/SMTP_USER/"
+                "SMTP_PASSWORD (e SMTP_FROM) para envio real. Sem mock.")
+        port = int(os.getenv("SMTP_PORT", "587"))
+        user = os.getenv("SMTP_USER"); pwd = os.getenv("SMTP_PASSWORD")
+        sender = os.getenv("SMTP_FROM", user or "no-reply@localhost")
+        msg = EmailMessage()
+        msg["From"] = sender; msg["To"] = to; msg["Subject"] = subject
+        msg.set_content(body or "")
+        if attachment_path and os.path.exists(attachment_path):
+            with open(attachment_path, "rb") as fh:
+                msg.add_attachment(fh.read(), maintype="application", subtype="octet-stream",
+                                   filename=os.path.basename(attachment_path))
+        with smtplib.SMTP(host, port, timeout=30) as s:
+            s.starttls()
+            if user and pwd:
+                s.login(user, pwd)
+            s.send_message(msg)
+        return {"status": "ok", "to": to}
+
+
+# Registro das tools locais reais (o ws-server mescla isto no TOOL_REGISTRY, sobrepondo
+# qualquer versão mock que o LLM tenha gerado no tools.py).
+STD_TOOLS = {
+    "pdf_generator_tool": PdfGeneratorTool(),
+    "csv_exporter_tool": CsvExporterTool(),
+    "embedding_tool": EmbeddingTool(),
+    "vector_search_tool": VectorSearchTool(),
+    "email_sender_tool": EmailSenderTool(),
+}
+'''
+
+
+def _generate_tools_std_py() -> str:
+    """Retorna o módulo ws-server/tools_std.py — biblioteca de tools LOCAIS REAIS."""
+    return _TOOLS_STD_PY
+
+
+def _strip_std_mock_tools(tools_py: str) -> str:
+    """Remove do tools.py do LLM as classes MOCK das tools padrão (embedding, vector,
+    pdf, csv, email) e suas entradas no TOOL_REGISTRY. As versões REAIS passam a vir de
+    tools_std.py (mescladas no registry pelo ws-server). Objetivo: zero mock no código gerado."""
+    if not tools_py:
+        return tools_py
+    import re as _re
+    out = tools_py
+    for nm in _STD_TOOL_NAMES:
+        for cls in (nm + "Schema", nm):  # schema antes da classe
+            out = _re.sub(rf'(?ms)^class\s+{cls}\b.*?(?=^\S|\Z)', '', out)
+        # comentário separador "# ---------- <Nome> ----------"
+        out = _re.sub(rf'(?m)^#\s*-+\s*{nm}\s*-+\s*\n', '', out)
+    for key in _STD_TOOL_KEYS:
+        out = _re.sub(rf'''(?m)^\s*["']{key}["']\s*:\s*[^,\n]+,?\s*\n''', '', out)
+    # injeta import + merge das reais no fim do tools.py (garante registry consistente
+    # mesmo se o ws-server for executado isoladamente)
+    if "from tools_std import STD_TOOLS" not in out:
+        out = out.rstrip() + (
+            "\n\n# LangNet: tools locais REAIS (substituem quaisquer mocks) — ver tools_std.py\n"
+            "try:\n"
+            "    from tools_std import STD_TOOLS as _STD_TOOLS\n"
+            "    TOOL_REGISTRY.update(_STD_TOOLS)\n"
+            "except Exception as _e:\n"
+            "    print(f'[tools] WARN: tools_std indisponível: {_e}')\n"
+        )
+    return out
+
+
 def _generate_mcp_tools_py(assignments: list) -> str:
     """Emite ws-server/mcp_tools.py: um BaseTool CrewAI por tool MCP atribuída, que chama
     a ferramenta no servidor MCP via cliente `mcp` (SSE/HTTP). Registra em MCP_TOOLS."""
@@ -4243,7 +4505,11 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     add("ws-server/database_tool.py", _template_database_tool_py())
     # Injeta import do database_tool real e substitui classe stub se existir
     tools_py = _inject_real_database_tool(tools_py)
+    # P1: remove QUALQUER mock das tools padrão (embedding/vector/pdf/csv/email) —
+    # as versões REAIS vêm de tools_std.py. Zero mock no código gerado.
+    tools_py = _strip_std_mock_tools(tools_py)
     add("ws-server/tools.py", tools_py if tools_py.endswith("\n") else tools_py + "\n")
+    add("ws-server/tools_std.py", _generate_tools_std_py())
     # F2 Fase 3: emite mcp_tools.py (wrappers CrewAI das tools MCP atribuídas)
     _mcp_py = _generate_mcp_tools_py(_mcp_assign)
     if _mcp_py:
