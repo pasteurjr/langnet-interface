@@ -268,6 +268,13 @@ REGRAS:
 1. Os `components` devem refletir os campos REAIS do schema abaixo. Use `bindTo`
    para ligar cada campo à coluna correta. Listas (ex.: canais) que no schema são
    tabela filha → type "multiselect" com bindTo "tabela_filha[].coluna".
+   🔴 PROIBIDO INVENTAR: `bindTo` SÓ pode citar tabelas e colunas que EXISTEM no SCHEMA
+   abaixo (idênticas ao nome real). Se um campo da tela não corresponde a nenhuma coluna
+   real, use `bindTo: null` (campo de exibição/não-persistido). NUNCA crie nome de tabela
+   ou coluna que não esteja no schema. Se não há schema fornecido, todos os bindTo = null.
+   🔵 CHAVE ESTRANGEIRA: campo que é FK (ex.: `persona_id`, `pilar_conteudo_id`) → type
+   "select" e no mockup_html renderize um <select> (dropdown) com opções de exemplo da
+   entidade referenciada — NUNCA uma caixa de texto de ID crua.
 2. `actions`: o botão principal de salvar/criar deve ter kind "task" e target no
    formato verbo_objeto snake_case (ex.: cadastrar_persona_alvo), casando com o
    nome provável da task do pipeline. Botões de cancelar/voltar usam kind "navigate".

@@ -92,6 +92,33 @@ def schema_columns(schema_sql: str) -> Dict[str, List[str]]:
     return out
 
 
+def schema_fks(schema_sql: str) -> Dict[str, Dict[str, str]]:
+    """Mapa de chaves estrangeiras: {tabela: {coluna: tabela_referenciada}}.
+    Detecta FK explícita (FOREIGN KEY ... REFERENCES) e, como fallback, a convenção
+    `<x>_id` → tabela `<x>` / `<x>s` / `<x>es` quando ela existe no schema."""
+    tables = parse_schema_tables(schema_sql) if schema_sql else {}
+    names = set(tables.keys())
+    fks: Dict[str, Dict[str, str]] = {}
+    for tname, ddl in tables.items():
+        m: Dict[str, str] = {}
+        for fm in re.finditer(
+            r'FOREIGN\s+KEY\s*\(\s*[`"]?(\w+)[`"]?\s*\)\s*REFERENCES\s*[`"]?(\w+)[`"]?', ddl, re.I):
+            if fm.group(2) in names:
+                m[fm.group(1)] = fm.group(2)
+        for cm in re.finditer(r'^\s*[`"]?(\w+_id)[`"]?\s', ddl, re.I | re.M):
+            col = cm.group(1)
+            if col in m:
+                continue
+            base = col[:-3]
+            for cand in (base, base + "s", base + "es", base.rstrip("s")):
+                if cand in names:
+                    m[col] = cand
+                    break
+        if m:
+            fks[tname] = m
+    return fks
+
+
 def _parse_bindto(bind: str) -> Optional[Tuple[str, str]]:
     """'tabela.coluna' | 'tabela_filha[].coluna' | 'tabela.coluna[]' → (tabela, coluna)."""
     if not bind or "." not in bind:

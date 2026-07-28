@@ -22,7 +22,56 @@ from prompts.generate_ui_spec import (
     build_sub_schema, is_agentic_screen, build_single_screen_prompt,
     extract_json_object, validate_screen, find_uc_block,
 )
-from agents.langnetcoherence import derive_screen_kind
+from agents.langnetcoherence import derive_screen_kind, schema_columns, _parse_bindto, schema_fks
+
+
+def _mark_fk_selects(screen: Dict[str, Any], fks: Dict[str, Dict[str, str]]) -> int:
+    """P3: campos que são chave estrangeira viram `select` (dropdown da entidade
+    referenciada) em vez de caixa de ID. Marca type='select' + refEntity. Retorna
+    quantos foram marcados."""
+    if not fks:
+        return 0
+    col2ref: Dict[str, str] = {}
+    for _t, m in fks.items():
+        for col, ref in m.items():
+            col2ref.setdefault(col, ref)
+    n = 0
+    for comp in (screen.get("components") or []):
+        col = None
+        b = comp.get("bindTo")
+        if b and "." in str(b):
+            col = str(b).split(".", 1)[1].replace("[]", "").split("[")[0]
+        col = col or comp.get("field")
+        if col and col in col2ref and comp.get("type") not in ("multiselect", "table"):
+            comp["type"] = "select"
+            comp["refEntity"] = col2ref[col]
+            n += 1
+    return n
+
+
+def _sanitize_screen_binds(screen: Dict[str, Any], cols_by_table: Dict[str, list]) -> int:
+    """P2: anula deterministicamente qualquer bindTo que NÃO exista no schema real
+    (tabela/coluna). Garante zero vínculo quebrado mesmo se o LLM inventar. Retorna
+    quantos foram anulados. Se não há schema, não valida (deixa como está)."""
+    if not cols_by_table:
+        return 0
+    lower = {t.lower(): {c.lower() for c in cols} for t, cols in cols_by_table.items()}
+    nulled = 0
+    for comp in (screen.get("components") or []):
+        b = comp.get("bindTo")
+        if not b or "." not in str(b):
+            continue
+        parsed = _parse_bindto(str(b))
+        ok = False
+        if parsed:
+            t, c = parsed
+            ok = t.lower() in lower and c.lower() in lower[t.lower()]
+        if not ok:
+            comp["bindTo"] = None
+            nulled += 1
+    if nulled:
+        print(f"[UI_SPEC] {screen.get('id')}: {nulled} bindTo inválido(s) anulado(s) (fora do schema)")
+    return nulled
 
 _llm_cache: Dict[str, Any] = {}
 
@@ -259,6 +308,8 @@ def execute_ui_spec_workflow(
     import re as _re  # noqa
     ucs = parse_uc_blocks(specification_document)
     tables = parse_schema_tables(schema_sql) if schema_sql else {}
+    cols_by_table = schema_columns(schema_sql) if schema_sql else {}
+    fks = schema_fks(schema_sql) if schema_sql else {}
     nav_items = _derive_nav_items(ucs)
 
     log_lines: List[str] = [f"UCs: {len(ucs)}, tabelas: {len(tables)}"]
@@ -275,6 +326,10 @@ def execute_ui_spec_workflow(
             print(f"[UI_SPEC] [{idx}/{len(ucs)}] {uc.get('id')} falhou")
             continue
 
+        # P2: anula bindTo inventado (fora do schema) — zero vínculo quebrado.
+        _sanitize_screen_binds(screen, cols_by_table)
+        # P3: campos FK viram select (dropdown da entidade referenciada).
+        _mark_fk_selects(screen, fks)
         # Tipo de tela derivado da INTENÇÃO do UC (fonte: comportamento).
         screen["kind"] = derive_screen_kind(uc)
         # CONSISTÊNCIA protótipo↔código: só telas de LISTAGEM de entidade recebem o
@@ -350,10 +405,14 @@ def regenerate_one_screen_from_spec(
     if not screen:
         raise RuntimeError(f"regeneração da tela do {uc_id} não retornou JSON válido")
 
-    # Mesma consistência protótipo↔código do workflow completo: telas de ENTIDADE
-    # não-agênticas recebem o mockup de CRUD convencional determinístico.
+    # P2: anula bindTo inventado (fora do schema). P3: FK vira select.
+    _sanitize_screen_binds(screen, schema_columns(schema_sql) if schema_sql else {})
+    _mark_fk_selects(screen, schema_fks(schema_sql) if schema_sql else {})
+    # Consistência protótipo↔código igual ao workflow: só LISTAGEM de entidade vira
+    # CRUD-tabela determinístico (usa a intenção do UC, não 'agêntico ou não').
+    screen["kind"] = derive_screen_kind(uc)
     _ent = screen.get("entity")
-    if _ent and _ent in tables and not is_agentic_screen(uc):
+    if _ent and _ent in tables and screen["kind"] == "list":
         screen["layout"] = "table"
         screen["mockup_html"] = _crud_mockup_html(
             screen.get("name") or _ent, _ent, tables[_ent])

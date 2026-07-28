@@ -5405,6 +5405,14 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
                 payload_lines.append(f'      {json.dumps(f)}: form[{json.dumps(f)}]')
     payload_body = ",\n".join(payload_lines) if payload_lines else ""
 
+    # P3: campos FK (marcados como select+refEntity no ui_spec) → dropdown carregado da
+    # entidade referenciada (em vez de caixa de ID).
+    fk_by_field = {}
+    for _comp in (screen.get("components") or []):
+        if _comp.get("type") == "select" and _comp.get("refEntity") and _comp.get("field"):
+            fk_by_field[_norm_field(_comp["field"])] = _comp["refEntity"]
+    fk_used = []
+
     # ── JSX dos inputs (Tailwind) ──
     INPUT_CLS = "w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
     LABEL_CLS = "block text-sm font-medium text-slate-700 mb-1.5"
@@ -5414,7 +5422,14 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
         label = c.get("label", f)
         t = c.get("type")
         wide = ' className="md:col-span-2"' if t == "textarea" else ""
-        if t == "textarea":
+        if _norm_field(f) in fk_by_field:
+            ref = fk_by_field[_norm_field(f)]
+            fk_used.append((f, ref))
+            ctrl = (f'<select className="{INPUT_CLS}" value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}}>'
+                    '<option value="">Selecione…</option>'
+                    f'{{(fkOpts[{json.dumps(f)}] || []).map((o) => <option key={{o.id}} value={{o.id}}>{{o.nome || o.name || o.titulo || o.descricao || o.id}}</option>)}}'
+                    '</select>')
+        elif t == "textarea":
             ctrl = f'<textarea className="{INPUT_CLS}" rows={{2}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
         elif t == "multiselect":
             ctrl = f'<input className="{INPUT_CLS}" placeholder="separe por vírgula" value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
@@ -5483,14 +5498,39 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
 
     subtitle = f"{'/'.join(screen.get('uc', []))} · {layout}"
 
+    # P3: se há campos FK, carrega as opções (dropdowns) da entidade referenciada no mount.
+    react_import = ('import React, { useState, useEffect } from "react";\n'
+                    if fk_used else 'import React, { useState } from "react";\n')
+    if fk_used:
+        fk_arr = ", ".join(f'{{ field: {json.dumps(f)}, ref: {json.dumps(ref)} }}' for f, ref in fk_used)
+        fk_block = (
+            '  const [fkOpts, setFkOpts] = useState({});\n'
+            f'  const FK_FIELDS = [{fk_arr}];\n'
+            '  useEffect(() => {\n'
+            '    (async () => {\n'
+            '      const next = {};\n'
+            '      for (const fk of FK_FIELDS) {\n'
+            '        try {\n'
+            '          const r = await runTask("listar_" + fk.ref, {});\n'
+            '          next[fk.field] = Array.isArray(r) ? r : (r && r.rows ? r.rows : []);\n'
+            '        } catch (e) { next[fk.field] = []; }\n'
+            '      }\n'
+            '      setFkOpts(next);\n'
+            '    })();\n'
+            '  }, []);\n'
+        )
+    else:
+        fk_block = ''
+
     return (
-        'import React, { useState } from "react";\n'
+        react_import +
         'import { runTask, splitList } from "./wsClient";\n\n'
         f'export default function {comp_name}() {{\n'
         f'  const [form, setForm] = useState({{ {init_state} }});\n'
         '  const [result, setResult] = useState(null);\n'
         '  const [err, setErr] = useState(null);\n'
         '  const [busy, setBusy] = useState(false);\n'
+        + fk_block +
         '  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));\n\n'
         + action_fn +
         '\n  return (\n'
