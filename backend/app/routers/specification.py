@@ -673,6 +673,13 @@ TAREFA CRÍTICA:
 5. NÃO adicione comentários, análises ou introduções
 6. CONSIDERE o histórico de refinamentos anteriores para manter coerência
 7. ⚠️ NÃO REPRODUZA o documento de requisitos na saída - ele é apenas contexto de referência
+8. 🔴 CONSISTÊNCIA DE INTERAÇÃO (obrigatória): se a solicitação altera a INTERAÇÃO/UI de um caso de uso
+   (adicionar/remover/renomear campo, botão, tela, mensagem, ou mudar um passo do fluxo), você DEVE
+   atualizar JUNTOS, no MESMO UC, o "Fluxo Principal" (ação do ator / resposta do sistema), os fluxos
+   alternativos afetados E o "Wireframe da Interface" — usando os MESMOS nomes de campos/botões/tela nos
+   dois. NUNCA mude o fluxo sem refletir no wireframe (nem o contrário). Ao terminar, o wireframe deve
+   conter exatamente os campos/botões que o fluxo cita, e o nome da tela deve bater entre fluxo e wireframe.
+   Não toque em UCs que a solicitação não mencionou.
 
 IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente com o título "# Especificação Funcional". NÃO inclua o documento de requisitos base no final da resposta.
 """

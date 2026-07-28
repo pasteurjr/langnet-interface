@@ -320,6 +320,11 @@ referencie-a — não a reformule.
 4. A coluna "Resposta do Sistema" DEVE descrever elementos concretos da UI (nome exato da tela, campos listados, texto das mensagens)
 5. Sub-passos opcionais são numerados como 2.1, 2.2, etc.
 6. Cada UC DEVE ter wireframe da(s) tela(s) principal(is)
+6.1. 🔴 CONSISTÊNCIA FLUXO ⟷ WIREFRAME (obrigatória): o wireframe é o rascunho EXATO da tela descrita no fluxo. Portanto:
+   - TODO campo, botão, lista ou mensagem citado no Fluxo Principal e nos Fluxos Alternativos DEVE aparecer no wireframe, com o MESMO nome (ex.: se o fluxo diz Clica em "Aprovar", o wireframe DEVE ter um botão "Aprovar").
+   - O wireframe NÃO deve conter controles que o comportamento do UC não exige (nada de campos/botões que o fluxo nunca menciona).
+   - O nome da tela no "**Tela:**" DEVE ser o mesmo nome de tela citado na coluna "Resposta do Sistema" do fluxo.
+   - Antes de fechar cada UC, revise: cada passo do fluxo tem seu elemento no wireframe? cada elemento do wireframe é usado por algum passo? Se não, corrija um dos dois até casarem.
 7. O documento pode ser LONGO — isso é ESPERADO e OBRIGATÓRIO. Não comprima.
 8. 🔴 RASTREABILIDADE OBRIGATÓRIA: nos campos "RFs Relacionados" e "RNs Aplicáveis" de cada UC, use SOMENTE os IDs EXATOS do Documento de Requisitos (ex.: se o requirements tem "FR-001", use "FR-001" — NUNCA renomeie para "RF-001" ou similar). Se o UC não implementa nenhum FR do requirements literal, escreva "Nenhum" — jamais invente IDs novos.
 9. 🔴 CADA UC deve rastrear a PELO MENOS 1 requisito real do Documento de Requisitos. Se você não encontrar um requisito compatível no requirements, ESSE UC NÃO DEVE EXISTIR — reescreva a lista de UCs a partir dos requisitos existentes.
