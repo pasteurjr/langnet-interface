@@ -1,0 +1,13 @@
+DEPOIS (strip): EmbeddingTool mock removido; tools_std real:
+
+EmbeddingTool no tools.py? NÃO — removido ✓
+merge STD_TOOLS anexado? SIM ✓
+
+tools_std.py (real):
+def _run(self, data: Dict[str, Any], output_path: str = "relatorio.pdf") -> Dict[str, Any]:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        c = canvas.Canvas(output_path, pagesize=A4)
+        w, h = A4
+        y = h - 40
+        

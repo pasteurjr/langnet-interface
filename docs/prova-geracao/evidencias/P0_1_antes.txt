@@ -1,0 +1,1 @@
+ANTES: a tela chamava runTask('aprovar_todos_itens') — task inexistente → erro ao clicar.

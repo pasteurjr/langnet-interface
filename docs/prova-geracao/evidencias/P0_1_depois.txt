@@ -1,0 +1,6 @@
+DEPOIS: alvo fantasma não resolve → TASK null, botão desabilitado:
+
+const TASK = null;
+...
+<button className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60 inline-flex items-center gap-2" disabled={busy || !TASK} onClick={executar}>
+<span className="text-xs text-slate-400">{TASK ? <>Dispara o agente <code>{TASK}</code></> : "Tarefa não definida para esta tela"}</span>

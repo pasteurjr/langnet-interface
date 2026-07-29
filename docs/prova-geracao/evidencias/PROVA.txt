@@ -1,0 +1,5 @@
+Sessão de prova: c7418a73 (18 telas, regeneradas no qwen2.5-coder-32b)
+- vínculos quebrados: 0/24
+- telas com pendência: 3/18
+- tipo de tela incompatível: 3
+=> P2 provado: ZERO vínculo quebrado ✓

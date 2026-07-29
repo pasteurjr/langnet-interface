@@ -1,0 +1,9 @@
+ANTES (mock no tools.py gerado):
+
+class EmbeddingToolSchema(BaseModel):
+    text: str = Field(..., description="Texto para gerar embedding")
+
+class EmbeddingTool(BaseTool):
+    name: str = "EmbeddingTool"
+    description: str = "Gera embeddings vetoriais para um texto usando modelo de linguagem."
+    args_schema:

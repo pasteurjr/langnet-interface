@@ -1,0 +1,7 @@
+Campo FK 'pilar_conteudo_id' gerado como <select> (carrega opções via runTask):
+
+const [fkOpts, setFkOpts] = useState({});
+const FK_FIELDS = [{ field: "pilar_conteudo_id", ref: "pilares_conteudo" }];
+for (const fk of FK_FIELDS) {
+const r = await runTask("listar_" + fk.ref, {});
+<select className="w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" value={form["pilar_conteudo_id"]} onChange={(e) => set("pilar_conteudo_id", e.target.value)}><option value="">Selecione…</option>{(fkOpts["pilar_conteudo_id"] || []).map((o) => <option key={o.id} value={o.id}>{o.nome || o.name || o.titulo || o.descricao || o.id}</option>)}</select>

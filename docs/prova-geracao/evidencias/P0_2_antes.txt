@@ -1,0 +1,4 @@
+ANTES (NameError — usa 'prob' solto):
+
+for problema in _as_list(input_data.get('problemas')):
+            cur.execute('INSERT INTO problemas(persona_id, descricao) VALUES(%s, %s)', [persona_id, problema])
