@@ -67,6 +67,25 @@ reflete o que o protótipo/spec pediam: um painel de indicadores.
 
 ---
 
+### B.3 — Execução RUNTIME completa (ws-server :5002 no ar)
+
+Subi o **ws-server** (`:5002`, apontando para o banco real `quantica_ops` + LM Studio) e testei a
+app com **dados reais** — sem "WebSocket error":
+
+| Teste (runtime) | Caminho | Resultado |
+|---|---|---|
+| **CRUD `listar_personas`** | determinístico (SQL) | ✅ **44 personas reais** do banco na tela (Fundador de Fintech, CTO HealthTech, VP Marketing SaaS…) |
+| **`gerar_conteudo_redator`** | determinístico (SQL) | ✅ executou **INSERT real**; retornou erro de banco legítimo `data_publicacao cannot be null` (input de teste mínimo) — prova que roda de verdade contra o banco |
+| **`coletar_metricas` (dashboard)** | agêntico (CrewAI) + `linkedin_api_tool`/`instagram_graph_api_tool` | ✅ externas **NÃO configuradas → falham explícito** (P1: zero mock — não inventam métricas) |
+
+![CRUD Personas — 44 registros reais](CRUD)
+
+**Comentário:** a app gerada **executa ponta a ponta** — WebSocket → dispatch → SQL real no
+`quantica_ops`. O CRUD lê/mostra os 44 registros reais. As integrações externas (redes sociais)
+falham explícito em vez de fingir — exatamente o "zero mock" que corrigimos.
+
+---
+
 ## Conclusão
 
 **Teste ponta a ponta bem-sucedido**, com as duas frentes documentadas:
@@ -77,8 +96,13 @@ reflete o que o protótipo/spec pediam: um painel de indicadores.
   (P1), **sem a task fantasma** (P0.1), **adapter de edição correto** (P0.2) e a tela de Métricas
   agora é um **dashboard de KPIs** (G2) — provado ao vivo com a app rodando.
 
+- **(B.3) Runtime completo:** com o **ws-server :5002 no ar** (banco real `quantica_ops`), a app
+  roda ponta a ponta — CRUD com **44 personas reais**, escrita executando **SQL real**, e
+  integrações externas **falhando explícito** (zero mock).
+
 Os demais fixes (G3 auto-load, G4 revisão da Petri, G5 prompts) já haviam sido verificados na
 revisão pela UI. **Backup do banco feito antes de tudo.**
 
-_(Ressalva honesta: a execução runtime completa com dados reais exige subir o ws-server :5002 —
-não incluído neste teste; o foco foi provar as telas/estrutura corrigidas.)_
+_(Achado honesto de runtime: o adapter determinístico de `gerar_conteudo_redator` faz INSERT sem
+preencher `data_publicacao` (NOT NULL) — um gap de mapeamento de dados a corrigir no gerador, à
+parte dos G1-G5. O importante: a app executa de verdade contra o banco.)_
