@@ -572,8 +572,8 @@ Tabela relacionando requisitos originais com elementos desta especificação:
 O documento DEVE conter EXATAMENTE estas 14 seções numeradas:
 1. Introdução (1.1-1.4)
 2. Visão Geral do Sistema (2.1-2.5)
-3. Requisitos Funcionais Detalhados
-4. Requisitos Não-Funcionais (4.1-4.5)
+3. Requisitos Cobertos por Esta Especificação (3.1 Funcionais Cobertos, 3.2 Não-Funcionais Cobertos — apenas ENUMERAR os IDs, sem redetalhar)
+4. Detalhamentos Técnicos de RNFs (complementares ao requirements)
 5. Casos de Uso (MÍNIMO 10 UCs detalhados)
 6. Modelo de Dados Conceitual
 7. Interfaces do Sistema

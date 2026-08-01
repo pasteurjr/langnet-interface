@@ -276,8 +276,11 @@ REGRAS:
    "select" e no mockup_html renderize um <select> (dropdown) com opções de exemplo da
    entidade referenciada — NUNCA uma caixa de texto de ID crua.
 2. `actions`: o botão principal de salvar/criar deve ter kind "task" e target no
-   formato verbo_objeto snake_case (ex.: cadastrar_persona_alvo), casando com o
-   nome provável da task do pipeline. Botões de cancelar/voltar usam kind "navigate".
+   formato verbo_objeto snake_case DERIVADO DO CASO DE USO (verbo do UC + entidade —
+   ex.: UC "Cadastrar Persona-Alvo" → target "cadastrar_persona_alvo"). Esse target é uma
+   DICA que será reconciliada com a task real na geração de código; por isso, mantenha o
+   padrão verbo_objeto consistente com o NOME do UC (não invente verbos alheios ao UC).
+   Botões de cancelar/voltar usam kind "navigate".
 3. `mockup_html`: HTML COMPLETO e AUTOCONTIDO usando **Tailwind CSS via CDN**,
    com aparência de PRODUTO SaaS moderno e profissional — não um formulário cru.
    Comece SEMPRE com:

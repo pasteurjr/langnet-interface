@@ -410,6 +410,10 @@ TAREFA CRÍTICA:
 4. COPIE todo conteúdo original + aplique as mudanças solicitadas
 5. Retorne o documento COMPLETO, sem truncamento
 6. CONSIDERE o histórico de refinamentos anteriores para manter coerência
+7. 🔴 PRESERVE OS IDs E A PROVENIÊNCIA: mantenha TODOS os IDs de requisitos existentes
+   (FR-XXX, NFR-XXX, BR-XXX) exatamente como estão — NÃO renumere. Mantenha os indicadores
+   de origem de cada requisito (ex.: 🔴 RED / REI / RI / RW / RIA) que já existem. Só os
+   requisitos DIRETAMENTE afetados pelo pedido podem mudar; todos os demais ficam idênticos.
 
 IMPORTANTE: Retorne SOMENTE o documento em markdown. Sem introduções, sem comentários.
 """

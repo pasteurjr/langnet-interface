@@ -659,8 +659,8 @@ async def execute_specification_refinement(
         refinement_prompt = f"""ESPECIFICAÇÃO FUNCIONAL ATUAL:
 {current_specification}
 
-DOCUMENTO DE REQUISITOS BASE (REFERÊNCIA):
-{original_requirements[:15000] if original_requirements else "Não disponível"}
+DOCUMENTO DE REQUISITOS BASE (REFERÊNCIA — não reproduzir na saída):
+{(original_requirements[:45000] + ('\n\n[...requisitos truncados por tamanho...]' if len(original_requirements) > 45000 else '')) if original_requirements else "Não disponível"}
 
 {refinement_history}NOVA SOLICITAÇÃO DO USUÁRIO:
 {refinement_instructions}
@@ -867,8 +867,8 @@ async def execute_specification_chat(
         chat_prompt = f"""ESPECIFICAÇÃO FUNCIONAL (PARA ANÁLISE):
 {current_specification}
 
-DOCUMENTO DE REQUISITOS BASE (REFERÊNCIA):
-{original_requirements[:15000] if original_requirements else "Não disponível"}
+DOCUMENTO DE REQUISITOS BASE (REFERÊNCIA — não reproduzir na saída):
+{(original_requirements[:45000] + ('\n\n[...requisitos truncados por tamanho...]' if len(original_requirements) > 45000 else '')) if original_requirements else "Não disponível"}
 
 SOLICITAÇÃO DO USUÁRIO:
 {chat_message}

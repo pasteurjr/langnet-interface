@@ -84,6 +84,12 @@ Regras:
 4. Documente relacionamentos: 1:1, 1:N, N:M com nome da relação.
 5. Não invente entidades que não estão na spec.
 6. Se a spec mencionar tabela específica, use esse nome.
+7. 🔴 CONSISTÊNCIA DE NOMES (crítico p/ as etapas seguintes): use EXATAMENTE os nomes de
+   entidades e de campos que aparecem na spec — na seção de Modelo de Dados (§6) E nos
+   CAMPOS DOS WIREFRAMES dos casos de uso (ex.: se um wireframe tem o campo "Segmento",
+   a coluna deve ser "segmento"). NÃO renomeie, traduza nem pluralize de forma diferente
+   da spec. As telas do protótipo ligam seus campos a estas colunas pelo nome — nomes
+   divergentes quebram esse vínculo. Prefira os nomes já usados na spec ao inventar sinônimos.
 
 ESPECIFICAÇÃO:
 ------
@@ -412,6 +418,11 @@ def refine_data_model(
 (em YAML) e quer aplicar a modificação abaixo. Retorne o YAML COMPLETO atualizado,
 sem explicações.
 
+🔴 PRESERVAÇÃO OBRIGATÓRIA: aplique SOMENTE a mudança pedida. TODAS as tabelas, colunas,
+tipos, chaves e relacionamentos que o pedido NÃO menciona devem permanecer IDÊNTICOS (mesmos
+nomes, mesma ordem). NÃO remova, renomeie nem "otimize" nada que não foi pedido. O resultado
+deve ser o modelo atual + a alteração — nunca uma reescrita que perca tabelas/colunas.
+
 DATA MODEL ATUAL:
 ```yaml
 {current_yaml}
@@ -420,7 +431,7 @@ DATA MODEL ATUAL:
 PEDIDO DO USUÁRIO:
 {user_message}
 
-Retorne SOMENTE o YAML final."""
+Retorne SOMENTE o YAML final (completo, com tudo que já existia + a mudança)."""
     raw = _call_llm(prompt)
     new_yaml = _strip_code_fence(raw)
 

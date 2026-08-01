@@ -490,7 +490,13 @@ REGRAS:
    ```
 2. Não retorne arquivos inalterados.
 3. Mantenha imports, indentação e PEP 8.
-4. Não escape backslashes do código."""
+4. Não escape backslashes do código.
+5. 🔴 CONSISTÊNCIA OBRIGATÓRIA: se mexer em tools.py, o TOOL_REGISTRY deve continuar mapeando
+   TODAS as tools usadas pelos agentes. Se mexer em adapters.py, mantenha as funções
+   <task>_input_func / <task>_output_func (e <task>_deterministic quando existir) para TODAS
+   as tasks — não remova cobertura. NÃO introduza mocks/simulações: tools que dependem de
+   serviço externo devem falhar explícito, não fingir sucesso. O projeto deve continuar
+   executável após o refino."""
 
     llm_text = await get_llm_response_async(prompt=prompt, max_tokens=8000)
 
