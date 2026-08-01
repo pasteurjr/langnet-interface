@@ -67,6 +67,35 @@ const AgentTaskPage: React.FC = () => {
   const [isReviewing, setIsReviewing] = useState(false);
   const [isApplyingSuggestions, setIsApplyingSuggestions] = useState(false);
 
+  // Auto-carrega a última sessão do projeto ao abrir (padrão das etapas iniciais).
+  // Antes, esta etapa exigia "Selecionar Especificação" mesmo já existindo sessão.
+  useEffect(() => {
+    const effPid = projectId || localStorage.getItem('currentProjectId') || '';
+    if (!effPid || currentSessionId) return;
+    (async () => {
+      try {
+        const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+        const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+        const hdr = { 'Authorization': token ? `Bearer ${token}` : '', 'Content-Type': 'application/json' };
+        const r = await fetch(`${API_BASE_URL}/agent-task-spec/sessions?project_id=${effPid}`, { headers: hdr });
+        if (!r.ok) return;
+        const d = await r.json();
+        const sessions = Array.isArray(d) ? d : (d.sessions || []);
+        if (!sessions.length) return;
+        const latest = sessions[0];
+        const sid = latest.session_id || latest.id;
+        const sr = await fetch(`${API_BASE_URL}/agent-task-spec/${sid}`, { headers: hdr });
+        if (!sr.ok) return;
+        const s = await sr.json();
+        setCurrentSessionId(s.session_id || sid);
+        setGeneratedDocument(s.agent_task_spec_document || '');
+        setTotalAgents(s.total_agents || 0);
+        setTotalTasks(s.total_tasks || 0);
+      } catch { /* silencioso — usuário ainda pode selecionar manualmente */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
   // useEffect para detectar diffs automaticamente (padrão SpecificationPage)
   useEffect(() => {
     if (chatMessages.length === 0) return;
