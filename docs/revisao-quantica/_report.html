@@ -1,0 +1,299 @@
+<!doctype html><html lang='pt-br'><head><meta charset='utf-8'><style>
+body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#1e293b;max-width:1000px;margin:0 auto;padding:28px;font-size:13px;line-height:1.5}
+h1{color:#4338ca;border-bottom:3px solid #4338ca;padding-bottom:8px;font-size:24px}
+h2{color:#312e81;border-bottom:1px solid #cbd5e1;padding-bottom:5px;margin-top:26px;font-size:18px}
+h3{color:#3730a3;font-size:15px}
+table{border-collapse:collapse;width:100%;margin:10px 0;font-size:12px}
+th,td{border:1px solid #cbd5e1;padding:6px 9px;text-align:left;vertical-align:top}
+th{background:#eef2ff;color:#312e81}
+code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:11.5px;color:#7c3aed}
+blockquote{background:#f8fafc;border-left:4px solid #818cf8;margin:10px 0;padding:8px 14px;color:#475569}
+.gallery{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:16px 0}
+figure{margin:0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden}
+figure img{width:100%;display:block}
+figcaption{font-size:11px;color:#64748b;padding:5px 8px;background:#f8fafc}
+</style></head><body><h1 id="revisao-profunda-quantica-comercial-avaliacao-do-langnet">Revisão Profunda — Quântica Comercial + Avaliação do LangNet</h1>
+<p><strong>Data:</strong> 2026-07-28 · <strong>Revisor:</strong> Claude (agindo como o usuário, pela interface + backend)
+<strong>Projeto avaliado:</strong> Quântica Comercial (<code>b55ef718-0073-44d4-b279-11df89403e92</code>)
+<strong>Modelo que corrige/refina (no ar):</strong> qwen2.5-coder-32b-instruct (LM Studio 192.168.1.115:1234)</p>
+<blockquote>
+<p>Escopo: revisar cada etapa do pipeline (Especificação → Modelo de Dados → Protótipo de
+Interface → Agentes/Tarefas → Sequência/Petri → Código final), analisar os artefatos até o
+código, submeter melhorias ao modelo gerando novas versões, com foco em <strong>interface</strong> e
+<strong>agentes</strong>. Entregável: avaliação da Quântica + avaliação do LangNet + ajustes necessários,
+<strong>antes de testar MCP</strong>.</p>
+</blockquote>
+<h2 id="ambiente">Ambiente</h2>
+<p>Frontend :3000 ✓ · Backend :8000 ✓ · App gerado :3001 ✓ · ws-server :5002 (fora) · LM Studio ✓
+(qwen2.5-coder-32b). Entrei na UI como o dono do projeto (token do usuário <code>teste@teste.com</code>).</p>
+<h2 id="mapa-das-etapas-estado-no-inicio">Mapa das etapas (estado no início)</h2>
+<table>
+<thead>
+<tr>
+<th>Etapa</th>
+<th>Sessão</th>
+<th>Estado</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Especificação Funcional</td>
+<td><code>fbc45992</code></td>
+<td>73.263 chars · completed</td>
+</tr>
+<tr>
+<td>Modelo de Dados</td>
+<td><code>6f7183e6</code></td>
+<td>v2 (após fix de coerência) · completed</td>
+</tr>
+<tr>
+<td>UI Spec / Protótipo</td>
+<td><code>68607a1b</code></td>
+<td>18 telas · draft</td>
+</tr>
+<tr>
+<td>Sequência de Tarefas</td>
+<td><code>3a7b5a9b</code></td>
+<td>—</td>
+</tr>
+<tr>
+<td>Código gerado</td>
+<td><code>2630fd53</code></td>
+<td>74 arquivos · ws :5002</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="1-interface-prototipo-o-achado-central">1. INTERFACE / PROTÓTIPO — o achado central</h2>
+<p><strong>Percepção do usuário:</strong> "a interface está muito fraca, só tem CRUD."
+<strong>Veredito honesto (revisei as 18 telas do protótipo + os 35 componentes do código gerado):</strong>
+❌ <strong>NÃO é só CRUD.</strong> O gerador produz <strong>4 tipos de tela</strong> conforme a intenção do caso de uso:</p>
+<table>
+<thead>
+<tr>
+<th>Tipo</th>
+<th>Exemplo (Quântica)</th>
+<th>Qualidade</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Form (criar/editar)</strong></td>
+<td><em>Nova Persona</em> — campos + chips (Canais, Palavras-chave) + Salvar/Cancelar</td>
+<td>Boa</td>
+</tr>
+<tr>
+<td><strong>Ação agêntica</strong></td>
+<td><em>Gerar Conteúdo</em> — dropdowns, Headlines (chips), Texto gerado, Gerar Novamente + área de resultado</td>
+<td>Boa</td>
+</tr>
+<tr>
+<td><strong>Dashboard</strong></td>
+<td><em>Coleta de Métricas</em> — cards de KPI (Impressões 12.480…) com deltas ▲8%</td>
+<td>Boa</td>
+</tr>
+<tr>
+<td><strong>Grid editável</strong></td>
+<td><em>Editar Calendário</em> — tabela com date-picker, dropdown, chips, Salvar/Desfazer</td>
+<td>Boa</td>
+</tr>
+</tbody>
+</table>
+<p>No <strong>código gerado</strong> (35 telas React): 20 CRUD, 12 agent, 2 report, 1 form. As telas CRUD são
+<strong>CRUD completo</strong> (lista + busca + "N de M", ＋Novo, Ver/Editar/Excluir <strong>com confirmação Sim/Não</strong>,
+detalhe, formulário tipado), ligadas ao backend real por <code>runTask()</code> → SQL. As telas agent têm
+"▷ Executar com IA" + painel de resultado; as report têm export CSV.</p>
+<h3 id="fraquezas-reais-da-interface-e-isto-que-faz-parecer-fraca">Fraquezas REAIS da interface (é isto que faz parecer "fraca")</h3>
+<ol>
+<li>🔴 <strong>Nome do produto genérico</strong> — sidebar "Nome do Produto"/"MeuProduto", nunca "Quântica". <strong>[CORRIGIDO nesta revisão]</strong></li>
+<li>🔴 <strong>Navegação lateral inconsistente</strong> — cada tela inventava seu próprio menu. <strong>[CORRIGIDO nesta revisão]</strong></li>
+<li>🔴 <strong>Dados 100% placeholder</strong> — "Persona X", "Pilar Y", "Lorem ipsum". Sem preview com dados reais do banco.</li>
+<li>🔴 <strong>16/39 vínculos de dados quebrados</strong> — telas referenciam tabelas/colunas inexistentes (ver §2).</li>
+<li>🟡 <strong>UI genérica para um domínio rico</strong> — sem gráficos, sem seletores relacionais (FK vira caixa de texto de ID), sem calendário/kanban apesar do domínio (calendário editorial, métricas, funil de leads). Toda tela CRUD é o mesmo template.</li>
+<li>🟡 Erros de língua ("Novo Persona" → "Nova Persona").</li>
+</ol>
+<p><strong>Conclusão:</strong> o problema não é "só CRUD" — é <strong>branding, navegação unificada, dados reais,
+coerência com o banco e riqueza semântica</strong> (gráficos/seletores). São ajustes de <strong>geração</strong>, não
+limitação de fundo. <em>(evidência: docs/revisao-quantica/mockups/*.png — 18 telas)</em></p>
+<hr />
+<h2 id="2-modelo-de-dados-coerencia-com-as-telas">2. MODELO DE DADOS — coerência com as telas</h2>
+<p>Rodei o validador de coerência (UC ⟷ Mockup ⟷ Modelo de Dados) sobre a Quântica:</p>
+<ul>
+<li>🔴 <strong>16 de 39 vínculos <code>bindTo</code> do protótipo apontam para tabelas/colunas inexistentes.</strong> O LLM
+  do protótipo <strong>inventou</strong> entidades: <code>afirmacoes_conteudo</code>, <code>agendamento_publicacoes</code>, <code>usuarios</code>,
+  <code>calendario_mensal</code>, <code>itens_calendario</code> (tabelas inexistentes) e <code>pilares_conteudo.nome</code> (coluna).</li>
+<li>Causa: nada validava o mockup contra o schema real; e a regra de tipo de tela "entidade no
+  schema ⇒ tabela" era cega (2 telas — editar/aprovar calendário — foram rotuladas <code>table</code>).</li>
+<li><strong>Ações desta revisão:</strong> apliquei a reconciliação para <code>pilares_conteudo.nome</code> → <strong>Modelo de
+  Dados v2</strong> (schema + entities atualizados). Os demais 14 são decisão caso-a-caso: alguns são
+  <strong>alucinação</strong> (ex.: <code>usuarios</code> deve religar para a tabela real de usuários), outros são
+  <strong>lacuna real</strong> a adicionar. O painel de Coerência agora oferece as duas opções por item.</li>
+</ul>
+<p>Fora isso, o schema em si (19 tabelas) está coerente/normalizado; o problema é o <strong>protótipo
+divergir do schema</strong>, não o schema estar errado.</p>
+<hr />
+<h2 id="3-especificacao-funcional-qualidade">3. ESPECIFICAÇÃO FUNCIONAL — qualidade</h2>
+<p>Estrutura muito rica por UC: cabeçalho, Fluxo Principal (ator↔sistema), fluxos alternativos, de
+exceção, auth, LGPD, auditoria, riscos, <strong>wireframe</strong>. Rastreabilidade a FR-XXX obrigatória.</p>
+<ul>
+<li><strong>Alinhamento fluxo ⟷ wireframe:</strong> bom na prática (13/14 ações citadas no fluxo apareciam no
+  wireframe), mas <strong>não era imposto</strong> pelos prompts — era emergente.</li>
+<li><strong>Ações desta revisão (LangNet):</strong> adicionei regra de <strong>consistência fluxo⟷wireframe</strong> na geração
+  e tornei o <strong>refino ciente de interação</strong> (ao mudar UI de um UC, atualiza fluxo + wireframe
+  juntos, mesmos nomes). Validado ao vivo.</li>
+</ul>
+<p>Veredito: etapa <strong>sólida</strong>. É a referência de qualidade do pipeline.</p>
+<hr />
+<h2 id="4-agentes-e-tarefas-como-funcionam-de-verdade">4. AGENTES E TAREFAS — como funcionam (de verdade)</h2>
+<p><strong>Modelo de execução (um único dispatcher WebSocket, <code>ws-server/websocket_server.py</code>):</strong> o frontend
+nunca fala com CrewAI direto — toda ação é <code>runTask(nome, input)</code> por <code>ws://…:5002</code>.</p>
+<ul>
+<li><strong>Determinístico-primeiro, CrewAI como fallback:</strong> se <code>adapters.py</code> define <code>&lt;task&gt;_deterministic</code>,
+  roda <strong>Python puro com SQL no MySQL, sem LLM</strong> (todo CRUD + 4 tarefas de escrita). Senão, monta um
+  <strong>Agent + Task + Crew do CrewAI</strong> e chama <code>crew.kickoff()</code>.</li>
+<li><strong>15 agentes CrewAI reais</strong> (role/goal/backstory/tools) e <strong>16 tarefas</strong> 1:1 com agentes
+  (<code>agents.yaml</code>/<code>tasks.yaml</code>). Tools por nome via <code>TOOL_REGISTRY</code> + <code>mcp_tools.MCP_TOOLS</code>.</li>
+<li><strong>Escolha de LLM:</strong> <code>PRO_LLM</code> se o agente tem tools, <code>FLASH_LLM</code> se é texto puro. 3 provedores
+  (<code>LLM_PROVIDER</code>: deepseek/lmstudio/openai).</li>
+<li><strong>Duas caras:</strong> Cara A = telas de negócio chamando <code>runTask</code>; Cara B = executor de Rede de Petri
+  (<code>MainExecutor.jsx</code> + <code>petri-engine/*</code>) rodando <code>petri_net.json</code>, disparando as MESMAS tarefas.</li>
+</ul>
+<p><strong>Nuance importante:</strong> na prática, os agentes são <strong>pouco acionados</strong> — os 4 "gêmeos determinísticos"
+fazem o fluxo principal de dados sem LLM; só tarefas sem gêmeo (verificar fatos, classificar
+comentários, identificar leads, gerar relatórios) realmente chamam <code>crew.kickoff()</code>. Para essas, monta
+um Crew de <strong>um agente só</strong> por chamada, com <code>allow_delegation=True</code> mas <strong>sem pares para delegar</strong>.</p>
+<hr />
+<h2 id="5-sequencia-de-tarefas-rede-de-petri">5. SEQUÊNCIA DE TAREFAS / REDE DE PETRI</h2>
+<p>A Rede de Petri é a Cara B (executor administrativo). A Sequência de Tarefas (<code>3a7b5a9b</code>) alimenta a
+Petri. Ambas disparam as mesmas 16 tarefas do dispatcher. (Fora do foco desta revisão; sem bloqueios
+novos além dos herdados de agents/tasks.)</p>
+<hr />
+<h2 id="6-codigo-final-gerado-74-arquivos-sessao-2630fd53">6. CÓDIGO FINAL GERADO — 74 arquivos (sessão <code>2630fd53</code>)</h2>
+<p>Layout: <code>ws-server/</code> (CrewAI + WS), <code>frontend/</code> (React, 35 telas), <code>backend/</code> (FastAPI fino),
+<code>db/schema.sql</code>, <code>docker-compose.yml</code>. <strong>O app, como gerado, NÃO sobe limpo:</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Severidade</th>
+<th>Problema</th>
+<th>Correção</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>🔴 CRÍTICO</td>
+<td><strong>Tarefa fantasma <code>aprovar_todos_itens</code></strong> — <code>AprovarCalendarioMensal.jsx</code> chama uma task que não existe em <code>tasks.yaml</code> nem como determinística → erro em runtime. Causa: <code>_agent_screen</code> mantém o <code>target</code> inventado pela UI-spec quando <code>_resolve_task_target</code> pontua &lt;2.</td>
+<td>Validar todo <code>target</code> de tela contra <code>tasks.yaml ∪ determinísticas</code> na geração; se não existir, tela desabilitada + aviso.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>🔴 CRÍTICO</td>
+<td><strong><code>editar_persona_alvo_deterministic</code> usa variáveis indefinidas</strong> (<code>prob</code>/<code>obj</code>/<code>palavra</code> em loops que ligam <code>problema</code>/<code>objecao</code>/<code>palavra_chave</code>) → <code>NameError</code>, edição faz rollback e retorna erro.</td>
+<td>Corrigir os nomes das variáveis no template do adapter de edição.</td>
+</tr>
+<tr>
+<td>3</td>
+<td>🟠 ALTO</td>
+<td><strong>4 tools referenciadas mas ausentes</strong> do registry (<code>cms_api_tool</code>, <code>google_calendar_api_tool</code>, <code>instagram_graph_api_tool</code>, <code>linkedin_api_tool</code>) — <code>_resolve_tools</code> descarta em silêncio → publisher/metrics/calendar rodam <strong>sem</strong> suas integrações.</td>
+<td>Emitir wrapper (stub ou real) para toda tool referenciada; falhar geração se nome não resolver.</td>
+</tr>
+<tr>
+<td>4</td>
+<td>🟠 ALTO</td>
+<td><strong>Tools "reais" são mocks</strong> — <code>EmbeddingTool</code> retorna <code>[0.1]*384</code>, <code>VectorSearchTool</code> id fixo, <code>Pdf/Csv/Email</code> retornam string e não fazem nada. Fact-check, classificação, lead-scoring, e-mail são <strong>não-funcionais</strong>.</td>
+<td>Implementar de verdade (sentence-transformers/pgvector, reportlab, smtplib) ou marcar tela "simulado".</td>
+</tr>
+<tr>
+<td>5</td>
+<td>🟡 MÉDIO</td>
+<td>Agentes majoritariamente bypassados (gêmeos determinísticos) — backstories viram peso morto; tarefas agênticas montam Crew de 1 agente sem delegação real.</td>
+<td>Decidir por tarefa: determinística OU agêntica; podar a metade não usada; montar crew multi-agente onde fizer sentido.</td>
+</tr>
+<tr>
+<td>6</td>
+<td>🟡 MÉDIO</td>
+<td>Sem auth/multi-tenant/pool — cada função abre conexão MySQL nova; papéis (CEO/Operador/Convidado) existem como tabela mas <strong>não são aplicados</strong>.</td>
+<td>Pool compartilhado, token no handshake do WS, aplicar papéis no servidor.</td>
+</tr>
+<tr>
+<td>7</td>
+<td>🔵 BAIXO</td>
+<td>UI genérica p/ domínio rico; FK como caixa de texto.</td>
+<td>Gerar selects relacionais das FKs + ao menos 1 dashboard de métricas.</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Bottom line:</strong> o modelo de runtime é <strong>coerente e engenhoso</strong> (1 dispatcher WS, determinístico-
+primeiro com fallback CrewAI, YAML-driven, Petri como face admin). O frontend é <strong>CRUD completo +
+telas agent/report</strong> — não "só CRUD" — porém <strong>genérico e raso</strong>. Mas há <strong>2 crashes garantidos</strong>,
+4 tools faltando e 5 integrações stub: a parte "IA" e de ações externas é <strong>cosmética até corrigir</strong>.</p>
+<hr />
+<h2 id="7-avaliacao-do-langnet-nossa-aplicacao-ajustes-necessarios">7. AVALIAÇÃO DO LANGNET (nossa aplicação) + AJUSTES NECESSÁRIOS</h2>
+<p>O pipeline do LangNet está <strong>funcional e coerente ponta a ponta</strong>, mas a revisão expôs ajustes
+priorizados no <strong>gerador</strong> (é lá que se conserta, não nos artefatos da Quântica):</p>
+<h3 id="prioridade-1-o-app-gerado-nao-sobe-limpo-bloqueadores">Prioridade 1 — o app gerado não sobe limpo (bloqueadores)</h3>
+<ul>
+<li><strong>A1.</strong> Validar <code>target</code> de cada tela contra as tarefas reais na geração (mata a task fantasma). <em>[gerador]</em></li>
+<li><strong>A2.</strong> Corrigir o template do adapter de edição (variáveis de loop) — mata o <code>NameError</code>. <em>[gerador]</em></li>
+<li><strong>A3.</strong> Emitir wrapper para toda tool referenciada e <strong>falhar a geração</strong> se alguma não resolver. <em>[gerador]</em></li>
+</ul>
+<h3 id="prioridade-2-coerencia-prototipo-dados-fraqueza-de-interface">Prioridade 2 — coerência protótipo ⟷ dados (fraqueza de interface)</h3>
+<ul>
+<li><strong>A4.</strong> ✅ FEITO: validador de coerência + reconciliação propor-e-aprovar (add ao DM / religar).</li>
+<li><strong>A5.</strong> Aplicar a reconciliação nos 14 binds restantes da Quântica (religar alucinações, adicionar lacunas reais).</li>
+<li><strong>A6.</strong> Fazer o mockup <strong>não inventar</strong> entidade/coluna: dar ao LLM só o schema real e proibir campos fora dele.</li>
+</ul>
+<h3 id="prioridade-3-riqueza-e-polimento-da-interface-a-queixa-do-usuario">Prioridade 3 — riqueza e polimento da interface (a queixa do usuário)</h3>
+<ul>
+<li><strong>A7.</strong> ✅ FEITO: branding com nome do projeto + navegação unificada.</li>
+<li><strong>A8.</strong> Gerar <strong>selects relacionais</strong> a partir das FKs (em vez de caixa de ID) e ao menos 1 <strong>dashboard com gráfico</strong>.</li>
+<li><strong>A9.</strong> Preencher telas com <strong>amostra de dados reais</strong> do banco (preview), não "Persona X".</li>
+</ul>
+<h3 id="prioridade-4-agentes-de-verdade">Prioridade 4 — agentes de verdade</h3>
+<ul>
+<li><strong>A10.</strong> Implementar as tools mock (embedding/vector/pdf/email) ou marcar "simulado" na tela.</li>
+<li><strong>A11.</strong> Decidir determinístico-vs-agêntico por tarefa e montar crew multi-agente onde há colaboração.</li>
+</ul>
+<h3 id="ja-entregue-nesta-revisao-melhorias-no-langnet">Já entregue nesta revisão (melhorias no LangNet)</h3>
+<ul>
+<li>Consistência <strong>fluxo⟷wireframe</strong> na Especificação (geração + refino).</li>
+<li><strong>Branding + navegação unificada</strong> no protótipo.</li>
+<li><strong>Validador de coerência + reconciliação</strong> (proposto/aprovado) UC⟷Mockup⟷DM.</li>
+<li><strong>Amarração Spec⟷Protótipo</strong> (editar interação no spec propaga para a tela).</li>
+</ul>
+<hr />
+<h2 id="8-acoes-executadas-nesta-revisao-novas-versoes-commits">8. AÇÕES EXECUTADAS NESTA REVISÃO (novas versões / commits)</h2>
+<table>
+<thead>
+<tr>
+<th>Ação</th>
+<th>Resultado</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Extração das 18 telas do protótipo (PNG)</td>
+<td><code>docs/revisao-quantica/mockups/</code></td>
+</tr>
+<tr>
+<td>Análise profunda de código+agentes (74 arquivos)</td>
+<td>§4 e §6</td>
+</tr>
+<tr>
+<td>Reconciliação de coerência <code>pilares_conteudo.nome</code></td>
+<td>Modelo de Dados <strong>v2</strong></td>
+</tr>
+<tr>
+<td>Branding + nav unificada (gerador) + regeneração</td>
+<td>tela regenerada com "Quântica Comercial"; <strong>regeneração completa das 18 telas em andamento (nova versão branded)</strong></td>
+</tr>
+<tr>
+<td>Consistência fluxo⟷wireframe (Especificação)</td>
+<td>commit no gerador</td>
+</tr>
+</tbody>
+</table>
+<p><em>Screenshots usados: <code>docs/revisao-quantica/mockups/</code> (18 telas v1) + <code>mockups-v2/</code> (branded) +
+<code>shots/DEMO-branding-quantica.png</code>.</em></p></body></html>

@@ -1,0 +1,31 @@
+LangNet
+←
+📊
+Dashboard
+📁
+Projetos
+🔗
+MCP
+🚧
+▼
+🌐
+Configuração Global
+🔍
+Descoberta de Serviços
+🔄
+Sincronização de Estados
+⚙️
+Configurações
+🚧
+❓
+Ajuda
+🚧
+LangNet
+🔍
+🔔
+👤
+📝 Especificação Funcional
+
+Gere especificações funcionais a partir de documentos de requisitos
+
+Carregando...
