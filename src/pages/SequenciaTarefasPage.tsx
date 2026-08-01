@@ -20,6 +20,7 @@ import * as chatService from '../services/chatService';
 import {
   createTaskExecutionFlowSession,
   getTaskExecutionFlow,
+  listTaskExecutionFlows,
   getSessionStatus,
   updateTaskExecutionFlow,
   listTaskExecutionFlowVersions,
@@ -88,6 +89,23 @@ const SequenciaTarefasPage: React.FC = () => {
 
   useEffect(() => {
     loadDocuments();
+  }, [projectId]);
+
+  // Auto-carrega a última sessão do projeto ao abrir (padrão das etapas iniciais).
+  // Antes, esta etapa exigia reselecionar os 3 documentos mesmo já existindo sessão.
+  useEffect(() => {
+    const effPid = projectId || localStorage.getItem('currentProjectId') || '';
+    if (!effPid || currentSessionId) return;
+    (async () => {
+      try {
+        const list = await listTaskExecutionFlows(effPid);
+        const sessions = Array.isArray(list) ? list : ((list as any)?.sessions || []);
+        if (!sessions.length) return;
+        const latest = sessions[0];
+        await handleSelectHistorySession(latest.session_id || latest.id, latest.session_name || 'Sequência de Tarefas');
+      } catch { /* silencioso — usuário ainda pode gerar/selecionar manualmente */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   // Polling: Reload chat history periodically while processing
