@@ -5139,15 +5139,42 @@ export default function %COMP%() {
     );
   };
 
+  // G2: valor de um KPI a partir do resultado do agente (aceita {kpi:val} ou {kpis:{...}})
+  const kpiVal = (key) => {
+    if (!result || typeof result !== "object") return "—";
+    const src = result.kpis && typeof result.kpis === "object" ? result.kpis : result;
+    const v = src[key];
+    return v == null ? "—" : (typeof v === "object" ? JSON.stringify(v) : String(v));
+  };
+
   return (
-    <div className="max-w-4xl">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-slate-800">%TITLE%</h1>
-        <p className="text-xs text-slate-400 mt-0.5">%SUBTITLE% · executado por agente de IA</p>
+    <div className="max-w-5xl">
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-800">%TITLE%</h1>
+          <p className="text-xs text-slate-400 mt-0.5">%SUBTITLE% · {IS_DASHBOARD ? "painel · atualizado por agente de IA" : "executado por agente de IA"}</p>
+        </div>
+        <button className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60 inline-flex items-center gap-2" disabled={busy || !TASK} onClick={executar}>
+          {busy && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+          {busy ? "Atualizando…" : (IS_DASHBOARD ? "↻ Atualizar" : "▷ Executar com IA")}
+        </button>
       </div>
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-7">
-        {INPUTS.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+
+      {/* Dashboard: cards de KPI (placeholder — populados pelo resultado do agente) */}
+      {IS_DASHBOARD && KPIS.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          {KPIS.map((k) => (
+            <div key={k.key} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
+              <div className="text-xs text-slate-400 uppercase tracking-wide">{k.label}</div>
+              <div className="text-3xl font-bold text-slate-800 mt-1">{kpiVal(k.key)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {INPUTS.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-7 mb-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {INPUTS.map((fd) => (
               <div key={fd.key}>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">{fd.label}</label>
@@ -5155,17 +5182,19 @@ export default function %COMP%() {
               </div>
             ))}
           </div>
-        )}
-        <div className="flex items-center gap-3">
-          <button className="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700 disabled:opacity-60 inline-flex items-center gap-2" disabled={busy || !TASK} onClick={executar}>
-            {busy && <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />}
-            {busy ? "Executando com IA…" : "▷ Executar com IA"}
-          </button>
+          {!IS_DASHBOARD && (
+            <div className="mt-4"><span className="text-xs text-slate-400">{TASK ? <>Dispara o agente <code>{TASK}</code></> : "Tarefa não definida para esta tela"}</span></div>
+          )}
+        </div>
+      )}
+      {INPUTS.length === 0 && !IS_DASHBOARD && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-7 mb-5">
           <span className="text-xs text-slate-400">{TASK ? <>Dispara o agente <code>{TASK}</code></> : "Tarefa não definida para esta tela"}</span>
         </div>
-      </div>
+      )}
+
       {err && <div className="mt-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">⚠ {err}</div>}
-      {result != null && (
+      {result != null && !(IS_DASHBOARD && KPIS.length > 0) && (
         <div className="mt-5">
           <h3 className="text-sm font-semibold text-slate-600 mb-2">Resultado</h3>
           <div className="bg-white rounded-2xl border border-slate-200 p-5">{renderResult(result)}</div>
@@ -5184,16 +5213,26 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
         if a.get("kind") in ("task", "crud") and a.get("target"):
             target = a["target"]; break
     target = _resolve_task_target(target, task_fields)
-    # inputs = componentes de entrada da tela
+    # inputs = componentes de ENTRADA (readonly NÃO entra — vira KPI)
     inp = []
+    kpis = []
     for c in (screen.get("components") or []):
-        if c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea") and c.get("field"):
+        if c.get("type") == "readonly" and c.get("field"):
+            kpis.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
+        elif c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea") and c.get("field"):
             inp.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
+    # G2: tela dashboard → renderiza cards de KPI (populados pelo resultado do agente),
+    # não só um botão. Se o ui_spec não marcou readonly mas o layout é dashboard, o
+    # painel de resultado já vira cards (renderResult); os KPIS explícitos dão o placeholder.
+    is_dashboard = (screen.get("layout") == "dashboard" or screen.get("kind") == "dashboard"
+                    or len(kpis) > 0)
     header = (
         'import React, { useState } from "react";\n'
         'import { runTask } from "./wsClient";\n\n'
         f'const TASK = {json.dumps(target)};\n'  # null se o alvo não é uma task real → botão desabilita
         f'const INPUTS = {json.dumps(inp, ensure_ascii=False)};\n'
+        f'const KPIS = {json.dumps(kpis, ensure_ascii=False)};\n'
+        f'const IS_DASHBOARD = {json.dumps(is_dashboard)};\n'
     )
     body = (_AGENT_BODY.replace("%COMP%", comp_name)
             .replace("%TITLE%", screen.get("name", comp_name).replace('"', ""))
