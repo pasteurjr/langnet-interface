@@ -113,10 +113,17 @@ const CodeGenerationPage: React.FC = () => {
     }
   }, [codeRun.run?.status, codeRun.run?.run_id, currentSession?.websocket_port, projectId, navigate]);
 
-  // Load sessions list when project changes
+  // Load sessions list when project changes + auto-seleciona a mais recente
+  // (padrão das etapas iniciais: abrir a etapa já mostra o último artefato gerado).
   useEffect(() => {
     if (!projectId) return;
-    listCodeSessions(projectId).then(setSessions).catch(console.error);
+    listCodeSessions(projectId).then((list) => {
+      setSessions(list);
+      if (list && list.length && !currentSession) {
+        loadSession(list[0].id);
+      }
+    }).catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
   // Load session details when picking from list
