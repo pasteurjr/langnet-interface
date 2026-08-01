@@ -326,6 +326,26 @@ def get_petri_net(
     return {"petri_net": data}
 
 
+@router.post("/{project_id}/review")
+def review_petri_net_ep(
+    project_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """Revisão pelo agente: analisa a Rede de Petri (deadlocks, alcançabilidade, cobertura,
+    marcação inicial/final) e devolve sugestões. Não altera a rede. Alinha a etapa de Petri
+    ao padrão das demais (botão 🔍 Revisar)."""
+    data = get_project_data(project_id)
+    if not data:
+        return {"suggestions": "Não há Rede de Petri para revisar. Gere a rede primeiro."}
+    try:
+        import json as _json
+        from agents.langnetdatamodel import review_petri_net
+        suggestions = review_petri_net(_json.dumps(data, ensure_ascii=False))
+    except Exception as e:  # noqa: BLE001
+        suggestions = f"Não foi possível gerar sugestões automáticas no momento ({e})."
+    return {"suggestions": suggestions}
+
+
 @router.put("/{project_id}")
 def update_petri_net(
     project_id: str,

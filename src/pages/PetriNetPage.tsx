@@ -17,6 +17,28 @@ const PetriNetPage: React.FC = () => {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [generating, setGenerating] = useState(false);
+  // G4: revisão da rede pelo agente (padrão das demais etapas — 🔍 Revisar).
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewSuggestions, setReviewSuggestions] = useState<string | null>(null);
+
+  const handleReview = async () => {
+    setReviewing(true);
+    setReviewSuggestions(null);
+    try {
+      const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+      const r = await fetch(`${API_BASE}/petri-net/${projectId}/review`, {
+        method: 'POST',
+        headers: { 'Authorization': token ? `Bearer ${token}` : '', 'Content-Type': 'application/json' },
+      });
+      const d = await r.json();
+      setReviewSuggestions(d.suggestions || 'Sem sugestões.');
+    } catch (e) {
+      setReviewSuggestions(`Falha ao revisar: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setReviewing(false);
+    }
+  };
   // Instruções adicionais: a etapa da Rede não usa (refino é por regeneração),
   // mas o shell exige as props; mantidas para uniformidade visual.
   const [instructions, setInstructions] = useState('');
@@ -71,9 +93,13 @@ const PetriNetPage: React.FC = () => {
       generating={generating}
       generateLabel="🔗 Gerar Rede"
       onHistory={() => setHistoryOpen(true)}
+      onReview={handleReview}
+      reviewing={reviewing}
+      canReview={!generating}
       chat={
         <div style={{ padding: 16, fontSize: 13, color: '#555' }}>
-          O refino da rede é por regeneração (não há chat).
+          O refino da rede é por regeneração. Use <b>🔍 Revisar</b> para o agente analisar a
+          rede (deadlocks, alcançabilidade, cobertura de tasks) e sugerir melhorias.
         </div>
       }
       modals={
@@ -102,6 +128,26 @@ const PetriNetPage: React.FC = () => {
             projectId={projectId}
             onRestored={() => window.location.reload()}
           />
+          {reviewSuggestions !== null && (
+            <div
+              onClick={() => setReviewSuggestions(null)}
+              style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex',
+                       alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}
+            >
+              <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', borderRadius: 12,
+                     width: 'min(760px,92vw)', maxHeight: '82vh', overflow: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                       padding: '14px 18px', borderBottom: '1px solid #e2e8f0' }}>
+                  <b>🔍 Sugestões de revisão da Rede de Petri</b>
+                  <button onClick={() => setReviewSuggestions(null)}
+                    style={{ border: 'none', background: '#eef2ff', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>Fechar</button>
+                </div>
+                <div style={{ padding: 18, fontSize: 13.5, lineHeight: 1.55, color: '#334', whiteSpace: 'pre-wrap' }}>
+                  {reviewSuggestions}
+                </div>
+              </div>
+            </div>
+          )}
         </>
       }
     >

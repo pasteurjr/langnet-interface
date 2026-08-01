@@ -443,6 +443,34 @@ Retorne SOMENTE o YAML final."""
         raise RuntimeError(f"YAML refinado inválido: {e}")
 
 
+def review_petri_net(petri_json: str) -> str:
+    """Usa o LLM para revisar a Rede de Petri (NÃO modifica nada). Analisa corretude
+    do workflow: deadlocks/lugares inalcançáveis, transições sem entrada ou saída,
+    cobertura das tasks/agentes, marcação inicial/final, e boas práticas. Robusto a falha."""
+    try:
+        snippet = (petri_json or "").strip()[:22000]
+        if not snippet:
+            return "Não há Rede de Petri para revisar."
+        prompt = (
+            "Você é um especialista em Redes de Petri e modelagem de workflows de sistemas "
+            "multi-agente. Abaixo está uma Rede de Petri (JSON com lugares, transições, arcos "
+            "e agentes). Analise criticamente e liste sugestões objetivas: possíveis DEADLOCKS "
+            "ou lugares inalcançáveis, transições sem arco de entrada ou de saída, marcação "
+            "inicial/final coerente (início e fim do fluxo), COBERTURA (toda task/agente do "
+            "sistema aparece como transição?), paralelismo/sincronização adequados, e boas "
+            "práticas de nomeação. NÃO reescreva a rede — apenas recomende. Responda em "
+            "português, em tópicos.\n\n"
+            "REDE DE PETRI (JSON):\n```json\n" + snippet + "\n```\n"
+        )
+        out = _call_llm(prompt)
+        return (out or "").strip() or "O agente não retornou sugestões."
+    except Exception as e:
+        return (
+            f"Não foi possível gerar sugestões automáticas no momento ({e}). "
+            "Revise manualmente: deadlocks, alcançabilidade, cobertura de tasks e marcação inicial/final."
+        )
+
+
 def review_data_model(
     data_model_yaml: str,
     schema_sql: str = "",
