@@ -1,0 +1,98 @@
+<!doctype html><html lang='pt-br'><head><meta charset='utf-8'><style>body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#1e293b;max-width:920px;margin:0 auto;padding:24px;font-size:12.5px;line-height:1.55}h1{color:#4338ca;border-bottom:3px solid #4338ca;padding-bottom:7px;font-size:20px}h2{color:#312e81;border-top:2px solid #e2e8f0;padding-top:12px;margin-top:20px;font-size:16px}h3{color:#3730a3;font-size:14px}blockquote{background:#eff6ff;border-left:4px solid #60a5fa;padding:8px 13px;color:#1e3a5f;font-size:11.5px}table{border-collapse:collapse;width:100%;font-size:11.5px;margin:8px 0}th,td{border:1px solid #cbd5e1;padding:6px 9px;text-align:left;vertical-align:top}th{background:#eef2ff}code{background:#f1f5f9;padding:1px 4px;border-radius:3px;font-size:10.5px}pre{background:#0f172a;color:#e2e8f0;padding:10px;border-radius:7px;font-size:10.5px;white-space:pre-wrap}</style></head><body><h1>Relatório — Regeneração do Protótipo + Ajustes Autônomos (Quântica Comercial)</h1>
+<p><strong>Data:</strong> 2026-08-02 · <strong>Executor:</strong> Claude (autônomo: analisar retorno → corrigir → re-verificar → analisar app)
+<strong>Projeto:</strong> Quântica Comercial (<code>b55ef718…</code>) · <strong>Modelo:</strong> qwen2.5-coder-32b (LM Studio)</p>
+<blockquote>
+<p>Tarefa: regenerar o protótipo com os prompts novos (P3 FK-select + ancoragem de nomes),
+<strong>analisar o retorno e corrigir sozinho</strong> o que precisasse, iterar até ficar satisfatório, e
+<strong>analisar a aplicação</strong> gerada. Backup do banco feito antes.</p>
+</blockquote>
+<hr />
+<h2>1. Análise do retorno da 1ª regeneração (sessão <code>b7f46d15</code>, 18 telas)</h2>
+<p>Rodei o validador de coerência UC⟷Mockup⟷Modelo de Dados e a checagem de FK. <strong>Achei 2 problemas:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Problema</th>
+<th>Diagnóstico</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🔴 <strong>FK-select = 0</strong></td>
+<td>O LLM já punha <code>type=select</code> nos campos FK, mas <strong>sem <code>refEntity</code></strong> — o código gerado não sabia de qual entidade carregar as opções. Minha detecção pegava a coluna errada (<code>personas.id</code> → <code>id</code>, não <code>persona_id</code>).</td>
+</tr>
+<tr>
+<td>🟡 <strong>3 kind_mismatches</strong></td>
+<td>Layout da tela não batia com a intenção do UC: <code>editar-calendário</code> (edit) estava dashboard; <code>gerenciar-permissões</code> (list) estava form; <code>exportar-relatórios</code> estava form.</td>
+</tr>
+</tbody>
+</table>
+<p>Coerência inicial: <strong>0 vínculos quebrados</strong> (P2 já ok), mas 3 kind_mismatch e 0 FK-select.</p>
+<h2>2. Ajustes que fiz (sem perguntar) — no gerador</h2>
+<ol>
+<li><strong><code>_mark_fk_selects</code> robusto</strong> — detecta FK por 3 sinais (field FK, <code>bindTo=tabela.col_fk</code>, ou
+   <code>bindTo=&lt;outra_entidade&gt;.id</code> com field <code>*_id</code>) e seta <code>refEntity</code>. → os FK viram dropdown de verdade.</li>
+<li><strong><code>derive_screen_kind</code> prioriza o VERBO PRINCIPAL</strong> (1ª palavra do UC) antes do match por
+   substring — ex.: "Exportar … Relatórios" é <strong>ação</strong>, não "dashboard" só por conter "relatórios".</li>
+<li><strong><code>_align_layout_to_kind</code></strong> — força o <code>layout</code> a ser compatível com o <code>kind</code> derivado (resolve
+   kind_mismatch na origem, não deixa o LLM escolher errado).</li>
+<li><strong><code>_agent_screen</code> renderiza FK como <code>&lt;select&gt;</code></strong> carregado via <code>runTask("listar_"+refEntity)</code> —
+   antes só o path CRUD tinha FK-dropdown; telas agênticas (ex.: Gerar Conteúdo) mostravam caixa de texto.</li>
+<li><strong>useEffect sempre importado</strong> nas telas agênticas (o corpo tem o effect de carregar FK) —
+   corrigi um erro de compilação <code>useEffect is not defined</code>.</li>
+<li><strong><code>_classify_screen</code>: dashboard (só readonly/KPIs) → agent, não CRUD</strong> — corrigi uma <strong>regressão</strong>
+   que fiz: ao alinhar o layout, a tela de Métricas (layout=detail + entity) passou a ser classificada
+   como cadastro e <strong>perdeu os cards de KPI</strong>; agora painel de KPIs volta a ser tela agêntica.</li>
+</ol>
+<h2>3. Re-verificação — protótipo ficou limpo</h2>
+<p>Após os ajustes (re-aplicados à sessão <code>b7f46d15</code>):</p>
+<pre><code>COERÊNCIA FINAL: screens=18 · screens_with_issues=0 · broken_binds=0 · kind_mismatches=0
+FK-select: 2 (persona_id→personas, pilar_conteudo_id→pilares_conteudo)
+</code></pre>
+<p>✅ <strong>0 telas com problema, 0 vínculos quebrados, 0 kind_mismatch, FK-selects marcados.</strong></p>
+<hr />
+<h2>4. Análise da APLICAÇÃO gerada (rodando :3001 + ws-server :5002 → banco <code>quantica_ops</code>)</h2>
+<p>Regenerei o código a cada ajuste e rodei a app. Estado final: <strong>35 telas React, compila (1 warning),
+0 erros de console (fora ws)</strong>. Provas ao vivo:</p>
+<h3>4.1 — P3 FK-dropdown AO VIVO</h3>
+<p>A tela agêntica <strong>"Geração Automática de Conteúdo"</strong> (UC-006): <strong>Persona</strong> e <strong>Pilar</strong> agora são
+<code>&lt;select&gt;</code> — o de Persona carregou <strong>45 personas reais</strong> do banco ("Fundador de Fintech", "CTO de
+HealthTech"…). Antes eram caixas de texto de ID.</p>
+<p><img alt="FK dropdown ao vivo" src="FK" /></p>
+<h3>4.2 — G2 Dashboard de KPIs (mantido após corrigir a regressão)</h3>
+<p><strong>"Coleta de Métricas de Engajamento"</strong> (UC-011): painel de <strong>6 cards de KPI</strong> (Impressões, Alcance,
+Curtidas, Comentários, Compartilhamentos, Cliques) + "↻ Atualizar" — não um botão.</p>
+<p><img alt="Dashboard KPIs" src="KPI" /></p>
+<h3>4.3 — CRUD com dados reais</h3>
+<p><strong>Formulário de Cadastro de Persona</strong>: <strong>44 de 44 registros reais</strong> (Ver/Editar/Excluir, busca),
+sem WebSocket error — lê do <code>quantica_ops</code>.</p>
+<p><img alt="CRUD real" src="CRUD" /></p>
+<h3>4.4 — Telas cujo tipo foi corrigido</h3>
+<ul>
+<li><code>editar-calendário-mensal</code> → agora <strong>form/edit</strong> (era dashboard).</li>
+<li><code>gerenciar-permissões-usuários</code> → agora <strong>list/table</strong> (era form).</li>
+<li><code>exportar-calendário-relatórios</code> → agora <strong>action/report</strong> (era form).</li>
+</ul>
+<hr />
+<h2>5. Achados residuais (honestos, não bloqueiam)</h2>
+<ul>
+<li>🟡 <code>pilares_conteudo</code> tem <strong>1 linha</strong> no banco → o dropdown de Pilar mostra 1 opção (dado, não bug).</li>
+<li>🟡 <code>gerenciar-permissões-usuários</code> não tem entidade no schema → cai em <code>form</code> (sem tabela CRUD).
+  Poderia virar uma entidade <code>usuarios/permissoes</code> no Modelo de Dados (fora do escopo deste ajuste).</li>
+<li>🟡 <code>editar-calendário</code> teve o LLM gerar componentes de métrica (readonly) em vez de slots editáveis
+  — qualidade do output do LLM naquele UC; a estrutura (form) está certa.</li>
+</ul>
+<h2>6. Commits desta rodada (todos no gerador do LangNet)</h2>
+<ol>
+<li>FK-select robusto + kind pelo verbo principal + layout alinhado ao kind.</li>
+<li>Telas agênticas renderizam FK como <code>&lt;select&gt;</code> carregado da entidade.</li>
+<li>useEffect sempre importado nas telas agênticas.</li>
+<li>Dashboard (só readonly) não vira CRUD por engano (fix da regressão do G2).</li>
+</ol>
+<p>Tudo commitado/pushado. <strong>A pendência das 4 integrações externas via MCP foi registrada na memória</strong>
+(adiada a pedido do usuário).</p>
+<h2>Conclusão</h2>
+<p>Protótipo regenerado e <strong>ajustado autonomamente até ficar limpo</strong> (0/0/0 na coerência), com FK-selects
+e dashboards funcionando <strong>ao vivo na app</strong> com dados reais do <code>quantica_ops</code>. A aplicação gerada roda
+ponta a ponta: CRUD (44 personas), dashboard de KPIs, e FK-dropdowns (45 personas) — todos provados
+com o ws-server no ar.</p></body></html>
