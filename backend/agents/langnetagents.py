@@ -5278,10 +5278,9 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
     # painel de resultado já vira cards (renderResult); os KPIS explícitos dão o placeholder.
     is_dashboard = (screen.get("layout") == "dashboard" or screen.get("kind") == "dashboard"
                     or len(kpis) > 0)
-    react_import = ('import React, { useState, useEffect } from "react";\n'
-                    if fk_used else 'import React, { useState } from "react";\n')
+    # useEffect é sempre necessário (o corpo tem o effect de carregar FK, guardado por HAS_FK).
     header = (
-        react_import +
+        'import React, { useState, useEffect } from "react";\n'
         'import { runTask } from "./wsClient";\n\n'
         f'const TASK = {json.dumps(target)};\n'  # null se o alvo não é uma task real → botão desabilita
         f'const INPUTS = {json.dumps(inp, ensure_ascii=False)};\n'
