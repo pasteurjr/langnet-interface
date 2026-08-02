@@ -3098,6 +3098,12 @@ _LIST_HELPER = (
     "    if isinstance(v, str):\n"
     "        return [x.strip() for x in v.split(',') if x.strip()]\n"
     "    return [v]\n"
+    "\n\n"
+    "def _hoje():\n"
+    "    \"\"\"Data de hoje (YYYY-MM-DD) — default para colunas de data NOT NULL ausentes\n"
+    "    no input, evitando '1048 Column ... cannot be null'.\"\"\"\n"
+    "    from datetime import date\n"
+    "    return date.today().isoformat()\n"
 )
 
 
@@ -3551,19 +3557,32 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
     if not params_str or not params_str.strip():
         return "[]"
     import re as _re
+
+    def _date_col(name: str) -> bool:
+        """Coluna semanticamente de DATA (default para hoje quando ausente, p/ não
+        violar NOT NULL). Ex.: data_publicacao, data_agendamento, agendado_em."""
+        n = name.lower()
+        return (n.startswith("data") or n.startswith("dt_") or n.endswith("_data")
+                or n.endswith("_em") or n in ("data_publicacao", "data_agendamento"))
+
+    def _emit_get(col: str) -> str:
+        base = f"input_data.get({col!r})"
+        # NOT NULL de data ausente → hoje (evita '1048 Column ... cannot be null')
+        return f"({base} or _hoje())" if _date_col(col) else base
+
     parts = [p.strip() for p in params_str.split(",") if p.strip()]
     py_parts: List[str] = []
     for p in parts:
         m = _re.match(r'^\{(\w+)\}$', p)
         if m:
-            py_parts.append(f"input_data.get({m.group(1)!r})")
+            py_parts.append(_emit_get(m.group(1)))
             continue
         if p in captured_vars or p == loop_item:
             py_parts.append(p)
             continue
         # Identificador Python simples e não-resolvido → reconciliar (evita NameError).
         if _re.match(r'^[A-Za-z_]\w*$', p) and p not in ("None", "True", "False"):
-            py_parts.append(loop_item if in_loop and loop_item else f"input_data.get({p!r})")
+            py_parts.append((loop_item if in_loop and loop_item else _emit_get(p)))
             continue
         # Literais / expressões (números, 'strings', a.b(...)) — mantém.
         py_parts.append(p)
