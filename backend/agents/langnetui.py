@@ -22,29 +22,71 @@ from prompts.generate_ui_spec import (
     build_sub_schema, is_agentic_screen, build_single_screen_prompt,
     extract_json_object, validate_screen, find_uc_block,
 )
-from agents.langnetcoherence import derive_screen_kind, schema_columns, _parse_bindto, schema_fks
+from agents.langnetcoherence import (
+    derive_screen_kind, schema_columns, _parse_bindto, schema_fks,
+    _KIND_OK_LAYOUTS, _KIND_SUGGESTED_LAYOUT,
+)
+
+
+def _align_layout_to_kind(screen: Dict[str, Any]) -> None:
+    """P3/coerência: o LLM às vezes escolhe um `layout` incompatível com a intenção do
+    UC (ex.: UC de editar vira 'dashboard'). Força o layout para um compatível com o
+    `kind` derivado, resolvendo os kind_mismatch na origem."""
+    kind = screen.get("kind")
+    if not kind:
+        return
+    ok = _KIND_OK_LAYOUTS.get(kind)
+    if ok and screen.get("layout") not in ok:
+        screen["layout"] = _KIND_SUGGESTED_LAYOUT.get(kind) or (ok[0] if ok else screen.get("layout"))
 
 
 def _mark_fk_selects(screen: Dict[str, Any], fks: Dict[str, Dict[str, str]]) -> int:
     """P3: campos que são chave estrangeira viram `select` (dropdown da entidade
     referenciada) em vez de caixa de ID. Marca type='select' + refEntity. Retorna
-    quantos foram marcados."""
+    quantos foram marcados.
+
+    Detecta FK por 3 sinais (o LLM varia entre eles):
+      1. field é uma coluna FK do schema (ex.: persona_id) → refEntity = tabela referenciada;
+      2. bindTo = `<tabela>.<coluna_fk>` (ex.: posts.persona_id);
+      3. bindTo aponta para a PK de outra entidade (`<tabela>.id`/`.pk`) e o field parece
+         referência (`*_id`) → refEntity = essa tabela. (LLM às veze liga direto à PK-alvo.)
+    """
     if not fks:
         return 0
     col2ref: Dict[str, str] = {}
     for _t, m in fks.items():
         for col, ref in m.items():
             col2ref.setdefault(col, ref)
+    tables = set()
+    for t, m in fks.items():
+        tables.add(t)
+        for ref in m.values():
+            tables.add(ref)
     n = 0
     for comp in (screen.get("components") or []):
-        col = None
-        b = comp.get("bindTo")
-        if b and "." in str(b):
-            col = str(b).split(".", 1)[1].replace("[]", "").split("[")[0]
-        col = col or comp.get("field")
-        if col and col in col2ref and comp.get("type") not in ("multiselect", "table"):
+        if comp.get("type") in ("multiselect", "table"):
+            continue
+        field = (comp.get("field") or "")
+        b = str(comp.get("bindTo") or "")
+        ref_entity = None
+        # (1) field é coluna FK conhecida
+        if field in col2ref:
+            ref_entity = col2ref[field]
+        # (2) bindTo = tabela.coluna_fk
+        elif "." in b:
+            left, right = b.split(".", 1)
+            right = right.replace("[]", "").split("[")[0]
+            if right in col2ref:
+                ref_entity = col2ref[right]
+            # (3) bindTo liga direto à PK de outra entidade e o field é *_id
+            elif right in ("id", "pk", "uuid") and left in tables and field.endswith("_id"):
+                ref_entity = left
+        if ref_entity:
             comp["type"] = "select"
-            comp["refEntity"] = col2ref[col]
+            comp["refEntity"] = ref_entity
+            # bindTo canônico: a COLUNA FK na entidade da tela (não a PK-alvo), p/ persistir certo
+            if field in col2ref and "." not in b:
+                comp["bindTo"] = f"{screen.get('entity') or ''}.{field}".strip(".") or None
             n += 1
     return n
 
@@ -332,6 +374,7 @@ def execute_ui_spec_workflow(
         _mark_fk_selects(screen, fks)
         # Tipo de tela derivado da INTENÇÃO do UC (fonte: comportamento).
         screen["kind"] = derive_screen_kind(uc)
+        _align_layout_to_kind(screen)
         # CONSISTÊNCIA protótipo↔código: só telas de LISTAGEM de entidade recebem o
         # mockup de CRUD CONVENCIONAL determinístico. Telas de criar/editar/aprovar
         # NÃO são forçadas a tabela — respeitam o verbo do UC (evita over-CRUD).
@@ -411,6 +454,7 @@ def regenerate_one_screen_from_spec(
     # Consistência protótipo↔código igual ao workflow: só LISTAGEM de entidade vira
     # CRUD-tabela determinístico (usa a intenção do UC, não 'agêntico ou não').
     screen["kind"] = derive_screen_kind(uc)
+    _align_layout_to_kind(screen)
     _ent = screen.get("entity")
     if _ent and _ent in tables and screen["kind"] == "list":
         screen["layout"] = "table"

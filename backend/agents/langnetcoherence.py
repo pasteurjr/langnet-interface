@@ -62,12 +62,20 @@ def _norm(s: str) -> str:
 
 def derive_screen_kind(uc: Dict[str, str]) -> str:
     """Deriva o tipo de tela a partir do verbo do nome do UC (fonte: comportamento).
-    Ordem importa: verbos mais específicos (create/edit/approve/action) antes de
-    'visualizar' (que é ambíguo com list)."""
+
+    O VERBO PRINCIPAL (primeira palavra do UC) manda: ex. "Exportar Calendário e
+    Relatórios" é uma AÇÃO de exportar, não um 'dashboard' só porque contém "relatórios".
+    Só quando a 1ª palavra não é um verbo conhecido caímos no match por substring."""
     name = _norm(uc.get("name", ""))
-    first = name.split()[0] if name.split() else ""
+    words = name.split()
+    first = words[0] if words else ""
+    # 1ª passada: a PRIMEIRA palavra decide (prioriza o verbo principal do UC).
     for kind, verbs in _KIND_VERBS:
-        if first in verbs or any(re.search(rf"\b{re.escape(v)}\b", name) for v in verbs):
+        if first in verbs:
+            return kind
+    # 2ª passada: substring em qualquer lugar do nome (fallback).
+    for kind, verbs in _KIND_VERBS:
+        if any(re.search(rf"\b{re.escape(v)}\b", name) for v in verbs):
             return kind
     return "view"
 
