@@ -4702,8 +4702,17 @@ def _classify_screen(screen: dict, entity_exists: bool) -> str:
     """Classifica a tela: crud | report | agent | form."""
     name = (screen.get("name", "") + " " + screen.get("id", "")).lower()
     layout = screen.get("layout", "form")
+    comps = screen.get("components") or []
+    editable = any(c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea")
+                   for c in comps)
+    readonly = any(c.get("type") == "readonly" for c in comps)
     if any(k in name for k in ("relat", "export")):
         return "report"
+    # Dashboard/painel de KPIs (só campos readonly, ou kind=dashboard) → agent, mesmo com
+    # entity: precisa do agente pra popular os cards, NÃO é uma tela de cadastro. (Tem
+    # precedência sobre o crud, senão layout='detail'+entity viraria CRUD por engano.)
+    if screen.get("kind") == "dashboard" or (readonly and not editable):
+        return "agent"
     if entity_exists and layout in ("form", "table", "detail"):
         return "crud"
     agent_kw = ("gerar", "gera ", "classific", "coletar", "coleta", "verific", "publicar",
