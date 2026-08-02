@@ -5166,6 +5166,24 @@ export default function %COMP%() {
     return v == null ? "—" : (typeof v === "object" ? JSON.stringify(v) : String(v));
   };
 
+  // P3: opções dos campos FK (dropdown) carregadas da entidade referenciada.
+  const [fkOpts, setFkOpts] = useState({});
+  useEffect(() => {
+    if (!HAS_FK) return;
+    (async () => {
+      const next = {};
+      for (const fd of INPUTS) {
+        if (!fd.ref) continue;
+        try {
+          const r = await runTask("listar_" + fd.ref, {});
+          next[fd.key] = Array.isArray(r) ? r : (r && r.rows ? r.rows : []);
+        } catch (e) { next[fd.key] = []; }
+      }
+      setFkOpts(next);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="max-w-5xl">
       <div className="mb-6 flex items-start justify-between">
@@ -5197,7 +5215,16 @@ export default function %COMP%() {
             {INPUTS.map((fd) => (
               <div key={fd.key}>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">{fd.label}</label>
-                <input className={IN} value={form[fd.key]} onChange={(e) => set(fd.key, e.target.value)} />
+                {fd.ref ? (
+                  <select className={IN} value={form[fd.key]} onChange={(e) => set(fd.key, e.target.value)}>
+                    <option value="">Selecione…</option>
+                    {(fkOpts[fd.key] || []).map((o) => (
+                      <option key={o.id} value={o.id}>{o.nome || o.name || o.titulo || o.tema || o.descricao || o.id}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input className={IN} value={form[fd.key]} onChange={(e) => set(fd.key, e.target.value)} />
+                )}
               </div>
             ))}
           </div>
@@ -5232,26 +5259,35 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
         if a.get("kind") in ("task", "crud") and a.get("target"):
             target = a["target"]; break
     target = _resolve_task_target(target, task_fields)
-    # inputs = componentes de ENTRADA (readonly NÃO entra — vira KPI)
+    # inputs = componentes de ENTRADA (readonly NÃO entra — vira KPI). P3: campo FK
+    # (select+refEntity) carrega ref no input p/ virar dropdown da entidade.
     inp = []
     kpis = []
+    fk_used = []
     for c in (screen.get("components") or []):
         if c.get("type") == "readonly" and c.get("field"):
             kpis.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
         elif c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea") and c.get("field"):
-            inp.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
+            item = {"key": c["field"], "label": c.get("label", _humanize(c["field"]))}
+            if c.get("type") == "select" and c.get("refEntity"):
+                item["ref"] = c["refEntity"]        # P3: dropdown da entidade referenciada
+                fk_used.append(c["field"])
+            inp.append(item)
     # G2: tela dashboard → renderiza cards de KPI (populados pelo resultado do agente),
     # não só um botão. Se o ui_spec não marcou readonly mas o layout é dashboard, o
     # painel de resultado já vira cards (renderResult); os KPIS explícitos dão o placeholder.
     is_dashboard = (screen.get("layout") == "dashboard" or screen.get("kind") == "dashboard"
                     or len(kpis) > 0)
+    react_import = ('import React, { useState, useEffect } from "react";\n'
+                    if fk_used else 'import React, { useState } from "react";\n')
     header = (
-        'import React, { useState } from "react";\n'
+        react_import +
         'import { runTask } from "./wsClient";\n\n'
         f'const TASK = {json.dumps(target)};\n'  # null se o alvo não é uma task real → botão desabilita
         f'const INPUTS = {json.dumps(inp, ensure_ascii=False)};\n'
         f'const KPIS = {json.dumps(kpis, ensure_ascii=False)};\n'
         f'const IS_DASHBOARD = {json.dumps(is_dashboard)};\n'
+        f'const HAS_FK = {json.dumps(bool(fk_used))};\n'
     )
     body = (_AGENT_BODY.replace("%COMP%", comp_name)
             .replace("%TITLE%", screen.get("name", comp_name).replace('"', ""))
