@@ -22,15 +22,19 @@ DB_CONFIG = {
     "charset": "utf8mb4",
     "collation": "utf8mb4_unicode_ci",
     "autocommit": False,
-    "raise_on_warnings": True
+    "raise_on_warnings": True,
+    # Banco é DDNS remoto (camerascasas.no-ip.info) — falha rápido em conexão morta
+    # em vez de pendurar a requisição (era uma das causas do pool travar).
+    "connection_timeout": int(os.getenv("DB_CONNECTION_TIMEOUT", "10")),
 }
 
 # Connection pool configuration
 POOL_CONFIG = {
     **DB_CONFIG,
     "pool_name": "langnet_pool",
-    "pool_size": 10,
-    "pool_reset_session": True
+    # Pool maior (era 10) — o app tem vários routers + background tasks concorrentes.
+    "pool_size": int(os.getenv("DB_POOL_SIZE", "20")),
+    "pool_reset_session": True,
 }
 
 # Global connection pool
@@ -57,6 +61,34 @@ def get_db_pool():
     return connection_pool
 
 
+def _checkout_connection():
+    """Pega uma conexão saudável. Do pool; se estiver stale (DDNS remoto derruba
+    conexões ociosas), revive via ping(reconnect). Se o pool estiver ESGOTADO
+    (PoolError), degrada para uma conexão DIRETA em vez de pendurar a requisição —
+    marcada com _langnet_direct pra ser realmente fechada no finally.
+    """
+    pool = get_db_pool()
+    try:
+        conn = pool.get_connection()
+    except Exception as e:  # noqa: BLE001 — inclui PoolError (pool exhausted)
+        print(f"⚠️ Pool indisponível ({e}); usando conexão direta (fallback).")
+        conn = mysql.connector.connect(**DB_CONFIG)
+        conn._langnet_direct = True
+        return conn
+    # Revive conexões stale do pool (evita erro no primeiro uso + vazamento no finally).
+    try:
+        conn.ping(reconnect=True, attempts=2, delay=1)
+    except Exception:
+        # não deu pra reviver — descarta e abre uma direta saudável
+        try:
+            conn.close()
+        except Exception:
+            pass
+        conn = mysql.connector.connect(**DB_CONFIG)
+        conn._langnet_direct = True
+    return conn
+
+
 @contextmanager
 def get_db_connection() -> Generator:
     """
@@ -68,19 +100,28 @@ def get_db_connection() -> Generator:
             cursor.execute("SELECT * FROM users")
             results = cursor.fetchall()
     """
-    pool = get_db_pool()
     connection = None
     try:
-        connection = pool.get_connection()
+        connection = _checkout_connection()
         yield connection
     except Error as e:
         if connection:
-            connection.rollback()
+            try:
+                connection.rollback()
+            except Exception:
+                pass
         print(f"❌ Database error: {e}")
         raise
     finally:
-        if connection and connection.is_connected():
-            connection.close()
+        # 🔴 SEMPRE devolve a conexão ao pool (ou fecha a direta). Antes, isto era
+        # `if connection.is_connected(): close()` — conexão stale (is_connected=False)
+        # NUNCA voltava ao pool → slot perdido → pool esgotava → HTTP 000. Agora fecha
+        # incondicionalmente (close() de conexão pooled a devolve ao pool).
+        if connection is not None:
+            try:
+                connection.close()
+            except Exception:
+                pass
 
 
 @contextmanager
