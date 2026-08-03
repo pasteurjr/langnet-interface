@@ -1,0 +1,240 @@
+<!doctype html><html lang='pt-br'><head><meta charset='utf-8'><style>
+body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#1e293b;max-width:900px;margin:0 auto;padding:26px;font-size:12.5px;line-height:1.55}
+h1{color:#4338ca;border-bottom:3px solid #4338ca;padding-bottom:8px;font-size:22px}
+h2{color:#312e81;border-top:2px solid #e2e8f0;padding-top:12px;margin-top:22px;font-size:17px}
+h3{color:#3730a3;font-size:14px;margin-top:14px}
+blockquote{background:#fff7ed;border-left:4px solid #fb923c;padding:8px 14px;color:#7c2d12;font-size:11.5px}
+table{border-collapse:collapse;width:100%;font-size:11px;margin:10px 0}
+th,td{border:1px solid #cbd5e1;padding:6px 9px;text-align:left;vertical-align:top}
+th{background:#eef2ff;color:#312e81}
+code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:11px;color:#7c3aed}
+pre{background:#0f172a;color:#e2e8f0;padding:11px 13px;border-radius:7px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-word}
+ol,ul{padding-left:22px}
+li{margin:3px 0}
+</style></head><body><h1>Guia Completo — Como Obter as Credenciais das Integrações</h1>
+<p><strong>Para:</strong> app gerado pelo LangNet (Quântica Comercial) · <strong>Onde vão:</strong> arquivo <code>.env</code> do <code>ws-server</code>, seção <strong>INTEGRAÇÕES EXTERNAS</strong>
+<strong>Objetivo:</strong> obter cada valor que precisa ser colado no <code>.env</code> para habilitar as tools. Enquanto vazio, a tool <strong>falha explícito</strong> (não finge) — é seguro deixar em branco até você ter a credencial.</p>
+<blockquote>
+<p>⚠️ <strong>Aviso honesto:</strong> os nomes de menu/telas dos painéis (Meta, Google, LinkedIn) mudam com frequência.
+Os <strong>passos e conceitos</strong> abaixo são estáveis; se um botão tiver outro nome, procure o equivalente.
+Onde envolve <strong>aprovação (App Review)</strong> ou <strong>custo</strong>, está sinalizado.</p>
+</blockquote>
+<hr />
+<h2>Resumo rápido — o que preencher e onde conseguir</h2>
+<table>
+<thead>
+<tr>
+<th>Integração</th>
+<th>Variáveis no <code>.env</code></th>
+<th>Onde obter</th>
+<th>Precisa pagar?</th>
+<th>Precisa aprovação?</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>LinkedIn</strong></td>
+<td><code>LINKEDIN_ACCESS_TOKEN</code>, <code>LINKEDIN_AUTHOR_URN</code></td>
+<td>LinkedIn Developers (app OAuth)</td>
+<td>Não (grátis)</td>
+<td>Sim, p/ postar como empresa</td>
+</tr>
+<tr>
+<td><strong>Instagram</strong></td>
+<td><code>INSTAGRAM_ACCESS_TOKEN</code>, <code>INSTAGRAM_USER_ID</code></td>
+<td>Meta for Developers (app)</td>
+<td>Não (grátis)</td>
+<td>Sim (App Review) p/ produção</td>
+</tr>
+<tr>
+<td><strong>Google Calendar</strong></td>
+<td><code>GOOGLE_CALENDAR_ACCESS_TOKEN</code>, <code>GOOGLE_CALENDAR_ID</code></td>
+<td>Google Cloud Console (OAuth)</td>
+<td>Não (dentro da cota)</td>
+<td>Não (interno) / Sim (público)</td>
+</tr>
+<tr>
+<td><strong>CMS</strong></td>
+<td><code>CMS_API_URL</code>, <code>CMS_API_KEY</code></td>
+<td>Painel do CMS do cliente</td>
+<td>Depende do CMS</td>
+<td>Não</td>
+</tr>
+<tr>
+<td><strong>E-mail (SMTP)</strong></td>
+<td><code>SMTP_HOST/PORT/USER/PASSWORD/FROM</code></td>
+<td>Gmail (App Password) ou provedor</td>
+<td>Grátis/limites ou pago</td>
+<td>Não</td>
+</tr>
+<tr>
+<td><strong>Embeddings</strong></td>
+<td><code>EMBEDDINGS_API_BASE</code>, <code>EMBEDDINGS_MODEL</code></td>
+<td>LM Studio local (grátis) ou OpenAI</td>
+<td>Grátis (local) / pago (OpenAI)</td>
+<td>Não</td>
+</tr>
+<tr>
+<td><strong>Busca vetorial</strong></td>
+<td><code>VECTOR_TABLE</code>, <code>VECTOR_TEXT_COL</code>, <code>VECTOR_ID_COL</code></td>
+<td>Sua própria tabela no banco</td>
+<td>Não</td>
+<td>Não</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>1. LinkedIn — publicar posts</h2>
+<p><strong>O que a tool faz:</strong> publica um post de texto (via LinkedIn <em>UGC Posts API</em>).
+<strong>Conta necessária:</strong> um perfil LinkedIn. Para postar <strong>como empresa</strong>, uma <strong>LinkedIn Page</strong> (página da empresa) onde você seja administrador.
+<strong>Custo:</strong> a API é <strong>gratuita</strong>. (Postar como empresa exige aprovação da Community Management API.)</p>
+<h3>Passo a passo</h3>
+<ol>
+<li>Acesse <strong>https://www.linkedin.com/developers/</strong> e faça login.</li>
+<li><strong>Create app</strong> → informe nome, associe a <strong>Company Page</strong> da empresa, logo e aceite os termos.</li>
+<li>Na aba <strong>Auth</strong> do app você verá o <strong>Client ID</strong> e <strong>Client Secret</strong> (guarde).</li>
+<li>Na aba <strong>Products</strong>, adicione:</li>
+<li><strong>Share on LinkedIn</strong> (para postar como o <strong>membro/pessoa</strong> logado) — liberação geralmente automática.</li>
+<li><strong>Community Management API</strong> (para postar como a <strong>empresa/organização</strong>) — <strong>requer solicitação/aprovação</strong> da LinkedIn.</li>
+<li><strong>Obter o access token (OAuth 2.0):</strong></li>
+<li>Configure uma <strong>Redirect URL</strong> (ex.: <code>http://localhost:8000/callback</code>) na aba Auth.</li>
+<li>Autorize com o <strong>scope</strong> adequado:<ul>
+<li><code>w_member_social</code> → postar como pessoa (o mais simples).</li>
+<li><code>w_organization_social</code> → postar como empresa (precisa da aprovação do passo 4).</li>
+</ul>
+</li>
+<li>Troque o <em>authorization code</em> por um <strong>access token</strong>. Ferramenta oficial fácil: o <strong>OAuth Token Generator</strong> dentro do próprio app (aba <strong>Auth → OAuth 2.0 tools</strong>), que gera um token de teste com os scopes marcados.</li>
+<li>→ Esse token é o <strong><code>LINKEDIN_ACCESS_TOKEN</code></strong>. ⏳ Expira (tokens de membro ~60 dias); renove quando expirar.</li>
+<li><strong>Obter o URN do autor (<code>LINKEDIN_AUTHOR_URN</code>):</strong></li>
+<li><strong>Pessoa:</strong> chame <code>GET https://api.linkedin.com/v2/userinfo</code> (com o token) → use <code>urn:li:person:{sub}</code> onde <code>{sub}</code> é o id retornado.</li>
+<li><strong>Empresa:</strong> o URN é <code>urn:li:organization:{ID_DA_PAGE}</code> — o ID aparece na URL de admin da Company Page.</li>
+</ol>
+<pre><code>LINKEDIN_ACCESS_TOKEN=AQV...(token gerado)
+LINKEDIN_AUTHOR_URN=urn:li:person:AbC123   (ou urn:li:organization:12345678)
+</code></pre>
+<hr />
+<h2>2. Instagram — publicar imagem (Graph API)</h2>
+<p><strong>O que a tool faz:</strong> publica uma imagem com legenda (cria o container e publica).
+<strong>Contas necessárias (obrigatório):</strong>
+- Conta do Instagram do tipo <strong>Business</strong> ou <strong>Creator</strong> (não pode ser pessoal comum).
+- Uma <strong>Página do Facebook</strong> vinculada a essa conta do Instagram.
+- Uma conta no <strong>Meta for Developers</strong>.</p>
+<p><strong>Custo:</strong> <strong>gratuito</strong>. Para uso em <strong>produção</strong> (fora do modo de teste), a Meta exige <strong>App Review</strong> das permissões.</p>
+<h3>Passo a passo</h3>
+<ol>
+<li><strong>Prepare as contas:</strong> no app do Instagram → Configurações → converta para <strong>conta profissional (Business)</strong>. No <strong>Facebook</strong>, crie/una uma <strong>Página</strong> e vincule o Instagram (Configurações da Página → Contas do Instagram).</li>
+<li>Acesse <strong>https://developers.facebook.com/</strong> → <strong>My Apps</strong> → <strong>Create App</strong> → tipo <strong>Business</strong>.</li>
+<li>No app, adicione o produto <strong>Instagram Graph API</strong> (e <strong>Facebook Login</strong>).</li>
+<li><strong>Permissões necessárias:</strong> <code>instagram_basic</code>, <code>instagram_content_publish</code>, <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>business_management</code>.</li>
+<li><strong>Gerar o token:</strong> use o <strong>Graph API Explorer</strong> (developers.facebook.com/tools/explorer):</li>
+<li>Selecione seu app, clique <strong>Generate Access Token</strong>, marque as permissões acima.</li>
+<li>Isso gera um <strong>User Access Token</strong> de curta duração. Troque por um <strong>long-lived token</strong> (dura ~60 dias) com a chamada <code>oauth/access_token?grant_type=fb_exchange_token</code>.</li>
+<li>→ esse é o <strong><code>INSTAGRAM_ACCESS_TOKEN</code></strong>. ⏳ Renove a cada ~60 dias (ou configure um token de sistema).</li>
+<li><strong>Descobrir o <code>INSTAGRAM_USER_ID</code></strong> (id da conta business do Instagram):</li>
+<li><code>GET /me/accounts</code> → pega o <strong>id da Página</strong>.</li>
+<li><code>GET /{page-id}?fields=instagram_business_account</code> → retorna o <strong>id da conta IG</strong> → esse é o <code>INSTAGRAM_USER_ID</code>.</li>
+<li><strong>App Review (para produção):</strong> enquanto o app está em <em>Desenvolvimento</em>, só funciona com contas de teste/administradores. Para publicar de verdade em contas do cliente, submeta as permissões à <strong>App Review</strong> da Meta.</li>
+</ol>
+<pre><code>INSTAGRAM_ACCESS_TOKEN=EAAG...(long-lived)
+INSTAGRAM_USER_ID=17841400000000000
+</code></pre>
+<blockquote>
+<p>Obs.: a imagem enviada precisa estar em uma <strong>URL pública</strong> (o Instagram baixa a imagem da URL).</p>
+</blockquote>
+<hr />
+<h2>3. Google Calendar — criar eventos</h2>
+<p><strong>O que a tool faz:</strong> cria um evento (data/hora início e fim) num calendário.
+<strong>Conta necessária:</strong> uma conta Google + um <strong>projeto no Google Cloud</strong>.
+<strong>Custo:</strong> <strong>gratuito</strong> dentro da cota generosa da API.</p>
+<h3>Passo a passo</h3>
+<ol>
+<li>Acesse <strong>https://console.cloud.google.com/</strong> → crie um <strong>projeto</strong> (ou use um existente).</li>
+<li><strong>APIs e serviços → Biblioteca</strong> → procure <strong>Google Calendar API</strong> → <strong>Ativar</strong>.</li>
+<li><strong>Tela de consentimento OAuth:</strong> configure (tipo <em>Externo</em> ou <em>Interno</em> se for Google Workspace da empresa). Adicione o <strong>escopo</strong> <code>https://www.googleapis.com/auth/calendar.events</code>.</li>
+<li><strong>Credenciais → Criar credenciais → ID do cliente OAuth</strong> (tipo <em>App para computador</em> ou <em>Web</em>). Guarde <strong>Client ID</strong> e <strong>Client Secret</strong>.</li>
+<li><strong>Obter o access token:</strong> rode o fluxo OAuth (ex.: no <strong>OAuth 2.0 Playground</strong> — https://developers.google.com/oauthplayground):</li>
+<li>No Playground, engrenagem → marque <em>Use your own OAuth credentials</em> e cole Client ID/Secret.</li>
+<li>Selecione o escopo <strong>Calendar API v3 → .../auth/calendar.events</strong> → <strong>Authorize</strong> → login → <strong>Exchange authorization code for tokens</strong>.</li>
+<li>Copie o <strong>Access token</strong> → esse é o <strong><code>GOOGLE_CALENDAR_ACCESS_TOKEN</code></strong>.</li>
+<li>⏳ <strong>Importante:</strong> o access token do Google <strong>expira em ~1 hora</strong>. Para uso contínuo, guarde o <strong>refresh token</strong> (o Playground também mostra) e gere um novo access token quando expirar — ou use uma <strong>Service Account</strong> (recomendado para servidor, sem interação humana).</li>
+<li><strong><code>GOOGLE_CALENDAR_ID</code>:</strong> use <code>primary</code> (a agenda principal da conta) ou o ID de um calendário específico (Google Calendar → Configurações do calendário → <strong>ID do calendário</strong>, algo como <code>abc123@group.calendar.google.com</code>).</li>
+</ol>
+<pre><code>GOOGLE_CALENDAR_ACCESS_TOKEN=ya29....(expira em 1h — renovar via refresh token)
+GOOGLE_CALENDAR_ID=primary
+</code></pre>
+<blockquote>
+<p>Recomendação p/ produção: em vez de token manual, criar uma <strong>conta de serviço</strong> e compartilhar o calendário com o e-mail dela — assim o servidor autentica sozinho.</p>
+</blockquote>
+<hr />
+<h2>4. CMS — publicar conteúdo</h2>
+<p><strong>O que a tool faz:</strong> manda um <code>POST</code> com <code>{title, content, status}</code> para o endpoint REST do CMS, com um <strong>token Bearer</strong>.
+<strong>Depende de qual CMS o cliente usa.</strong> A tool é genérica (endpoint + chave). Exemplos:</p>
+<ul>
+<li><strong>Ghost / Strapi / Contentful / headless CMS</strong> (usam Bearer token nativamente):</li>
+<li><code>CMS_API_URL</code> = o endpoint de criação de post (ex.: <code>https://cms.cliente.com/api/posts</code>).</li>
+<li><code>CMS_API_KEY</code> = o <strong>API token</strong> gerado no painel do CMS (em <em>Settings → API Keys / Tokens</em>).</li>
+<li><strong>WordPress</strong> (padrão usa <strong>Application Password</strong> com Basic Auth, não Bearer):</li>
+<li>Endpoint: <code>https://site.com/wp-json/wp/v2/posts</code>.</li>
+<li>Gere uma <strong>Application Password</strong> (Usuário → Perfil → <em>Application Passwords</em>).</li>
+<li>⚠️ WordPress usa <strong>Basic Auth</strong> (usuário:senha), enquanto a tool envia <strong>Bearer</strong>. Para WordPress, use um <strong>plugin de JWT</strong> (ex.: <em>JWT Authentication for WP REST API</em>) que aceita Bearer, OU me peça que eu adapto a <code>cms_api_tool</code> para Basic Auth do WordPress.</li>
+<li><strong>Custo:</strong> depende do CMS (WordPress/Ghost self-hosted = grátis; Contentful/serviços gerenciados têm planos pagos).</li>
+</ul>
+<pre><code>CMS_API_URL=https://cms.cliente.com/api/posts
+CMS_API_KEY=(token gerado no painel do CMS)
+</code></pre>
+<hr />
+<h2>5. E-mail (SMTP) — <code>email_sender_tool</code></h2>
+<p><strong>O que a tool faz:</strong> envia e-mail via SMTP.
+<strong>Opção A — Gmail (rápido para testar):</strong>
+1. Ative a <strong>verificação em 2 etapas</strong> na conta Google (obrigatório).
+2. Vá em <strong>https://myaccount.google.com/apppasswords</strong> → gere uma <strong>Senha de app</strong> (16 caracteres).
+3. Preencha:</p>
+<pre><code>SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=seuemail@gmail.com
+SMTP_PASSWORD=(a senha de app de 16 caracteres — NÃO a senha normal)
+SMTP_FROM=seuemail@gmail.com
+</code></pre>
+<ul>
+<li><strong>Custo:</strong> grátis, mas o Gmail tem <strong>limite diário</strong> de envios (~500). Para volume, use um provedor transacional.</li>
+</ul>
+<p><strong>Opção B — Provedor transacional (recomendado p/ produção):</strong> SendGrid, Mailgun, Amazon SES, Brevo.
+- Crie conta (têm <strong>plano gratuito</strong> com limite mensal; acima disso é pago), verifique seu domínio, pegue as credenciais SMTP do painel e preencha <code>SMTP_HOST/PORT/USER/PASSWORD/FROM</code> com os dados que eles fornecem.</p>
+<hr />
+<h2>6. Embeddings — <code>embedding_tool</code></h2>
+<p><strong>O que a tool faz:</strong> transforma texto em vetor (para busca semântica).
+- <strong>Opção A — LM Studio local (grátis, sem chave):</strong> já é o padrão. Carregue um modelo de embeddings no LM Studio e aponte:</p>
+<pre><code>EMBEDDINGS_API_BASE=http://192.168.1.115:1234/v1
+EMBEDDINGS_MODEL=text-embedding-nomic-embed-text-v1.5
+</code></pre>
+<ul>
+<li><strong>Opção B — OpenAI (pago, por uso):</strong> crie conta em https://platform.openai.com/, gere uma <strong>API key</strong>, e use:</li>
+</ul>
+<pre><code>EMBEDDINGS_API_BASE=https://api.openai.com/v1
+EMBEDDINGS_MODEL=text-embedding-3-small
+OPENAI_API_KEY=sk-...(a chave)
+</code></pre>
+<ul>
+<li><strong>Custo:</strong> LM Studio local = <strong>grátis</strong>. OpenAI = <strong>pago por token</strong> (embeddings são baratos).</li>
+</ul>
+<hr />
+<h2>7. Busca vetorial — <code>vector_search_tool</code></h2>
+<p><strong>O que a tool faz:</strong> embeda a consulta e ranqueia por similaridade os textos de uma <strong>tabela do seu banco</strong>.
+<strong>Não precisa de credencial externa</strong> — só apontar para a tabela:</p>
+<pre><code>VECTOR_TABLE=nome_da_tabela        (ex.: base_conhecimento)
+VECTOR_TEXT_COL=texto              (coluna com o texto a indexar)
+VECTOR_ID_COL=id                   (coluna identificadora)
+</code></pre>
+<ul>
+<li><strong>Custo:</strong> nenhum (usa seu próprio banco + o <code>embedding_tool</code> acima).</li>
+</ul>
+<hr />
+<h2>Como aplicar (depois de obter as credenciais)</h2>
+<ol>
+<li>Edite o arquivo <strong><code>ws-server/.env</code></strong> do app gerado.</li>
+<li>Preencha as variáveis das integrações que você quer ativar (deixe em branco as que não usar).</li>
+<li><strong>Reinicie o ws-server.</strong> Pronto — as tools correspondentes passam a funcionar de verdade.</li>
+<li>Enquanto uma variável estiver <strong>vazia</strong>, a tool falha com uma mensagem clara dizendo <strong>exatamente qual variável preencher</strong> (nunca inventa resultado).</li>
+</ol>
+<h2>O que EU (LangNet) preciso de você</h2>
+<p>Só os <strong>valores</strong> acima — não preciso das suas senhas de painel, só dos <strong>tokens/URLs finais</strong> que os passos geram. Me passe (ou cole no <code>.env</code>) e as integrações ficam ativas. Se algum serviço tiver um fluxo diferente (ex.: WordPress em Basic Auth, ou Google via conta de serviço), me avise que eu <strong>adapto a tool</strong> correspondente.</p></body></html>
