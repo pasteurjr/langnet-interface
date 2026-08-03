@@ -1,0 +1,24 @@
+Refine a INTERFACE desta especificação, mantendo todo o resto do documento intacto (introdução, requisitos cobertos, casos de uso, regras de negócio, glossário). O objetivo é deixar a interface BEM ORGANIZADA em DUAS partes claras — CADASTROS e AGÊNTICA — e melhorar os WIREFRAMES de cada caso de uso e a seção "7. Interfaces do Sistema", seguindo as regras abaixo. Devolva o documento COMPLETO revisado, no mesmo formato (tabelas de UC + fluxos + wireframes ASCII).
+
+REGRA 1 — TELAS DE CADASTRO/CRUD (UC-001 Cadastro de Pacientes, UC-011 Agenda, UC-013 Especialidades, UC-014 Médicos, UC-015 Pacientes, UC-016 Atendimentos/Triagens, UC-017 Pré-diagnósticos, UC-018 Encaminhamentos): o wireframe deve SEMPRE mostrar OS DOIS elementos:
+  (a) uma LISTAGEM em TABELA, com um campo de BUSCA no topo, COLUNAS reais da entidade, e AÇÕES POR LINHA (Ver | Editar | Excluir) em cada registro;
+  (b) o FORMULÁRIO de cadastro/edição com os campos reais da entidade e os botões [Salvar] [Cancelar].
+  NÃO usar apenas botões genéricos "Cadastrar/Editar/Excluir" nem lista em bullets. Use uma tabela com linhas e ações por linha. Exemplo de estrutura esperada:
+    Busca: [__________]  [+ Novo]
+    | Nome | Coluna2 | Coluna3 | Ações            |
+    | ...  | ...     | ...     | Ver Editar Excluir |
+    --- Formulário ---
+    Campo1: [____]  Campo2: [____]   [Salvar] [Cancelar]
+
+REGRA 2 — TELAS AGÊNTICAS (UC-002 Triagem Agentiva, UC-003 Pré-atendimento por Especialista, UC-004 Geração de Pré-diagnóstico, UC-005 Agente de Encaminhamento): o wireframe deve separar CLARAMENTE TRÊS blocos:
+  (a) ENTRADA — campos que o operador/recepção PREENCHE (ex.: queixa, sinais vitais; ou respostas do roteiro), editáveis;
+  (b) AÇÃO EXPLÍCITA — um BOTÃO que DISPARA o agente de IA (ex.: [Classificar com IA], [Gerar Pré-diagnóstico com IA], [Encaminhar com IA]);
+  (c) RESULTADO DO AGENTE — a saída produzida pelo agente (para triagem: classificação Verde/Amarelo/Vermelho + justificativa + ÁREA DE DESTINO roteada; para pré-diagnóstico: hipóteses + nível de confiança + exames sugeridos), seguido do BOTÃO DA PRÓXIMA AÇÃO (ex.: [Encaminhar ao Especialista], [Encaminhar ao Pronto-Socorro], [Enviar ao Médico]).
+  Deixe evidente no wireframe qual agente é disparado (ex.: "Executado pelo Agente Hub de Triagem").
+
+REGRA 3 — SEÇÃO "7. Interfaces do Sistema": organize as telas explicitamente em DOIS grupos rotulados:
+  - "Módulo de Cadastros" — todas as telas CRUD (Pacientes, Médicos, Especialidades, Agentes, Atendimentos, Pré-diagnósticos, Encaminhamentos, Agenda);
+  - "Módulo de Atendimento Agêntico" — Triagem, Pré-atendimento, Pré-diagnóstico, Encaminhamento, Prontuário, e o Dashboard de KPIs.
+  Atualize os wireframes dessa seção com as MESMAS regras (tabela+formulário para cadastros; entrada+ação+resultado para agênticas).
+
+Não altere os identificadores de UC, os requisitos (FR/NFR/BR) nem a rastreabilidade. Apenas melhore a definição de interface (wireframes + seção 7 + descrição de fluxo onde a tela for citada).

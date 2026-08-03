@@ -14,6 +14,11 @@
   },
   "specification": {
     "session_id": "bb40c57d-7a98-4deb-b3de-6ba7307ab826",
-    "status": "generating"
+    "status": "ok",
+    "size": 120126
+  },
+  "data_model": {
+    "status": "ERROR",
+    "exc": "HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=60)"
   }
 }

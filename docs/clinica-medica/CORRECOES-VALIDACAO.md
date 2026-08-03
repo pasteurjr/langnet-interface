@@ -42,3 +42,25 @@ A etapa que travava o pipeline inteiro na origem agora conclui e o chain seguiu 
 para a Especificação.
 
 ---
+
+## Achado #2 — Backend fica sem resposta durante geração pesada (event loop bloqueado)
+
+**Etapa:** transição Especificação → Modelo de Dados
+**Sintoma:** logo após a Especificação concluir (120 KB), o `POST /data-model/{pid}/generate` deu
+**read timeout (60s)** e o driver abortou o chain. Segundos depois o backend voltou a responder
+normalmente (200 em ~0,1s) — ou seja, **hang transitório**, não permanente.
+
+**Causa provável:** as chamadas ao LLM local dentro das tasks assíncronas rodam de forma
+**bloqueante** no event loop do FastAPI; enquanto uma geração longa está em curso, outras requisições
+podem esperar além de 60s. Diferente do hang de pool já corrigido (aquele era esgotamento de conexão;
+este é bloqueio de event loop).
+
+**Ação (2 níveis):**
+- **Imediata (resiliência do driver):** o driver de geração passará a **repetir POSTs com timeout maior
+  e retry** em vez de abortar na 1ª leitura estourada — assim uma janela de backend ocupado não mata o
+  ciclo. (Correção operacional, não altera o LangNet.)
+- **Recomendação (LangNet, maior):** rodar as chamadas de LLM em thread pool (`run_in_executor`) para
+  não bloquear o event loop — registrado como recomendação; mudança arquitetural com risco de
+  regressão, a fazer com teste dedicado (não aplicada no meio desta validação para não desestabilizar).
+
+---
