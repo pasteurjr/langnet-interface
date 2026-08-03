@@ -1377,6 +1377,43 @@ def generate_document_input_func(state: LangNetFullState) -> Dict[str, Any]:
     }
 
 
+def _extract_md_field_lenient(raw: Any, field: str = "requirements_document_md") -> str:
+    """Extrai o valor STRING de um campo JSON mesmo com escaping malformado/truncado.
+    Tolera: aspas não escapadas dentro do conteúdo, newlines literais, texto extra
+    após o JSON, e truncamento (modelo local qwen frequentemente produz JSON imperfeito
+    ao embrulhar um markdown grande). Aceita a chave escapada (\\"field\\") ou não."""
+    if not raw or not isinstance(raw, str):
+        return ""
+    import re as _re
+    m = _re.search(r'(?:\\)?"' + _re.escape(field) + r'(?:\\)?"\s*:\s*(?:\\)?"', raw)
+    if not m:
+        return ""
+    i, n = m.end(), len(raw)
+    out = []
+    _map = {'n': '\n', 't': '\t', 'r': '\r', '"': '"', '\\': '\\', '/': '/', 'b': '\b', 'f': '\f'}
+    while i < n:
+        c = raw[i]
+        if c == '\\' and i + 1 < n:
+            nxt = raw[i + 1]
+            if nxt == 'u' and i + 5 < n:
+                try:
+                    out.append(chr(int(raw[i + 2:i + 6], 16))); i += 6; continue
+                except ValueError:
+                    pass
+            out.append(_map.get(nxt, nxt)); i += 2; continue
+        if c == '"':
+            # Fim REAL do valor apenas se seguido (após espaços) por ',' ou '}' ou fim;
+            # caso contrário é uma aspa literal dentro do conteúdo.
+            j = i + 1
+            while j < n and raw[j] in ' \t\r\n':
+                j += 1
+            if j >= n or raw[j] in ',}':
+                break
+            out.append('"'); i += 1; continue
+        out.append(c); i += 1
+    return ''.join(out).strip()
+
+
 def generate_document_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
     """Update state with generate_document results and extract requirements document"""
     print(f"\n{'='*80}")
@@ -1398,66 +1435,56 @@ def generate_document_output_func(state: LangNetFullState, result: Any) -> LangN
     print(f"[DEBUG] output_json length: {len(output_json)}")
     print(f"[DEBUG] output_json preview (first 500 chars): {output_json[:500]}")
 
+    parsed = {}
+    team_result_str = None
     try:
         parsed = json.loads(output_json)
-        print(f"[DEBUG] Parsed type: {type(parsed)}")
         if isinstance(parsed, dict):
             print(f"[DEBUG] Parsed keys: {list(parsed.keys())}")
-            print(f"[DEBUG] Has 'requirements_document_md' key: {'requirements_document_md' in parsed}")
-            if 'requirements_document_md' in parsed:
-                print(f"[DEBUG] requirements_document_md type: {type(parsed['requirements_document_md'])}")
-                print(f"[DEBUG] requirements_document_md length: {len(str(parsed['requirements_document_md']))}")
-
-        # Handle nested team_result if present
-        if isinstance(parsed, dict) and "team_result" in parsed:
-            team_result_str = parsed["team_result"]
-            if isinstance(team_result_str, str):
-                # Remove markdown code blocks
-                team_result_str = team_result_str.strip()
+            # Desembrulhar envelope team_result se presente
+            if "team_result" in parsed and isinstance(parsed["team_result"], str):
+                team_result_str = parsed["team_result"].strip()
                 if team_result_str.startswith("```json"):
                     team_result_str = team_result_str[7:]
                 elif team_result_str.startswith("```"):
                     team_result_str = team_result_str[3:]
                 if team_result_str.endswith("```"):
                     team_result_str = team_result_str[:-3]
-                
-                # Parse the nested JSON
-                nested_parse_failed = False
+                team_result_str = team_result_str.strip()
                 try:
-                    parsed = json.loads(team_result_str.strip())
+                    nested = json.loads(team_result_str)
+                    if isinstance(nested, dict):
+                        parsed = nested
                 except json.JSONDecodeError as nested_err:
-                    print(f"[DEBUG] Nested team_result JSON parse FAILED: {nested_err}")
-                    nested_parse_failed = True
-                # Regex fallback — string-level extraction directly from team_result_str
-                if nested_parse_failed and isinstance(team_result_str, str):
-                    import re as _re
-                    m = _re.search(r'"requirements_document_md"\s*:\s*"((?:[^"\\]|\\.)*)"', team_result_str, _re.DOTALL)
-                    if m:
-                        try:
-                            extracted = json.loads('"' + m.group(1) + '"')
-                            parsed = {"requirements_document_md": extracted}
-                            print(f"[DEBUG] Regex fallback OK — extracted {len(extracted)} chars")
-                        except Exception as exc:
-                            print(f"[DEBUG] Regex fallback decode failed: {exc}")
+                    print(f"[DEBUG] Nested team_result JSON parse FAILED: {nested_err} — usarei extrator leniente")
     except json.JSONDecodeError as e:
-        print(f"[DEBUG] JSON parsing FAILED: {e}")
+        print(f"[DEBUG] Top-level JSON parsing FAILED: {e} — usarei extrator leniente")
         parsed = {}
 
-    # Extract the requirements document MD
+    # 1) parse limpo
     requirements_doc_md = ""
     if isinstance(parsed, dict):
-        requirements_doc_md = parsed.get("requirements_document_md", "")
+        requirements_doc_md = parsed.get("requirements_document_md", "") or ""
 
-    # Last-resort: regex direct na string output_json se ainda vazio
+    # 2) salvamento LENIENTE (tolera aspas/newlines não escapados e truncamento)
+    if not requirements_doc_md and team_result_str:
+        requirements_doc_md = _extract_md_field_lenient(team_result_str, "requirements_document_md")
+        if requirements_doc_md:
+            print(f"[DEBUG] Extrator leniente (team_result) OK — {len(requirements_doc_md)} chars")
     if not requirements_doc_md and output_json:
-        import re as _re
-        m = _re.search(r'"requirements_document_md"\s*:\s*"((?:[^"\\]|\\.)*)"', output_json, _re.DOTALL)
-        if m:
-            try:
-                requirements_doc_md = json.loads('"' + m.group(1) + '"')
-                print(f"[DEBUG] Last-resort regex on output_json OK — {len(requirements_doc_md)} chars")
-            except Exception as exc:
-                print(f"[DEBUG] Last-resort regex decode failed: {exc}")
+        requirements_doc_md = _extract_md_field_lenient(output_json, "requirements_document_md")
+        if requirements_doc_md:
+            print(f"[DEBUG] Extrator leniente (output_json) OK — {len(requirements_doc_md)} chars")
+
+    # 3) se AINDA vazio, salvar o raw p/ diagnóstico
+    if not requirements_doc_md:
+        try:
+            _dbg = "/home/pasteurjr/progreact/langnet-interface/docs/clinica-medica/failed_generate_document_raw.txt"
+            with open(_dbg, "w") as _f:
+                _f.write(output_json if isinstance(output_json, str) else str(output_json))
+            print(f"[DEBUG] raw salvo p/ diagnóstico em {_dbg}")
+        except Exception:
+            pass
 
     print(f"[DEBUG] FINAL requirements_doc_md length: {len(requirements_doc_md)}")
     if requirements_doc_md:
