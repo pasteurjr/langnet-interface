@@ -185,6 +185,42 @@ VECTOR_ID_COL=id                   (coluna identificadora)
 
 ---
 
+## 🧪 Testar ANTES de ter as credenciais — modo Simulação
+
+Você **não precisa** de credencial para testar o fluxo. Ligue o modo de simulação:
+
+```
+SIMULATE_EXTERNAL=true
+```
+
+Com isso, as tools externas (LinkedIn, Instagram, Google Calendar, CMS) e o e-mail **não chamam a
+API real** — retornam um resultado **claramente rotulado como simulado**, mostrando o que *seria*
+enviado. Exemplo do retorno:
+
+```json
+{
+  "status": "simulado",
+  "tool": "linkedin_api_tool",
+  "message": "[SIMULAÇÃO] publicaria este post no LinkedIn — nenhuma ação externa REAL foi executada...",
+  "preview": "Novo case da Quântica no ar!"
+}
+```
+
+- É **opt-in e transparente** (status `simulado`) — **não** é um mock silencioso: você sempre sabe que
+  foi simulado.
+- Quando tiver as credenciais, é só **apagar/definir `SIMULATE_EXTERNAL=false`** e preencher as
+  variáveis reais → as tools passam a agir de verdade.
+- Sem simulação e sem credencial, a tool **falha explícito** dizendo qual variável preencher.
+
+**Resumo dos 3 estados de cada tool:**
+| `SIMULATE_EXTERNAL` | Credencial no `.env` | Comportamento |
+|---|---|---|
+| `true` | tanto faz | retorna **"simulado"** (com preview) |
+| vazio/`false` | ausente | **falha explícito** ("preencha X") |
+| vazio/`false` | preenchida | **ação real** (chama a API) |
+
+---
+
 ## Como aplicar (depois de obter as credenciais)
 
 1. Edite o arquivo **`ws-server/.env`** do app gerado.

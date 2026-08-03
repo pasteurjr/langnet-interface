@@ -1,17 +1,4 @@
-<!doctype html><html lang='pt-br'><head><meta charset='utf-8'><style>
-body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#1e293b;max-width:900px;margin:0 auto;padding:26px;font-size:12.5px;line-height:1.55}
-h1{color:#4338ca;border-bottom:3px solid #4338ca;padding-bottom:8px;font-size:22px}
-h2{color:#312e81;border-top:2px solid #e2e8f0;padding-top:12px;margin-top:22px;font-size:17px}
-h3{color:#3730a3;font-size:14px;margin-top:14px}
-blockquote{background:#fff7ed;border-left:4px solid #fb923c;padding:8px 14px;color:#7c2d12;font-size:11.5px}
-table{border-collapse:collapse;width:100%;font-size:11px;margin:10px 0}
-th,td{border:1px solid #cbd5e1;padding:6px 9px;text-align:left;vertical-align:top}
-th{background:#eef2ff;color:#312e81}
-code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:11px;color:#7c3aed}
-pre{background:#0f172a;color:#e2e8f0;padding:11px 13px;border-radius:7px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-word}
-ol,ul{padding-left:22px}
-li{margin:3px 0}
-</style></head><body><h1>Guia Completo — Como Obter as Credenciais das Integrações</h1>
+<!doctype html><html lang='pt-br'><head><meta charset='utf-8'><style>body{font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#1e293b;max-width:900px;margin:0 auto;padding:26px;font-size:12.5px;line-height:1.55}h1{color:#4338ca;border-bottom:3px solid #4338ca;padding-bottom:8px;font-size:22px}h2{color:#312e81;border-top:2px solid #e2e8f0;padding-top:12px;margin-top:22px;font-size:17px}h3{color:#3730a3;font-size:14px;margin-top:14px}blockquote{background:#fff7ed;border-left:4px solid #fb923c;padding:8px 14px;color:#7c2d12;font-size:11.5px}table{border-collapse:collapse;width:100%;font-size:11px;margin:10px 0}th,td{border:1px solid #cbd5e1;padding:6px 9px;text-align:left;vertical-align:top}th{background:#eef2ff;color:#312e81}code{background:#f1f5f9;padding:1px 5px;border-radius:4px;font-size:11px;color:#7c3aed}pre{background:#0f172a;color:#e2e8f0;padding:11px 13px;border-radius:7px;font-size:11px;overflow-x:auto;white-space:pre-wrap;word-break:break-word}ol,ul{padding-left:22px}li{margin:3px 0}</style></head><body><h1>Guia Completo — Como Obter as Credenciais das Integrações</h1>
 <p><strong>Para:</strong> app gerado pelo LangNet (Quântica Comercial) · <strong>Onde vão:</strong> arquivo <code>.env</code> do <code>ws-server</code>, seção <strong>INTEGRAÇÕES EXTERNAS</strong>
 <strong>Objetivo:</strong> obter cada valor que precisa ser colado no <code>.env</code> para habilitar as tools. Enquanto vazio, a tool <strong>falha explícito</strong> (não finge) — é seguro deixar em branco até você ter a credencial.</p>
 <blockquote>
@@ -228,6 +215,34 @@ VECTOR_ID_COL=id                   (coluna identificadora)
 <ul>
 <li><strong>Custo:</strong> nenhum (usa seu próprio banco + o <code>embedding_tool</code> acima).</li>
 </ul>
+<hr />
+<h2>🧪 Testar ANTES de ter as credenciais — modo Simulação</h2>
+<p>Você <strong>não precisa</strong> de credencial para testar o fluxo. Ligue o modo de simulação:</p>
+<pre><code>SIMULATE_EXTERNAL=true
+</code></pre>
+<p>Com isso, as tools externas (LinkedIn, Instagram, Google Calendar, CMS) e o e-mail <strong>não chamam a
+API real</strong> — retornam um resultado <strong>claramente rotulado como simulado</strong>, mostrando o que <em>seria</em>
+enviado. Exemplo do retorno:</p>
+<pre><code class="language-json">{
+  &quot;status&quot;: &quot;simulado&quot;,
+  &quot;tool&quot;: &quot;linkedin_api_tool&quot;,
+  &quot;message&quot;: &quot;[SIMULAÇÃO] publicaria este post no LinkedIn — nenhuma ação externa REAL foi executada...&quot;,
+  &quot;preview&quot;: &quot;Novo case da Quântica no ar!&quot;
+}
+</code></pre>
+<ul>
+<li>É <strong>opt-in e transparente</strong> (status <code>simulado</code>) — <strong>não</strong> é um mock silencioso: você sempre sabe que
+  foi simulado.</li>
+<li>Quando tiver as credenciais, é só <strong>apagar/definir <code>SIMULATE_EXTERNAL=false</code></strong> e preencher as
+  variáveis reais → as tools passam a agir de verdade.</li>
+<li>Sem simulação e sem credencial, a tool <strong>falha explícito</strong> dizendo qual variável preencher.</li>
+</ul>
+<p><strong>Resumo dos 3 estados de cada tool:</strong>
+| <code>SIMULATE_EXTERNAL</code> | Credencial no <code>.env</code> | Comportamento |
+|---|---|---|
+| <code>true</code> | tanto faz | retorna <strong>"simulado"</strong> (com preview) |
+| vazio/<code>false</code> | ausente | <strong>falha explícito</strong> ("preencha X") |
+| vazio/<code>false</code> | preenchida | <strong>ação real</strong> (chama a API) |</p>
 <hr />
 <h2>Como aplicar (depois de obter as credenciais)</h2>
 <ol>
