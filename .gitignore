@@ -17,3 +17,7 @@ instancias/
 # IDE
 .vscode/
 .idea/
+docs/clinica-medica/.token
+docs/clinica-medica/*.log
+docs/clinica-medica/*.nohup
+docs/clinica-medica/backend.log
