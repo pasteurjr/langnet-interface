@@ -2772,6 +2772,11 @@ def _template_env_example(detected_tools: List[str]) -> str:
         "# INTEGRAÇÕES EXTERNAS — preencha no futuro para habilitar (vazio = desabilitado)",
         "# ══════════════════════════════════════════════════════════════════",
         "",
+        "# MODO SIMULAÇÃO: SIMULATE_EXTERNAL=true faz as tools externas (LinkedIn/Instagram/",
+        "# Calendar/CMS/e-mail) RETORNAREM um resultado ROTULADO 'simulado' em vez de chamar a",
+        "# API real — para você testar o fluxo ANTES de ter credenciais. Deixe vazio/false p/ valer.",
+        "SIMULATE_EXTERNAL=",
+        "",
         "# LinkedIn — publicar posts (token OAuth + URN do autor)",
         "LINKEDIN_ACCESS_TOKEN=",
         "LINKEDIN_AUTHOR_URN=",
@@ -3970,6 +3975,12 @@ class EmailSenderTool(BaseTool):
     def _run(self, to: str, subject: str, body: str, attachment_path: Optional[str] = None) -> Dict[str, Any]:
         import smtplib
         from email.message import EmailMessage
+        # Modo de SIMULAÇÃO opt-in (mesmo flag das externas) — resposta rotulada.
+        if (os.getenv("SIMULATE_EXTERNAL", "") or "").strip().lower() in ("1", "true", "yes", "sim", "on"):
+            return {"status": "simulado", "tool": "email_sender_tool",
+                    "message": f"[SIMULAÇÃO] enviaria e-mail para {to} — nenhum envio real "
+                               "(SIMULATE_EXTERNAL ligado). Configure SMTP no .env para valer.",
+                    "to": to, "subject": subject}
         host = os.getenv("SMTP_HOST")
         if not host:
             raise RuntimeError(
@@ -4063,6 +4074,27 @@ def _require(*names: str):
     return [os.getenv(n) for n in names]
 
 
+def _sim_on() -> bool:
+    """Modo de SIMULAÇÃO (opt-in): permite testar o fluxo antes de ter as credenciais.
+    Ligado por SIMULATE_EXTERNAL=true (global) ou SIMULATE_<TOOL>=true (por tool)."""
+    return (os.getenv("SIMULATE_EXTERNAL", "") or "").strip().lower() in ("1", "true", "yes", "sim", "on")
+
+
+def _simulado(tool: str, resumo: str, extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Resposta CLARAMENTE ROTULADA como simulada (não é mock silencioso: o status é
+    'simulado' e a mensagem avisa que nenhuma ação externa real ocorreu)."""
+    out = {
+        "status": "simulado",
+        "tool": tool,
+        "message": f"[SIMULAÇÃO] {resumo} — nenhuma ação externa REAL foi executada "
+                   f"(SIMULATE_EXTERNAL ligado). Preencha as credenciais no .env para valer.",
+        "id": "SIMULADO-" + tool.replace("_tool", "").replace("_api", "").upper(),
+    }
+    if extra:
+        out.update(extra)
+    return out
+
+
 # ---------- LinkedIn: publicar post (API oficial) ----------
 class LinkedInPublishSchema(BaseModel):
     text: str = Field(..., description="Texto do post a publicar no LinkedIn")
@@ -4074,6 +4106,9 @@ class LinkedInApiTool(BaseTool):
     args_schema: type[BaseModel] = LinkedInPublishSchema
 
     def _run(self, text: str) -> Dict[str, Any]:
+        if _sim_on():
+            return _simulado("linkedin_api_tool", "publicaria este post no LinkedIn",
+                             {"preview": (text or "")[:200]})
         import requests
         token, author = _require("LINKEDIN_ACCESS_TOKEN", "LINKEDIN_AUTHOR_URN")
         resp = requests.post(
@@ -4103,6 +4138,9 @@ class InstagramGraphApiTool(BaseTool):
     args_schema: type[BaseModel] = InstagramPublishSchema
 
     def _run(self, image_url: str, caption: str = "") -> Dict[str, Any]:
+        if _sim_on():
+            return _simulado("instagram_graph_api_tool", "publicaria esta imagem no Instagram",
+                             {"image_url": image_url, "caption": (caption or "")[:200]})
         import requests
         token, ig_user = _require("INSTAGRAM_ACCESS_TOKEN", "INSTAGRAM_USER_ID")
         base = "https://graph.facebook.com/v19.0"
@@ -4132,6 +4170,10 @@ class GoogleCalendarApiTool(BaseTool):
 
     def _run(self, summary: str, start_iso: str, end_iso: str,
              calendar_id: Optional[str] = None) -> Dict[str, Any]:
+        if _sim_on():
+            return _simulado("google_calendar_api_tool", f"criaria o evento '{summary}'",
+                             {"summary": summary, "start": start_iso, "end": end_iso,
+                              "htmlLink": "https://calendar.google.com/(evento-simulado)"})
         import requests
         (token,) = _require("GOOGLE_CALENDAR_ACCESS_TOKEN")
         cal = calendar_id or os.getenv("GOOGLE_CALENDAR_ID", "primary")
@@ -4158,6 +4200,9 @@ class CmsApiTool(BaseTool):
     args_schema: type[BaseModel] = CmsPublishSchema
 
     def _run(self, title: str, body: str, status: str = "draft") -> Dict[str, Any]:
+        if _sim_on():
+            return _simulado("cms_api_tool", f"publicaria '{title}' no CMS",
+                             {"title": title, "post_status": status})
         import requests
         url, key = _require("CMS_API_URL", "CMS_API_KEY")
         resp = requests.post(
