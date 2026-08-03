@@ -3299,10 +3299,18 @@ def _parse_schema_tables_full(schema_sql: str) -> Dict[str, str]:
     return tables
 
 
-def _generate_crud_adapters(entities: List[str], schema_sql: str) -> str:
+def _generate_crud_adapters(entities: List[str], schema_sql: str,
+                            existing_fns: Optional[set] = None) -> str:
     """Gera listar_/obter_/atualizar_/excluir_<entidade>_deterministic pra cada
-    entidade que existe no schema, com base nas colunas e tabelas filhas."""
+    entidade que existe no schema, com base nas colunas e tabelas filhas.
+
+    `existing_fns`: nomes de funções JÁ definidas (pelos adapters do LLM ou pelos
+    determinísticos por-task). Entidade cujo `listar_<ent>_deterministic` já existe é
+    PULADA — evita definição duplicada (a 2ª sobrescreveria a 1ª) e, com isso, evita usar
+    colunas divergentes entre o schema do Modelo de Dados e o que a task/DB real usa
+    (ex.: pilares_conteudo com 'nome' no schema mas 'tema' no banco → 'Unknown column nome')."""
     model = _schema_model(schema_sql)
+    existing_fns = existing_fns or set()
     out_fns: List[str] = []
     names: List[str] = []
     conn_block = (
@@ -3314,6 +3322,10 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str) -> str:
     seen = set()
     for ent in entities:
         if not ent or ent not in model or ent in seen:
+            continue
+        # Dedup: se já existe um listar_<ent>_deterministic definido antes, não regera
+        # (a definição por-task/LLM tem prioridade — casa com o que o app realmente usa).
+        if f"listar_{ent}_deterministic" in existing_fns:
             continue
         seen.add(ent)
         m = model[ent]
@@ -4758,7 +4770,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         except Exception:
             pass
     if _entities and _schema_sql_cg:
-        _crud_snippet = _generate_crud_adapters(_entities, _schema_sql_cg)
+        # nomes de funções já definidas (LLM + determinísticos por-task) → dedup no CRUD
+        import re as _re_fns
+        _existing_fns = set(_re_fns.findall(r"def\s+(\w+)\s*\(", adapters_py))
+        _crud_snippet = _generate_crud_adapters(_entities, _schema_sql_cg, _existing_fns)
         if _crud_snippet:
             if not _list_helper_added:
                 adapters_py = adapters_py.rstrip() + "\n" + _LIST_HELPER
