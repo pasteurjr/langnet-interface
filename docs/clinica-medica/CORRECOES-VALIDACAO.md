@@ -81,6 +81,16 @@ de novo, **recarregou no context length DEFAULT do modelo (4096)**, não nos 409
 **Ação (do usuário, na máquina 192.168.1.115):** recarregar `qwen2.5-coder-32b-instruct` com context
 length 40960 (ou 32768), **desativar auto-unload/idle TTL** e mantê-lo pinado. Não corrigível daqui.
 **Status:** ⏸️ pipeline pausado no Modelo de Dados aguardando o modelo voltar a 40960.
+
+**Atualização (recorrência):** após o usuário recarregar a 40960, um teste passou (prompt ~7k tokens),
+mas **em poucos minutos o contexto voltou a 4096** — confirmado que o modelo é **evictado por
+ociosidade (auto-unload/idle TTL) e recarregado via JIT no default 4096** entre as etapas. Descartada
+a hipótese de eviction por embeddings (o pipeline de data model **não** usa `memory=True`/embedder;
+as referências a embeddings estão só no CÓDIGO GERADO, não no pipeline). Portanto **recarregar não
+basta** — é preciso, no LM Studio: (1) **desativar Auto-Unload / Idle TTL** do modelo; (2) se o
+**JIT loading** estiver ligado, setar o **context length do JIT = 40960** (senão o JIT recarrega em
+4096); (3) manter o modelo **pinado/carregado** e evitar que outros modelos (ex.: vídeo `wan2.2`) o
+expulsem por VRAM. É ajuste de ambiente (máquina do usuário), não do LangNet.
 **Nota LangNet (menor, opcional):** `langnetdatamodel._get_llm` não seta `context_window` no CrewLLM;
 setar ajudaria o litellm a contar tokens/truncar, mas NÃO resolve o n_ctx servido (que é do LM Studio).
 
