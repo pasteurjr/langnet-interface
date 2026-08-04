@@ -197,7 +197,7 @@ async def execute_analysis_in_background(
             project_name=f"Análise de Requisitos - Projeto {project_id}",
             project_description=instructions[:500] if instructions else "Análise de documentos para geração de requisitos",
             project_domain="",  # Será identificado pelos agentes a partir dos documentos
-            use_deepseek=True  # Enable DeepSeek (will use reasoner if configured)
+            use_deepseek=False  # Regra do projeto: nunca DeepSeek cloud — usa LLM_PROVIDER (lmstudio)
         )
 
         # Extract requirements document

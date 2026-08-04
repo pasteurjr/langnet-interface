@@ -256,7 +256,10 @@ async def generate_petri_net(
     state["agents_data"] = agents_list
     state["tasks_data"] = tasks_list
     state["dependencies"] = {"flow_document_md": flow_document} if flow_document else {}
-    state["use_deepseek"] = True
+    # Usa o provider configurado (LLM_PROVIDER, ex.: lmstudio). NÃO forçar DeepSeek cloud —
+    # regra do projeto: nunca usar DeepSeek cloud. use_deepseek=True causava timeout de 900s
+    # e violava a restrição. Com False, get_llm respeita LLM_PROVIDER=lmstudio.
+    state["use_deepseek"] = False
 
     try:
         result_state = execute_task_with_context("design_petri_net", state)

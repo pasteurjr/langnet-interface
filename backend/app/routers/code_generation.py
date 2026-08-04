@@ -231,7 +231,8 @@ async def generate_code(
     except Exception:
         pass
     state["project_name"] = state.get("project_name") or "Sistema Agêntico"
-    state["use_deepseek"] = True
+    # Respeita LLM_PROVIDER (lmstudio). Regra do projeto: nunca usar DeepSeek cloud.
+    state["use_deepseek"] = False
 
     # Carrega agent_task_spec_document (markdown) — permite o adapter Python
     # parsear a coluna `| Tools |` e amarrar tools por task/agente.

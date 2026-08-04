@@ -65,6 +65,28 @@ este é bloqueio de event loop).
 
 ---
 
+## Bug #6 — 3 etapas forçavam DeepSeek cloud (viola a regra "nunca DeepSeek cloud") e travavam a Petri
+
+**Etapa:** Rede de Petri (falha visível) + Requisitos + Geração de Código (mesma raiz).
+**Sintoma:** a Petri falhava com `litellm.BadRequestError: DeepseekException - We were unable to start
+processing your request within the 900-second timeout limit`. Ou seja, a geração da Petri estava indo
+para o **DeepSeek cloud** (não o LM Studio local), e o DeepSeek não respondeu em 900s.
+**Causa raiz:** três routers tinham **`use_deepseek=True` hardcoded**, e `get_llm(use_deepseek=True)`
+**ignora `LLM_PROVIDER`** e força DeepSeek:
+- `app/routers/petri_net.py:259` (Petri) → falhou visivelmente (DeepSeek timeout);
+- `app/routers/code_generation.py:234` (Código) → usaria DeepSeek também;
+- `app/routers/documents.py:200` (Requisitos) → também roteava para DeepSeek.
+Isso **viola a restrição do projeto** ("nunca usar DeepSeek cloud") e explica o travamento da Petri.
+(Os Requisitos "funcionaram" porque o DeepSeek estava disponível naquele momento — mas ainda assim
+era o caminho errado.)
+**Correção:** os três passaram a `use_deepseek=False`, respeitando `LLM_PROVIDER=lmstudio` (qwen local).
+**Commits:** `CHECKPOINT ... ANTES de: Petri parar de usar DeepSeek cloud` + `FIX: pipeline respeita
+LLM_PROVIDER (lmstudio) em Petri/Código/Requisitos — nunca DeepSeek cloud`.
+**Verificação:** _(regenerar a Petri com lmstudio; agora o `_repair_json` do bug #5 lida com eventual
+truncamento no modelo local)._
+
+---
+
 ## Achado #4 (AMBIENTE, não-LangNet) — LM Studio recarregou o modelo em 4096 (JIT), travando o Modelo de Dados
 
 **Etapa:** Modelo de Dados (`POST /data-model/{pid}/generate`) e todas as seguintes.
