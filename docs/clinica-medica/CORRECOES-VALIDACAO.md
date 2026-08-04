@@ -64,3 +64,34 @@ este é bloqueio de event loop).
   regressão, a fazer com teste dedicado (não aplicada no meio desta validação para não desestabilizar).
 
 ---
+
+## Bug #3 — Refino da Especificação estoura o contexto do modelo local (refino falha silencioso)
+
+**Etapa:** Especificação → `POST /api/specifications/{sid}/refine`
+**Sintoma:** ao enviar a rodada 1 de refino de interface (instruções de 3 KB), o refino foi aceito
+(HTTP 200, assíncrono) mas **nunca gerou a v2**. No log:
+`[SPEC REFINEMENT] Prompt built: 169660 chars` →
+`openai.BadRequestError: 400 - n_keep: 41264 >= n_ctx: 40960 ("provide a shorter input")`.
+
+**Causa raiz:** `execute_specification_refinement` (specification.py) monta o prompt com **a
+especificação inteira (120 KB) + requisitos (até 45 KB) + histórico + instruções ≈ 41.264 tokens**,
+acima do contexto de **40.960 tokens** do qwen local. Mesmo sem os requisitos, um doc de 120 KB
+(~30 K tokens de entrada) mais a saída do doc inteiro (~30 K tokens) não cabe num contexto de 40 K —
+**refino de documento inteiro numa tacada é fisicamente impossível no modelo local** para specs
+grandes. (Limitação já conhecida, agora batida com doc maior.)
+
+**Correção:** refino **por seção/UC (chunked)** dentro do endpoint. Quando a spec é grande, em vez de
+uma chamada gigante: (1) divide o documento por seções `## N.` e a seção de Casos de Uso por blocos
+`**UC-`; (2) refina **apenas as unidades relevantes à interface** (as que contêm "Wireframe" ou a
+seção "Interfaces do Sistema"), passando o resto **inalterado**; (3) cada chamada leva só aquele
+trecho + as instruções (cabe folgado no contexto); (4) se um trecho refinado vier suspeito
+(curto/perdeu cabeçalho), mantém o original; (5) remonta o documento na ordem e salva como nova versão.
+
+**Commits:**
+- `CHECKPOINT 2026-08-03 21:40 — ANTES de: corrigir refino da Especificação p/ caber no contexto`
+- `FIX Especificação: refino por seção/UC (chunked) p/ caber no contexto do modelo local`
+
+**Verificação:** _(a preencher — reenviar a rodada 1 de refino de interface e confirmar que a v2 é
+criada e os wireframes ganham tabela+ações (CRUD) e entrada+ação+resultado (agênticas))._
+
+---
