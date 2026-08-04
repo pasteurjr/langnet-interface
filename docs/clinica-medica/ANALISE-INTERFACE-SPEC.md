@@ -43,5 +43,22 @@ Exemplos concretos observados na v1:
 Mensagem completa em `refino-interface-01.txt`. Enviada via `POST /api/specifications/{sid}/refine`
 (action_type=refine) — **aceita (HTTP 200)**, agente processando (v1→v2). Regras 1/2/3 acima.
 
-**Resultado da rodada 1:** _(a preencher quando a nova versão sair — tamanho, e se os wireframes
-passaram a ter tabela+ações nas telas CRUD e entrada+ação+resultado nas agênticas)._
+**Resultado da rodada 1 (✅ SUCESSO):** o 32B refinou **19 de 19** unidades com wireframe (0 mantidas
+por suspeita), em 725s, gerando a **v2** (120.126 → 121.366 chars). Os wireframes melhoraram nas DUAS
+categorias, exatamente como pedido:
+
+**Tela agêntica — UC-002 Triagem (antes → depois):**
+- *Antes:* só o resultado pré-preenchido (`Classificação: Verde`).
+- *Depois:* 3 blocos — **ENTRADA** (Paciente/Queixa/Sinais Vitais editáveis) → **AÇÃO EXPLÍCITA**
+  (`[Classificar com IA — Executado pelo Agente Hub de Triagem]`) → **RESULTADO DO AGENTE**
+  (Classificação + Justificativa + **Área de Destino** roteada) + botão **[Encaminhar ao Especialista]**.
+
+**Tela de cadastro — UC-013 Especialidades (antes → depois):**
+- *Antes:* lista em bullets (`- Cardiologia (Ativa)`) + botões genéricos + `[Selecionar]`.
+- *Depois:* `Busca: [____] [+ Novo]` + **tabela** (Nome | Status | **Ações** com `Ver Editar Excluir`
+  por linha) + **Formulário** com `[Salvar] [Cancelar]`.
+
+**Conclusão da rodada 1:** a organização em cadastros + agêntica já vinha boa; o refino guiado tornou os
+**wireframes** concretos e utilizáveis (tabela+ações nos CRUD; entrada→ação→resultado nas agênticas).
+Suficiente para seguir — a v2 vira a base do Protótipo e do Código. (Este ciclo também **validou o fix
+do bug #3**: o refino por seção/UC roda no modelo local sem estourar contexto.)

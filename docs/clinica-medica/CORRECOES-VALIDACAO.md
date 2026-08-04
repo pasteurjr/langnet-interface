@@ -91,7 +91,10 @@ trecho + as instruções (cabe folgado no contexto); (4) se um trecho refinado v
 - `CHECKPOINT 2026-08-03 21:40 — ANTES de: corrigir refino da Especificação p/ caber no contexto`
 - `FIX Especificação: refino por seção/UC (chunked) p/ caber no contexto do modelo local`
 
-**Verificação:** _(a preencher — reenviar a rodada 1 de refino de interface e confirmar que a v2 é
-criada e os wireframes ganham tabela+ações (CRUD) e entrada+ação+resultado (agênticas))._
+**Verificação (✅ CONFIRMADA):** reenviada a rodada 1 de refino de interface com o backend recarregado.
+Log: `Spec grande (120126 > 55000) → refino CHUNKED`, `33 unidades, 19 refináveis`, **sem
+BadRequestError**. Resultado: **v2 criada** (725s, 19/19 unidades refinadas, 0 suspeitas). Wireframes
+melhoraram: UC-013 (CRUD) ganhou tabela+busca+ações por linha+formulário; UC-002 (agêntica) ganhou
+Entrada→Ação de IA→Resultado do agente+Encaminhar. Detalhes em `ANALISE-INTERFACE-SPEC.md`.
 
 ---
