@@ -1746,6 +1746,63 @@ def _adapt_petri_net(parsed: Dict[str, Any]) -> Dict[str, Any]:
     return root
 
 
+def _repair_json(s: str) -> Dict[str, Any]:
+    """Repara JSON TRUNCADO (saída do LLM cortada por max_tokens/contexto).
+    Estratégia: varre respeitando strings/escapes, guarda a posição do último
+    fechamento de elemento em nível seguro, corta o lixo truncado no fim, remove
+    vírgula pendente e fecha as estruturas abertas. Recupera lugares/transições/arcos
+    que já haviam completado."""
+    import json as _json
+    s = (s or "").strip()
+    # localiza o início do objeto raiz
+    start = s.find("{")
+    if start < 0:
+        return {}
+    s = s[start:]
+    stack = []          # pilha de '{' e '['
+    in_str = False; esc = False
+    last_safe = -1      # índice do último '}' ou ']' com a pilha "rasa" (dentro de um array/obj raiz)
+    for i, c in enumerate(s):
+        if in_str:
+            if esc: esc = False
+            elif c == "\\": esc = True
+            elif c == '"': in_str = False
+            continue
+        if c == '"':
+            in_str = True
+        elif c in "{[":
+            stack.append(c)
+        elif c in "}]":
+            if stack: stack.pop()
+            # ponto seguro: acabamos de fechar um elemento e ainda restam ≤2 níveis abertos
+            if len(stack) <= 2:
+                last_safe = i
+    if last_safe < 0:
+        return {}
+    frag = s[:last_safe + 1]
+    # remove vírgula/espaços pendentes e fecha estruturas ainda abertas
+    frag_stripped = frag.rstrip()
+    if frag_stripped.endswith(","):
+        frag_stripped = frag_stripped[:-1]
+    # recomputa o que ficou aberto no fragmento e fecha na ordem inversa
+    st2 = []; in_s = False; es = False
+    for c in frag_stripped:
+        if in_s:
+            if es: es = False
+            elif c == "\\": es = True
+            elif c == '"': in_s = False
+            continue
+        if c == '"': in_s = True
+        elif c in "{[": st2.append(c)
+        elif c in "}]":
+            if st2: st2.pop()
+    closer = "".join("}" if b == "{" else "]" for b in reversed(st2))
+    try:
+        return _json.loads(frag_stripped + closer)
+    except (_json.JSONDecodeError, TypeError):
+        return {}
+
+
 def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
     """Update state with design_petri_net results, adapted to petri-net-editor schema."""
     import re as _re
@@ -1781,7 +1838,13 @@ def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNe
             try:
                 return json.loads(outer.group(0))
             except json.JSONDecodeError:
-                return {}
+                pass
+        # Truncado (cortado por max_tokens/contexto): repara fechando estruturas abertas
+        repaired = _repair_json(s)
+        if repaired:
+            print(f"[PETRI OUT] JSON truncado reparado — recuperados "
+                  f"{len(repaired.get('lugares', repaired.get('places', [])))} lugares")
+            return repaired
         return {}
 
     parsed = _try_parse(output_json)
@@ -1802,6 +1865,14 @@ def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNe
         f"transicoes={len(adapted.get('transicoes', []))} "
         f"arcos={len(adapted.get('arcos', []))}"
     )
+    # Diagnóstico: se ainda vazio, salva o raw p/ inspeção
+    if not adapted.get("lugares"):
+        try:
+            with open("/tmp/petri_raw_fail.txt", "w") as _f:
+                _f.write(output_json if isinstance(output_json, str) else str(output_json))
+            print("[PETRI OUT] raw salvo em /tmp/petri_raw_fail.txt")
+        except Exception:
+            pass
 
     # Validação estrutural — emite warnings se detectarmos antipatterns
     petri_warnings = _validate_petri_net_topology(adapted)
