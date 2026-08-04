@@ -18,7 +18,42 @@
     "size": 120126
   },
   "data_model": {
+    "session_id": "6cdf5bfd-26b0-4e0f-9c74-c72880a5299d",
+    "status": "ok",
+    "sid": "6cdf5bfd-26b0-4e0f-9c74-c72880a5299d"
+  },
+  "ui_spec": {
+    "session_id": "1f6609b4-5523-493e-b6f6-133c24dacb5e",
+    "status": "ok",
+    "screens": 18
+  },
+  "test_cases": {
+    "session_id": "f707c65b-b7c4-4c53-9e9f-63b31e1b29ca",
+    "status": "ok",
+    "sid": "f707c65b-b7c4-4c53-9e9f-63b31e1b29ca"
+  },
+  "agent_task_spec": {
+    "session_id": "aac41fff-6cfb-437f-ac20-83f664ce217f",
+    "status": "ok",
+    "sid": "aac41fff-6cfb-437f-ac20-83f664ce217f"
+  },
+  "agents_yaml": {
+    "session_id": "71e7429a-550c-4b49-9106-8ec2ef711e71",
+    "status": "ok",
+    "sid": "71e7429a-550c-4b49-9106-8ec2ef711e71"
+  },
+  "tasks_yaml": {
+    "session_id": "21855b5f-bb23-450c-b5be-c33ad184118c",
+    "status": "ok",
+    "sid": "21855b5f-bb23-450c-b5be-c33ad184118c"
+  },
+  "task_flow": {
+    "session_id": "822e6893-3202-4b6b-a9b2-63c77d422eb4",
+    "status": "ok",
+    "sid": "822e6893-3202-4b6b-a9b2-63c77d422eb4"
+  },
+  "petri": {
     "status": "ERROR",
-    "exc": "HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=60)"
+    "err": "502: {\"detail\":\"LLM não retornou rede de Petri válida (lugares vazio)\"}"
   }
 }
