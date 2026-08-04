@@ -98,6 +98,35 @@ def _safe_format_description(template: str, mapping: Dict[str, Any]) -> str:
     return _re.sub(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", _repl, template)
 
 
+def _direct_llm_complete(description: str, expected_output: str = "") -> str:
+    """Chamada DIRETA ao LM Studio (openai SDK) — fallback quando o CrewAI retorna vazio.
+    O CrewAI + modelo local (qwen) às vezes devolve 'Invalid response from LLM call - None
+    or empty' mesmo com o modelo gerando corretamente por chamada direta. Este helper reusa a
+    MESMA descrição já formatada e devolve o texto cru para o output_func processar."""
+    import os as _os
+    from openai import OpenAI as _OpenAI
+    base = _os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1")
+    model = _os.getenv("LMSTUDIO_MODEL_NAME", "qwen2.5-coder-32b-instruct")
+    client = _OpenAI(api_key=_os.getenv("LMSTUDIO_API_KEY", "lm-studio"), base_url=base)
+    prompt = description
+    if expected_output:
+        prompt += "\n\nFORMATO DE SAÍDA ESPERADO:\n" + expected_output
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=int(_os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
+        temperature=0.2,
+    )
+    return resp.choices[0].message.content or ""
+
+
+class _DirectResult:
+    """Imita o CrewOutput (atributo .raw) para o output_func consumir o fallback direto."""
+    def __init__(self, raw: str):
+        self.raw = raw
+        self.json_dict = None
+
+
 def get_llm(use_deepseek: bool = False):
     """
     Get LLM instance based on configuration (with caching)
@@ -7063,7 +7092,23 @@ def execute_task_with_context(
         # This prevents CrewAI from trying to interpolate any braces in the content
 
         if hasattr(crew, 'kickoff'):
-            result = crew.kickoff(inputs={})
+            try:
+                result = crew.kickoff(inputs={})
+            except Exception as _kick_err:
+                # CrewAI + modelo local às vezes retorna vazio ("Invalid response from LLM call -
+                # None or empty") mesmo com o modelo gerando corretamente por chamada direta.
+                # Fallback: chama o LLM diretamente com a MESMA descrição já formatada.
+                _msg = str(_kick_err)
+                _provider = (os.getenv("LLM_PROVIDER", "openai") or "").lower()
+                if _provider == "lmstudio" and ("None or empty" in _msg or "Invalid response from LLM" in _msg):
+                    print(f"[FALLBACK] CrewAI vazio em '{task_name}' — usando chamada DIRETA ao LM Studio")
+                    _direct = _direct_llm_complete(task_description, task_expected_output)
+                    if not _direct or len(_direct) < 20:
+                        raise
+                    print(f"[FALLBACK] chamada direta OK — {len(_direct)} chars")
+                    result = _DirectResult(_direct)
+                else:
+                    raise
         elif hasattr(crew, 'executar'):
             result = crew.executar(inputs={})
         else:
