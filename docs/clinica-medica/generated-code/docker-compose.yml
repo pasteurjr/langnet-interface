@@ -1,0 +1,34 @@
+version: "3.9"
+
+services:
+  ws-server:
+    build: ./ws-server
+    container_name: clinia-clinica-medica-inteligente_ws
+    env_file: ./ws-server/.env
+    ports:
+      - "5003:5003"
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: clinia-clinica-medica-inteligente_backend
+    environment:
+      - PORT=8001
+    ports:
+      - "8001:8001"
+    depends_on:
+      - ws-server
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: clinia-clinica-medica-inteligente_frontend
+    environment:
+      - PORT=3001
+      - REACT_APP_BACKEND_URL=http://localhost:8001
+      - REACT_APP_WS_URL=ws://localhost:5003
+    ports:
+      - "3001:3001"
+    depends_on:
+      - backend
+    restart: unless-stopped

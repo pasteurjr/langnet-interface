@@ -1,0 +1,236 @@
+cadastrar_paciente:
+  agent: recepcionista_agent
+  description: "⚠️ REGRAS OBRIGATÓRIAS PARA ESTA TAREFA:\n1. Você DEVE usar as ferramentas:\
+    \ `database_tool`, `embedding_tool`. NÃO simule resultados.\n2. Se a tarefa exige\
+    \ INSERT/UPDATE/DELETE, chame `database_tool` com a query SQL real.\n3. Não invente\
+    \ UUIDs, IDs nem confirmações — pegue do resultado real da tool.\n4. Se uma consulta\
+    \ falhar (retornar chave 'error' no JSON), reporte o erro no output; não maquie.\n\
+    \n\U0001F4E5 INPUTS RECEBIDOS (use esses valores nas suas queries e chamadas de\
+    \ tool):\n  - nome = {nome}\n  - cpf = {cpf}\n  - data_nascimento = {data_nascimento}\n\
+    \  - contato = {contato}\n  - convenio = {convenio}\n  - historico = {historico}\n\
+    \  - status = {status}\n  - consentimento = {consentimento}\n\nCadastrar um novo\
+    \ paciente no sistema, armazenando os dados fornecidos. Input data format:\n \
+    \ - nome: String\n  - cpf: String\n  - data_nascimento: Date\n  - contato: String\n\
+    \  - convenio: String\n  - historico: Text\n  - status: Enum (ativo/inativo)\n\
+    \  - consentimento: Boolean\n\nProcess steps:\n  1. INSERT: chame database_tool\
+    \ com\n     query=\"INSERT INTO pacientes(nome, cpf, data_nascimento, contato,\
+    \ convenio) VALUES(%s, %s, %s, %s, %s)\"\n     params=[{nome}, {cpf}, {data_nascimento},\
+    \ {contato}, {convenio}]\n  2. Capture o id UUID: chame database_tool com\n  \
+    \   query=\"SELECT id FROM pacientes WHERE cpf=%s ORDER BY created_at DESC LIMIT\
+    \ 1\"\n     params=[{cpf}]\n     Guarde em paciente_id (NUNCA use LAST_INSERT_ID()).\n\
+    \  3. Se {consentimento} for True:\n     chame database_tool com\n     query=\"\
+    INSERT INTO consentimentos(paciente_id, data_hora, versao_termo) VALUES(%s, NOW(),\
+    \ 'v1')\"\n     params=[paciente_id]\n  4. Retorne paciente_id + status \"sucesso\"\
+    .\n"
+  expected_output: 'Retornar um texto em formato JSON contendo as seguintes keys:
+    - paciente_id: UUID capturado no passo 2 - status: String (sucesso ou erro)
+
+    '
+atualizar_paciente:
+  agent: recepcionista_agent
+  description: "Atualizar informações do paciente no sistema, armazenando os dados\
+    \ fornecidos. Input data format:\n  - paciente_id: UUID\n  - nome: String\n  -\
+    \ cpf: String\n  - data_nascimento: Date\n  - contato: String\n  - convenio: String\n\
+    \  - historico: Text\n  - status: Enum (ativo/inativo)\n  - consentimento: Boolean\n\
+    \nProcess steps:\n  1. UPDATE: chame database_tool com\n     query=\"UPDATE pacientes\
+    \ SET nome=%s, cpf=%s, data_nascimento=%s, contato=%s, convenio=%s, historico=%s,\
+    \ status=%s WHERE id=%s\"\n     params=[{nome}, {cpf}, {data_nascimento}, {contato},\
+    \ {convenio}, {historico}, {status}, {paciente_id}]\n  2. Se {consentimento} for\
+    \ True:\n     a. INSERT: chame database_tool com\n        query=\"INSERT INTO\
+    \ consentimentos(paciente_id, data_hora, versao_termo) VALUES(%s, NOW(), 'v1')\"\
+    \n        params=[{paciente_id}]\n  3. Retorne paciente_id + status \"sucesso\"\
+    .\n"
+  expected_output: 'Retornar um texto em formato JSON contendo as seguintes keys:
+    - paciente_id: UUID do paciente armazenado - status: String (sucesso ou erro)
+
+    '
+triagem_agentiva:
+  agent: triagem_hub_agent
+  description: 'Classificar a urgência do paciente com base em sinais vitais e queixa
+    inicial, roteirizando-o para o agente especialista correto. Input Schema: - paciente_id:
+    UUID - queixa_inicial: String - sinais_vitais: Text Process steps numerados: 1.
+    Receber os dados de entrada (paciente_id, queixa_inicial, sinais_vitais). 2. Utilizar
+    o embedding_tool para analisar a queixa_inicial e sinais_vitais. 3. Consultar
+    o database_tool para obter informações adicionais sobre o paciente, se necessário.
+    4. Classificar a urgência do paciente em uma das categorias: verde, amarelo ou
+    vermelho. 5. Determinar o agente especialista mais adequado com base na classificação
+    de urgência. 6. Gerar uma justificativa para a classificação de urgência e a roteirização.
+
+    '
+  expected_output: '- classificacao_urgencia: Enum (verde/amarelo/vermelho) - justificativa:
+    Text - area_destino: String
+
+    '
+pre_atendimento_cardiologia:
+  agent: especialista_cardiologia_agent
+  description: 'Realizar o pré-atendimento específico para pacientes com problemas
+    cardíacos, gerando um pré-diagnóstico. Input format: - paciente_id: UUID - queixa_inicial:
+    String - sinais_vitais: Text Process steps: 1. Receber os dados de entrada do
+    paciente. 2. Utilizar o embedding_tool para processar a queixa inicial e sinais
+    vitais. 3. Consultar o database_tool para buscar histórico médico do paciente
+    (SELECT * FROM historico_medico WHERE paciente_id = {paciente_id}). 4. Analisar
+    os dados recebidos e compará-los com informações históricas do paciente. 5. Gerar
+    hipóteses de diagnóstico baseado na análise. 6. Determinar o nível de confiança
+    no pré-diagnóstico (baixa/média/alta). 7. Sugerir exames complementares, se necessário.
+
+    '
+  expected_output: '- hipoteses: JSON contendo as possíveis condições cardíacas que
+    o paciente pode estar apresentando. - nivel_confianca: Enum indicando a confiabilidade
+    do pré-diagnóstico (baixa/média/alta). - exames_sugeridos: Texto descrevendo os
+    exames complementares recomendados para confirmar ou refutar as hipóteses.
+
+    '
+pre_atendimento_pediatria:
+  agent: especialista_pediatria_agent
+  description: 'Realizar o pré-atendimento específico para pacientes pediátricos,
+    gerando um pré-diagnóstico. Input format: - paciente_id: UUID - queixa_inicial:
+    String - sinais_vitais: Text Process steps: 1. Receber os dados de entrada do
+    paciente. 2. Utilizar o embedding_tool para processar a queixa inicial e sinais
+    vitais. 3. Consultar o database_tool para buscar históricos médicos e condições
+    similares. 4. Gerar hipóteses de diagnóstico baseado nos dados recebidos e na
+    consulta ao banco. 5. Avaliar a confiança do pré-diagnóstico. 6. Sugerir exames
+    complementares, se necessário.
+
+    '
+  expected_output: '- hipoteses: JSON - nivel_confianca: Enum (baixa/média/alta) -
+    exames_sugeridos: Text
+
+    '
+pre_atendimento_gastroenterologia:
+  agent: especialista_gastroenterologia_agent
+  description: 'Realizar o pré-atendimento específico para pacientes com problemas
+    gastrointestinais, gerando um pré-diagnóstico. Input Schema: - paciente_id: UUID
+    - queixa_inicial: String - sinais_vitais: Text Process steps numerados: 1. Receber
+    os dados de entrada do paciente. 2. Utilizar o embedding_tool para processar a
+    queixa inicial e sinais vitais. 3. Consultar o database_tool para buscar histórico
+    médico do paciente (SELECT). 4. Analisar os dados recebidos e compará-los com
+    informações médicas relevantes. 5. Gerar hipóteses de diagnóstico baseado na análise.
+    6. Determinar o nível de confiança no pré-diagnóstico. 7. Sugerir exames complementares,
+    se necessário.
+
+    '
+  expected_output: '- hipoteses: JSON contendo as possíveis condições médicas do paciente.
+    - nivel_confianca: Enum (baixa/média/alta) indicando a confiabilidade do pré-diagnóstico.
+    - exames_sugeridos: Text descrevendo os exames que devem ser realizados para confirmar
+    o diagnóstico.
+
+    '
+criar_encaminhamento:
+  agent: encaminhamento_agent
+  description: "⚠️ REGRAS OBRIGATÓRIAS PARA ESTA TAREFA:\n1. Você DEVE usar as ferramentas:\
+    \ `database_tool`, `embedding_tool`. NÃO simule resultados.\n2. Se a tarefa exige\
+    \ INSERT/UPDATE/DELETE, chame `database_tool` com a query SQL real.\n3. Não invente\
+    \ UUIDs, IDs nem confirmações — pegue do resultado real da tool.\n4. Se uma consulta\
+    \ falhar (retornar chave 'error' no JSON), reporte o erro no output; não maquie.\n\
+    \n\U0001F4E5 INPUTS RECEBIDOS (use esses valores nas suas queries e chamadas de\
+    \ tool):\n  - paciente_id = {paciente_id}\n  - especialidade_id = {especialidade_id}\n\
+    \  - hipoteses = {hipoteses}\n  - nivel_confianca = {nivel_confianca}\n  - exames_sugeridos\
+    \ = {exames_sugeridos}\n\nSelecionar médico disponível e criar encaminhamento\
+    \ para o paciente com base no pré-diagnóstico. Input data format:\n  - paciente_id:\
+    \ UUID\n  - especialidade_id: UUID\n  - hipoteses: JSON\n  - nivel_confianca:\
+    \ Enum (baixa/média/alta)\n  - exames_sugeridos: Text\n\nProcess steps:\n  1.\
+    \ Selecionar médico disponível na especialidade: chame database_tool com\n   \
+    \  query=\"SELECT id FROM medicos WHERE especialidade_id=%s ORDER BY created_at\
+    \ ASC LIMIT 1\"\n     params=[{especialidade_id}]\n     Guarde em medico_id.\n\
+    \  2. Obter atendimento_id do prontuário do paciente: chame database_tool com\n\
+    \     query=\"SELECT atendimento_id FROM prontuarios WHERE paciente_id=%s ORDER\
+    \ BY created_at DESC LIMIT 1\"\n     params=[{paciente_id}]\n     Guarde em atendimento_id.\n\
+    \  3. INSERT encaminhamento: chame database_tool com\n     query=\"INSERT INTO\
+    \ encaminhamentos(atendimento_id, especialidade_id, medico_id, prioridade) VALUES(%s,\
+    \ %s, %s, 'normal')\"\n     params=[atendimento_id, {especialidade_id}, medico_id]\n\
+    \  4. Capture o id UUID: chame database_tool com\n     query=\"SELECT id FROM\
+    \ encaminhamentos WHERE atendimento_id=%s AND especialidade_id=%s ORDER BY created_at\
+    \ DESC LIMIT 1\"\n     params=[atendimento_id, {especialidade_id}]\n     Guarde\
+    \ em encaminhamento_id (NUNCA use LAST_INSERT_ID()).\n  5. Atualizar prontuário\
+    \ com o encaminhamento_id: chame database_tool com\n     query=\"UPDATE prontuarios\
+    \ SET encaminhamento_id=%s WHERE atendimento_id=%s\"\n     params=[encaminhamento_id,\
+    \ atendimento_id]\n  6. Retorne encaminhamento_id + status \"sucesso\".\n"
+  expected_output: 'Retornar um texto em formato JSON contendo as seguintes keys:
+    - encaminhamento_id: UUID capturado no passo 4 - status: String (sucesso ou erro)
+
+    '
+registrar_prontuario:
+  agent: recepcionista_agent
+  description: "Consolidar a triagem, pré-diagnóstico e encaminhamento no prontuário\
+    \ do paciente. Input data format:\n  - paciente_id: UUID\n  - atendimento_id:\
+    \ UUID\n  - triagem: Text\n  - pre_diagnostico_id: UUID\n  - encaminhamento_id:\
+    \ UUID\n  - resumo_medico: Text\n\nProcess steps:\n  1. INSERT: chame database_tool\
+    \ com\n     query=\"INSERT INTO prontuarios(paciente_id, atendimento_id, triagem,\
+    \ pre_diagnostico_id, encaminhamento_id, resumo_medico) VALUES(%s, %s, %s, %s,\
+    \ %s, %s)\"\n     params=[{paciente_id}, {atendimento_id}, {triagem}, {pre_diagnostico_id},\
+    \ {encaminhamento_id}, {resumo_medico}]\n  2. Capture o id UUID: chame database_tool\
+    \ com\n     query=\"SELECT id FROM prontuarios WHERE paciente_id=%s AND atendimento_id=%s\
+    \ ORDER BY created_at DESC LIMIT 1\"\n     params=[{paciente_id}, {atendimento_id}]\n\
+    \     Guarde em prontuario_id (NUNCA use LAST_INSERT_ID()).\n  3. Retorne prontuario_id\
+    \ + status \"sucesso\".\n"
+  expected_output: 'Retornar um texto em formato JSON contendo as seguintes keys:
+    - prontuario_id: UUID capturado no passo 2 - status: String (sucesso ou erro)
+
+    '
+consulta_medica:
+  agent: recepcionista_agent
+  description: 'Realizar a consulta médica final, validar ou refutar hipóteses do
+    pré-diagnóstico e registrar o diagnóstico final. Input format: - paciente_id:
+    UUID - atendimento_id: UUID - hipoteses: JSON - nivel_confianca: Enum (baixa/média/alta)
+    - exames_sugeridos: Text Process steps: 1. Consultar o banco de dados para obter
+    informações detalhadas do paciente e do atendimento usando database_tool. 2. Analisar
+    as hipóteses fornecidas e validar ou refutar com base nas informações obtidas.
+    3. Utilizar embedding_tool para comparar os sintomas e exames sugeridos com a
+    literatura médica. 4. Formular o diagnóstico final, conduta e prescrição.
+
+    '
+  expected_output: 'diagnostico_final: String conduta: String prescricao: String
+
+    '
+gerir_administrador:
+  agent: administrador_agent
+  description: 'Gerenciar médicos, especialidades, agentes, agendas e usuários; auditar
+    o sistema. Input format: - acao: Enum (cadastrar/atualizar/excluir) - tipo_registro:
+    Enum (medicos/especialidades/agentes/agendas/usuarios) - dados: JSON Process steps
+    numerados: 1. Validar os campos de entrada para garantir que ação e tipo_registro
+    estejam corretos. 2. Converter o campo ''dados'' em um formato adequado para interação
+    com o banco de dados. 3. Utilizar o database_tool para realizar as operações necessárias
+    no banco de dados (SELECT, INSERT, UPDATE ou DELETE) conforme a ação solicitada
+    e tipo de registro. 4. Retornar o status da operação como sucesso ou falha.
+
+    '
+  expected_output: '- status: String (sucesso/falha)
+
+    '
+fallback_manual:
+  agent: fallback_agent
+  description: 'Implementar procedimento alternativo quando um agente de IA estiver
+    indisponível ou retornar erro. Input format: - paciente_id: UUID - atendimento_id:
+    UUID - justificativa: Text Process steps numerados: 1. Registrar a ocorrência
+    do erro no banco de dados usando database_tool. 2. Gerar um embedding da justificativa
+    utilizando embedding_tool. 3. Atualizar o status do atendimento para ''pendente''
+    no banco de dados.
+
+    '
+  expected_output: 'status: String (sucesso/falha)
+
+    '
+visualizar_kpis:
+  agent: kpi_dashboard_agent
+  description: 'Exibir KPIs operacionais do sistema para monitoramento e análise.
+    Input format: - periodo: Enum (diario/semanal/mensal) - metricas_selecionadas:
+    List[String] Process steps numerados: 1. Receber os parâmetros de entrada: {periodo}
+    e {metricas_selecionadas}. 2. Utilizar o database_tool para consultar as métricas
+    selecionadas no banco de dados conforme o período especificado. 3. Formatar os
+    resultados em um JSON estruturado.
+
+    '
+  expected_output: 'kpis: JSON contendo os valores das métricas operacionais solicitadas,
+    organizados por data conforme o período definido.
+
+    '
+gerir_agenda_medico:
+  agent: recepcionista_agent
+  description: 'Gerenciar a agenda e disponibilidade dos médicos para encaminhamentos.
+    Input format: - medico_id: UUID - horarios_disponiveis: List[DateTime] Process
+    steps numerados: 1. Receber os dados de entrada (medico_id e horarios_disponiveis).
+    2. Utilizar o database_tool para atualizar a disponibilidade do médico na base
+    de dados. 3. Verificar se a operação foi bem-sucedida.
+
+    '
+  expected_output: 'status: String (sucesso/falha)'

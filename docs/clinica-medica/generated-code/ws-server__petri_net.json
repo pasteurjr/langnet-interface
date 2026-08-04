@@ -1,0 +1,717 @@
+{
+  "nome": "Rede de Petri para Sistema Clínico",
+  "lugares": [
+    {
+      "id": "P0",
+      "nome": "Início do Fluxo",
+      "tokens": 1,
+      "agentId": null,
+      "logica": "const PREV_PLACE_IDS = [];\n// place intermediário — aguarda predecessores e propaga outputs deep-merged\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k]; const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) && tv && typeof tv === 'object' && !Array.isArray(tv)) deepMerge(tv, sv);\n    else target[k] = sv;\n  }\n  return target;\n}\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\nconst output = JSON.parse(JSON.stringify(input || {}));\nconst PREV = (typeof PREV_PLACE_IDS !== 'undefined' ? PREV_PLACE_IDS : []);\nconst WAIT_DEADLINE = Date.now() + 90000;\nfor (const pid of PREV) {\n  let prev = utils.getPlaceOutput(pid);\n  while (!hasUsefulPayload(prev) && Date.now() < WAIT_DEADLINE) {\n    await new Promise(r => setTimeout(r, 300));\n    prev = utils.getPlaceOutput(pid);\n  }\n  if (prev && typeof prev === 'object') deepMerge(output, prev);\n}\noutput.status = 'completed';\noutput.timestamp = new Date().toISOString();\nreturn output;",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 100,
+        "y": 100
+      }
+    },
+    {
+      "id": "P_cadastrar_paciente",
+      "nome": "Cadastrar Paciente pronta",
+      "tokens": 0,
+      "agentId": "recepcionista_agent",
+      "logica": "// place.logica para task 'cadastrar_paciente' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'cadastrar_paciente';\nconst PREV_PLACE_IDS = [];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 400,
+        "y": 100
+      },
+      "task_name": "cadastrar_paciente"
+    },
+    {
+      "id": "P_atualizar_paciente",
+      "nome": "Atualizar Paciente pronta",
+      "tokens": 0,
+      "agentId": "recepcionista_agent",
+      "logica": "// place.logica para task 'atualizar_paciente' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'atualizar_paciente';\nconst PREV_PLACE_IDS = [];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 1300,
+        "y": 100
+      },
+      "task_name": "atualizar_paciente"
+    },
+    {
+      "id": "P_triagem_agentiva",
+      "nome": "Triagem Agentiva pronta",
+      "tokens": 0,
+      "agentId": "triagem_hub_agent",
+      "logica": "// place.logica para task 'triagem_agentiva' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'triagem_agentiva';\nconst PREV_PLACE_IDS = [];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 1300,
+        "y": 1060
+      },
+      "task_name": "triagem_agentiva"
+    },
+    {
+      "id": "P_pre_atendimento_cardiologia",
+      "nome": "Pré-atendimento Cardiologia pronta",
+      "tokens": 0,
+      "agentId": "especialista_cardiologia_agent",
+      "logica": "// place.logica para task 'pre_atendimento_cardiologia' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'pre_atendimento_cardiologia';\nconst PREV_PLACE_IDS = [\"P_cadastrar_paciente\"];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 700,
+        "y": 100
+      },
+      "task_name": "pre_atendimento_cardiologia"
+    },
+    {
+      "id": "P_pre_atendimento_pediatria",
+      "nome": "Pré-atendimento Pediatria pronta",
+      "tokens": 0,
+      "agentId": "especialista_pediatria_agent",
+      "logica": "// place.logica para task 'pre_atendimento_pediatria' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'pre_atendimento_pediatria';\nconst PREV_PLACE_IDS = [\"P_cadastrar_paciente\"];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 700,
+        "y": 340
+      },
+      "task_name": "pre_atendimento_pediatria"
+    },
+    {
+      "id": "P_pre_atendimento_gastroenterologia",
+      "nome": "Pré-atendimento Gastroenterologia pronta",
+      "tokens": 0,
+      "agentId": "especialista_gastroenterologia_agent",
+      "logica": "// place.logica para task 'pre_atendimento_gastroenterologia' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'pre_atendimento_gastroenterologia';\nconst PREV_PLACE_IDS = [\"P_cadastrar_paciente\"];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 700,
+        "y": 220
+      },
+      "task_name": "pre_atendimento_gastroenterologia"
+    },
+    {
+      "id": "P_criar_encaminhamento",
+      "nome": "Criar Encaminhamento pronta",
+      "tokens": 0,
+      "agentId": "encaminhamento_agent",
+      "logica": "// place.logica para task 'criar_encaminhamento' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'criar_encaminhamento';\nconst PREV_PLACE_IDS = [\"P_pre_atendimento_cardiologia\", \"P_pre_atendimento_gastroenterologia\", \"P_pre_atendimento_pediatria\"];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 1000,
+        "y": 100
+      },
+      "task_name": "criar_encaminhamento"
+    },
+    {
+      "id": "P_registrar_prontuario",
+      "nome": "Registrar Prontuário pronta",
+      "tokens": 0,
+      "agentId": "registro_prontuario_agent",
+      "logica": "// place.logica para task 'registrar_prontuario' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'registrar_prontuario';\nconst PREV_PLACE_IDS = [];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 1300,
+        "y": 940
+      },
+      "task_name": "registrar_prontuario"
+    },
+    {
+      "id": "P_consulta_medica",
+      "nome": "Consulta Médica pronta",
+      "tokens": 0,
+      "agentId": "medico_agent",
+      "logica": "// place.logica para task 'consulta_medica' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'consulta_medica';\nconst PREV_PLACE_IDS = [];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 1300,
+        "y": 220
+      },
+      "task_name": "consulta_medica"
+    },
+    {
+      "id": "P_gerir_administrador",
+      "nome": "Gerir Administrador pronta",
+      "tokens": 0,
+      "agentId": "administrador_agent",
+      "logica": "// place.logica para task 'gerir_administrador' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'gerir_administrador';\nconst PREV_PLACE_IDS = [];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 1300,
+        "y": 580
+      },
+      "task_name": "gerir_administrador"
+    },
+    {
+      "id": "P_fallback_manual",
+      "nome": "Fallback Manual pronta",
+      "tokens": 0,
+      "agentId": "fallback_agent",
+      "logica": "// place.logica para task 'fallback_manual' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'fallback_manual';\nconst PREV_PLACE_IDS = [];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 1300,
+        "y": 340
+      },
+      "task_name": "fallback_manual"
+    },
+    {
+      "id": "P_visualizar_kpis",
+      "nome": "Visualizar KPIs pronta",
+      "tokens": 0,
+      "agentId": "kpi_dashboard_agent",
+      "logica": "// place.logica para task 'visualizar_kpis' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'visualizar_kpis';\nconst PREV_PLACE_IDS = [];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 1300,
+        "y": 1180
+      },
+      "task_name": "visualizar_kpis"
+    },
+    {
+      "id": "P_gerir_agenda_medico",
+      "nome": "Gerir Agenda Médico pronta",
+      "tokens": 0,
+      "agentId": "agenda_medico_agent",
+      "logica": "// place.logica para task 'gerir_agenda_medico' — executado pelo PlaceProcessor do petri-net-editor.\n// utils.merge e utils.getPlaceOutput vêm do contexto da sandbox; WebSocket/Date/JSON são globais.\nconst PORT = 5003;\nconst TASK_NAME = 'gerir_agenda_medico';\nconst PREV_PLACE_IDS = [];\nconst TIMEOUT_MS = 60000;\n\n// Deep merge — essencial pra JOIN multi-predecessor (outputs.X de cada lado coexistem).\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k];\n    const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) &&\n        tv && typeof tv === 'object' && !Array.isArray(tv)) {\n      deepMerge(tv, sv);\n    } else {\n      target[k] = sv;\n    }\n  }\n  return target;\n}\n\n// Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\n\nconst output = JSON.parse(JSON.stringify(input || {}));\ntry {\n  // Agrega outputs de TODOS os predecessores (espera com deadline grande\n  // pq predecessores podem estar processando WS upstream — 90s).\n  if (PREV_PLACE_IDS.length > 0) {\n    const deadline = Date.now() + 90000;\n    for (const pid of PREV_PLACE_IDS) {\n      let prev = utils.getPlaceOutput(pid);\n      while (!hasUsefulPayload(prev) && Date.now() < deadline) {\n        await new Promise(r => setTimeout(r, 300));\n        prev = utils.getPlaceOutput(pid);\n      }\n      if (prev && typeof prev === 'object') deepMerge(output, prev);\n    }\n  }\n\n  const ws = new WebSocket(`ws://localhost:${PORT}`);\n  const result = await new Promise((resolve, reject) => {\n    const t = setTimeout(() => { ws.close(); reject(new Error('timeout')); }, TIMEOUT_MS);\n    ws.onopen = () => ws.send(JSON.stringify({\n      type: 'execute_task',\n      data: { task_name: TASK_NAME, input_data: output }\n    }));\n    ws.onmessage = (e) => {\n      const r = JSON.parse(e.data);\n      if (r.type === 'task_completed' || r.type === 'task_result') {\n        clearTimeout(t); ws.close();\n        resolve((r.data && r.data.result) || r.data || {});\n      } else if (r.type === 'error') {\n        clearTimeout(t); ws.close();\n        reject(new Error((r.data && r.data.error) || 'task error'));\n      }\n    };\n    ws.onerror = () => { clearTimeout(t); reject(new Error('WebSocket error')); };\n  });\n\n  if (result && typeof result === 'object') {\n    deepMerge(output, result);\n  } else {\n    output.result = result;\n  }\n  output.status = 'completed';\n  output.timestamp = new Date().toISOString();\n} catch (err) {\n  output.status = 'error';\n  output.error = err.message;\n}\nreturn output;\n",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 1300,
+        "y": 700
+      },
+      "task_name": "gerir_agenda_medico"
+    },
+    {
+      "id": "P_join_pre_atendimento",
+      "nome": "Join Pré-atendimentos",
+      "tokens": 0,
+      "agentId": null,
+      "logica": "const PREV_PLACE_IDS = [];\n// place intermediário — aguarda predecessores e propaga outputs deep-merged\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k]; const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) && tv && typeof tv === 'object' && !Array.isArray(tv)) deepMerge(tv, sv);\n    else target[k] = sv;\n  }\n  return target;\n}\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\nconst output = JSON.parse(JSON.stringify(input || {}));\nconst PREV = (typeof PREV_PLACE_IDS !== 'undefined' ? PREV_PLACE_IDS : []);\nconst WAIT_DEADLINE = Date.now() + 90000;\nfor (const pid of PREV) {\n  let prev = utils.getPlaceOutput(pid);\n  while (!hasUsefulPayload(prev) && Date.now() < WAIT_DEADLINE) {\n    await new Promise(r => setTimeout(r, 300));\n    prev = utils.getPlaceOutput(pid);\n  }\n  if (prev && typeof prev === 'object') deepMerge(output, prev);\n}\noutput.status = 'completed';\noutput.timestamp = new Date().toISOString();\nreturn output;",
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "subnet": {},
+      "coordenadas": {
+        "x": 1300,
+        "y": 820
+      }
+    },
+    {
+      "id": "P_fim",
+      "nome": "Fim do Fluxo",
+      "tokens": 0,
+      "agentId": null,
+      "delay": 0,
+      "input_data": {},
+      "output_data": {},
+      "logica": "const PREV_PLACE_IDS = [];\n// place intermediário — aguarda predecessores e propaga outputs deep-merged\nfunction deepMerge(target, source) {\n  if (!source || typeof source !== 'object') return target;\n  for (const k of Object.keys(source)) {\n    const sv = source[k]; const tv = target[k];\n    if (sv && typeof sv === 'object' && !Array.isArray(sv) && tv && typeof tv === 'object' && !Array.isArray(tv)) deepMerge(tv, sv);\n    else target[k] = sv;\n  }\n  return target;\n}\nfunction hasUsefulPayload(o) {\n  if (!o || typeof o !== 'object') return false;\n  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n  return Object.keys(o).some(k => !meta.has(k));\n}\nconst output = JSON.parse(JSON.stringify(input || {}));\nconst PREV = (typeof PREV_PLACE_IDS !== 'undefined' ? PREV_PLACE_IDS : []);\nconst WAIT_DEADLINE = Date.now() + 90000;\nfor (const pid of PREV) {\n  let prev = utils.getPlaceOutput(pid);\n  while (!hasUsefulPayload(prev) && Date.now() < WAIT_DEADLINE) {\n    await new Promise(r => setTimeout(r, 300));\n    prev = utils.getPlaceOutput(pid);\n  }\n  if (prev && typeof prev === 'object') deepMerge(output, prev);\n}\noutput.status = 'completed';\noutput.timestamp = new Date().toISOString();\nreturn output;",
+      "subnet": {},
+      "coordenadas": {
+        "x": 1300,
+        "y": 460
+      }
+    }
+  ],
+  "transicoes": [
+    {
+      "id": "T_start",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": null,
+      "task_id": null,
+      "nome": "T_start",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 250,
+        "y": 100
+      }
+    },
+    {
+      "id": "T_cadastrar_paciente",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "recepcionista_agent",
+      "task_id": "cadastrar_paciente",
+      "nome": "T_cadastrar_paciente",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 1420
+      }
+    },
+    {
+      "id": "T_atualizar_paciente",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "recepcionista_agent",
+      "task_id": "atualizar_paciente",
+      "nome": "T_atualizar_paciente",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 1300
+      }
+    },
+    {
+      "id": "T_triagem_agentiva",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "triagem_hub_agent",
+      "task_id": "triagem_agentiva",
+      "nome": "T_triagem_agentiva",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 550,
+        "y": 100
+      }
+    },
+    {
+      "id": "T_pre_atendimento_cardiologia",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "especialista_cardiologia_agent",
+      "task_id": "pre_atendimento_cardiologia",
+      "nome": "T_pre_atendimento_cardiologia",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 2260
+      }
+    },
+    {
+      "id": "T_pre_atendimento_pediatria",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "especialista_pediatria_agent",
+      "task_id": "pre_atendimento_pediatria",
+      "nome": "T_pre_atendimento_pediatria",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 2500
+      }
+    },
+    {
+      "id": "T_pre_atendimento_gastroenterologia",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "especialista_gastroenterologia_agent",
+      "task_id": "pre_atendimento_gastroenterologia",
+      "nome": "T_pre_atendimento_gastroenterologia",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 2380
+      }
+    },
+    {
+      "id": "T_join_pre_atendimento",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": null,
+      "task_id": null,
+      "nome": "T_join_pre_atendimento",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 850,
+        "y": 100
+      }
+    },
+    {
+      "id": "T_criar_encaminhamento",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "encaminhamento_agent",
+      "task_id": "criar_encaminhamento",
+      "nome": "T_criar_encaminhamento",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 1660
+      }
+    },
+    {
+      "id": "T_registrar_prontuario",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "registro_prontuario_agent",
+      "task_id": "registrar_prontuario",
+      "nome": "T_registrar_prontuario",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1150,
+        "y": 100
+      }
+    },
+    {
+      "id": "T_consulta_medica",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "medico_agent",
+      "task_id": "consulta_medica",
+      "nome": "T_consulta_medica",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 1540
+      }
+    },
+    {
+      "id": "T_gerir_administrador",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "administrador_agent",
+      "task_id": "gerir_administrador",
+      "nome": "T_gerir_administrador",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 2020
+      }
+    },
+    {
+      "id": "T_fallback_manual",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "fallback_agent",
+      "task_id": "fallback_manual",
+      "nome": "T_fallback_manual",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 1780
+      }
+    },
+    {
+      "id": "T_visualizar_kpis",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "kpi_dashboard_agent",
+      "task_id": "visualizar_kpis",
+      "nome": "T_visualizar_kpis",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 2620
+      }
+    },
+    {
+      "id": "T_gerir_agenda_medico",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": "agenda_medico_agent",
+      "task_id": "gerir_agenda_medico",
+      "nome": "T_gerir_agenda_medico",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 2140
+      }
+    },
+    {
+      "id": "T_fim",
+      "guard": "",
+      "prioridade": 1,
+      "agente_id": null,
+      "task_id": null,
+      "nome": "T_fim",
+      "orientacao": "vert",
+      "probabilidade": 0,
+      "tempo": 0,
+      "coordenadas": {
+        "x": 1300,
+        "y": 1900
+      }
+    }
+  ],
+  "arcos": [
+    {
+      "origem": "P0",
+      "destino": "T_start",
+      "peso": 1
+    },
+    {
+      "origem": "T_start",
+      "destino": "P_cadastrar_paciente",
+      "peso": 1
+    },
+    {
+      "origem": "P_cadastrar_paciente",
+      "destino": "T_triagem_agentiva",
+      "peso": 1
+    },
+    {
+      "origem": "P_atualizar_paciente",
+      "destino": "T_triagem_agentiva",
+      "peso": 1
+    },
+    {
+      "origem": "T_triagem_agentiva",
+      "destino": "P_pre_atendimento_cardiologia",
+      "guard": "input.triagem_agentiva_data.area_destino === 'cardiologia'",
+      "peso": 1
+    },
+    {
+      "origem": "T_triagem_agentiva",
+      "destino": "P_pre_atendimento_pediatria",
+      "guard": "input.triagem_agentiva_data.area_destino === 'pediatria'",
+      "peso": 1
+    },
+    {
+      "origem": "T_triagem_agentiva",
+      "destino": "P_pre_atendimento_gastroenterologia",
+      "guard": "input.triagem_agentiva_data.area_destino === 'gastroenterologia'",
+      "peso": 1
+    },
+    {
+      "origem": "P_pre_atendimento_cardiologia",
+      "destino": "T_join_pre_atendimento",
+      "peso": 1
+    },
+    {
+      "origem": "P_pre_atendimento_pediatria",
+      "destino": "T_join_pre_atendimento",
+      "peso": 1
+    },
+    {
+      "origem": "P_pre_atendimento_gastroenterologia",
+      "destino": "T_join_pre_atendimento",
+      "peso": 1
+    },
+    {
+      "origem": "T_join_pre_atendimento",
+      "destino": "P_criar_encaminhamento",
+      "peso": 1
+    },
+    {
+      "origem": "P_criar_encaminhamento",
+      "destino": "T_registrar_prontuario",
+      "peso": 1
+    },
+    {
+      "origem": "P_registrar_prontuario",
+      "destino": "T_consulta_medica",
+      "peso": 1
+    },
+    {
+      "origem": "P_consulta_medica",
+      "destino": "T_fim",
+      "peso": 1
+    },
+    {
+      "origem": "P_gerir_administrador",
+      "destino": "T_fim",
+      "peso": 1
+    },
+    {
+      "origem": "P_fallback_manual",
+      "destino": "T_fim",
+      "peso": 1
+    },
+    {
+      "origem": "P_visualizar_kpis",
+      "destino": "T_fim",
+      "peso": 1
+    },
+    {
+      "origem": "P_gerir_agenda_medico",
+      "destino": "T_fim",
+      "peso": 1
+    }
+  ],
+  "agentes": [
+    {
+      "id": "recepcionista_agent",
+      "nome": "Gerente de Cadastros e Atendimentos Iniciais",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "triagem_hub_agent",
+      "nome": "Agente de Triagem Automatizado",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "especialista_cardiologia_agent",
+      "nome": "Agente Especialista em Cardiologia",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "especialista_pediatria_agent",
+      "nome": "Agente Especialista em Pediatria",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "especialista_gastroenterologia_agent",
+      "nome": "Agente Especialista em Gastroenterologia",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "encaminhamento_agent",
+      "nome": "Agente de Encaminhamento Automatizado",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "registro_prontuario_agent",
+      "nome": "Agente de Registro/Prontuário Automatizado",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "medico_agent",
+      "nome": "Agente de Consulta Médica Automatizado",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "administrador_agent",
+      "nome": "Agente de Gestão Administrativa",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "fallback_agent",
+      "nome": "Agente de Fallback Manual",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "kpi_dashboard_agent",
+      "nome": "Agente de Visualização de KPIs",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    },
+    {
+      "id": "agenda_medico_agent",
+      "nome": "Agente de Gestão da Agenda Médica",
+      "width": 300,
+      "height": 200,
+      "coordenadas": {
+        "x": 50,
+        "y": 50
+      }
+    }
+  ]
+}

@@ -118,6 +118,26 @@ de Petri (PetriNetSimulator, GuardEvaluator, PlaceProcessor).
 
 ---
 
+## Bug #9 — Adapters CRUD `listar_*`/`excluir_*` não foram gerados (app não lista dados)
+
+**Etapa:** Código (rodar a app). **Sintoma:** ao subir a app ClinIA, as telas CRUD chamam
+`listar_<entidade>` (tabelas e dropdowns de FK), mas o ws-server responde *"task 'listar_pacientes'
+não definida em tasks.yaml"*. O `adapters.py` gerado tinha só 4 funções determinísticas
+(`cadastrar_paciente`, `atualizar_paciente`, `criar_encaminhamento`, `registrar_prontuario`) — **faltaram
+os `listar_*` e `excluir_*`** de cada entidade. O `websocket_server.py` espera esses adapters
+determinísticos (comentário no próprio código: "CRUD genérico listar_/atualizar_/excluir_<entidade>
+que NÃO estão no tasks.yaml"), mas eles não foram emitidos.
+**Causa provável:** o caminho de fallback direto (bug #8) devolveu o `adapters.py` do LLM, e a etapa
+determinística `_generate_crud_adapters` (que gera listar_/excluir_ por entidade a partir do schema)
+não completou o conjunto — só ficaram os adapters que o LLM escreveu.
+**Mitigação (demo):** adicionei ao `adapters.py` da app um `__getattr__` que sintetiza
+`listar_<ent>_deterministic`/`excluir_<ent>_deterministic` genéricos (SELECT */DELETE) — a app passou a
+listar (ex.: `listar_pacientes` retorna os 3 pacientes). **É patch no artefato para a demo**, não no
+gerador. **A fix correta no LangNet** é garantir que `_generate_crud_adapters` rode e complete listar_/
+excluir_ para todas as entidades mesmo no caminho de fallback — registrado para corrigir depois.
+
+---
+
 ## Achado #4 (AMBIENTE, não-LangNet) — LM Studio recarregou o modelo em 4096 (JIT), travando o Modelo de Dados
 
 **Etapa:** Modelo de Dados (`POST /data-model/{pid}/generate`) e todas as seguintes.
