@@ -65,6 +65,27 @@ este é bloqueio de event loop).
 
 ---
 
+## Achado #4 (AMBIENTE, não-LangNet) — LM Studio recarregou o modelo em 4096 (JIT), travando o Modelo de Dados
+
+**Etapa:** Modelo de Dados (`POST /data-model/{pid}/generate`) e todas as seguintes.
+**Sintoma:** `litellm.BadRequestError 400 - n_keep: 12866 >= n_ctx: 4096`.
+**Investigação (empírica):** confirmado que **não é o LangNet nem o litellm**. Uma chamada pelo
+**openai SDK direto** (o mesmo cliente que gerou Requisitos/Especificação com sucesso) ao
+`qwen2.5-coder-32b-instruct` retorna AGORA `n_ctx: 4096`. O modelo do data model resolvido em runtime
+é o correto (`openai/qwen2.5-coder-32b-instruct`, provider lmstudio, via load_dotenv OK) — não há troca
+de modelo. Durante a Especificação o LM Studio servia **40960** (visto no erro daquela etapa); agora
+serve **4096**.
+**Causa:** comportamento de **JIT-load do LM Studio** — o modelo foi descarregado (idle TTL, ou outro
+modelo carregado; a instância tem vários modelos, inclusive de vídeo `wan2.2`) e, ao ser requisitado
+de novo, **recarregou no context length DEFAULT do modelo (4096)**, não nos 40960 setados manualmente.
+**Ação (do usuário, na máquina 192.168.1.115):** recarregar `qwen2.5-coder-32b-instruct` com context
+length 40960 (ou 32768), **desativar auto-unload/idle TTL** e mantê-lo pinado. Não corrigível daqui.
+**Status:** ⏸️ pipeline pausado no Modelo de Dados aguardando o modelo voltar a 40960.
+**Nota LangNet (menor, opcional):** `langnetdatamodel._get_llm` não seta `context_window` no CrewLLM;
+setar ajudaria o litellm a contar tokens/truncar, mas NÃO resolve o n_ctx servido (que é do LM Studio).
+
+---
+
 ## Bug #3 — Refino da Especificação estoura o contexto do modelo local (refino falha silencioso)
 
 **Etapa:** Especificação → `POST /api/specifications/{sid}/refine`
