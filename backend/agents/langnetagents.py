@@ -80,6 +80,24 @@ ProcessType = adapters["processtype"]
 # LLM instances (lazy initialization)
 _llm_cache = {}
 
+
+def _safe_format_description(template: str, mapping: Dict[str, Any]) -> str:
+    """Formata a descrição da task substituindo APENAS placeholders válidos ({identificador}).
+    Diferente de str.format(**mapping), NÃO tenta interpretar chaves de JSON literais nos
+    exemplos do prompt (ex.: {"input_data": ...}) como campos — essas ficam intactas. Evita
+    KeyError quando a descrição contém JSON com chaves. Placeholder ausente vira string vazia."""
+    import re as _re
+
+    def _repl(m):
+        key = m.group(1)
+        if key in mapping:
+            return str(mapping[key])
+        return m.group(0)  # placeholder desconhecido: deixa como está (não quebra)
+
+    # Só casa {nome_valido} — identificadores Python; ignora {"...": ...}, {{...}}, { ... } etc.
+    return _re.sub(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", _repl, template)
+
+
 def get_llm(use_deepseek: bool = False):
     """
     Get LLM instance based on configuration (with caching)
@@ -6979,7 +6997,7 @@ def execute_task_with_context(
         print(f"{TASKS_CONFIG[task_name]['description'][:500]}")
         print(f"{'='*80}\n")
 
-        task_description = TASKS_CONFIG[task_name]['description'].format(**task_input)
+        task_description = _safe_format_description(TASKS_CONFIG[task_name]['description'], task_input)
 
         # Note: After .format(), all template variables have been replaced with actual values.
         # Any remaining braces {} in the content (from JSON in LLM outputs) should not be
