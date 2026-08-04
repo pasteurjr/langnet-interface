@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from typing import List, Optional
 from pydantic import BaseModel, Field, validator
 import uuid
+import os
 from datetime import datetime
 import asyncio
 from app.database import (
@@ -587,6 +588,97 @@ async def execute_specification_generation(
 # REFINEMENT WORKFLOW (BACKGROUND)
 # ============================================================
 
+def _split_spec_units(spec: str):
+    """Divide a especificação em UNIDADES ordenadas para refino chunked.
+    Cada unidade = (texto, refinavel). Split por seções '## N.' e a seção de
+    Casos de Uso por blocos '**UC-'. Preserva o preâmbulo (antes da 1ª '## ')."""
+    import re as _re
+    units = []
+    # separa por seções top-level (mantendo o cabeçalho na seção)
+    parts = _re.split(r'(?m)(?=^## )', spec)
+    for part in parts:
+        if not part.strip():
+            continue
+        header = part.splitlines()[0] if part.splitlines() else ""
+        is_use_cases = bool(_re.match(r'^##\s*5\.', header)) or ('Casos de Uso' in header)
+        is_interfaces = ('Interfaces do Sistema' in header) or bool(_re.match(r'^##\s*7\.', header))
+        if is_use_cases and len(part) > 12000:
+            # subdivide por bloco de UC (mantém intro da seção como 1º bloco)
+            subparts = _re.split(r'(?m)(?=^\*\*UC-)', part)
+            for sp in subparts:
+                if not sp.strip():
+                    continue
+                refinavel = ('Wireframe' in sp) or ('wireframe' in sp)
+                units.append([sp, refinavel])
+        else:
+            refinavel = ('Wireframe' in part) or ('wireframe' in part) or is_interfaces
+            units.append([part, refinavel])
+    return units
+
+
+async def _refine_specification_chunked(current_specification: str,
+                                        refinement_instructions: str,
+                                        refinement_history: str,
+                                        llm_client) -> str:
+    """Refina a especificação POR SEÇÃO/UC para caber no contexto do modelo local.
+    Só chama o LLM nas unidades relevantes à interface (as que contêm Wireframe ou a
+    seção Interfaces); o resto passa inalterado. Se um refino vier suspeito, mantém o
+    original. Remonta o documento na ordem."""
+    units = _split_spec_units(current_specification)
+    total = len(units)
+    refinaveis = sum(1 for _, r in units if r)
+    print(f"[SPEC REFINEMENT][CHUNKED] {total} unidades, {refinaveis} refináveis (com wireframe/interface)")
+    out_parts = []
+    for idx, (text, refinavel) in enumerate(units):
+        if not refinavel:
+            out_parts.append(text)
+            continue
+        first_line = text.strip().splitlines()[0] if text.strip().splitlines() else ""
+        prompt = f"""Você está refinando UM TRECHO de uma Especificação Funcional (não o documento todo).
+
+INSTRUÇÕES DE REFINAMENTO (aplique SOMENTE a este trecho):
+{refinement_instructions}
+
+{refinement_history}TRECHO ATUAL (refine e devolva SOMENTE este trecho):
+{text}
+
+REGRAS DE SAÍDA:
+- Devolva SOMENTE este trecho refinado, começando EXATAMENTE com a mesma primeira linha: "{first_line}"
+- Mantenha o mesmo identificador de UC / cabeçalho de seção e a rastreabilidade (FR/UC/BR).
+- Se o trecho tem um "Wireframe da Interface", melhore-o conforme as instruções (ex.: tabela com
+  busca e ações por linha nos cadastros; entrada + ação de IA + resultado do agente nas telas agênticas),
+  e mantенha o Fluxo Principal coerente com o wireframe (mesmos campos/botões/tela).
+- NÃO adicione comentários, análises ou introduções. NÃO inclua outros trechos.
+"""
+        try:
+            refined = await llm_client.complete_async(prompt=prompt, temperature=0.5, max_tokens=8000)
+        except Exception as e:
+            print(f"[SPEC REFINEMENT][CHUNKED] unidade {idx} ERRO LLM ({e}) — mantendo original")
+            out_parts.append(text)
+            continue
+        refined = (refined or "").strip()
+        # remove cercas de código markdown se o modelo embrulhar
+        if refined.startswith("```"):
+            refined = _re_strip_fence(refined)
+        ok = len(refined) >= max(60, int(len(text) * 0.4))
+        if ok:
+            out_parts.append(refined + ("\n\n" if not refined.endswith("\n") else ""))
+            print(f"[SPEC REFINEMENT][CHUNKED] unidade {idx} refinada ({len(text)}->{len(refined)} chars)")
+        else:
+            out_parts.append(text)
+            print(f"[SPEC REFINEMENT][CHUNKED] unidade {idx} refino suspeito ({len(refined)} chars) — mantendo original")
+    return "".join(out_parts)
+
+
+def _re_strip_fence(s: str) -> str:
+    """Remove cercas ```...``` ao redor de um bloco, se presentes."""
+    import re as _re
+    s = s.strip()
+    s = _re.sub(r'^```[a-zA-Z]*\n', '', s)
+    s = _re.sub(r'\n```$', '', s)
+    return s.strip()
+
+
 async def execute_specification_refinement(
     session_id: str,
     refinement_instructions: str,
@@ -698,11 +790,24 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
         # 7. Call LLM
         print(f"[SPEC REFINEMENT] Calling LLM...")
         llm_client = get_llm_client()
-        refined_specification = await llm_client.complete_async(
-            prompt=refinement_prompt,
-            temperature=0.7,
-            max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
-        )
+        # Modelos locais têm contexto limitado (ex.: 40960 tokens). Um refino de documento
+        # inteiro (spec grande + saída do doc todo) não cabe → usa refino POR SEÇÃO/UC (chunked)
+        # quando a especificação é grande. Threshold conservador em chars (~1 token ≈ 3.5-4 chars).
+        CHUNKED_THRESHOLD = int(os.getenv("SPEC_REFINE_CHUNKED_THRESHOLD", "55000"))
+        if len(current_specification) > CHUNKED_THRESHOLD:
+            print(f"[SPEC REFINEMENT] Spec grande ({len(current_specification)} chars > {CHUNKED_THRESHOLD}) → refino CHUNKED por seção/UC")
+            refined_specification = await _refine_specification_chunked(
+                current_specification=current_specification,
+                refinement_instructions=refinement_instructions,
+                refinement_history=refinement_history,
+                llm_client=llm_client,
+            )
+        else:
+            refined_specification = await llm_client.complete_async(
+                prompt=refinement_prompt,
+                temperature=0.7,
+                max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
+            )
 
         print(f"[SPEC REFINEMENT] LLM completed. Refined document length: {len(refined_specification)} chars")
 
