@@ -809,10 +809,28 @@ def generate_code_input_func(state: LangNetFullState) -> Dict[str, Any]:
     output_func by ``_build_project_templates``.
     """
     petri = state.get("petri_net_data") or {}
+    # Petri COMPACTA para o prompt: só a ESTRUTURA (ids/nomes de lugares, transições, arcos e
+    # agentes). Descarta logica (SQL por lugar), coordenadas, input_data/output_data e subnet —
+    # esses campos inflam o prompt em dezenas de KB e SATURAM o modelo local (contexto 40960),
+    # fazendo o LLM retornar vazio ("None or empty"). A estrutura basta p/ gerar tools+adapters.
+    if petri and petri.get("lugares"):
+        compact = {
+            "lugares": [{"id": p.get("id"), "nome": p.get("nome"), "agentId": p.get("agentId")}
+                        for p in petri.get("lugares", [])],
+            "transicoes": [{"id": t.get("id"), "nome": t.get("nome")}
+                           for t in petri.get("transicoes", [])],
+            "arcos": [{"origem": a.get("origem"), "destino": a.get("destino")}
+                      for a in petri.get("arcos", [])],
+            "agentes": [{"id": a.get("id"), "nome": a.get("nome")}
+                        for a in petri.get("agentes", [])],
+        }
+        petri_json = json.dumps(compact, ensure_ascii=False)
+    else:
+        petri_json = "{}"
     return {
         "agents_yaml": state.get("agents_yaml", ""),
         "tasks_yaml": state.get("tasks_yaml", ""),
-        "petri_net_json": json.dumps(petri, ensure_ascii=False) if petri else "{}",
+        "petri_net_json": petri_json,
     }
 
 
