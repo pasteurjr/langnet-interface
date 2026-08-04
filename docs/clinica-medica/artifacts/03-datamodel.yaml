@@ -1,0 +1,370 @@
+version: 1
+dbms: mysql
+tables:
+- name: pacientes
+  description: Pacientes atendidos no sistema
+  columns:
+  - name: id
+    type: UUID
+    pk: true
+    nullable: false
+    default: uuid_generate_v4()
+  - name: nome
+    type: VARCHAR(255)
+    nullable: false
+  - name: cpf
+    type: VARCHAR(11)
+    nullable: false
+    unique: true
+  - name: data_nascimento
+    type: DATE
+    nullable: false
+  - name: contato
+    type: VARCHAR(20)
+    nullable: true
+  - name: convenio
+    type: VARCHAR(100)
+    nullable: true
+  - name: created_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  - name: updated_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  indexes:
+  - name: idx_pacientes_cpf
+    columns:
+    - cpf
+    unique: true
+- name: medicos
+  description: Médicos que atendem os pacientes no sistema
+  columns:
+  - name: id
+    type: UUID
+    pk: true
+    nullable: false
+    default: uuid_generate_v4()
+  - name: nome
+    type: VARCHAR(255)
+    nullable: false
+  - name: crm
+    type: VARCHAR(10)
+    nullable: false
+    unique: true
+  - name: especialidade_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: created_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  - name: updated_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  indexes:
+  - name: idx_medicos_crm
+    columns:
+    - crm
+    unique: true
+  - name: idx_medicos_especialidade_id
+    columns:
+    - especialidade_id
+- name: especialidades
+  description: Especialidades médicas oferecidas no sistema
+  columns:
+  - name: id
+    type: UUID
+    pk: true
+    nullable: false
+    default: uuid_generate_v4()
+  - name: nome
+    type: VARCHAR(255)
+    nullable: false
+    unique: true
+  - name: created_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  - name: updated_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  indexes:
+  - name: idx_especialidades_nome
+    columns:
+    - nome
+    unique: true
+- name: agentes_ia
+  description: Agentes de IA utilizados no sistema para triagem e atendimento
+  columns:
+  - name: id
+    type: UUID
+    pk: true
+    nullable: false
+    default: uuid_generate_v4()
+  - name: nome
+    type: VARCHAR(255)
+    nullable: false
+  - name: status
+    type: ENUM
+    values:
+    - ativo
+    - inativo
+    nullable: false
+    default: '''ativo'''
+  - name: created_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  - name: updated_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  indexes:
+  - name: idx_agentes_ia_nome
+    columns:
+    - nome
+    unique: true
+- name: atendimentos
+  description: Atendimentos realizados no sistema
+  columns:
+  - name: id
+    type: UUID
+    pk: true
+    nullable: false
+    default: uuid_generate_v4()
+  - name: paciente_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: data_hora
+    type: TIMESTAMP
+    nullable: false
+  - name: created_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  - name: updated_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  indexes:
+  - name: idx_atendimentos_paciente_id
+    columns:
+    - paciente_id
+- name: pre_diagnosticos
+  description: Pré-diagnósticos gerados pelo sistema para os pacientes
+  columns:
+  - name: id
+    type: UUID
+    pk: true
+    nullable: false
+    default: uuid_generate_v4()
+  - name: atendimento_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: hipoteses
+    type: TEXT
+    nullable: false
+  - name: nivel_confianca
+    type: FLOAT
+    nullable: false
+  - name: exames_sugeridos
+    type: TEXT
+    nullable: true
+  - name: created_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  - name: updated_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  indexes:
+  - name: idx_pre_diagnosticos_atendimento_id
+    columns:
+    - atendimento_id
+- name: encaminhamentos
+  description: Encaminhamentos gerados para os pacientes após pré-diagnóstico
+  columns:
+  - name: id
+    type: UUID
+    pk: true
+    nullable: false
+    default: uuid_generate_v4()
+  - name: atendimento_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: especialidade_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: medico_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: prioridade
+    type: ENUM
+    values:
+    - normal
+    - urgente
+    nullable: false
+    default: '''normal'''
+  - name: status
+    type: ENUM
+    values:
+    - gerado
+    - pendente
+    - concluido
+    nullable: false
+    default: '''gerado'''
+  - name: created_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  - name: updated_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  indexes:
+  - name: idx_encaminhamentos_atendimento_id
+    columns:
+    - atendimento_id
+  - name: idx_encaminhamentos_especialidade_id
+    columns:
+    - especialidade_id
+  - name: idx_encaminhamentos_medico_id
+    columns:
+    - medico_id
+- name: prontuarios
+  description: Prontuários eletrônicos dos pacientes
+  columns:
+  - name: id
+    type: UUID
+    pk: true
+    nullable: false
+    default: uuid_generate_v4()
+  - name: paciente_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: atendimento_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: triagem
+    type: TEXT
+    nullable: false
+  - name: pre_diagnostico_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: encaminhamento_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: resumo_medico
+    type: TEXT
+    nullable: false
+  - name: created_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  - name: updated_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  indexes:
+  - name: idx_prontuarios_paciente_id
+    columns:
+    - paciente_id
+  - name: idx_prontuarios_atendimento_id
+    columns:
+    - atendimento_id
+  - name: idx_prontuarios_pre_diagnostico_id
+    columns:
+    - pre_diagnostico_id
+  - name: idx_prontuarios_encaminhamento_id
+    columns:
+    - encaminhamento_id
+- name: consentimentos
+  description: Consentimentos dos pacientes para coleta e uso de dados
+  columns:
+  - name: id
+    type: UUID
+    pk: true
+    nullable: false
+    default: uuid_generate_v4()
+  - name: paciente_id
+    type: UUID
+    fk: true
+    nullable: false
+  - name: data_hora
+    type: TIMESTAMP
+    nullable: false
+  - name: versao_termo
+    type: VARCHAR(50)
+    nullable: false
+  - name: created_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  - name: updated_at
+    type: TIMESTAMP
+    nullable: false
+    default: CURRENT_TIMESTAMP
+  indexes:
+  - name: idx_consentimentos_paciente_id
+    columns:
+    - paciente_id
+foreign_keys:
+- table: medicos
+  column: especialidade_id
+  references: especialidades(id)
+  on_delete: CASCADE
+- table: atendimentos
+  column: paciente_id
+  references: pacientes(id)
+  on_delete: CASCADE
+- table: pre_diagnosticos
+  column: atendimento_id
+  references: atendimentos(id)
+  on_delete: CASCADE
+- table: encaminhamentos
+  column: atendimento_id
+  references: atendimentos(id)
+  on_delete: CASCADE
+- table: encaminhamentos
+  column: especialidade_id
+  references: especialidades(id)
+  on_delete: CASCADE
+- table: encaminhamentos
+  column: medico_id
+  references: medicos(id)
+  on_delete: CASCADE
+- table: prontuarios
+  column: paciente_id
+  references: pacientes(id)
+  on_delete: CASCADE
+- table: prontuarios
+  column: atendimento_id
+  references: atendimentos(id)
+  on_delete: CASCADE
+- table: prontuarios
+  column: pre_diagnostico_id
+  references: pre_diagnosticos(id)
+  on_delete: CASCADE
+- table: prontuarios
+  column: encaminhamento_id
+  references: encaminhamentos(id)
+  on_delete: CASCADE
+- table: consentimentos
+  column: paciente_id
+  references: pacientes(id)
+  on_delete: CASCADE

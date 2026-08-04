@@ -54,6 +54,6 @@
   },
   "petri": {
     "status": "ERROR",
-    "err": "502: {\"detail\":\"LLM não retornou rede de Petri válida (lugares vazio)\"}"
+    "err": "?: "
   }
 }

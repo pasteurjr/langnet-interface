@@ -1,0 +1,1160 @@
+{
+  "screens": [
+    {
+      "id": "cadastro-de-pacientes",
+      "name": "Cadastro de Pacientes",
+      "route": "/cadastro/pacientes",
+      "uc": [
+        "UC-001"
+      ],
+      "entity": "pacientes",
+      "layout": "form",
+      "components": [
+        {
+          "type": "text",
+          "field": "nome",
+          "label": "Nome",
+          "required": true,
+          "bindTo": "pacientes.nome"
+        },
+        {
+          "type": "text",
+          "field": "cpf",
+          "label": "CPF",
+          "required": true,
+          "bindTo": "pacientes.cpf"
+        },
+        {
+          "type": "date",
+          "field": "data_nascimento",
+          "label": "Data de Nascimento",
+          "required": true,
+          "bindTo": "pacientes.data_nascimento"
+        },
+        {
+          "type": "text",
+          "field": "contato",
+          "label": "Contato",
+          "required": false,
+          "bindTo": "pacientes.contato"
+        },
+        {
+          "type": "select",
+          "field": "convenio",
+          "label": "Convênio",
+          "required": false,
+          "bindTo": "pacientes.convenio"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Salvar",
+          "kind": "task",
+          "target": "cadastrar_paciente",
+          "primary": true
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/cadastro/pacientes",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\">\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n<style>body{font-family:'Inter',sans-serif}</style></head>\n<body class=\"bg-slate-100\">\n<div class=\"flex min-h-screen\">\n  <aside class=\"w-60 bg-slate-900 text-slate-300\">\n    <div class=\"p-4\">\n      <h2 class=\"text-lg font-bold mb-8\">ClinIA — Clínica Médica Inteligente</h2>\n      <nav>\n        <a href=\"/dashboard\" class=\"block py-2 px-4 hover:bg-slate-700 rounded-l-md\">Dashboard</a>\n        <a href=\"/cadastro\" class=\"block py-2 px-4 bg-slate-700 rounded-l-md font-bold\">Cadastro</a>\n        <a href=\"/triagem\" class=\"block py-2 px-4 hover:bg-slate-700 rounded-l-md\">Triagem</a>\n        <a href=\"/pre-atendimento\" class=\"block py-2 px-4 hover:bg-slate-700 rounded-l-md\">Pré-atendimento</a>\n        <a href=\"/pre-diagnostico\" class=\"block py-2 px-4 hover:bg-slate-700 rounded-l-md\">Pré-diagnóstico</a>\n        <a href=\"/selecao\" class=\"block py-2 px-4 hover:bg-slate-700 rounded-l-md\">Seleção</a>\n      </nav>\n    </div>\n  </aside>\n  <main class=\"flex-1\">\n    <header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\">\n      <h1 class=\"text-lg font-semibold text-slate-800\">Cadastro de Pacientes</h1>\n      <div class=\"text-sm text-slate-500\">Preencha os dados do novo paciente.</div>\n      <button class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">+ Novo</button>\n    </header>\n    <div class=\"p-8\">\n      <form class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7\">\n        <div class=\"grid grid-cols-2 gap-6\">\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Nome</label>\n            <input type=\"text\" name=\"nome\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">CPF</label>\n            <input type=\"text\" name=\"cpf\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Data de Nascimento</label>\n            <input type=\"date\" name=\"data_nascimento\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Contato</label>\n            <input type=\"text\" name=\"contato\" placeholder=\"(XX) XXXX-XXXX\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Convênio</label>\n            <select name=\"convenio\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n              <option value=\"\">Selecione um convênio...</option>\n              <option value=\"Unimed\">Unimed</option>\n              <option value=\"Amil\">Amil</option>\n              <option value=\"Bradesco Saúde\">Bradesco Saúde</option>\n            </select>\n          </div>\n        </div>\n        <div class=\"mt-6 flex justify-end\">\n          <button type=\"submit\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Salvar</button>\n          <a href=\"/cadastro/pacientes\" class=\"ml-3 px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50\">Cancelar</a>\n        </div>\n      </form>\n    </div>\n  </main>\n</div>\n</body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "triagem-agentiva",
+      "name": "Triagem Agentiva",
+      "route": "/triagem/agentiva",
+      "uc": [
+        "UC-002"
+      ],
+      "entity": null,
+      "layout": "detail",
+      "components": [
+        {
+          "type": "readonly",
+          "field": "paciente_nome",
+          "label": "Paciente",
+          "required": false,
+          "bindTo": "pacientes.nome"
+        },
+        {
+          "type": "readonly",
+          "field": "queixa",
+          "label": "Queixa",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "readonly",
+          "field": "pressao",
+          "label": "Pressão",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "readonly",
+          "field": "frequencia_cardiaca",
+          "label": "Frequência Cardíaca",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "select",
+          "field": "especialidade_id",
+          "label": "Especialidade",
+          "required": true,
+          "bindTo": "especialidades.id",
+          "refEntity": "especialidades"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Classificar com IA",
+          "kind": "task",
+          "target": "classificar_urgencia_paciente",
+          "primary": true
+        },
+        {
+          "label": "Encaminhar ao Especialista",
+          "kind": "navigate",
+          "target": "/pre-atendimento/especialista",
+          "primary": false
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\"><script src=\"https://cdn.tailwindcss.com\"></script><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><style>body{font-family:'Inter',sans-serif}</style></head><body class=\"bg-slate-100\"><div class=\"flex min-h-screen\"><aside class=\"w-60 bg-slate-900 text-slate-300 flex flex-col p-4 space-y-6\"><div class=\"text-lg font-bold\">ClinIA — Clínica Médica Inteligente</div><nav class=\"space-y-2\"><a href=\"/dashboard\" class=\"block py-2 px-4 hover:bg-slate-700 rounded transition duration-300\">Dashboard</a><a href=\"/cadastro\" class=\"block py-2 px-4 hover:bg-slate-700 rounded transition duration-300\">Cadastro</a><a href=\"/triagem\" class=\"block py-2 px-4 bg-slate-700 text-white rounded transition duration-300\">Triagem</a><a href=\"/pre-atendimento\" class=\"block py-2 px-4 hover:bg-slate-700 rounded transition duration-300\">Pré-atendimento</a><a href=\"/pre-diagnostico\" class=\"block py-2 px-4 hover:bg-slate-700 rounded transition duration-300\">Pré-diagnóstico</a><a href=\"/selecao\" class=\"block py-2 px-4 hover:bg-slate-700 rounded transition duration-300\">Seleção</a></nav></aside><main class=\"flex-1 p-8\"><header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\"><div><h1 class=\"text-lg font-semibold text-slate-800\">Triagem Agentiva</h1><p class=\"text-sm text-slate-500\">Classifique a urgência do paciente e roteie para a especialidade correta.</p></div><div><button class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\" type=\"button\">Classificar com IA</button></div></header><main class=\"mt-8\"><div class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7 max-w-screen-lg mx-auto\"><form action=\"#\"><div class=\"grid grid-cols-1 gap-6 md:grid-cols-2\"><div><label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Paciente</label><input type=\"text\" value=\"João Silva\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Queixa</label><input type=\"text\" value=\"Dor de cabeça\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Pressão</label><input type=\"text\" value=\"120/80 mmHg\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Frequência Cardíaca</label><input type=\"text\" value=\"85 bpm\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Especialidade</label><select name=\"especialidade_id\" id=\"especialidade_id\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"><option value=\"1\">Cardiologia</option><option value=\"2\">Neurologia</option><option value=\"3\">Pediatria</option></select></div></div><div class=\"mt-6 flex justify-end space-x-4\"><button type=\"submit\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Encaminhar ao Especialista</button><a href=\"/\" class=\"px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition duration-300\">Cancelar</a></div></form></div><div class=\"mt-8 bg-slate-50 rounded-xl border p-5 max-w-screen-lg mx-auto\"><p class=\"text-sm text-slate-500\">Resultado da Classificação:</p><div class=\"mt-4 space-y-2\"><div><span class=\"inline-block px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium border border-emerald-200\">Verde</span></div><div class=\"text-sm text-slate-800 mt-1\">Justificativa: Paciente com queixa leve e sinais vitais normais.</div></div></div></main></main></div></body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "pre-atendimento-especialista",
+      "name": "Pré-atendimento por Especialista",
+      "route": "/pre-atendimento/especialista",
+      "uc": [
+        "UC-003"
+      ],
+      "entity": null,
+      "layout": "detail",
+      "components": [
+        {
+          "type": "readonly",
+          "field": "paciente_nome",
+          "label": "Paciente",
+          "required": false,
+          "bindTo": "pacientes.nome"
+        },
+        {
+          "type": "readonly",
+          "field": "queixa_inicial",
+          "label": "Queixa inicial",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "text",
+          "field": "duracao_dor",
+          "label": "Duração da dor?",
+          "required": true,
+          "bindTo": null
+        },
+        {
+          "type": "text",
+          "field": "localizacao_dor",
+          "label": "Localização exata?",
+          "required": true,
+          "bindTo": null
+        },
+        {
+          "type": "textarea",
+          "field": "outros_sintomas",
+          "label": "Há outros sintomas associados?",
+          "required": false,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "Gerar Pré-diagnóstico com IA",
+          "kind": "task",
+          "target": "gerar_pre_diagnostico_com_ia",
+          "primary": true
+        },
+        {
+          "label": "Encaminhar ao Médico",
+          "kind": "navigate",
+          "target": "/pre-diagnostico/gerado",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\">\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n<style>body{font-family:'Inter',sans-serif}</style></head>\n<body class=\"bg-slate-100\">\n<div class=\"flex min-h-screen\">\n  <aside class=\"w-60 bg-slate-900 text-slate-300\">\n    <div class=\"p-4\">\n      <h2 class=\"text-lg font-bold\">ClinIA — Clínica Médica Inteligente</h2>\n    </div>\n    <nav class=\"mt-6\">\n      <a href=\"#\" class=\"block px-4 py-2 text-sm hover:bg-slate-700\">Dashboard</a>\n      <a href=\"#\" class=\"block px-4 py-2 text-sm hover:bg-slate-700\">Cadastro</a>\n      <a href=\"#\" class=\"block px-4 py-2 text-sm hover:bg-slate-700\">Triagem</a>\n      <a href=\"/pre-atendimento/especialista\" class=\"block px-4 py-2 text-sm bg-slate-700\">Pré-atendimento</a>\n      <a href=\"#\" class=\"block px-4 py-2 text-sm hover:bg-slate-700\">Pré-diagnóstico</a>\n      <a href=\"#\" class=\"block px-4 py-2 text-sm hover:bg-slate-700\">Seleção</a>\n    </nav>\n  </aside>\n  <main class=\"flex-1\">\n    <header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\">\n      <div>\n        <h1 class=\"text-lg font-semibold text-slate-800\">Pré-atendimento de Cardiologia</h1>\n        <p class=\"text-sm text-slate-500\">Conduzir pré-atendimento dirigido à especialidade do paciente.</p>\n      </div>\n      <div>\n        <button class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Gerar Pré-diagnóstico com IA</button>\n        <a href=\"/pre-diagnostico/gerado\" class=\"ml-2 px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50\">Encaminhar ao Médico</a>\n      </div>\n    </header>\n    <div class=\"p-8\">\n      <div class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7\">\n        <div class=\"grid grid-cols-2 gap-6\">\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Paciente</label>\n            <input type=\"text\" value=\"Maria Santos\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-slate-100\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Queixa inicial</label>\n            <input type=\"text\" value=\"Dor torácica\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-slate-100\">\n          </div>\n          <div class=\"col-span-2\">\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Duração da dor?</label>\n            <input type=\"text\" placeholder=\"Ex: 3 horas\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div class=\"col-span-2\">\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Localização exata?</label>\n            <input type=\"text\" placeholder=\"Ex: centro do peito\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div class=\"col-span-2\">\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Há outros sintomas associados?</label>\n            <textarea placeholder=\"Ex: dispneia, náuseas\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none h-24\"></textarea>\n          </div>\n        </div>\n      </div>\n      <div class=\"mt-8\">\n        <h3 class=\"text-lg font-semibold text-slate-800\">Pré-Diagnóstico Gerado</h3>\n        <div class=\"bg-slate-50 rounded-xl border p-5 mt-4\">\n          <p class=\"text-sm text-slate-500\">Executado pelo Agente de Pré-atendimento, sistema gera pré-diagnóstico com hipóteses, nível de confiança e recomendação de exames.</p>\n        </div>\n      </div>\n    </div>\n  </main>\n</div>\n</body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "geracao-pre-diagnostico",
+      "name": "Geração de Pré-Diagnóstico",
+      "route": "/pre-diagnostico/gerar",
+      "uc": [
+        "UC-004"
+      ],
+      "entity": null,
+      "layout": "detail",
+      "components": [
+        {
+          "type": "readonly",
+          "field": "paciente_nome",
+          "label": "Paciente",
+          "required": false,
+          "bindTo": "pacientes.nome"
+        },
+        {
+          "type": "readonly",
+          "field": "queixa_inicial",
+          "label": "Queixa Inicial",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "textarea",
+          "field": "sinais_vitais",
+          "label": "Sinais Vitais",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "textarea",
+          "field": "outras_observacoes",
+          "label": "Outras Observações",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "readonly",
+          "field": "hipoteses",
+          "label": "Hipóteses",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "readonly",
+          "field": "nivel_confianca",
+          "label": "Nível de Confiança",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "readonly",
+          "field": "recomendacao_exames",
+          "label": "Recomendação de Exames",
+          "required": false,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "Gerar Pré-diagnóstico com IA",
+          "kind": "task",
+          "target": "gerar_pre_diagnostico_com_ia",
+          "primary": true
+        },
+        {
+          "label": "Salvar",
+          "kind": "task",
+          "target": "salvar_pre_diagnostico",
+          "primary": false
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/pre-diagnostico/lista",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\">\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n<style>body{font-family:'Inter',sans-serif}</style></head>\n<body class=\"bg-slate-100\">\n<div class=\"flex min-h-screen\">\n  <aside class=\"w-60 bg-slate-900 text-slate-300\">\n    <div class=\"p-6\">\n      <h2 class=\"text-lg font-semibold\">ClinIA — Clínica Médica Inteligente</h2>\n    </div>\n    <nav class=\"mt-8\">\n      <a href=\"/dashboard\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Dashboard</a>\n      <a href=\"/cadastro\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Cadastro</a>\n      <a href=\"/triagem\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Triagem</a>\n      <a href=\"/pre-atendimento\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Pré-atendimento</a>\n      <a href=\"/pre-diagnostico/lista\" class=\"block px-4 py-3 text-sm bg-slate-700\">Pré-diagnóstico</a>\n      <a href=\"/selecao\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Seleção</a>\n    </nav>\n  </aside>\n  <main class=\"flex-1\">\n    <header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\">\n      <div>\n        <h1 class=\"text-lg font-semibold text-slate-800\">Geração de Pré-Diagnóstico</h1>\n        <p class=\"text-sm text-slate-500 mt-1\">Preencha os dados e gere um pré-diagnóstico com IA.</p>\n      </div>\n      <button class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\" onclick=\"alert('Gerando Pré-Diagnóstico...')\">Gerar Pré-diagnóstico com IA</button>\n    </header>\n    <div class=\"px-8 py-6\">\n      <div class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7\">\n        <h2 class=\"text-lg font-semibold text-slate-800 mb-4\">Entrada</h2>\n        <div class=\"grid grid-cols-1 gap-6\">\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Paciente</label>\n            <input type=\"text\" value=\"Maria Santos\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Queixa Inicial</label>\n            <input type=\"text\" value=\"Dor torácica\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Sinais Vitais</label>\n            <textarea class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" rows=\"4\"></textarea>\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Outras Observações</label>\n            <textarea class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" rows=\"4\"></textarea>\n          </div>\n        </div>\n      </div>\n      <div class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7 mt-6\">\n        <h2 class=\"text-lg font-semibold text-slate-800 mb-4\">Resultado do Agente</h2>\n        <div class=\"grid grid-cols-1 gap-6\">\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Hipóteses</label>\n            <input type=\"text\" value=\"Angina de peito, Apneia, Gastroenterite\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Nível de Confiança</label>\n            <input type=\"text\" value=\"85%\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Recomendação de Exames</label>\n            <input type=\"text\" value=\"ECG, Teste de colesterol, Endoscopia\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n        </div>\n      </div>\n      <div class=\"mt-6 flex justify-end\">\n        <button class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\" onclick=\"alert('Salvando Pré-Diagnóstico...')\">Salvar</button>\n        <a href=\"/pre-diagnostico/lista\" class=\"ml-4 px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50\">Cancelar</a>\n      </div>\n    </div>\n  </main>\n</div>\n</body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "selecao-de-medico",
+      "name": "Seleção de Médico",
+      "route": "/selecao-de-medico",
+      "uc": [
+        "UC-005"
+      ],
+      "entity": "encaminhamentos",
+      "layout": "detail",
+      "components": [
+        {
+          "type": "readonly",
+          "field": "paciente_nome",
+          "label": "Paciente",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "readonly",
+          "field": "especialidade_nome",
+          "label": "Especialidade",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "readonly",
+          "field": "pre_diagnostico",
+          "label": "Pré-diagnóstico",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "text",
+          "field": "busca_medicos",
+          "label": "Busca",
+          "required": false,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "Encaminhar",
+          "kind": "task",
+          "target": "encaminhar_medico",
+          "primary": true
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/triagem",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\">\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n<style>body{font-family:'Inter',sans-serif}</style></head>\n<body class=\"bg-slate-100\">\n<div class=\"flex min-h-screen\">\n  <aside class=\"w-60 bg-slate-900 text-slate-300\">\n    <div class=\"p-4 border-b border-slate-800\">\n      <h2 class=\"text-lg font-semibold\">ClinIA — Clínica Médica Inteligente</h2>\n    </div>\n    <nav class=\"mt-6\">\n      <a href=\"/dashboard\" class=\"block px-4 py-3 hover:bg-slate-800\">Dashboard</a>\n      <a href=\"/cadastro\" class=\"block px-4 py-3 hover:bg-slate-800\">Cadastro</a>\n      <a href=\"/triagem\" class=\"block px-4 py-3 hover:bg-slate-800\">Triagem</a>\n      <a href=\"/pre-atendimento\" class=\"block px-4 py-3 hover:bg-slate-800\">Pré-atendimento</a>\n      <a href=\"/pre-diagnostico\" class=\"block px-4 py-3 hover:bg-slate-800\">Pré-diagnóstico</a>\n      <a href=\"/selecao-de-medico\" class=\"block px-4 py-3 bg-slate-700 text-white\">Seleção</a>\n    </nav>\n  </aside>\n  <main class=\"flex-1\">\n    <header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\">\n      <div>\n        <h1 class=\"text-lg font-semibold text-slate-800\">Seleção de Médico</h1>\n        <p class=\"text-sm text-slate-500\">Selecione um médico disponível para o paciente.</p>\n      </div>\n      <div>\n        <button class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Encaminhar</button>\n        <a href=\"/triagem\" class=\"ml-3 px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50\">Cancelar</a>\n      </div>\n    </header>\n    <div class=\"px-8 py-6\">\n      <form>\n        <div class=\"grid grid-cols-2 gap-6 mb-6\">\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Paciente</label>\n            <input type=\"text\" value=\"Maria Santos\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Especialidade</label>\n            <input type=\"text\" value=\"Cardiologia\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n        </div>\n        <div class=\"mb-6\">\n          <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Pré-diagnóstico</label>\n          <input type=\"text\" value=\"Angina de peito\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n        </div>\n        <div class=\"mb-6\">\n          <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Busca</label>\n          <input type=\"text\" placeholder=\"Digite o nome do médico...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n        </div>\n      </form>\n      <table class=\"w-full text-sm\">\n        <thead class=\"text-xs text-slate-500 uppercase border-b\">\n          <tr>\n            <th class=\"py-3 px-6\">Nome</th>\n            <th class=\"py-3 px-6\">Horário</th>\n            <th class=\"py-3 px-6\">Ações</th>\n          </tr>\n        </thead>\n        <tbody>\n          <tr class=\"hover:bg-slate-50\">\n            <td class=\"py-4 px-6\">Dr. João Silva</td>\n            <td class=\"py-4 px-6\">14h às 15h</td>\n            <td class=\"py-4 px-6\">\n              <button class=\"px-2 py-1 rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300\">Ver</button>\n              <button class=\"ml-2 px-2 py-1 rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300\">Editar</button>\n              <button class=\"ml-2 px-2 py-1 rounded-lg bg-red-200 text-red-700 hover:bg-red-300\">Excluir</button>\n            </td>\n          </tr>\n          <tr class=\"hover:bg-slate-50\">\n            <td class=\"py-4 px-6\">Dra. Maria Oliveira</td>\n            <td class=\"py-4 px-6\">16h às 17h</td>\n            <td class=\"py-4 px-6\">\n              <button class=\"px-2 py-1 rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300\">Ver</button>\n              <button class=\"ml-2 px-2 py-1 rounded-lg bg-slate-200 text-slate-700 hover:bg-slate-300\">Editar</button>\n              <button class=\"ml-2 px-2 py-1 rounded-lg bg-red-200 text-red-700 hover:bg-red-300\">Excluir</button>\n            </td>\n          </tr>\n        </tbody>\n      </table>\n    </div>\n  </main>\n</div>\n</body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "registro-prontuario",
+      "name": "Registro/Prontuário",
+      "route": "/atendimentos/prontuario",
+      "uc": [
+        "UC-006"
+      ],
+      "entity": "prontuarios",
+      "layout": "form",
+      "components": [
+        {
+          "type": "readonly",
+          "field": "paciente_nome",
+          "label": "Paciente",
+          "required": false,
+          "bindTo": "pacientes.nome"
+        },
+        {
+          "type": "select",
+          "field": "atendimento_id",
+          "label": "Atendimento",
+          "required": false,
+          "bindTo": "atendimentos.id",
+          "refEntity": "atendimentos"
+        },
+        {
+          "type": "textarea",
+          "field": "triagem",
+          "label": "Queixa inicial",
+          "required": true,
+          "bindTo": "prontuarios.triagem"
+        },
+        {
+          "type": "select",
+          "field": "classificacao_urgencia",
+          "label": "Classificação de urgência",
+          "required": true,
+          "bindTo": null
+        },
+        {
+          "type": "select",
+          "field": "area_destino",
+          "label": "Área de destino",
+          "required": true,
+          "bindTo": null
+        },
+        {
+          "type": "textarea",
+          "field": "hipoteses",
+          "label": "Hipóteses",
+          "required": true,
+          "bindTo": null
+        },
+        {
+          "type": "number",
+          "field": "nivel_confianca",
+          "label": "Nível de confiança (%)",
+          "required": true,
+          "bindTo": null
+        },
+        {
+          "type": "textarea",
+          "field": "exames_sugeridos",
+          "label": "Exames sugeridos",
+          "required": true,
+          "bindTo": null
+        },
+        {
+          "type": "select",
+          "field": "medico_id",
+          "label": "Médico",
+          "required": true,
+          "bindTo": "encaminhamentos.medico_id",
+          "refEntity": "medicos"
+        },
+        {
+          "type": "select",
+          "field": "prioridade",
+          "label": "Prioridade",
+          "required": true,
+          "bindTo": "encaminhamentos.prioridade"
+        },
+        {
+          "type": "readonly",
+          "field": "status",
+          "label": "Status",
+          "required": false,
+          "bindTo": "encaminhamentos.status"
+        },
+        {
+          "type": "textarea",
+          "field": "resumo_medico",
+          "label": "Resumo para o médico",
+          "required": true,
+          "bindTo": "prontuarios.resumo_medico"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Salvar",
+          "kind": "task",
+          "target": "cadastrar_prontuario",
+          "primary": true
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/atendimentos",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\">\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n<style>body{font-family:'Inter',sans-serif}</style></head>\n<body class=\"bg-slate-100\">\n<div class=\"flex min-h-screen\">\n  <aside class=\"w-60 bg-slate-900 text-slate-300\">\n    <div class=\"p-6 flex items-center border-b border-slate-700\">\n      <h2 class=\"text-lg font-semibold\">ClinIA — Clínica Médica Inteligente</h2>\n    </div>\n    <nav class=\"mt-8\">\n      <a href=\"/dashboard\" class=\"block px-6 py-3 hover:bg-slate-700\">Dashboard</a>\n      <a href=\"/cadastro\" class=\"block px-6 py-3 hover:bg-slate-700\">Cadastro</a>\n      <a href=\"/triagem\" class=\"block px-6 py-3 hover:bg-slate-700\">Triagem</a>\n      <a href=\"/pre-atendimento\" class=\"block px-6 py-3 hover:bg-slate-700\">Pré-atendimento</a>\n      <a href=\"/pre-diagnostico\" class=\"block px-6 py-3 hover:bg-slate-700\">Pré-diagnóstico</a>\n      <a href=\"/selecao\" class=\"block px-6 py-3 hover:bg-slate-700\">Seleção</a>\n      <a href=\"/atendimentos/prontuario\" class=\"block px-6 py-3 bg-slate-800 text-indigo-500 font-semibold\">Registro/Prontuário</a>\n    </nav>\n  </aside>\n  <main class=\"flex-1\">\n    <header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\">\n      <div>\n        <h1 class=\"text-lg font-semibold text-slate-800\">Registro/Prontuário</h1>\n        <p class=\"text-sm text-slate-500\">Consolide triagem, pré-diagnóstico e encaminhamento no prontuário do paciente.</p>\n      </div>\n      <div>\n        <button class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Salvar</button>\n        <a href=\"/atendimentos\" class=\"ml-3 px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50\">Cancelar</a>\n      </div>\n    </header>\n    <div class=\"px-8 py-6\">\n      <form class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7 max-w-screen-lg mx-auto\">\n        <div class=\"grid grid-cols-2 gap-6\">\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Paciente</label>\n            <input type=\"text\" value=\"Maria Santos\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Atendimento</label>\n            <input type=\"text\" value=\"Triagem #12345\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div class=\"col-span-2\">\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Queixa inicial</label>\n            <textarea class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" required>Dor torácica</textarea>\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Classificação de urgência</label>\n            <select class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" required>\n              <option value=\"verde\">Verde</option>\n              <option value=\"amarelo\">Amarelo</option>\n              <option value=\"laranja\">Laranja</option>\n              <option value=\"vermelho\">Vermelho</option>\n            </select>\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Área de destino</label>\n            <select class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" required>\n              <option value=\"cardiologia\">Cardiologia</option>\n              <option value=\"neurologia\">Neurologia</option>\n              <option value=\"pediatria\">Pediatria</option>\n            </select>\n          </div>\n          <div class=\"col-span-2\">\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Hipóteses</label>\n            <textarea class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" required>Angina de peito, Apneia</textarea>\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Nível de confiança (%)</label>\n            <input type=\"number\" value=\"85\" min=\"0\" max=\"100\" required class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div class=\"col-span-2\">\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Exames sugeridos</label>\n            <textarea class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" required>ECG, Teste de colesterol</textarea>\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Médico</label>\n            <select class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" required>\n              <option value=\"dr_joao_silva\">Dr. João Silva</option>\n              <option value=\"dra_maria_pereira\">Dra. Maria Pereira</option>\n            </select>\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Prioridade</label>\n            <select class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" required>\n              <option value=\"normal\">Normal</option>\n              <option value=\"urgente\">Urgente</option>\n            </select>\n          </div>\n          <div>\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Status</label>\n            <input type=\"text\" value=\"Gerado\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n          </div>\n          <div class=\"col-span-2\">\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Resumo para o médico</label>\n            <textarea class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" required>Paciente apresenta sintomas consistentes com angina de peito, recomenda-se realizar ECG e teste de colesterol.</textarea>\n          </div>\n        </div>\n      </form>\n    </div>\n  </main>\n</div>\n</body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "consulta-medica",
+      "name": "Consulta Médica",
+      "route": "/consulta-medica",
+      "uc": [
+        "UC-007"
+      ],
+      "entity": "prontuarios",
+      "layout": "form",
+      "components": [
+        {
+          "type": "readonly",
+          "field": "paciente.nome",
+          "label": "Paciente",
+          "required": true,
+          "bindTo": "pacientes.nome"
+        },
+        {
+          "type": "readonly",
+          "field": "atendimento.id",
+          "label": "Atendimento",
+          "required": true,
+          "bindTo": "atendimentos.id"
+        },
+        {
+          "type": "readonly",
+          "field": "pre_diagnostico.hipoteses",
+          "label": "Hipóteses",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "readonly",
+          "field": "pre_diagnostico.nivel_confianca",
+          "label": "Nível de confiança",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "readonly",
+          "field": "pre_diagnostico.exames_sugeridos",
+          "label": "Exames sugeridos",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "textarea",
+          "field": "resumo_medico",
+          "label": "Diagnóstico Final",
+          "required": true,
+          "bindTo": "prontuarios.resumo_medico"
+        },
+        {
+          "type": "textarea",
+          "field": "conduta",
+          "label": "Conduta",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "textarea",
+          "field": "prescricao",
+          "label": "Prescrição",
+          "required": false,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "Salvar",
+          "kind": "task",
+          "target": "registrar_diagnostico_final",
+          "primary": true
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/triagem",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\">\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n<style>body{font-family:'Inter',sans-serif}</style></head>\n<body class=\"bg-slate-100\">\n<div class=\"flex min-h-screen\">\n<aside class=\"w-60 bg-slate-900 text-slate-300\">\n<div class=\"p-4\">\n<h2 class=\"text-lg font-bold\">ClinIA — Clínica Médica Inteligente</h2>\n</div>\n<nav class=\"mt-8\">\n<ul class=\"space-y-1\">\n<li><a href=\"/dashboard\" class=\"block px-4 py-2 text-sm hover:bg-slate-700 rounded-lg\">Dashboard</a></li>\n<li><a href=\"/cadastro\" class=\"block px-4 py-2 text-sm hover:bg-slate-700 rounded-lg\">Cadastro</a></li>\n<li><a href=\"/triagem\" class=\"block px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg\">Triagem</a></li>\n<li><a href=\"/pre-atendimento\" class=\"block px-4 py-2 text-sm hover:bg-slate-700 rounded-lg\">Pré-atendimento</a></li>\n<li><a href=\"/pre-diagnostico\" class=\"block px-4 py-2 text-sm hover:bg-slate-700 rounded-lg\">Pré-diagnóstico</a></li>\n<li><a href=\"/selecao\" class=\"block px-4 py-2 text-sm hover:bg-slate-700 rounded-lg\">Seleção</a></li>\n</ul>\n</nav>\n</aside>\n<main class=\"flex-1\">\n<header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\">\n<h1 class=\"text-lg font-semibold text-slate-800\">Consulta Médica</h1>\n<div class=\"text-sm text-slate-500\">Realizar consulta médica e registrar diagnóstico final.</div>\n<div class=\"space-x-2\">\n<button class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Salvar</button>\n<a href=\"/triagem\" class=\"px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50\">Cancelar</a>\n</div>\n</header>\n<div class=\"p-8\">\n<div class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7\">\n<div class=\"grid grid-cols-1 gap-6\">\n<div class=\"space-y-1.5\">\n<label class=\"block text-sm font-medium text-slate-700\">Paciente</label>\n<input type=\"text\" value=\"Maria Santos\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n</div>\n<div class=\"space-y-1.5\">\n<label class=\"block text-sm font-medium text-slate-700\">Atendimento</label>\n<input type=\"text\" value=\"Triagem #12345\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n</div>\n<div class=\"space-y-1.5\">\n<label class=\"block text-sm font-medium text-slate-700\">Hipóteses</label>\n<input type=\"text\" value=\"Angina de peito, Apneia\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n</div>\n<div class=\"space-y-1.5\">\n<label class=\"block text-sm font-medium text-slate-700\">Nível de confiança</label>\n<input type=\"text\" value=\"85%\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n</div>\n<div class=\"space-y-1.5\">\n<label class=\"block text-sm font-medium text-slate-700\">Exames sugeridos</label>\n<input type=\"text\" value=\"ECG, Teste de colesterol\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n</div>\n<div class=\"space-y-1.5\">\n<label class=\"block text-sm font-medium text-slate-700\">Diagnóstico Final</label>\n<textarea rows=\"3\" placeholder=\"Digite o diagnóstico final aqui...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></textarea>\n</div>\n<div class=\"space-y-1.5\">\n<label class=\"block text-sm font-medium text-slate-700\">Conduta</label>\n<textarea rows=\"3\" placeholder=\"Digite a conduta aqui...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></textarea>\n</div>\n<div class=\"space-y-1.5\">\n<label class=\"block text-sm font-medium text-slate-700\">Prescrição</label>\n<textarea rows=\"3\" placeholder=\"Digite a prescrição aqui...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></textarea>\n</div>\n</div>\n</div>\n</div>\n</main>\n</div>\n</body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "gestao-de-consentimento-lgpd",
+      "name": "Gestão de Consentimento LGPD",
+      "route": "/consentimentos",
+      "uc": [
+        "UC-008"
+      ],
+      "entity": "consentimentos",
+      "layout": "form",
+      "components": [
+        {
+          "type": "select",
+          "field": "paciente_id",
+          "label": "Paciente",
+          "required": true,
+          "bindTo": "pacientes.id",
+          "refEntity": "pacientes"
+        },
+        {
+          "type": "readonly",
+          "field": "data_hora",
+          "label": "Data/Hora",
+          "required": false,
+          "bindTo": "consentimentos.data_hora"
+        },
+        {
+          "type": "readonly",
+          "field": "versao_termo",
+          "label": "Versão Termo",
+          "required": false,
+          "bindTo": "consentimentos.versao_termo"
+        },
+        {
+          "type": "checkbox",
+          "field": "concorda",
+          "label": "Paciente concorda com os termos?",
+          "required": true,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "Salvar",
+          "kind": "task",
+          "target": "cadastrar_consentimento",
+          "primary": true
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/consentimentos",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\">\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n<style>body{font-family:'Inter',sans-serif}</style></head>\n<body class=\"bg-slate-100\">\n<div class=\"flex min-h-screen\">\n  <aside class=\"w-60 bg-slate-900 text-slate-300\">\n    <div class=\"p-4\">\n      <h2 class=\"text-lg font-semibold\">ClinIA — Clínica Médica Inteligente</h2>\n    </div>\n    <nav class=\"mt-6\">\n      <a href=\"/dashboard\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Dashboard</a>\n      <a href=\"/cadastro\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Cadastro</a>\n      <a href=\"/triagem\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Triagem</a>\n      <a href=\"/pre-atendimento\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Pré-atendimento</a>\n      <a href=\"/pre-diagnostico\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Pré-diagnóstico</a>\n      <a href=\"/selecao\" class=\"block px-4 py-3 text-sm hover:bg-slate-700\">Seleção</a>\n    </nav>\n  </aside>\n  <main class=\"flex-1\">\n    <header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\">\n      <div>\n        <h1 class=\"text-lg font-semibold text-slate-800\">Cadastrar Consentimento</h1>\n        <p class=\"mt-1 text-sm text-slate-500\">Capture e registre o consentimento do paciente para coleta, uso e compartilhamento de dados.</p>\n      </div>\n      <a href=\"/consentimentos\" class=\"px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50\">Cancelar</a>\n    </header>\n    <div class=\"p-8\">\n      <form>\n        <div class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7\">\n          <div class=\"grid grid-cols-1 gap-6\">\n            <div>\n              <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Paciente</label>\n              <select name=\"paciente_id\" id=\"paciente_id\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n                <option value=\"\">Selecione um paciente</option>\n                <option value=\"1\">João Silva</option>\n                <option value=\"2\">Maria Oliveira</option>\n              </select>\n            </div>\n            <div>\n              <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Data/Hora</label>\n              <input type=\"text\" name=\"data_hora\" id=\"data_hora\" value=\"2023-10-05 14:30\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" readonly>\n            </div>\n            <div>\n              <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Versão Termo</label>\n              <input type=\"text\" name=\"versao_termo\" id=\"versao_termo\" value=\"V2.0\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" readonly>\n            </div>\n            <div>\n              <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Termos e Condições</label>\n              <ul class=\"list-disc pl-4\">\n                <li>Coleta, uso e compartilhamento de dados pessoais</li>\n                <li>Responsabilidade do paciente pela veracidade</li>\n                <li>Direito a revogação do consentimento</li>\n              </ul>\n            </div>\n            <div class=\"flex items-center\">\n              <input type=\"checkbox\" name=\"concorda\" id=\"concorda\" class=\"h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded\">\n              <label for=\"concorda\" class=\"ml-2 block text-sm font-medium text-slate-700\">Paciente concorda com os termos?</label>\n            </div>\n          </div>\n        </div>\n        <div class=\"mt-6 flex justify-end\">\n          <button type=\"submit\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Salvar</button>\n        </div>\n      </form>\n    </div>\n  </main>\n</div>\n</body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "procedimento-manual",
+      "name": "Procedimento Manual",
+      "route": "/fallback/procedimento-manual",
+      "uc": [
+        "UC-009"
+      ],
+      "entity": null,
+      "layout": "form",
+      "components": [
+        {
+          "type": "readonly",
+          "field": "paciente_nome",
+          "label": "Paciente",
+          "required": false,
+          "bindTo": "pacientes.nome"
+        },
+        {
+          "type": "select",
+          "field": "atendimento_id",
+          "label": "Atendimento",
+          "required": false,
+          "bindTo": "atendimentos.id",
+          "refEntity": "atendimentos"
+        },
+        {
+          "type": "textarea",
+          "field": "passos_procedimento",
+          "label": "Passos do Procedimento Manual",
+          "required": true,
+          "bindTo": null
+        },
+        {
+          "type": "textarea",
+          "field": "responsaveis",
+          "label": "Responsáveis pelas etapas",
+          "required": true,
+          "bindTo": null
+        },
+        {
+          "type": "textarea",
+          "field": "justificativa_fallback",
+          "label": "Justificativa do fallback",
+          "required": true,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "Iniciar",
+          "kind": "task",
+          "target": "iniciar_procedimento_manual",
+          "primary": true
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/triagem",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\">\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n<style>body{font-family:'Inter',sans-serif}</style></head>\n<body class=\"bg-slate-100\">\n<div class=\"flex min-h-screen\">\n  <aside class=\"w-60 bg-slate-900 text-slate-300\">\n    <div class=\"p-4 border-b border-slate-700\">\n      <h1 class=\"text-lg font-semibold\">ClinIA — Clínica Médica Inteligente</h1>\n    </div>\n    <nav class=\"mt-6\">\n      <a href=\"#\" class=\"block px-4 py-2 text-sm hover:bg-slate-700\">Dashboard</a>\n      <a href=\"/cadastro\" class=\"block px-4 py-2 text-sm hover:bg-slate-700\">Cadastro</a>\n      <a href=\"/triagem\" class=\"block px-4 py-2 text-sm font-semibold bg-slate-700\">Triagem</a>\n      <a href=\"#\" class=\"block px-4 py-2 text-sm hover:bg-slate-700\">Pré-atendimento</a>\n      <a href=\"#\" class=\"block px-4 py-2 text-sm hover:bg-slate-700\">Pré-diagnóstico</a>\n      <a href=\"#\" class=\"block px-4 py-2 text-sm hover:bg-slate-700\">Seleção</a>\n    </nav>\n  </aside>\n  <main class=\"flex-1\">\n    <header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\">\n      <div>\n        <h1 class=\"text-lg font-semibold text-slate-800\">Procedimento Manual</h1>\n        <p class=\"text-sm text-slate-500\">Instruções detalhadas para procedimento manual</p>\n      </div>\n    </header>\n    <div class=\"px-8 py-6\">\n      <div class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7\">\n        <form>\n          <div class=\"grid grid-cols-2 gap-6\">\n            <div>\n              <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Paciente</label>\n              <input type=\"text\" value=\"Maria Santos\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n            </div>\n            <div>\n              <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Atendimento</label>\n              <input type=\"text\" value=\"Triagem #12345\" readonly class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n            </div>\n          </div>\n          <div class=\"mt-6\">\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Passos do Procedimento Manual</label>\n            <textarea rows=\"4\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">1. Coletar queixa inicial e sinais vitais\n2. Classificar urgência manualmente\n3. Roteirizar para especialidade correspondente</textarea>\n          </div>\n          <div class=\"mt-6\">\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Responsáveis pelas etapas</label>\n            <textarea rows=\"4\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">- Recepcionista: Passos 1 e 2\n- Administrador: Passo 3</textarea>\n          </div>\n          <div class=\"mt-6\">\n            <label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Justificativa do fallback</label>\n            <textarea rows=\"4\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></textarea>\n          </div>\n          <div class=\"mt-8 flex justify-end\">\n            <button type=\"submit\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Iniciar</button>\n            <a href=\"/triagem\" class=\"ml-3 px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50\">Cancelar</a>\n          </div>\n        </form>\n      </div>\n    </div>\n  </main>\n</div>\n</body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "dashboard-kpis",
+      "name": "Dashboard KPIs",
+      "route": "/dashboard/kpis",
+      "uc": [
+        "UC-010"
+      ],
+      "entity": null,
+      "layout": "detail",
+      "components": [
+        {
+          "type": "text",
+          "field": "busca",
+          "label": "Busca",
+          "required": false,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "Detalhes",
+          "kind": "navigate",
+          "target": "/detalhes/kpis",
+          "primary": true
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\"><script src=\"https://cdn.tailwindcss.com\"></script><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><style>body{font-family:'Inter',sans-serif}</style></head><body class=\"bg-slate-100\"><div class=\"flex min-h-screen\"><aside class=\"w-60 bg-slate-900 text-slate-300\"><div class=\"p-6\"><h1 class=\"text-lg font-bold\">ClinIA — Clínica Médica Inteligente</h1></div><nav class=\"mt-8 space-y-2\"><a href=\"/dashboard\" class=\"block px-4 py-2 rounded-lg hover:bg-slate-700\">Dashboard</a><a href=\"/cadastro\" class=\"block px-4 py-2 rounded-lg hover:bg-slate-700\">Cadastro</a><a href=\"/triagem\" class=\"block px-4 py-2 rounded-lg hover:bg-slate-700\">Triagem</a><a href=\"/pre-atendimento\" class=\"block px-4 py-2 rounded-lg hover:bg-slate-700\">Pré-atendimento</a><a href=\"/pre-diagnostico\" class=\"block px-4 py-2 rounded-lg hover:bg-slate-700\">Pré-diagnóstico</a><a href=\"/selecao\" class=\"block px-4 py-2 rounded-lg bg-indigo-600 text-white font-medium hover:bg-indigo-700\">Seleção</a></nav></aside><main class=\"flex-1 p-8\"><header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\"><h2 class=\"text-lg font-semibold text-slate-800\">Dashboard KPIs</h2><p class=\"text-sm text-slate-500\">Monitoramento e análise operacional</p><div><input type=\"text\" placeholder=\"Busca...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div></header><section class=\"mt-8 grid grid-cols-4 gap-4\"><div class=\"bg-white rounded-2xl border border-slate-200 p-5\"><div class=\"text-xs text-slate-400 uppercase tracking-wide\">Atendimentos do Dia - Verde</div><div class=\"text-3xl font-bold text-slate-800 mt-1\">100</div></div><div class=\"bg-white rounded-2xl border border-slate-200 p-5\"><div class=\"text-xs text-slate-400 uppercase tracking-wide\">Atendimentos do Dia - Amarelo</div><div class=\"text-3xl font-bold text-slate-800 mt-1\">50</div></div><div class=\"bg-white rounded-2xl border border-slate-200 p-5\"><div class=\"text-xs text-slate-400 uppercase tracking-wide\">Atendimentos do Dia - Vermelho</div><div class=\"text-3xl font-bold text-slate-800 mt-1\">10</div></div><div class=\"bg-white rounded-2xl border border-slate-200 p-5\"><div class=\"text-xs text-slate-400 uppercase tracking-wide\">Distribuição por Especialidade - Cardiologia</div><div class=\"text-3xl font-bold text-slate-800 mt-1\">60%</div></div><div class=\"bg-white rounded-2xl border border-slate-200 p-5\"><div class=\"text-xs text-slate-400 uppercase tracking-wide\">Distribuição por Especialidade - Pediatria</div><div class=\"text-3xl font-bold text-slate-800 mt-1\">20%</div></div><div class=\"bg-white rounded-2xl border border-slate-200 p-5\"><div class=\"text-xs text-slate-400 uppercase tracking-wide\">Distribuição por Especialidade - Gastroenterologia</div><div class=\"text-3xl font-bold text-slate-800 mt-1\">20%</div></div><div class=\"bg-white rounded-2xl border border-slate-200 p-5\"><div class=\"text-xs text-slate-400 uppercase tracking-wide\">Urgências</div><div class=\"text-3xl font-bold text-slate-800 mt-1\">15</div></div><div class=\"bg-white rounded-2xl border border-slate-200 p-5\"><div class=\"text-xs text-slate-400 uppercase tracking-wide\">Tempo Médio de Triagem (min) - P95</div><div class=\"text-3xl font-bold text-slate-800 mt-1\">28</div></div></section><button class=\"mt-8 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Detalhes</button></main></div></body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "gestao-de-agendas",
+      "name": "Gestão de Agendas",
+      "route": "/gestao/agendas",
+      "uc": [
+        "UC-011"
+      ],
+      "entity": "medicos",
+      "layout": "detail",
+      "components": [
+        {
+          "type": "select",
+          "field": "medico_id",
+          "label": "Médico",
+          "required": true,
+          "bindTo": "medicos.id",
+          "refEntity": "medicos"
+        },
+        {
+          "type": "text",
+          "field": "segunda-feira",
+          "label": "Segunda-feira",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "text",
+          "field": "terca-feira",
+          "label": "Terça-feira",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "text",
+          "field": "quarta-feira",
+          "label": "Quarta-feira",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "text",
+          "field": "quinta-feira",
+          "label": "Quinta-feira",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "text",
+          "field": "sexta-feira",
+          "label": "Sexta-feira",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "text",
+          "field": "sabado",
+          "label": "Sábado",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "text",
+          "field": "domingo",
+          "label": "Domingo",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "date",
+          "field": "bloqueio_data",
+          "label": "Data do Bloqueio",
+          "required": false,
+          "bindTo": null
+        },
+        {
+          "type": "text",
+          "field": "bloqueio_motivo",
+          "label": "Motivo do Bloqueio",
+          "required": false,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "Salvar",
+          "kind": "task",
+          "target": "cadastrar_agenda_medico",
+          "primary": true
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/gestao/agendas",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\"><script src=\"https://cdn.tailwindcss.com\"></script><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><style>body{font-family:'Inter',sans-serif}</style></head><body class=\"bg-slate-100\"><div class=\"flex min-h-screen\"><aside class=\"w-60 bg-slate-900 text-slate-300 flex flex-col p-4 space-y-6\"><h2 class=\"text-lg font-bold\">ClinIA — Clínica Médica Inteligente</h2><nav class=\"space-y-1\"><a href=\"/dashboard\" class=\"block py-2 px-4 hover:bg-slate-700 rounded transition duration-300\">Dashboard</a><a href=\"/cadastro\" class=\"block py-2 px-4 hover:bg-slate-700 rounded transition duration-300\">Cadastro</a><a href=\"/triagem\" class=\"block py-2 px-4 hover:bg-slate-700 rounded transition duration-300\">Triagem</a><a href=\"/pre-atendimento\" class=\"block py-2 px-4 hover:bg-slate-700 rounded transition duration-300\">Pré-atendimento</a><a href=\"/pre-diagnostico\" class=\"block py-2 px-4 hover:bg-slate-700 rounded transition duration-300\">Pré-diagnóstico</a><a href=\"/selecao\" class=\"block py-2 px-4 bg-slate-700 text-indigo-500 rounded transition duration-300 font-semibold\">Seleção</a></nav></aside><main class=\"flex-1 p-8\"><header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\"><h1 class=\"text-lg font-semibold text-slate-800\">Gestão de Agendas</h1><div class=\"text-sm text-slate-500\">Gerencie a disponibilidade dos médicos para encaminhamentos.</div><div class=\"space-x-2\"><button class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">+ Novo</button></div></header><div class=\"mt-8\"><table class=\"w-full text-sm mt-4\"><thead class=\"text-xs text-slate-500 uppercase border-b\"><tr><th>Médico</th><th>Segunda-feira</th><th>Terça-feira</th><th>Quarta-feira</th><th>Quinta-feira</th><th>Sexta-feira</th><th>Sábado</th><th>Domingo</th><th>Ações</th></tr></thead><tbody class=\"divide-y divide-slate-200\"><tr class=\"hover:bg-slate-50\"><td>Dr. João Silva</td><td>08h às 12h</td><td>08h às 12h</td><td>08h às 12h</td><td>-</td><td>-</td><td>-</td><td>-</td><td class=\"space-x-2\"><button class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100\">Ver</button><button class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100\">Editar</button><button class=\"px-2 py-1 rounded-lg bg-red-50 text-red-700 hover:bg-red-100\">Excluir</button></td></tr><tr class=\"hover:bg-slate-50\"><td>Dr. Maria Costa</td><td>09h às 13h</td><td>09h às 13h</td><td>09h às 13h</td><td>-</td><td>-</td><td>-</td><td>-</td><td class=\"space-x-2\"><button class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100\">Ver</button><button class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100\">Editar</button><button class=\"px-2 py-1 rounded-lg bg-red-50 text-red-700 hover:bg-red-100\">Excluir</button></td></tr></tbody></table></div><div class=\"mt-8\"><div class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7\"><form action=\"#\" method=\"POST\"><div class=\"grid grid-cols-2 gap-6\"><div><label for=\"medico_id\" class=\"block text-sm font-medium text-slate-700 mb-1.5\">Médico</label><select id=\"medico_id\" name=\"medico_id\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"><option value=\"\">Selecionar médico...</option><option value=\"1\">Dr. João Silva</option><option value=\"2\">Dr. Maria Costa</option></select></div><div><label for=\"segunda-feira\" class=\"block text-sm font-medium text-slate-700 mb-1.5\">Segunda-feira</label><input type=\"text\" id=\"segunda-feira\" name=\"segunda-feira\" placeholder=\"Selecione horário...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label for=\"terca-feira\" class=\"block text-sm font-medium text-slate-700 mb-1.5\">Terça-feira</label><input type=\"text\" id=\"terca-feira\" name=\"terca-feira\" placeholder=\"Selecione horário...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label for=\"quarta-feira\" class=\"block text-sm font-medium text-slate-700 mb-1.5\">Quarta-feira</label><input type=\"text\" id=\"quarta-feira\" name=\"quarta-feira\" placeholder=\"Selecione horário...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label for=\"quinta-feira\" class=\"block text-sm font-medium text-slate-700 mb-1.5\">Quinta-feira</label><input type=\"text\" id=\"quinta-feira\" name=\"quinta-feira\" placeholder=\"Selecione horário...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label for=\"sexta-feira\" class=\"block text-sm font-medium text-slate-700 mb-1.5\">Sexta-feira</label><input type=\"text\" id=\"sexta-feira\" name=\"sexta-feira\" placeholder=\"Selecione horário...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label for=\"sabado\" class=\"block text-sm font-medium text-slate-700 mb-1.5\">Sábado</label><input type=\"text\" id=\"sabado\" name=\"sabado\" placeholder=\"Selecione horário...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label for=\"domingo\" class=\"block text-sm font-medium text-slate-700 mb-1.5\">Domingo</label><input type=\"text\" id=\"domingo\" name=\"domingo\" placeholder=\"Selecione horário...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div class=\"col-span-2\"><label for=\"bloqueio_data\" class=\"block text-sm font-medium text-slate-700 mb-1.5\">Data do Bloqueio</label><input type=\"date\" id=\"bloqueio_data\" name=\"bloqueio_data\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div class=\"col-span-2\"><label for=\"bloqueio_motivo\" class=\"block text-sm font-medium text-slate-700 mb-1.5\">Motivo do Bloqueio</label><input type=\"text\" id=\"bloqueio_motivo\" name=\"bloqueio_motivo\" placeholder=\"Digite o motivo...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div></div><div class=\"mt-6 space-x-4\"><button type=\"submit\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Salvar</button><a href=\"/gestao/agendas\" class=\"px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50\">Cancelar</a></div></form></div></div></main></div></body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "gestao-de-agentes",
+      "name": "Gestão de Agentes",
+      "route": "/gestao-de-agentes",
+      "uc": [
+        "UC-012"
+      ],
+      "entity": null,
+      "layout": "detail",
+      "components": [
+        {
+          "type": "text",
+          "field": "busca",
+          "label": "Busca",
+          "required": false,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "+ Novo",
+          "kind": "navigate",
+          "target": "/cadastro-agente",
+          "primary": true
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\"><script src=\"https://cdn.tailwindcss.com\"></script><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><style>body{font-family:'Inter',sans-serif}</style></head><body class=\"bg-slate-100\"><div class=\"flex min-h-screen\"><aside class=\"w-60 bg-slate-900 text-slate-300 flex flex-col p-4\"><div class=\"mb-8\">ClinIA — Clínica Médica Inteligente</div><nav><a href=\"/dashboard\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Dashboard</a><a href=\"/cadastro\" class=\"block py-2.5 bg-slate-800 rounded-l-lg pl-3 text-indigo-400\">Cadastro</a><a href=\"/triagem\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Triagem</a><a href=\"/pre-atendimento\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Pré-atendimento</a><a href=\"/pre-diagnostico\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Pré-diagnóstico</a><a href=\"/selecao\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Seleção</a></nav></aside><main class=\"flex-1 p-8\"><header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\"><h1 class=\"text-lg font-semibold text-slate-800\">Gestão de Agentes</h1><div class=\"text-sm text-slate-500\">Gerencie os agentes de IA ativos e inativos.</div></header><div class=\"mt-6 bg-white rounded-2xl shadow-sm border border-slate-200 p-7\"><form class=\"flex items-center justify-between mb-4\"><input type=\"text\" placeholder=\"Buscar...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none mr-4\"/><button type=\"button\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">+ Novo</button></form><table class=\"w-full text-sm\"><thead class=\"text-xs text-slate-500 uppercase border-b\"><tr><th class=\"p-4\">Nome</th><th class=\"p-4\">Tipo</th><th class=\"p-4\">Status</th><th class=\"p-4\">Ações</th></tr></thead><tbody><tr class=\"hover:bg-slate-50\"><td class=\"p-4\">Agente Hub</td><td class=\"p-4\">Triagem</td><td class=\"p-4\">Ativo</td><td class=\"p-4 flex space-x-2\"><button type=\"button\" class=\"px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-medium shadow-sm hover:bg-indigo-700\">Ver</button><button type=\"button\" class=\"px-2 py-1 rounded-lg bg-slate-300 text-slate-600 hover:bg-slate-50\">Editar</button><button type=\"button\" class=\"px-2 py-1 rounded-lg bg-red-600 text-white text-xs font-medium shadow-sm hover:bg-red-700\">Excluir</button></td></tr><tr class=\"hover:bg-slate-50\"><td class=\"p-4\">Agente Cardiologia</td><td class=\"p-4\">Especialidade</td><td class=\"p-4\">Inativo</td><td class=\"p-4 flex space-x-2\"><button type=\"button\" class=\"px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-medium shadow-sm hover:bg-indigo-700\">Ver</button><button type=\"button\" class=\"px-2 py-1 rounded-lg bg-slate-300 text-slate-600 hover:bg-slate-50\">Editar</button><button type=\"button\" class=\"px-2 py-1 rounded-lg bg-red-600 text-white text-xs font-medium shadow-sm hover:bg-red-700\">Excluir</button></td></tr></tbody></table></div></main></div></body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "gestao-de-especialidades",
+      "name": "Gestão de Especialidades",
+      "route": "/especialidades",
+      "uc": [
+        "UC-013"
+      ],
+      "entity": "especialidades",
+      "layout": "detail",
+      "components": [
+        {
+          "type": "text",
+          "field": "nome",
+          "label": "Nome da Especialidade",
+          "required": true,
+          "bindTo": "especialidades.nome"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Salvar",
+          "kind": "task",
+          "target": "cadastrar_especialidade",
+          "primary": true
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/especialidades",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\"><script src=\"https://cdn.tailwindcss.com\"></script><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><style>body{font-family:'Inter',sans-serif}</style></head><body class=\"bg-slate-100\"><div class=\"flex min-h-screen\"><aside class=\"w-60 bg-slate-900 text-slate-300 flex flex-col p-4\"><div class=\"mb-8\">ClinIA — Clínica Médica Inteligente</div><nav><a href=\"/dashboard\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Dashboard</a><a href=\"/cadastro\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Cadastro</a><a href=\"/triagem\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Triagem</a><a href=\"/pre-atendimento\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Pré-atendimento</a><a href=\"/pre-diagnostico\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Pré-diagnóstico</a><a href=\"/selecao\" class=\"block py-2.5 hover:bg-slate-700 rounded-l-lg pl-3\">Seleção</a></nav></aside><main class=\"flex-1 p-8\"><header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\"><h1 class=\"text-lg font-semibold text-slate-800\">Gestão de Especialidades</h1><div class=\"text-sm text-slate-500\">Gerencie as especialidades médicas oferecidas no sistema.</div></header><div class=\"mt-6\"><div class=\"flex justify-between items-center mb-4\"><input type=\"text\" placeholder=\"Busca...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none mr-4\"><a href=\"/especialidades/novo\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">+ Novo</a></div><table class=\"w-full text-sm\"><thead class=\"text-xs text-slate-500 uppercase border-b\"><tr><th class=\"p-3\">Nome</th><th class=\"p-3\">Status</th><th class=\"p-3\">Ações</th></tr></thead><tbody><tr class=\"hover:bg-slate-50\"><td class=\"p-3\">Cardiologia</td><td class=\"p-3\">Ativa</td><td class=\"p-3 space-x-2\"><a href=\"/especialidades/1\" class=\"px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-medium shadow-sm hover:bg-indigo-700\">Ver</a><a href=\"/especialidades/1/editar\" class=\"px-2 py-1 rounded-lg bg-slate-300 text-slate-600 hover:bg-slate-50\">Editar</a><a href=\"#\" class=\"px-2 py-1 rounded-lg bg-red-600 text-white text-xs font-medium shadow-sm hover:bg-red-700\">Excluir</a></td></tr><tr class=\"hover:bg-slate-50\"><td class=\"p-3\">Pediatria</td><td class=\"p-3\">Inativa</td><td class=\"p-3 space-x-2\"><a href=\"/especialidades/2\" class=\"px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-medium shadow-sm hover:bg-indigo-700\">Ver</a><a href=\"/especialidades/2/editar\" class=\"px-2 py-1 rounded-lg bg-slate-300 text-slate-600 hover:bg-slate-50\">Editar</a><a href=\"#\" class=\"px-2 py-1 rounded-lg bg-red-600 text-white text-xs font-medium shadow-sm hover:bg-red-700\">Excluir</a></td></tr></tbody></table></div></main></div></body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "gestao-de-medicos",
+      "name": "Gestão de Médicos",
+      "route": "/gestao-de-medicos",
+      "uc": [
+        "UC-014"
+      ],
+      "entity": "medicos",
+      "layout": "detail",
+      "components": [
+        {
+          "type": "text",
+          "field": "nome",
+          "label": "Nome",
+          "required": true,
+          "bindTo": "medicos.nome"
+        },
+        {
+          "type": "number",
+          "field": "crm",
+          "label": "CRM",
+          "required": true,
+          "bindTo": "medicos.crm"
+        },
+        {
+          "type": "select",
+          "field": "especialidade_id",
+          "label": "Especialidade",
+          "required": true,
+          "bindTo": "medicos.especialidade_id",
+          "refEntity": "especialidades"
+        }
+      ],
+      "actions": [
+        {
+          "label": "Salvar",
+          "kind": "task",
+          "target": "cadastrar_medico",
+          "primary": true
+        },
+        {
+          "label": "Cancelar",
+          "kind": "navigate",
+          "target": "/gestao-de-medicos",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\"><script src=\"https://cdn.tailwindcss.com\"></script><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><style>body{font-family:'Inter',sans-serif}</style></head><body class=\"bg-slate-100\"><div class=\"flex min-h-screen\"><aside class=\"w-60 bg-slate-900 text-slate-300 flex flex-col p-4 space-y-6\"><div class=\"text-lg font-semibold\">ClinIA — Clínica Médica Inteligente</div><nav><a href=\"/dashboard\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-150\">Dashboard</a><a href=\"/cadastro\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-150\">Cadastro</a><a href=\"/triagem\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-150\">Triagem</a><a href=\"/pre-atendimento\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-150\">Pré-atendimento</a><a href=\"/pre-diagnostico\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-150\">Pré-diagnóstico</a><a href=\"/selecao\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-150\">Seleção</a></nav></aside><main class=\"flex-1 p-8\"><header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\"><h1 class=\"text-lg font-semibold text-slate-800\">Gestão de Médicos</h1><div class=\"text-sm text-slate-500\">Gerencie os cadastros de médicos ativos e inativos.</div></header><div class=\"mt-6\"><input type=\"text\" placeholder=\"Busca...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none mb-4\"><button class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">+ Novo</button></div><table class=\"w-full text-sm mt-6\"><thead class=\"text-xs text-slate-500 uppercase border-b\"><tr><th class=\"py-3 px-4\">Nome</th><th class=\"py-3 px-4\">CRM</th><th class=\"py-3 px-4\">Especialidade</th><th class=\"py-3 px-4\">Ações</th></tr></thead><tbody><tr class=\"hover:bg-slate-50\"><td class=\"py-3 px-4\">Dr. João Silva</td><td class=\"py-3 px-4\">12345</td><td class=\"py-3 px-4\">Cardiologia</td><td class=\"py-3 px-4 space-x-2\"><button class=\"px-2 py-1 rounded-lg bg-slate-600 text-white text-xs font-medium shadow-sm hover:bg-slate-700\">Ver</button><button class=\"px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-medium shadow-sm hover:bg-indigo-700\">Editar</button><button class=\"px-2 py-1 rounded-lg bg-red-600 text-white text-xs font-medium shadow-sm hover:bg-red-700\">Excluir</button></td></tr><tr class=\"hover:bg-slate-50\"><td class=\"py-3 px-4\">Dra. Maria Oliveira</td><td class=\"py-3 px-4\">67890</td><td class=\"py-3 px-4\">Pediatria</td><td class=\"py-3 px-4 space-x-2\"><button class=\"px-2 py-1 rounded-lg bg-slate-600 text-white text-xs font-medium shadow-sm hover:bg-slate-700\">Ver</button><button class=\"px-2 py-1 rounded-lg bg-indigo-600 text-white text-xs font-medium shadow-sm hover:bg-indigo-700\">Editar</button><button class=\"px-2 py-1 rounded-lg bg-red-600 text-white text-xs font-medium shadow-sm hover:bg-red-700\">Excluir</button></td></tr></tbody></table><div class=\"mt-8\"><form class=\"bg-white rounded-2xl shadow-sm border border-slate-200 p-7\"><div class=\"grid grid-cols-2 gap-6\"><div><label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Nome</label><input type=\"text\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label class=\"block text-sm font-medium text-slate-700 mb-1.5\">CRM</label><input type=\"number\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"></div><div><label class=\"block text-sm font-medium text-slate-700 mb-1.5\">Especialidade</label><select class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"><option value=\"1\">Cardiologia</option><option value=\"2\">Pediatria</option></select></div></div><div class=\"mt-6 flex justify-end space-x-4\"><button type=\"submit\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">Salvar</button><a href=\"/gestao-de-medicos\" class=\"px-4 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50\">Cancelar</a></div></form></div></main></div></body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "gestao-de-pacientes",
+      "name": "Gestão de Pacientes",
+      "route": "/pacientes",
+      "uc": [
+        "UC-015"
+      ],
+      "entity": "pacientes",
+      "layout": "detail",
+      "components": [
+        {
+          "type": "text",
+          "field": "nome",
+          "label": "Nome",
+          "required": true,
+          "bindTo": "pacientes.nome"
+        },
+        {
+          "type": "text",
+          "field": "cpf",
+          "label": "CPF",
+          "required": true,
+          "bindTo": "pacientes.cpf"
+        },
+        {
+          "type": "text",
+          "field": "contato",
+          "label": "Telefone",
+          "required": false,
+          "bindTo": "pacientes.contato"
+        }
+      ],
+      "actions": [
+        {
+          "label": "+ Novo",
+          "kind": "navigate",
+          "target": "/pacientes/novo",
+          "primary": true
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\"><script src=\"https://cdn.tailwindcss.com\"></script><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><style>body{font-family:'Inter',sans-serif}</style></head><body class=\"bg-slate-100\"><div class=\"flex min-h-screen\"><aside class=\"w-60 bg-slate-900 text-slate-300 flex flex-col p-4 space-y-6\"><div class=\"text-lg font-bold\">ClinIA — Clínica Médica Inteligente</div><nav><a href=\"/dashboard\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-300\">Dashboard</a><a href=\"/cadastro\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-300\">Cadastro</a><a href=\"/triagem\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-300\">Triagem</a><a href=\"/pre-atendimento\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-300\">Pré-atendimento</a><a href=\"/pre-diagnostico\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-300\">Pré-diagnóstico</a><a href=\"/selecao\" class=\"block py-2.5 hover:bg-slate-700 px-4 rounded transition duration-300\">Seleção</a></nav></aside><main class=\"flex-1 p-8\"><header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\"><h1 class=\"text-lg font-semibold text-slate-800\">Gestão de Pacientes</h1><div class=\"space-x-2\"><input type=\"text\" placeholder=\"Busca...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"><a href=\"/pacientes/novo\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">+ Novo</a></div></header><div class=\"mt-8 overflow-x-auto\"><table class=\"w-full text-sm\"><thead class=\"text-xs text-slate-500 uppercase border-b\"><tr><th class=\"p-4\">Nome</th><th class=\"p-4\">CPF</th><th class=\"p-4\">Telefone</th><th class=\"p-4\">Ações</th></tr></thead><tbody><tr class=\"hover:bg-slate-50\"><td class=\"p-4\">Maria Santos</td><td class=\"p-4\">123.456.789-00</td><td class=\"p-4\">(11) 98765-4321</td><td class=\"p-4 space-x-2\"><a href=\"/pacientes/ver/1\" class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-50\">Ver</a><a href=\"/pacientes/editar/1\" class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-50\">Editar</a><a href=\"#\" class=\"px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-50\">Excluir</a></td></tr><tr class=\"hover:bg-slate-50\"><td class=\"p-4\">João Silva</td><td class=\"p-4\">987.654.321-11</td><td class=\"p-4\">(11) 12345-6789</td><td class=\"p-4 space-x-2\"><a href=\"/pacientes/ver/2\" class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-50\">Ver</a><a href=\"/pacientes/editar/2\" class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-50\">Editar</a><a href=\"#\" class=\"px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-50\">Excluir</a></td></tr></tbody></table></div></main></div></body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "gestao-de-atendimentos",
+      "name": "Gestão de Atendimentos",
+      "route": "/atendimentos/gestao",
+      "uc": [
+        "UC-016"
+      ],
+      "entity": "atendimentos",
+      "layout": "detail",
+      "components": [
+        {
+          "type": "text",
+          "field": "busca",
+          "label": "Busca",
+          "required": false,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "+ Novo",
+          "kind": "navigate",
+          "target": "/atendimentos/novo",
+          "primary": true
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\">\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n<style>body{font-family:'Inter',sans-serif}</style></head>\n<body class=\"bg-slate-100\">\n<div class=\"flex min-h-screen\">\n  <aside class=\"w-60 bg-slate-900 text-slate-300\">\n    <div class=\"p-4\">\n      <h2 class=\"text-lg font-bold mb-6\">ClinIA — Clínica Médica Inteligente</h2>\n      <nav>\n        <ul>\n          <li><a href=\"/dashboard\" class=\"block py-2 px-4 hover:bg-slate-800\">Dashboard</a></li>\n          <li><a href=\"/cadastro\" class=\"block py-2 px-4 hover:bg-slate-800\">Cadastro</a></li>\n          <li><a href=\"/triagem\" class=\"block py-2 px-4 bg-slate-700\">Triagem</a></li>\n          <li><a href=\"/pre-atendimento\" class=\"block py-2 px-4 hover:bg-slate-800\">Pré-atendimento</a></li>\n          <li><a href=\"/pre-diagnostico\" class=\"block py-2 px-4 hover:bg-slate-800\">Pré-diagnóstico</a></li>\n          <li><a href=\"/selecao\" class=\"block py-2 px-4 hover:bg-slate-800\">Seleção</a></li>\n        </ul>\n      </nav>\n    </div>\n  </aside>\n  <main class=\"flex-1\">\n    <header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\">\n      <h1 class=\"text-lg font-semibold text-slate-800\">Gestão de Atendimentos</h1>\n      <div class=\"flex space-x-3\">\n        <input type=\"text\" placeholder=\"Busca...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\">\n        <a href=\"/atendimentos/novo\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">+ Novo</a>\n      </div>\n    </header>\n    <div class=\"p-8\">\n      <table class=\"w-full text-sm\">\n        <thead class=\"text-xs text-slate-500 uppercase border-b\">\n          <tr>\n            <th>Paciente</th>\n            <th>Data/Hora</th>\n            <th>Status</th>\n            <th>Ações</th>\n          </tr>\n        </thead>\n        <tbody>\n          <tr class=\"hover:bg-slate-50\">\n            <td>Paciente A</td>\n            <td>10/05/2023 14:00</td>\n            <td>aberto</td>\n            <td><a href=\"/atendimentos/ver/1\" class=\"text-indigo-600 hover:text-indigo-700\">Ver</a> <a href=\"/atendimentos/editar/1\" class=\"text-indigo-600 hover:text-indigo-700\">Editar</a> <a href=\"/atendimentos/excluir/1\" class=\"text-red-600 hover:text-red-700\">Excluir</a></td>\n          </tr>\n          <tr class=\"hover:bg-slate-50\">\n            <td>Paciente B</td>\n            <td>10/05/2023 15:00</td>\n            <td>em_triagem</td>\n            <td><a href=\"/atendimentos/ver/2\" class=\"text-indigo-600 hover:text-indigo-700\">Ver</a> <a href=\"/atendimentos/editar/2\" class=\"text-indigo-600 hover:text-indigo-700\">Editar</a> <a href=\"/atendimentos/excluir/2\" class=\"text-red-600 hover:text-red-700\">Excluir</a></td>\n          </tr>\n        </tbody>\n      </table>\n    </div>\n  </main>\n</div>\n</body>\n</html>",
+      "kind": "view"
+    },
+    {
+      "id": "gestao-pre-diagnosticos",
+      "name": "Gestão de Pré-Diagnósticos",
+      "route": "/pre-diagnosticos",
+      "uc": [
+        "UC-017"
+      ],
+      "entity": "atendimentos",
+      "layout": "detail",
+      "components": [
+        {
+          "type": "text",
+          "field": "busca",
+          "label": "Busca",
+          "required": false,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "+ Novo",
+          "kind": "navigate",
+          "target": "/pre-diagnosticos/novo",
+          "primary": true
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\"><script src=\"https://cdn.tailwindcss.com\"></script><link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\"><style>body{font-family:'Inter',sans-serif}</style></head><body class=\"bg-slate-100\"><div class=\"flex min-h-screen\"><aside class=\"w-60 bg-slate-900 text-slate-300\"><div class=\"p-4 space-y-2\"><div class=\"text-lg font-semibold\">ClinIA — Clínica Médica Inteligente</div><a href=\"/dashboard\" class=\"block py-2 px-4 hover:bg-slate-700 rounded\">Dashboard</a><a href=\"/cadastro\" class=\"block py-2 px-4 hover:bg-slate-700 rounded\">Cadastro</a><a href=\"/triagem\" class=\"block py-2 px-4 hover:bg-slate-700 rounded\">Triagem</a><a href=\"/pre-atendimento\" class=\"block py-2 px-4 hover:bg-slate-700 rounded\">Pré-atendimento</a><a href=\"/pre-diagnostico\" class=\"block py-2 px-4 bg-indigo-600 text-white rounded\">Pré-diagnóstico</a><a href=\"/selecao\" class=\"block py-2 px-4 hover:bg-slate-700 rounded\">Seleção</a></div></aside><main class=\"flex-1 p-8\"><header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\"><h1 class=\"text-lg font-semibold text-slate-800\">Gestão de Pré-Diagnósticos</h1><div class=\"space-x-2\"><input type=\"text\" placeholder=\"Busca...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\"><a href=\"/pre-diagnosticos/novo\" class=\"px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">+ Novo</a></div></header><div class=\"mt-8\"><table class=\"w-full text-sm\"><thead class=\"text-xs text-slate-500 uppercase border-b\"><tr><th class=\"p-4\">Atendimento</th><th class=\"p-4\">Paciente</th><th class=\"p-4\">Hipóteses</th><th class=\"p-4\">Ações</th></tr></thead><tbody><tr class=\"hover:bg-slate-50\"><td class=\"p-4\">2023-10-01 14:30</td><td class=\"p-4\">João Silva</td><td class=\"p-4\">Hipertensão arterial</td><td class=\"p-4 space-x-2\"><a href=\"/pre-diagnosticos/ver/1\" class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-300\">Ver</a><a href=\"/pre-diagnosticos/editar/1\" class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-300\">Editar</a><a href=\"/pre-diagnosticos/excluir/1\" class=\"px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-300\">Excluir</a></td></tr><tr class=\"hover:bg-slate-50\"><td class=\"p-4\">2023-10-02 15:45</td><td class=\"p-4\">Maria Oliveira</td><td class=\"p-4\">Diabetes mellitus tipo 2</td><td class=\"p-4 space-x-2\"><a href=\"/pre-diagnosticos/ver/2\" class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-300\">Ver</a><a href=\"/pre-diagnosticos/editar/2\" class=\"px-2 py-1 rounded-lg bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-300\">Editar</a><a href=\"/pre-diagnosticos/excluir/2\" class=\"px-2 py-1 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 border border-red-300\">Excluir</a></td></tr></tbody></table></div></main></div></body></html>",
+      "kind": "view"
+    },
+    {
+      "id": "gestao-de-encaminhamentos",
+      "name": "Gestão de Encaminhamentos",
+      "route": "/gestao-de-encaminhamentos",
+      "uc": [
+        "UC-018"
+      ],
+      "entity": "encaminhamentos",
+      "layout": "detail",
+      "components": [
+        {
+          "type": "text",
+          "field": "busca",
+          "label": "Busca",
+          "required": false,
+          "bindTo": null
+        }
+      ],
+      "actions": [
+        {
+          "label": "+ Novo",
+          "kind": "navigate",
+          "target": "/novo-encaminhamento",
+          "primary": true
+        },
+        {
+          "label": "Salvar",
+          "kind": "task",
+          "target": "cadastrar_encaminhamento",
+          "primary": false
+        }
+      ],
+      "mockup_html": "<!doctype html><html lang=\"pt-br\"><head><meta charset=\"utf-8\">\n<script src=\"https://cdn.tailwindcss.com\"></script>\n<link href=\"https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap\" rel=\"stylesheet\">\n<style>body{font-family:'Inter',sans-serif}</style></head>\n<body class=\"bg-slate-100\">\n<div class=\"flex min-h-screen\">\n<aside class=\"w-60 bg-slate-900 text-slate-300\">\n  <div class=\"p-6\">\n    <h1 class=\"text-lg font-bold\">ClinIA — Clínica Médica Inteligente</h1>\n  </div>\n  <nav class=\"mt-8\">\n    <ul class=\"space-y-2\">\n      <li><a href=\"/dashboard\" class=\"block px-6 py-3 hover:bg-slate-700\">Dashboard</a></li>\n      <li><a href=\"/cadastro\" class=\"block px-6 py-3 hover:bg-slate-700\">Cadastro</a></li>\n      <li><a href=\"/triagem\" class=\"block px-6 py-3 hover:bg-slate-700\">Triagem</a></li>\n      <li><a href=\"/pre-atendimento\" class=\"block px-6 py-3 hover:bg-slate-700\">Pré-atendimento</a></li>\n      <li><a href=\"/pre-diagnostico\" class=\"block px-6 py-3 hover:bg-slate-700\">Pré-diagnóstico</a></li>\n      <li><a href=\"/selecao\" class=\"block px-6 py-3 hover:bg-slate-700\">Seleção</a></li>\n      <li><a href=\"/gestao-de-encaminhamentos\" class=\"block px-6 py-3 bg-slate-700 text-white font-bold\">Gestão de Encaminhamentos</a></li>\n    </ul>\n  </nav>\n</aside>\n<main class=\"flex-1\">\n  <header class=\"bg-white border-b border-slate-200 px-8 py-4 flex items-center justify-between\">\n    <div>\n      <h1 class=\"text-lg font-semibold text-slate-800\">Gestão de Encaminhamentos</h1>\n      <p class=\"text-sm text-slate-500\">Gerencie os encaminhamentos associados aos atendimentos.</p>\n    </div>\n    <div>\n      <form class=\"flex items-center\">\n        <input type=\"text\" placeholder=\"Busca...\" class=\"w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none\" name=\"busca\">\n        <a href=\"/novo-encaminhamento\" class=\"ml-4 px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium shadow-sm hover:bg-indigo-700\">+ Novo</a>\n      </form>\n    </div>\n  </header>\n  <section class=\"p-8\">\n    <table class=\"w-full text-sm\">\n      <thead class=\"text-xs text-slate-500 uppercase border-b\">\n        <tr>\n          <th class=\"py-3 px-6\">Atendimento</th>\n          <th class=\"py-3 px-6\">Especialidade</th>\n          <th class=\"py-3 px-6\">Médico</th>\n          <th class=\"py-3 px-6\">Prioridade</th>\n          <th class=\"py-3 px-6\">Ações</th>\n        </tr>\n      </thead>\n      <tbody>\n        <tr class=\"hover:bg-slate-50\">\n          <td class=\"py-4 px-6\">123456789</td>\n          <td class=\"py-4 px-6\">Cardiologia</td>\n          <td class=\"py-4 px-6\">Dr. João Silva</td>\n          <td class=\"py-4 px-6\">Urgente</td>\n          <td class=\"py-4 px-6\">\n            <a href=\"/ver-encaminhamento/1\" class=\"text-indigo-600 hover:underline mr-2\">Ver</a>\n            <a href=\"/editar-encaminhamento/1\" class=\"text-indigo-600 hover:underline mr-2\">Editar</a>\n            <a href=\"#\" class=\"text-red-600 hover:underline\">Excluir</a>\n          </td>\n        </tr>\n        <tr class=\"hover:bg-slate-50\">\n          <td class=\"py-4 px-6\">987654321</td>\n          <td class=\"py-4 px-6\">Pediatria</td>\n          <td class=\"py-4 px-6\">Dra. Maria Oliveira</td>\n          <td class=\"py-4 px-6\">Normal</td>\n          <td class=\"py-4 px-6\">\n            <a href=\"/ver-encaminhamento/2\" class=\"text-indigo-600 hover:underline mr-2\">Ver</a>\n            <a href=\"/editar-encaminhamento/2\" class=\"text-indigo-600 hover:underline mr-2\">Editar</a>\n            <a href=\"#\" class=\"text-red-600 hover:underline\">Excluir</a>\n          </td>\n        </tr>\n      </tbody>\n    </table>\n  </section>\n</main>\n</div>\n</body></html>",
+      "kind": "view"
+    }
+  ],
+  "navigation": [
+    {
+      "label": "Cadastro de Pacientes",
+      "route": "/cadastro"
+    },
+    {
+      "label": "Triagem Agentiva",
+      "route": "/triagem"
+    },
+    {
+      "label": "Pré-atendimento por Especialista",
+      "route": "/pre-atendimento"
+    },
+    {
+      "label": "Geração de Pré-Diagnóstico",
+      "route": "/pre-diagnostico"
+    },
+    {
+      "label": "Seleção de Médico",
+      "route": "/selecao-de-medico"
+    },
+    {
+      "label": "Registro/Prontuário",
+      "route": "/atendimentos"
+    },
+    {
+      "label": "Consulta Médica",
+      "route": "/consulta-medica"
+    },
+    {
+      "label": "Gestão de Consentimento LGPD",
+      "route": "/consentimentos"
+    },
+    {
+      "label": "Procedimento Manual",
+      "route": "/fallback"
+    },
+    {
+      "label": "Dashboard KPIs",
+      "route": "/dashboard"
+    },
+    {
+      "label": "Gestão de Agendas",
+      "route": "/gestao"
+    },
+    {
+      "label": "Gestão de Agentes",
+      "route": "/gestao-de-agentes"
+    },
+    {
+      "label": "Gestão de Especialidades",
+      "route": "/especialidades"
+    },
+    {
+      "label": "Gestão de Médicos",
+      "route": "/gestao-de-medicos"
+    },
+    {
+      "label": "Gestão de Pacientes",
+      "route": "/pacientes"
+    },
+    {
+      "label": "Gestão de Pré-Diagnósticos",
+      "route": "/pre-diagnosticos"
+    },
+    {
+      "label": "Gestão de Encaminhamentos",
+      "route": "/gestao-de-encaminhamentos"
+    }
+  ],
+  "action_map": {
+    "cadastrar_paciente": {
+      "kind": "task",
+      "screen": "cadastro-de-pacientes"
+    },
+    "classificar_urgencia_paciente": {
+      "kind": "task",
+      "screen": "triagem-agentiva"
+    },
+    "gerar_pre_diagnostico_com_ia": {
+      "kind": "task",
+      "screen": "geracao-pre-diagnostico"
+    },
+    "salvar_pre_diagnostico": {
+      "kind": "task",
+      "screen": "geracao-pre-diagnostico"
+    },
+    "encaminhar_medico": {
+      "kind": "task",
+      "screen": "selecao-de-medico"
+    },
+    "cadastrar_prontuario": {
+      "kind": "task",
+      "screen": "registro-prontuario"
+    },
+    "registrar_diagnostico_final": {
+      "kind": "task",
+      "screen": "consulta-medica"
+    },
+    "cadastrar_consentimento": {
+      "kind": "task",
+      "screen": "gestao-de-consentimento-lgpd"
+    },
+    "iniciar_procedimento_manual": {
+      "kind": "task",
+      "screen": "procedimento-manual"
+    },
+    "cadastrar_agenda_medico": {
+      "kind": "task",
+      "screen": "gestao-de-agendas"
+    },
+    "cadastrar_especialidade": {
+      "kind": "task",
+      "screen": "gestao-de-especialidades"
+    },
+    "cadastrar_medico": {
+      "kind": "task",
+      "screen": "gestao-de-medicos"
+    },
+    "cadastrar_encaminhamento": {
+      "kind": "task",
+      "screen": "gestao-de-encaminhamentos"
+    }
+  }
+}
