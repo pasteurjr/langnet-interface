@@ -777,7 +777,9 @@
     "transitions": 0
   },
   "code_gen": {
-    "status": "ERROR",
-    "err": "502: {\"detail\":\"Gerador não retornou arquivos\"}"
-  }
+    "session_id": "a7f8e7cd-68eb-471a-8781-40d40986a5d6",
+    "status": "ok",
+    "nfiles": 57
+  },
+  "DONE": true
 }

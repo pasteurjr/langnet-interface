@@ -87,6 +87,37 @@ truncamento no modelo local)._
 
 ---
 
+## Bug #7 — KeyError na formatação da descrição da task (Código)
+
+**Etapa:** Geração de Código (`generate_python_code`).
+**Sintoma:** `KeyError: '\n       "input_data"'`.
+**Causa:** a descrição da task era formatada com `.format(**task_input)`, que interpreta as chaves
+`{...}` dos exemplos JSON do prompt como campos de template.
+**Correção:** `_safe_format_description` — substitui só placeholders válidos `{identificador}`,
+deixando o JSON literal intacto. Commit: `FIX Código: KeyError na formatação...`. ✅ Verificado.
+
+## Bug #8 — Geração de Código falhava (LLM vazio): prompt saturado + incompatibilidade CrewAI×modelo local
+
+**Etapa:** Geração de Código. **Sintoma:** `ValueError: Invalid response from LLM call - None or empty`.
+**Causa (duas camadas):**
+1. **Prompt saturado (77 KB):** a Petri enriquecida (logica SQL por lugar, coordenadas, input/output_data
+   dos 16 lugares) era serializada inteira no `petri_net_json`. Fix: **Petri compacta** (só estrutura) →
+   prompt caiu para ~29 KB. Também `LMSTUDIO_MAX_TOKENS` 32000→16000 (32000 é otimista p/ contexto 40960).
+2. **CrewAI × modelo local:** mesmo com o prompt cabendo, o **CrewAI+qwen retornava vazio** na resposta
+   final do agente (que usa a tool `python_code_writer`) — enquanto **openai SDK, litellm e chamada direta
+   geram o código corretamente** (provado 3×). O `crew` é um `LangGraphTeamAdapter` (método `executar()`,
+   não `kickoff()`), e a exceção vinha de dentro do `executar()`.
+**Correção:** **fallback direto ao LM Studio** em `execute_task_with_context` — envolve `_run_crew()`
+(cobre `kickoff` E `executar`); se vier vazio e provider=lmstudio, chama `_direct_llm_complete()` com a
+MESMA descrição e embrulha em `_DirectResult(.raw)` p/ o output_func processar.
+**Commits:** `FIX Código: Petri compacta...` + `FIX Código: fallback direto ao LM Studio...`.
+**Verificação (✅ CONFIRMADA):** log `[FALLBACK] chamada direta OK — 11477 chars`, HTTP 200, **13/13**.
+A app ClinIA foi gerada completa: telas de negócio (TriagemAgentiva, PreAtendimentoEspecialista,
+GeracaoPreDiagnostico, SelecaoDeMedico, GestaoDeEspecialidades/Medicos/Pacientes/Agentes…) + executor
+de Petri (PetriNetSimulator, GuardEvaluator, PlaceProcessor).
+
+---
+
 ## Achado #4 (AMBIENTE, não-LangNet) — LM Studio recarregou o modelo em 4096 (JIT), travando o Modelo de Dados
 
 **Etapa:** Modelo de Dados (`POST /data-model/{pid}/generate`) e todas as seguintes.

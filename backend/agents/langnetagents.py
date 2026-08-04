@@ -7091,28 +7091,32 @@ def execute_task_with_context(
         # Pass empty inputs since we've already formatted the description with all values
         # This prevents CrewAI from trying to interpolate any braces in the content
 
-        if hasattr(crew, 'kickoff'):
-            try:
-                result = crew.kickoff(inputs={})
-            except Exception as _kick_err:
-                # CrewAI + modelo local às vezes retorna vazio ("Invalid response from LLM call -
-                # None or empty") mesmo com o modelo gerando corretamente por chamada direta.
-                # Fallback: chama o LLM diretamente com a MESMA descrição já formatada.
-                _msg = str(_kick_err)
-                _provider = (os.getenv("LLM_PROVIDER", "openai") or "").lower()
-                if _provider == "lmstudio" and ("None or empty" in _msg or "Invalid response from LLM" in _msg):
-                    print(f"[FALLBACK] CrewAI vazio em '{task_name}' — usando chamada DIRETA ao LM Studio")
-                    _direct = _direct_llm_complete(task_description, task_expected_output)
-                    if not _direct or len(_direct) < 20:
-                        raise
-                    print(f"[FALLBACK] chamada direta OK — {len(_direct)} chars")
-                    result = _DirectResult(_direct)
-                else:
-                    raise
-        elif hasattr(crew, 'executar'):
-            result = crew.executar(inputs={})
-        else:
+        # CrewAI + modelo local às vezes retorna vazio ("Invalid response from LLM call - None or
+        # empty") mesmo com o modelo gerando corretamente por chamada direta. Fallback: chama o LLM
+        # diretamente com a MESMA descrição já formatada. Cobre TANTO kickoff (Crew) QUANTO executar
+        # (LangGraphTeamAdapter, que envolve o kickoff internamente).
+        def _run_crew():
+            if hasattr(crew, 'kickoff'):
+                return crew.kickoff(inputs={})
+            elif hasattr(crew, 'executar'):
+                return crew.executar(inputs={})
             raise AttributeError(f"Team object has neither 'kickoff' nor 'executar' method: {type(crew).__name__}")
+
+        try:
+            result = _run_crew()
+        except Exception as _kick_err:
+            _msg = str(_kick_err)
+            _provider = (os.getenv("LLM_PROVIDER", "openai") or "").lower()
+            print(f"[FALLBACK-DBG] crew levantou em '{task_name}': type={type(_kick_err).__name__} provider={_provider!r} msg={_msg[:120]!r}")
+            if _provider == "lmstudio" and ("None or empty" in _msg or "Invalid response from LLM" in _msg or "empty" in _msg.lower()):
+                print(f"[FALLBACK] CrewAI vazio em '{task_name}' — usando chamada DIRETA ao LM Studio")
+                _direct = _direct_llm_complete(task_description, task_expected_output)
+                if not _direct or len(_direct) < 20:
+                    raise
+                print(f"[FALLBACK] chamada direta OK — {len(_direct)} chars")
+                result = _DirectResult(_direct)
+            else:
+                raise
 
         # Debug CrewOutput structure to understand what we're receiving
         print(f"\n{'='*80}")
