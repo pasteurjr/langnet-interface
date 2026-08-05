@@ -5316,16 +5316,24 @@ def _infer_module(screen: dict, kind: str = "") -> str:
     has = lambda *kws: any(k in name for k in kws)
     if kind == "report" or has("relat", "export"):
         return "Relatórios"
+    # Fluxo de ATENDIMENTO agêntico (genérico p/ domínios de atendimento/serviço): triagem,
+    # recepção, pré-atendimento, pré-diagnóstico, encaminhamento, prontuário, consulta.
+    if has("triagem", "recep", "atendimento", "pré-atend", "pre-atend", "pré-diag", "pre-diag",
+           "diagn", "encaminh", "prontu", "consulta"):
+        return "Atendimento"
     if has("google", "sincron", " ide", "integra"):
         return "Integrações"
-    if has("persona", "usuario", "usuário", "permiss", "pilar", "cadastr"):
-        return "Cadastros"
     if has("agendar", "agendamento", "publica"):
         return "Publicação"
     if has("metric", "métric", "coment", "resposta", "lead", "engaj", "classific"):
         return "Engajamento"
     if has("calendario", "calendário", "conteudo", "conteúdo", "tema", "sugest", "revis", "fato"):
         return "Conteúdo"
+    if has("persona", "usuario", "usuário", "permiss", "pilar", "cadastr", "gestão", "gestao", "gerir"):
+        return "Cadastros"
+    # Fallback por TIPO: tela agêntica solta → Atendimento; CRUD/form → Cadastros administrativo.
+    if kind == "agent":
+        return "Atendimento"
     return "Cadastros"
 
 
@@ -6166,7 +6174,8 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
     )
 
 
-_MODULE_ORDER = ["Cadastros", "Conteúdo", "Publicação", "Engajamento", "Relatórios", "Integrações", "Geral"]
+# Atendimento (fluxo agêntico) no TOPO; Cadastros (administrativo) ao FINAL — antes do genérico "Geral".
+_MODULE_ORDER = ["Atendimento", "Conteúdo", "Publicação", "Engajamento", "Relatórios", "Integrações", "Cadastros", "Geral"]
 _KIND_ICON = {"crud": "▦", "report": "▤", "agent": "✦", "form": "▧"}
 
 def _template_business_app(comp_meta: list, project_name: str) -> str:
