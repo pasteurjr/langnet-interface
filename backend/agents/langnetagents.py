@@ -5722,12 +5722,14 @@ export default function %COMP%() {
 def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
     actions = screen.get("actions") or []
     target = None
+    has_task_action = False
     for a in actions:
         if a.get("kind") in ("task", "crud") and a.get("target"):
-            target = a["target"]; break
+            if target is None:
+                target = a["target"]
+            has_task_action = True
     target = _resolve_task_target(target, task_fields)
-    # inputs = componentes de ENTRADA (readonly NÃO entra — vira KPI). P3: campo FK
-    # (select+refEntity) carrega ref no input p/ virar dropdown da entidade.
+    # inputs = componentes de ENTRADA. P3: campo FK (select+refEntity) vira dropdown da entidade.
     inp = []
     kpis = []
     fk_used = []
@@ -5740,11 +5742,28 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
                 item["ref"] = c["refEntity"]        # P3: dropdown da entidade referenciada
                 fk_used.append(c["field"])
             inp.append(item)
-    # G2: tela dashboard → renderiza cards de KPI (populados pelo resultado do agente),
-    # não só um botão. Se o ui_spec não marcou readonly mas o layout é dashboard, o
-    # painel de resultado já vira cards (renderResult); os KPIS explícitos dão o placeholder.
-    is_dashboard = (screen.get("layout") == "dashboard" or screen.get("kind") == "dashboard"
-                    or len(kpis) > 0)
+    explicit_dashboard = screen.get("layout") == "dashboard" or screen.get("kind") == "dashboard"
+    # F1: tela agêntica INTERATIVA (tem ação de task) → formato ENTRADA → AÇÃO → RESULTADO.
+    # O ui_spec às vezes marca os campos de ENTRADA como readonly (ex.: Triagem: queixa/pressão);
+    # aqui promovemos esses readonly a INPUTS editáveis para o operador preencher antes de acionar
+    # a IA. Campos que parecem SAÍDA do agente (hipóteses, classificação, confiança, recomendação…)
+    # NÃO viram entrada — aparecem no painel de Resultado quando o agente responde.
+    interactive_agent = has_task_action and not explicit_dashboard
+    _out_kw = ("hipotes", "diagnost", "classificac", "urgencia", "urgência", "confianc",
+               "recomendac", "resultado", "score", "justificativa", "status", "parecer")
+    if interactive_agent and kpis:
+        _promoted = []
+        for k in kpis:
+            key_l = str(k["key"]).lower()
+            if any(w in key_l for w in _out_kw):
+                continue  # é saída do agente → fica no painel de Resultado
+            _promoted.append({"key": k["key"], "label": k["label"]})
+        # evita duplicar campos que já são inputs
+        _have = {i["key"] for i in inp}
+        inp = [i for i in inp] + [p for p in _promoted if p["key"] not in _have]
+        kpis = []
+    # Dashboard = painel de KPIs (só quando explicitamente dashboard, OU há KPIs e NÃO é interativa).
+    is_dashboard = explicit_dashboard or (len(kpis) > 0 and not interactive_agent)
     # useEffect é sempre necessário (o corpo tem o effect de carregar FK, guardado por HAS_FK).
     header = (
         'import React, { useState, useEffect } from "react";\n'
