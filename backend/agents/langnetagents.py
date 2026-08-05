@@ -4897,7 +4897,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
                 _cur2 = _c2.cursor(dictionary=True)
                 _cur2.execute(
                     "SELECT schema_sql, entities_json, target_dbms FROM data_model_sessions "
-                    "WHERE project_id=%s AND status IN ('completed','approved') "
+                    # 'draft' incluído: o endpoint de Modelo de Dados salva a sessão como 'draft'
+                    # por padrão (aprovação é opcional). Sem isso, o code-gen não achava o schema
+                    # e PULAVA a geração dos adapters CRUD (listar_/excluir_) — bug #9.
+                    "WHERE project_id=%s AND status IN ('completed','approved','draft') "
                     "ORDER BY created_at DESC LIMIT 1",
                     (str(state.get('project_id') or ''),))
                 _r2 = _cur2.fetchone()
