@@ -5221,8 +5221,14 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
 
     comp_meta = []  # (id, name, comp_name, route, kind, module)
     covered_entities = set()  # entidades que já ganharam tela de CRUD via ui_spec
+    _seen_comp = set()  # nomes de componente já gerados — evita import/declaração duplicada
     for s in screens:
         comp_name = _pascal_case(s.get("id") or s.get("name") or "Screen")
+        # Dedup: se o ui_spec tem telas duplicadas (mesmo id/nome → mesmo comp_name), gera só
+        # uma vez. Duas telas com o mesmo comp_name quebram o build (Identifier already declared).
+        if comp_name in _seen_comp:
+            continue
+        _seen_comp.add(comp_name)
         entity = s.get("entity")
         # Inferência/correção de entidade (acento-normalizada): telas de gestão às vezes vêm com
         # entity=None (ex.: "Gestão de Agentes") OU MAL-ROTULADAS (ex.: "Gestão de Pré-Diagnósticos"
