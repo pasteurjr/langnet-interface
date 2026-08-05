@@ -5142,13 +5142,26 @@ def _classify_screen(screen: dict, entity_exists: bool) -> str:
     readonly = any(c.get("type") == "readonly" for c in comps)
     if any(k in name for k in ("relat", "export")):
         return "report"
-    # Dashboard/painel de KPIs (só campos readonly, ou kind=dashboard) → agent, mesmo com
-    # entity: precisa do agente pra popular os cards, NÃO é uma tela de cadastro. (Tem
-    # precedência sobre o crud, senão layout='detail'+entity viraria CRUD por engano.)
-    if screen.get("kind") == "dashboard" or (readonly and not editable):
+    # Verbos de GESTÃO/CADASTRO: a tela mantém/lista uma entidade, não é uma tela agêntica.
+    mgmt_kw = ("gestão", "gestao", "gerenciar", "gerenciamento", "gerir", "cadastr",
+               "administr", "manter", "listar")
+    is_mgmt = any(name.strip().startswith(k) or k in name for k in mgmt_kw)
+    # Dashboard EXPLÍCITO (kind=dashboard) → agent (painel de KPIs populado por agente).
+    if screen.get("kind") == "dashboard":
         return "agent"
-    if entity_exists and layout in ("form", "table", "detail"):
+    # Tela de gestão/cadastro de uma ENTIDADE real → CRUD (tabela+form), mesmo que os
+    # componentes tenham vindo readonly (o ui_spec às vezes gera 'view' em vez de form).
+    # NÃO usar layout='detail' aqui: telas AGÊNTICAS (triagem, pré-atendimento, seleção de
+    # médico) também têm entidade + layout='detail' e seriam viradas em CRUD por engano.
+    # Só é CRUD se for tela de gestão (is_mgmt) OU layout explicitamente de formulário/tabela.
+    if entity_exists and (is_mgmt or layout in ("form", "table")):
         return "crud"
+    # Painel só-readonly (sem entidade) → agent (cards populados por agente).
+    if readonly and not editable:
+        return "agent"
+    # Gestão/cadastro SEM entidade casada ainda é um cadastro (form), nunca um agente.
+    if is_mgmt:
+        return "form"
     agent_kw = ("gerar", "gera ", "classific", "coletar", "coleta", "verific", "publicar",
                 "publica", "identific", "sincroniz", "aprovar", "sugest", "revis", "monitor")
     if any(name.strip().startswith(k) or k in name for k in agent_kw) or layout in ("dashboard", "detail"):
@@ -5192,6 +5205,17 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
     for s in screens:
         comp_name = _pascal_case(s.get("id") or s.get("name") or "Screen")
         entity = s.get("entity")
+        # Inferência: telas de gestão às vezes vêm com entity=None (ex.: "Gestão de Agentes").
+        # Tenta casar o nome da tela com uma tabela do schema para virar CRUD de verdade.
+        if (not entity or entity not in model) and model:
+            _nm = (s.get("name") or "").lower()
+            for _tbl in model:
+                _base = _tbl.split("_")[0]          # agentes_ia -> agentes
+                _sing = _base.rstrip("s")           # agentes -> agente
+                if _base in _nm or (len(_sing) >= 4 and _sing in _nm) or _tbl in _nm:
+                    entity = _tbl
+                    s["entity"] = _tbl              # persiste p/ o resto da geração
+                    break
         entity_exists = bool(entity and entity in model)
         kind = _classify_screen(s, entity_exists)
         if kind == "crud" and entity:
