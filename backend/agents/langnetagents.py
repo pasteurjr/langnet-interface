@@ -2663,6 +2663,19 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                 description = description.format_map(_SafeDict(prepared))
             except Exception:
                 pass  # último recurso: mantém description literal
+            # Injeta os DADOS DE ENTRADA reais no prompt: as descrições geradas descrevem o
+            # schema de input em prosa (SEM placeholders {{campo}}), então os valores do
+            # paciente não entravam no prompt e o agente respondia genérico/alucinado. Aqui
+            # anexamos os dados de entrada explicitamente ao final da descrição.
+            try:
+                _parts = []
+                for _k, _v in prepared.items():
+                    if _v not in (None, "", [], {{}}):
+                        _parts.append("- " + str(_k) + ": " + str(_v))
+                if _parts:
+                    description = description.rstrip() + "\\n\\nDADOS DE ENTRADA (use EXATAMENTE estes dados do paciente; NAO invente sintomas):\\n" + "\\n".join(_parts)
+            except Exception:
+                pass
 
         task = _build_task(task_name, agent, description)
         crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
