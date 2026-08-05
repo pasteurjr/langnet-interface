@@ -3885,6 +3885,12 @@ def _fix_common_tool_imports(tools_py: str) -> str:
         r"^from\s+crewai_tools\s+import\s+([^\n]+)$",
         _repl, tools_py, flags=_re.MULTILINE,
     )
+    # Variante SUBMÓDULO: o LLM às vezes escreve `from crewai_tools.base_tool import BaseTool`
+    # (ou .tools) — submódulo inexistente nas versões atuais. BaseTool vive em `crewai.tools`.
+    tools_py = _re.sub(
+        r"^from\s+crewai_tools\.\w+\s+import\s+BaseTool\s*$",
+        "from crewai.tools import BaseTool", tools_py, flags=_re.MULTILINE,
+    )
     return tools_py
 
 
