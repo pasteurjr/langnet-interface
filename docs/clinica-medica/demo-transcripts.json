@@ -1,0 +1,124 @@
+[
+  {
+    "paciente": "Maria Silva",
+    "perfil": "Cardíaco",
+    "esperado": "Cardiologia",
+    "interacoes": [
+      {
+        "passo": "1. Triagem (triagem_hub_agent)",
+        "resultado": {
+          "classificacao_urgencia": "vermelho",
+          "justificativa": "A paciente apresenta sintomas graves de possível infarto agudo do miocárdio, incluindo dor torácica irradiando para o braço esquerdo, sudorese e falta de ar há uma hora. Os sinais vitais mostram pressão arterial alta (150/95) e frequência cardíaca acelerada (118 bpm), indicando uma situação médica de emergência.",
+          "area_destino": "Cardiologia"
+        }
+      },
+      {
+        "passo": "2. Pré-atendimento (Cardiologia — pre_atendimento_cardiologia)",
+        "resultado": {
+          "hipoteses": {
+            "Infarto Agudo do Miocárdio": 0.85,
+            "Angina Instável": 0.15
+          },
+          "nivel_confianca": "alta",
+          "exames_sugeridos": "ECG, troponina sérica, eletrocardiografia de estresse (se necessário), imagem coronária por tomografia computadorizada (CTA) ou angiografia coronária."
+        }
+      },
+      {
+        "passo": "3. Encaminhamento (encaminhamento_agent)",
+        "resultado": {
+          "status": "erro",
+          "error": "1048 (23000): Column 'atendimento_id' cannot be null"
+        }
+      },
+      {
+        "passo": "4. Registro/Prontuário (registro_prontuario_agent)",
+        "resultado": {
+          "status": "erro",
+          "error": "1048 (23000): Column 'paciente_id' cannot be null"
+        }
+      }
+    ]
+  },
+  {
+    "paciente": "Pedro Santos (6 anos)",
+    "perfil": "Pediátrico",
+    "esperado": "Pediatria",
+    "interacoes": [
+      {
+        "passo": "1. Triagem (triagem_hub_agent)",
+        "resultado": {
+          "classificacao_urgencia": "amarelo",
+          "justificativa": "A febre alta (39.2°C) em uma criança de 6 anos é um sintoma preocupante que pode indicar uma infecção séria, mas os sinais vitais (pressão arterial 100/65 e frequência cardíaca 96) estão dentro dos limites normais para essa idade. É importante monitorar a evolução dos sintomas e considerar a possibilidade de uma infecção respiratória.",
+          "area_destino": "Pediatra Infectologista"
+        }
+      },
+      {
+        "passo": "2. Pré-atendimento (Pediatra Infectologista — pre_atendimento_pediatria)",
+        "resultado": {
+          "hipoteses": [
+            "Gripe (Influenza)",
+            "Faringe viral",
+            "Infecção respiratória aguda"
+          ],
+          "nivel_confianca": "media",
+          "exames_sugeridos": "Exame rápido para detecção de influenza (teste rápido de antígenos da gripe), Hemograma completo, Radiografia torácica, se sintomas persistirem ou piorarem"
+        }
+      },
+      {
+        "passo": "3. Encaminhamento (encaminhamento_agent)",
+        "resultado": {
+          "status": "erro",
+          "error": "1048 (23000): Column 'atendimento_id' cannot be null"
+        }
+      },
+      {
+        "passo": "4. Registro/Prontuário (registro_prontuario_agent)",
+        "resultado": {
+          "status": "erro",
+          "error": "1048 (23000): Column 'paciente_id' cannot be null"
+        }
+      }
+    ]
+  },
+  {
+    "paciente": "Ana Costa",
+    "perfil": "Gastro",
+    "esperado": "Gastroenterologia",
+    "interacoes": [
+      {
+        "passo": "1. Triagem (triagem_hub_agent)",
+        "resultado": {
+          "classificacao_urgencia": "vermelho",
+          "justificativa": "A paciente apresenta sintomas de dor abdominal intensa localizada no lado direito, náuseas e vômitos há 6 horas sem febre. Esses sintomas são consistentes com a apendicite, uma condição médica que requer atendimento imediato para evitar complicações graves como perfuração do apêndice.",
+          "area_destino": "Emergência"
+        }
+      },
+      {
+        "passo": "2. Pré-atendimento (Emergência — pre_atendimento_gastroenterologia)",
+        "resultado": {
+          "hipoteses": {
+            "apendicite": "Dor abdominal aguda localizada no lado direito, náuseas e vômitos podem indicar apendicite.",
+            "colite_ulcerativa": "Embora menos provável sem diarreia, a colite ulcerativa pode apresentar dor abdominal e outros sintomas semelhantes.",
+            "gastroenterite_aguda": "Dor abdominal, náuseas e vômitos podem ser sinais de gastroenterite aguda."
+          },
+          "nivel_confianca": "baixa",
+          "exames_sugeridos": "Exame físico detalhado, exame de urina, hemograma completo, função renal e hepática, ultrassonografia abdominal e possivelmente tomografia computadorizada (TC) para avaliar a gravidade da condição."
+        }
+      },
+      {
+        "passo": "3. Encaminhamento (encaminhamento_agent)",
+        "resultado": {
+          "status": "erro",
+          "error": "1048 (23000): Column 'atendimento_id' cannot be null"
+        }
+      },
+      {
+        "passo": "4. Registro/Prontuário (registro_prontuario_agent)",
+        "resultado": {
+          "status": "erro",
+          "error": "1048 (23000): Column 'paciente_id' cannot be null"
+        }
+      }
+    ]
+  }
+]
