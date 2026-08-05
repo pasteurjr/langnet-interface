@@ -5357,25 +5357,32 @@ def _template_ws_client(ws_port: int) -> str:
     )
 
 
-def _resolve_task_target(target, task_fields):
-    """Casa o alvo da ação (às vezes inventado pelo UI Spec) com a task real
-    (chave em task_fields) por similaridade de tokens. Nível de módulo p/ reuso."""
-    if not target or not task_fields:
+def _resolve_task_target(target, task_fields, screen_name=None):
+    """Casa o alvo da ação com a task real (chave em task_fields) por similaridade de tokens.
+    Considera TAMBÉM o nome da tela: o UI Spec às vezes inventa um alvo (ex.:
+    'classificar_urgencia_paciente') que não casa com o tasks.yaml ('triagem_agentiva'), enquanto
+    o NOME da tela ('Triagem Agentiva') casa exatamente. Testa ambos e devolve o melhor casamento."""
+    if not task_fields:
         return target
-    if target in task_fields:
+    candidates = [c for c in (target, screen_name) if c]
+    if not candidates:
         return target
-    tnorm = _norm_field(target)
+    # Casamento EXATO (prioridade ao alvo explícito, depois ao nome da tela).
+    for c in candidates:
+        if c in task_fields:
+            return c
     best, best_score = None, 0
-    for real in task_fields:
-        rnorm = _norm_field(real)
-        shared = len(set(_tokens(target)) & set(_tokens(real)))
-        contains = 1 if (tnorm in rnorm or rnorm in tnorm) else 0
-        score = shared * 2 + contains
-        if score > best_score:
-            best, best_score = real, score
-    # Sem casamento com uma task REAL → None (o UI Spec inventou o alvo). O chamador
-    # desabilita o botão em vez de emitir runTask() para uma tarefa inexistente
-    # (que quebraria em runtime). NUNCA devolver o alvo inventado.
+    for c in candidates:
+        tnorm = _norm_field(c)
+        for real in task_fields:
+            rnorm = _norm_field(real)
+            shared = len(set(_tokens(c)) & set(_tokens(real)))
+            contains = 1 if (tnorm in rnorm or rnorm in tnorm) else 0
+            score = shared * 2 + contains
+            if score > best_score:
+                best, best_score = real, score
+    # Sem casamento com uma task REAL → None (o chamador desabilita o botão em vez de
+    # emitir runTask() para uma tarefa inexistente). NUNCA devolver o alvo inventado.
     return best if best_score >= 2 else None
 
 
@@ -5734,7 +5741,7 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
             if target is None:
                 target = a["target"]
             has_task_action = True
-    target = _resolve_task_target(target, task_fields)
+    target = _resolve_task_target(target, task_fields, screen.get("name"))
     # inputs = componentes de ENTRADA. P3: campo FK (select+refEntity) vira dropdown da entidade.
     inp = []
     kpis = []
