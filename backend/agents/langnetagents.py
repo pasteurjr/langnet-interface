@@ -5211,17 +5211,24 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
     for s in screens:
         comp_name = _pascal_case(s.get("id") or s.get("name") or "Screen")
         entity = s.get("entity")
-        # Inferência: telas de gestão às vezes vêm com entity=None (ex.: "Gestão de Agentes").
-        # Tenta casar o nome da tela com uma tabela do schema para virar CRUD de verdade.
-        if (not entity or entity not in model) and model:
-            _nm = (s.get("name") or "").lower()
-            for _tbl in model:
-                _base = _tbl.split("_")[0]          # agentes_ia -> agentes
-                _sing = _base.rstrip("s")           # agentes -> agente
-                if _base in _nm or (len(_sing) >= 4 and _sing in _nm) or _tbl in _nm:
-                    entity = _tbl
-                    s["entity"] = _tbl              # persiste p/ o resto da geração
-                    break
+        # Inferência/correção de entidade (acento-normalizada): telas de gestão às vezes vêm com
+        # entity=None (ex.: "Gestão de Agentes") OU MAL-ROTULADAS (ex.: "Gestão de Pré-Diagnósticos"
+        # com entity=atendimentos). Se a entidade do ui_spec NÃO aparece no nome da tela mas OUTRA
+        # tabela aparece, corrige — isso evita deixar 'pre_diagnosticos' descoberto (o que gera uma
+        # tela CRUD duplicada "Pre Diagnosticos" no fim).
+        if model:
+            _name_toks = set(_tokens(s.get("name") or ""))
+            def _tbl_in_name(_tbl):
+                _tt = [t for t in _tbl.split("_") if len(t) >= 3]  # pre_diagnosticos -> [pre? no, diagnosticos]
+                _tt = [t for t in _tt] + [_tbl.split("_")[0]]
+                return any(set(_tokens(t)) & _name_toks for t in _tt)
+            _cur_ok = bool(entity and entity in model and _tbl_in_name(entity))
+            if not _cur_ok:
+                for _tbl in model:
+                    if _tbl_in_name(_tbl):
+                        entity = _tbl
+                        s["entity"] = _tbl          # persiste p/ o resto da geração
+                        break
         entity_exists = bool(entity and entity in model)
         kind = _classify_screen(s, entity_exists)
         if kind == "crud" and entity:
