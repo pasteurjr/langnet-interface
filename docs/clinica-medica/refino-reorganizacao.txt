@@ -1,0 +1,8 @@
+Reorganize a INTERFACE em DOIS módulos claros, separando o fluxo agêntico dos cadastros administrativos.
+
+MÓDULO A — ATENDIMENTO (fluxo agêntico, no TOPO do menu, na ordem do fluxo): Recepção & Triagem; Pré-atendimento do Especialista; Encaminhamento ao Médico; Prontuário e Consulta Médica.
+MÓDULO B — CADASTROS (administrativo, ao FINAL do menu): Pacientes, Médicos, Especialidades, Agentes de IA.
+
+No caso de uso de Triagem (UC-002 — renomeie para "Recepção & Triagem"): o ATENDENTE informa a IDENTIFICAÇÃO do paciente (Nome, CPF, Data de Nascimento, Contato, Convênio) E a Queixa + Sinais Vitais (Pressão Arterial, Frequência Cardíaca, Temperatura, SpO2). Ao clicar em "Iniciar Triagem", o sistema executa: (1) IDENTIFICA o paciente pelo CPF; (2) se NÃO existir, CADASTRA o paciente automaticamente; (3) ABRE um Atendimento, gerando o atendimento_id; (4) o agente de triagem classifica a urgência (verde/amarelo/vermelho) e escolhe a ESPECIALIDADE de destino a partir de uma LISTA FECHADA das especialidades cadastradas (Cardiologia, Pediatria, Gastroenterologia, Endocrinologia, Oncologia, Pronto-Socorro); (5) roteia para o Pré-atendimento da especialidade escolhida. Atualize JUNTOS o Fluxo Principal e o Wireframe do UC-002 para conter EXATAMENTE esses campos (identificação + queixa + sinais vitais) e esses passos, com o botão "Iniciar Triagem" e o resultado exibindo urgência + especialidade roteada.
+
+No caso de uso de Encaminhamento e no de Prontuário, use os IDENTIFICADORES do atendimento corrente (atendimento_id e paciente_id), NÃO o nome do paciente — o encaminhamento e o prontuário pertencem a um atendimento já aberto na triagem.
