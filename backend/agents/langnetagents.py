@@ -5168,6 +5168,12 @@ def _classify_screen(screen: dict, entity_exists: bool) -> str:
     # Dashboard EXPLÍCITO (kind=dashboard) → agent (painel de KPIs populado por agente).
     if screen.get("kind") == "dashboard":
         return "agent"
+    # Tela HÍBRIDA/AGÊNTICA: se a tela dispara uma TASK de agente (ação kind=='task'), é agêntica
+    # mesmo tendo entidade — deve renderizar FORMULÁRIO (identificação + entrada) + botão de IA +
+    # RESULTADO, não um CRUD. Ex.: "Recepção & Triagem" cadastra o paciente E dispara o agente de
+    # triagem na MESMA tela. Precede a regra de CRUD por entidade.
+    if any(a.get("kind") == "task" and a.get("target") for a in (screen.get("actions") or [])):
+        return "agent"
     # Tela de gestão/cadastro de uma ENTIDADE real → CRUD (tabela+form), mesmo que os
     # componentes tenham vindo readonly (o ui_spec às vezes gera 'view' em vez de form).
     # NÃO usar layout='detail' aqui: telas AGÊNTICAS (triagem, pré-atendimento, seleção de
@@ -5267,7 +5273,7 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
         elif kind == "report":
             src = _report_screen(s, comp_name, task_fields)
         elif kind == "agent":
-            src = _agent_screen(s, comp_name, task_fields)
+            src = _agent_screen(s, comp_name, task_fields, model)
         else:
             src = _react_component_for_screen(s, comp_name, task_fields)
         add(f"frontend/src/screens/{comp_name}.jsx", src)
@@ -5652,7 +5658,37 @@ export default function %COMP%() {
   const executar = async () => {
     if (!TASK) { setErr("Ação indisponível: nenhuma tarefa definida para esta tela."); return; }
     setBusy(true); setResult(null); setErr(null);
-    try { const r = await runTask(TASK, form); setResult(r); }
+    try {
+      // ctx acumula os dados do formulário + os IDs gerados no encadeamento de persistência.
+      const ctx = { ...form };
+      // ENCADEAMENTO (tela híbrida cadastro+agente): antes de acionar o agente, PERSISTE a
+      // entidade (ex.: cadastra o paciente) e ABRE o atendimento — gerando os FKs que as etapas
+      // seguintes (encaminhamento/prontuário) exigem. Best-effort: uma falha aqui (ex.: CPF já
+      // cadastrado) não impede a ação agêntica.
+      if (CHAIN) {
+        try {
+          const rc = await runTask("criar_" + CHAIN.entity, ctx);
+          const pid = rc && (rc[CHAIN.pk] || rc.id);
+          if (pid) ctx[CHAIN.fk] = pid;   // ex.: paciente_id (usado pelo atendimento e etapas seguintes)
+        } catch (_) { /* segue: paciente pode já existir */ }
+        if (CHAIN.atend_entity) {
+          try {
+            const nowSql = new Date().toISOString().slice(0, 19).replace("T", " ");
+            // colunas comuns de data/status preenchidas p/ satisfazer NOT NULL (extras são ignoradas).
+            const ap = { ...ctx, data_hora: nowSql, data: nowSql, data_abertura: nowSql, status: "em_andamento" };
+            const ra = await runTask("criar_" + CHAIN.atend_entity, ap);
+            const aid = ra && (ra[CHAIN.atend_pk] || ra.id);
+            if (aid) ctx[CHAIN.atend_fk] = aid;   // ex.: atendimento_id
+          } catch (_) { /* segue mesmo sem atendimento */ }
+        }
+      }
+      const r = await runTask(TASK, ctx);
+      // anexa os IDs gerados ao resultado exibido (rastreabilidade do atendimento aberto).
+      let out = (r && typeof r === "object" && !Array.isArray(r)) ? { ...r } : { resultado: r };
+      if (CHAIN && ctx[CHAIN.fk]) out[CHAIN.fk] = ctx[CHAIN.fk];
+      if (CHAIN && CHAIN.atend_fk && ctx[CHAIN.atend_fk]) out[CHAIN.atend_fk] = ctx[CHAIN.atend_fk];
+      setResult(out);
+    }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
   };
 
@@ -5766,7 +5802,7 @@ export default function %COMP%() {
 '''
 
 
-def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
+def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Optional[dict] = None) -> str:
     actions = screen.get("actions") or []
     target = None
     has_task_action = False
@@ -5811,6 +5847,30 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
         kpis = []
     # Dashboard = painel de KPIs (só quando explicitamente dashboard, OU há KPIs e NÃO é interativa).
     is_dashboard = explicit_dashboard or (len(kpis) > 0 and not interactive_agent)
+    # ENCADEAMENTO DE PERSISTÊNCIA (tela HÍBRIDA cadastro+agente): quando a tela agêntica também
+    # COLETA a identidade de uma entidade (ex.: Recepção & Triagem coleta CPF/Nome do paciente),
+    # o submit primeiro CADASTRA a entidade e ABRE o atendimento (gerando os FKs paciente_id/
+    # atendimento_id) e só então aciona o agente — o que faz o fluxo persistir de ponta a ponta.
+    chain = None
+    if model and interactive_agent and not is_dashboard:
+        ent = screen.get("entity")
+        if ent and ent in model:
+            m = model[ent]
+            input_keys = {i["key"] for i in inp}
+            uniq = (m.get("uniques") or [None])[0]
+            id_candidates = {c for c in (uniq, "cpf", "nome", "email", "documento") if c}
+            if input_keys & id_candidates:      # a tela realmente coleta a identidade → é cadastro
+                _sing = lambda e: (e[:-1] if e.endswith("s") else e)  # pacientes→paciente
+                chain = {"entity": ent, "pk": m["pk"], "fk": _sing(ent) + "_id"}
+                for t in model:                  # detecta a tabela de atendimento p/ abrir o atendimento
+                    if t != ent and t.startswith("atendiment"):
+                        # só encadeia se o atendimento realmente referencia a entidade (tem a FK)
+                        _acols = {c for c, _ in model[t]["cols"]}
+                        if chain["fk"] in _acols:
+                            chain["atend_entity"] = t
+                            chain["atend_pk"] = model[t]["pk"]
+                            chain["atend_fk"] = _sing(t) + "_id"
+                        break
     # useEffect é sempre necessário (o corpo tem o effect de carregar FK, guardado por HAS_FK).
     header = (
         'import React, { useState, useEffect } from "react";\n'
@@ -5820,6 +5880,7 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
         f'const KPIS = {json.dumps(kpis, ensure_ascii=False)};\n'
         f'const IS_DASHBOARD = {json.dumps(is_dashboard)};\n'
         f'const HAS_FK = {json.dumps(bool(fk_used))};\n'
+        f'const CHAIN = {json.dumps(chain, ensure_ascii=False)};\n'
     )
     body = (_AGENT_BODY.replace("%COMP%", comp_name)
             .replace("%TITLE%", screen.get("name", comp_name).replace('"', ""))
