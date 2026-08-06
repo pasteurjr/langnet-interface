@@ -5833,7 +5833,8 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
     # NÃO viram entrada — aparecem no painel de Resultado quando o agente responde.
     interactive_agent = has_task_action and not explicit_dashboard
     _out_kw = ("hipotes", "diagnost", "classificac", "urgencia", "urgência", "confianc",
-               "recomendac", "resultado", "score", "justificativa", "status", "parecer")
+               "recomendac", "resultado", "score", "justificativa", "status", "parecer",
+               "destino", "encaminh")
     if interactive_agent and kpis:
         _promoted = []
         for k in kpis:
