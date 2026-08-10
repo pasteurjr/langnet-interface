@@ -3767,8 +3767,22 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
         lines.append(f"{indent}cur.execute({q_repr})")
 
     if is_select and capture_var:
+        # Coluna REALMENTE selecionada (SELECT <col> FROM ...) — não assumir 'id'.
+        # 'SELECT atendimento_id FROM ...' capturado como 'id' devolvia sempre None.
+        sel_col = "id"
+        _selm = _re.match(r'(?is)^\s*select\s+(.+?)\s+from\b', query)
+        if _selm:
+            first = _selm.group(1).split(",")[0].strip().split()[0]  # 1ª coluna, sem alias
+            first = first.replace("`", "").replace('"', "")
+            if "." in first:
+                first = first.split(".")[-1]                          # remove prefixo de tabela
+            if _re.match(r'^\w+$', first):
+                sel_col = first
         lines.append(f"{indent}_row = cur.fetchone()")
-        lines.append(f"{indent}{capture_var} = _row['id'] if _row else None")
+        # PREFERE o input_data (contexto propagado — ex.: atendimento_id do atendimento corrente);
+        # o SELECT é só FALLBACK. Assim o adapter respeita o que a UI enviou em vez de re-derivar
+        # por lookup frágil/circular (ex.: buscar atendimento_id num prontuário que ainda não existe).
+        lines.append(f"{indent}{capture_var} = input_data.get({capture_var!r}) or (_row[{sel_col!r}] if _row else None)")
         if capture_var not in captured_vars:
             captured_vars.append(capture_var)
 
