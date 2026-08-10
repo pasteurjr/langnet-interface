@@ -3326,6 +3326,30 @@ _LIST_HELPER = (
     "    no input, evitando '1048 Column ... cannot be null'.\"\"\"\n"
     "    from datetime import date\n"
     "    return date.today().isoformat()\n"
+    "\n\n"
+    "def _cv(v, t):\n"
+    "    \"\"\"Coerção de valor p/ o tipo da coluna. Torna a persistência robusta quando o\n"
+    "    resultado do AGENTE não bate exatamente com o tipo do schema:\n"
+    "      - numérico (FLOAT/INT/…): 'média'/'alta' → magnitude; '70%'/'0.7' → número;\n"
+    "      - texto: dict/list → JSON string (evita erro ao inserir objeto em TEXT).\"\"\"\n"
+    "    import json as _json\n"
+    "    if v is None:\n"
+    "        return None\n"
+    "    t = (t or '').upper()\n"
+    "    if t in ('INT', 'BIGINT', 'TINYINT'):\n"
+    "        try: return int(float(str(v).strip().replace('%', '')))\n"
+    "        except Exception: return None\n"
+    "    if t in ('FLOAT', 'DOUBLE', 'DECIMAL'):\n"
+    "        s = str(v).strip().lower().replace('%', '')\n"
+    "        try:\n"
+    "            f = float(s)\n"
+    "            return f / 100.0 if f > 1 and '%' in str(v) else f\n"
+    "        except Exception:\n"
+    "            return {'baixa': 0.4, 'baixo': 0.4, 'media': 0.7, 'média': 0.7,\n"
+    "                    'medio': 0.7, 'médio': 0.7, 'alta': 0.9, 'alto': 0.9}.get(s)\n"
+    "    if isinstance(v, (dict, list)):\n"
+    "        return _json.dumps(v, ensure_ascii=False)\n"
+    "    return v\n"
 )
 
 
@@ -3534,7 +3558,9 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str,
         uniq = m["uniques"][0] if m["uniques"] else (editable[0] if editable else pk)
         ins_cols = ", ".join(editable)
         ins_ph = ", ".join(["%s"] * len(editable))
-        ins_params = ", ".join(f"input_data.get('{c}')" for c in editable)
+        # _cv coage o valor ao tipo da coluna (robusto a resultado do agente: enum→float, dict→JSON).
+        _coltype = {c: t for c, t in m["cols"]}
+        ins_params = ", ".join(f"_cv(input_data.get('{c}'), {_coltype.get(c, 'VARCHAR')!r})" for c in editable)
         child_ins = ""
         for ch, fk, val in children:
             if not val: continue
@@ -5414,7 +5440,7 @@ def _template_ws_client(ws_port: int) -> str:
         '  return new Promise((resolve, reject) => {\n'
         '    let ws;\n'
         '    try { ws = new WebSocket(WS_URL); } catch (e) { reject(e); return; }\n'
-        '    const timer = setTimeout(() => { try { ws.close(); } catch (e) {} reject(new Error("timeout")); }, 120000);\n'
+        '    const timer = setTimeout(() => { try { ws.close(); } catch (e) {} reject(new Error("timeout")); }, 300000);\n'
         '    ws.onopen = () => ws.send(JSON.stringify({ type: "execute_task", data: { task_name: taskName, input_data: inputData || {} } }));\n'
         '    ws.onmessage = (ev) => {\n'
         '      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }\n'
@@ -5763,6 +5789,17 @@ export default function %COMP%() {
         const rid = (r && typeof r === "object") ? (r.id || r[RESULT_FK]) : null;
         if (rid) { out[RESULT_FK] = rid; setCarryState(setCarry({ [RESULT_FK]: rid })); }
       }
+      // SAVE_ENTITY: PERSISTE o resultado do agente na entidade do fluxo (ex.: pre_diagnosticos)
+      // e faz write-back do id gerado — para a próxima etapa (prontuário) herdar. Best-effort.
+      if (SAVE_ENTITY) {
+        try {
+          const payload = { ...getCarry(), ...form };
+          if (r && typeof r === "object" && !Array.isArray(r)) Object.assign(payload, r);
+          const rs = await runTask("criar_" + SAVE_ENTITY.entity, payload);
+          const sid = rs && (rs.id || rs[SAVE_ENTITY.fk]);
+          if (sid) { out[SAVE_ENTITY.fk] = sid; setCarryState(setCarry({ [SAVE_ENTITY.fk]: sid })); }
+        } catch (_) { /* persistência best-effort não bloqueia a exibição do resultado */ }
+      }
       setResult(out);
     }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
@@ -5977,6 +6014,28 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
                 if _t.rstrip("s") == _nsing:
                     result_fk = _nsing + "_id"
                     break
+    # SAVE_ENTITY: tela AGÊNTICA (task produz saída, não é criar_/registrar_) que MANTÉM uma
+    # entidade do fluxo (ex.: Geração de Pré-diagnóstico → pre_diagnosticos). Depois do agente
+    # responder, o resultado é PERSISTIDO na entidade (via criar_<entidade>) e o id gerado é
+    # gravado no atendimento corrente (write-back) — assim o pré-diagnóstico entra na cadeia.
+    # Só dispara quando a entidade depende APENAS do contexto corrente (FKs paciente_id/
+    # atendimento_id) — se ela exige FK de OUTRA etapa (ex.: prontuário exige pre_diagnostico_id/
+    # encaminhamento_id), NÃO persiste aqui (evita criar registro incompleto/prematuro).
+    save_entity = None
+    if model and not is_dashboard and not chain and not result_fk and target:
+        _sent = screen.get("entity")
+        if _sent and _sent in model:
+            import re as _re_se
+            _ddl = model[_sent].get("ddl", "")
+            _blocking = any(
+                _m.group(1) not in ("paciente_id", "atendimento_id")
+                for _m in _re_se.finditer(r'(?im)^\s*[`"]?(\w+_id)[`"]?\s+[^\n,]*\bNOT\s+NULL', _ddl)
+            )
+            _sfk = (_sent[:-1] if _sent.endswith("s") else _sent) + "_id"
+            # NÃO persistir a entidade que É o contexto corrente (atendimento/paciente já criados
+            # pela triagem) — recriá-la duplicaria o atendimento e sobrescreveria o carry.
+            if not _blocking and _sfk not in ("paciente_id", "atendimento_id"):
+                save_entity = {"entity": _sent, "fk": _sfk}
     # useEffect é sempre necessário (o corpo tem o effect de carregar FK, guardado por HAS_FK).
     header = (
         'import React, { useState, useEffect } from "react";\n'
@@ -5989,6 +6048,7 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
         f'const HAS_FK = {json.dumps(bool(fk_used))};\n'
         f'const CHAIN = {json.dumps(chain, ensure_ascii=False)};\n'
         f'const RESULT_FK = {json.dumps(result_fk)};\n'
+        f'const SAVE_ENTITY = {json.dumps(save_entity, ensure_ascii=False)};\n'
     )
     body = (_AGENT_BODY.replace("%COMP%", comp_name)
             .replace("%TITLE%", screen.get("name", comp_name).replace('"', ""))
