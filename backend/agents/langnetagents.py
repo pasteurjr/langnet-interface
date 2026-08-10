@@ -5224,6 +5224,7 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
         out.append({"path": path, "content": content if content.endswith("\n") else content + "\n", "language": lang})
 
     add("frontend/src/screens/wsClient.js", _template_ws_client(ws_port))
+    add("frontend/src/screens/currentAttendance.js", _template_current_attendance())
 
     comp_meta = []  # (id, name, comp_name, route, kind, module)
     covered_entities = set()  # entidades que já ganharam tela de CRUD via ui_spec
@@ -5367,6 +5368,30 @@ def _template_business_index_html(project_name: str) -> str:
     )
 
 
+def _template_current_attendance() -> str:
+    """Store do ATENDIMENTO CORRENTE, compartilhado entre telas via localStorage.
+    A triagem grava aqui os FKs gerados (paciente_id/atendimento_id); as telas seguintes
+    (encaminhamento, prontuário, consulta) herdam esses IDs automaticamente nas tasks —
+    sem o operador redigitar o atendimento corrente."""
+    return (
+        '// Contexto do ATENDIMENTO CORRENTE — compartilhado entre telas (localStorage).\n'
+        '// Gravado pela triagem (paciente_id/atendimento_id) e herdado pelas etapas seguintes.\n'
+        'const KEY = "clinia.current_attendance";\n\n'
+        'export function getCarry() {\n'
+        '  try { return JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (e) { return {}; }\n'
+        '}\n\n'
+        'export function setCarry(patch) {\n'
+        '  const next = { ...getCarry() };\n'
+        '  for (const [k, v] of Object.entries(patch || {})) { if (v != null && v !== "") next[k] = v; }\n'
+        '  try { localStorage.setItem(KEY, JSON.stringify(next)); } catch (e) {}\n'
+        '  return next;\n'
+        '}\n\n'
+        'export function clearCarry() {\n'
+        '  try { localStorage.removeItem(KEY); } catch (e) {}\n'
+        '}\n'
+    )
+
+
 def _template_ws_client(ws_port: int) -> str:
     return (
         'const WS_URL = process.env.REACT_APP_WS_URL || "ws://localhost:' + str(ws_port) + '";\n\n'
@@ -5411,19 +5436,31 @@ def _resolve_task_target(target, task_fields, screen_name=None):
     for c in candidates:
         if c in task_fields:
             return c
+    # Verbos genéricos de CRUD/ação: compartilhar "cadastrar" entre alvo e task NÃO deve
+    # decidir o casamento — o SUBSTANTIVO (encaminhamento, prontuário, paciente) é que importa.
+    # Sem isso, 'cadastrar_encaminhamento' empatava com 'cadastrar_paciente' e 'criar_encaminhamento'
+    # (ambos score 2) e o desempate por ordem pegava a task errada (cadastrar_paciente).
+    _VERBS = {"cadastrar", "criar", "registrar", "gerir", "gerar", "atualizar", "salvar",
+              "listar", "obter", "novo", "adicionar", "selecionar", "selecao", "buscar",
+              "consultar", "editar", "excluir", "remover", "visualizar", "abrir", "iniciar",
+              "com", "ia", "de", "do", "da", "e", "o", "a"}
     best, best_score = None, 0
     for c in candidates:
         tnorm = _norm_field(c)
+        toks_c = set(_tokens(c))
         for real in task_fields:
             rnorm = _norm_field(real)
-            shared = len(set(_tokens(c)) & set(_tokens(real)))
+            shared = toks_c & set(_tokens(real))
+            nouns = shared - _VERBS                    # substantivos em comum (peso alto)
+            verbs = shared & _VERBS                     # verbos/stopwords em comum (peso baixo)
             contains = 1 if (tnorm in rnorm or rnorm in tnorm) else 0
-            score = shared * 2 + contains
+            score = len(nouns) * 3 + len(verbs) * 1 + contains
             if score > best_score:
                 best, best_score = real, score
-    # Sem casamento com uma task REAL → None (o chamador desabilita o botão em vez de
-    # emitir runTask() para uma tarefa inexistente). NUNCA devolver o alvo inventado.
-    return best if best_score >= 2 else None
+    # Exige casamento por SUBSTANTIVO (score ≥ 3) — um match só por verbo (ex.: 'cadastrar')
+    # não basta. Sem isso → None: o chamador desabilita o botão em vez de emitir runTask()
+    # para uma tarefa errada/inexistente. NUNCA devolver o alvo inventado.
+    return best if best_score >= 3 else None
 
 
 def _humanize(col: str) -> str:
@@ -5652,6 +5689,17 @@ export default function %COMP%() {
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
+  const [carry, setCarryState] = useState({});   // atendimento corrente (FKs herdados)
+  useEffect(() => {
+    const c = getCarry();
+    setCarryState(c);
+    // pré-preenche campos desta tela (ex.: paciente_id/atendimento_id) com o atendimento corrente.
+    if (Object.keys(c).length) setForm((f) => {
+      const nf = { ...f };
+      for (const fd of INPUTS) { if ((nf[fd.key] === "" || nf[fd.key] == null) && c[fd.key] != null) nf[fd.key] = c[fd.key]; }
+      return nf;
+    });
+  }, []);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const IN = "w-full rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:ring-2 focus:ring-indigo-500 outline-none";
 
@@ -5659,8 +5707,12 @@ export default function %COMP%() {
     if (!TASK) { setErr("Ação indisponível: nenhuma tarefa definida para esta tela."); return; }
     setBusy(true); setResult(null); setErr(null);
     try {
-      // ctx acumula os dados do formulário + os IDs gerados no encadeamento de persistência.
-      const ctx = { ...form };
+      // ctx = ATENDIMENTO CORRENTE (FKs herdados de telas anteriores, ex.: paciente_id/
+      // atendimento_id gerados na triagem) + dados do formulário desta tela. Assim as etapas
+      // seguintes (encaminhamento/prontuário/consulta) NÃO redigitam o atendimento corrente.
+      // O form só sobrescreve o herdado quando preenchido (campo vazio não apaga o FK herdado).
+      const ctx = { ...(IS_DASHBOARD ? {} : getCarry()) };
+      for (const [k, v] of Object.entries(form)) { if (v !== "" && v != null) ctx[k] = v; }
       // ENCADEAMENTO (tela híbrida cadastro+agente): antes de acionar o agente, PERSISTE a
       // entidade (ex.: cadastra o paciente) e ABRE o atendimento — gerando os FKs que as etapas
       // seguintes (encaminhamento/prontuário) exigem. Best-effort: uma falha aqui (ex.: CPF já
@@ -5681,12 +5733,22 @@ export default function %COMP%() {
             if (aid) ctx[CHAIN.atend_fk] = aid;   // ex.: atendimento_id
           } catch (_) { /* segue mesmo sem atendimento */ }
         }
+        // grava o ATENDIMENTO CORRENTE p/ as próximas telas herdarem os FKs automaticamente.
+        const _carry = {};
+        if (ctx[CHAIN.fk]) _carry[CHAIN.fk] = ctx[CHAIN.fk];
+        if (CHAIN.atend_fk && ctx[CHAIN.atend_fk]) _carry[CHAIN.atend_fk] = ctx[CHAIN.atend_fk];
+        if (Object.keys(_carry).length) setCarryState(setCarry(_carry));
       }
       const r = await runTask(TASK, ctx);
       // anexa os IDs gerados ao resultado exibido (rastreabilidade do atendimento aberto).
       let out = (r && typeof r === "object" && !Array.isArray(r)) ? { ...r } : { resultado: r };
       if (CHAIN && ctx[CHAIN.fk]) out[CHAIN.fk] = ctx[CHAIN.fk];
       if (CHAIN && CHAIN.atend_fk && ctx[CHAIN.atend_fk]) out[CHAIN.atend_fk] = ctx[CHAIN.atend_fk];
+      // write-back: grava o id gerado por esta etapa no ATENDIMENTO CORRENTE p/ a próxima herdar.
+      if (RESULT_FK) {
+        const rid = (r && typeof r === "object") ? (r.id || r[RESULT_FK]) : null;
+        if (rid) { out[RESULT_FK] = rid; setCarryState(setCarry({ [RESULT_FK]: rid })); }
+      }
       setResult(out);
     }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
@@ -5746,6 +5808,20 @@ export default function %COMP%() {
           {busy ? "Atualizando…" : (IS_DASHBOARD ? "↻ Atualizar" : "▷ Executar com IA")}
         </button>
       </div>
+
+      {/* ATENDIMENTO CORRENTE: FKs herdados das telas anteriores (paciente_id/atendimento_id).
+          As etapas seguintes usam estes IDs automaticamente — sem redigitar o atendimento. */}
+      {!IS_DASHBOARD && Object.keys(carry).length > 0 && (
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5">
+          <div className="text-xs text-emerald-800">
+            <span className="font-semibold uppercase tracking-wide mr-2">Atendimento corrente</span>
+            {Object.entries(carry).map(([k, v]) => (
+              <span key={k} className="mr-3"><span className="text-emerald-500">{k}:</span> <code className="text-emerald-900">{String(v).slice(0, 8)}…</code></span>
+            ))}
+          </div>
+          <button className="text-xs text-emerald-700 hover:text-emerald-900 underline" onClick={() => { clearCarry(); setCarryState({}); }}>Encerrar / novo atendimento</button>
+        </div>
+      )}
 
       {/* Dashboard: cards de KPI (placeholder — populados pelo resultado do agente) */}
       {IS_DASHBOARD && KPIS.length > 0 && (
@@ -5872,16 +5948,33 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
                             chain["atend_pk"] = model[t]["pk"]
                             chain["atend_fk"] = _sing(t) + "_id"
                         break
+    # RESULT_FK: quando a TASK desta tela PERSISTE uma entidade do fluxo (criar_/registrar_/
+    # cadastrar_/salvar_<entidade>), o id gerado é gravado no ATENDIMENTO CORRENTE sob <singular>_id
+    # para a PRÓXIMA etapa herdar (ex.: prontuário precisa de encaminhamento_id). Derivado do NOME
+    # da task (não da entidade da tela, que às vezes é re-rotulada pelo nome — "Seleção de Médico").
+    result_fk = None
+    if model and not is_dashboard and target and not chain:
+        _pverbs = {"criar", "registrar", "cadastrar", "salvar"}
+        _parts = target.split("_")
+        if len(_parts) >= 2 and _parts[0] in _pverbs:
+            _noun = "_".join(_parts[1:])            # encaminhamento / prontuario / paciente
+            _nsing = _noun[:-1] if _noun.endswith("s") else _noun
+            for _t in model:                         # confere que casa uma entidade real
+                if _t.rstrip("s") == _nsing:
+                    result_fk = _nsing + "_id"
+                    break
     # useEffect é sempre necessário (o corpo tem o effect de carregar FK, guardado por HAS_FK).
     header = (
         'import React, { useState, useEffect } from "react";\n'
-        'import { runTask } from "./wsClient";\n\n'
+        'import { runTask } from "./wsClient";\n'
+        'import { getCarry, setCarry, clearCarry } from "./currentAttendance";\n\n'
         f'const TASK = {json.dumps(target)};\n'  # null se o alvo não é uma task real → botão desabilita
         f'const INPUTS = {json.dumps(inp, ensure_ascii=False)};\n'
         f'const KPIS = {json.dumps(kpis, ensure_ascii=False)};\n'
         f'const IS_DASHBOARD = {json.dumps(is_dashboard)};\n'
         f'const HAS_FK = {json.dumps(bool(fk_used))};\n'
         f'const CHAIN = {json.dumps(chain, ensure_ascii=False)};\n'
+        f'const RESULT_FK = {json.dumps(result_fk)};\n'
     )
     body = (_AGENT_BODY.replace("%COMP%", comp_name)
             .replace("%TITLE%", screen.get("name", comp_name).replace('"', ""))
