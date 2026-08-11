@@ -3442,6 +3442,78 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# Guard de COERÊNCIA tasks ⟷ schema: uma task não pode consultar tabela que
+# o Modelo de Dados nunca criou (ex.: pre_atendimento consultava historico_medico,
+# inexistente → o agente entrava em loop/erro). Detecta e anota a task.
+# ─────────────────────────────────────────────────────────────────────
+def _extract_sql_table_refs(text: str) -> set:
+    """Nomes de tabela citados em SQL num texto (FROM/JOIN/INTO/UPDATE <tabela>)."""
+    import re as _re
+    refs = set()
+    if not text:
+        return refs
+    for m in _re.finditer(r'(?is)\b(?:FROM|JOIN|INTO|UPDATE)\s+[`"\']?([a-zA-Z_]\w*)', text):
+        refs.add(m.group(1).lower())
+    return refs
+
+
+def _validate_tasks_schema_coherence(tasks_yaml: str, schema_sql: str) -> Dict[str, List[str]]:
+    """Cruza as tabelas citadas em SQL das descrições de task com as tabelas REAIS do schema.
+    Retorna {task_name: [tabelas_inexistentes]}. Só considera candidatos plausíveis a tabela
+    (snake_case com '_' ou já presentes no schema) — evita falsos positivos de prosa."""
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml) or {}
+    except Exception:
+        return {}
+    if not isinstance(parsed, dict) or not schema_sql:
+        return {}
+    tables = set(_schema_model(schema_sql).keys())
+    _stems = {t.rstrip("s") for t in tables}
+    def _known(t):
+        return t in tables or (t + "s") in tables or t.rstrip("s") in _stems
+    violations: Dict[str, List[str]] = {}
+    for tname, cfg in parsed.items():
+        if not isinstance(cfg, dict):
+            continue
+        refs = _extract_sql_table_refs(cfg.get("description", "") or "")
+        bad = sorted(r for r in refs
+                     if ("_" in r or r in tables or (r + "s") in tables) and not _known(r))
+        if bad:
+            violations[tname] = bad
+    return violations
+
+
+def _annotate_tasks_coherence(tasks_yaml: str, schema_sql: str):
+    """Anexa NOTA DE COERÊNCIA às tasks que citam tabelas inexistentes: instrui o agente a NÃO
+    consultá-las e usar só as tabelas reais / os dados de entrada. Retorna (tasks_yaml, violations)."""
+    violations = _validate_tasks_schema_coherence(tasks_yaml, schema_sql)
+    if not violations:
+        return tasks_yaml, {}
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml) or {}
+    except Exception:
+        return tasks_yaml, violations
+    real = ", ".join(sorted(_schema_model(schema_sql).keys()))
+    for tname, bad in violations.items():
+        cfg = parsed.get(tname)
+        if not isinstance(cfg, dict):
+            continue
+        if "[COERÊNCIA — LangNet]" in (cfg.get("description") or ""):
+            continue
+        note = (f"\n\n[COERÊNCIA — LangNet] As tabelas a seguir NÃO existem no Modelo de Dados e "
+                f"NÃO devem ser consultadas: {', '.join(bad)}. Use SOMENTE as tabelas reais do schema "
+                f"({real}) ou os dados de entrada (input_data).")
+        cfg["description"] = (cfg.get("description") or "") + note
+    try:
+        import yaml as _yaml
+        return _yaml.safe_dump(parsed, allow_unicode=True, sort_keys=False), violations
+    except Exception:
+        return tasks_yaml, violations
+
+
+# ─────────────────────────────────────────────────────────────────────
 # CRUD determinístico completo por entidade (list / obter / atualizar / excluir)
 # ─────────────────────────────────────────────────────────────────────
 _TECH_COLS = {"created_at", "updated_at"}
@@ -5004,6 +5076,16 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
                 adapters_py = adapters_py.rstrip() + "\n" + _LIST_HELPER
                 _list_helper_added = True
             adapters_py = adapters_py.rstrip() + "\n" + _crud_snippet
+
+    # GUARD de coerência tasks ⟷ schema: se alguma task consulta uma tabela que NÃO existe no
+    # Modelo de Dados (ex.: pre_atendimento → historico_medico), anota a task instruindo o agente
+    # a não consultá-la (evita loop/erro/timeout do agente). O tasks.yaml anotado flui para o
+    # ws-server e para os templates abaixo.
+    if tasks_yaml and _schema_looks_real(_schema_sql_cg):
+        tasks_yaml, _coh_viol = _annotate_tasks_coherence(tasks_yaml, _schema_sql_cg)
+        if _coh_viol:
+            print("[CODE-GEN][COERÊNCIA] task(s) citam tabela inexistente no schema: "
+                  + "; ".join(f"{k} → {v}" for k, v in _coh_viol.items()))
 
     # F2 Fase 3: tools MCP atribuídas aos agentes (etapa MCP do Projeto) entram no
     # agents_map ANTES da injeção — assim os agentes ganham as tools MCP no agents.yaml.
