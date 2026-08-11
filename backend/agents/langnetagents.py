@@ -6118,6 +6118,31 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
             # pela triagem) — recriá-la duplicaria o atendimento e sobrescreveria o carry.
             if not _blocking and _sfk not in ("paciente_id", "atendimento_id"):
                 save_entity = {"entity": _sent, "fk": _sfk}
+    # ITEM 3 — COMPLETAR FKs OBRIGATÓRIAS DA ENTIDADE PERSISTIDA: uma tela agêntica que PERSISTE
+    # uma entidade (ex.: "Seleção de Médico" cria encaminhamento) precisa COLETAR as FKs NOT NULL
+    # que essa entidade exige (ex.: medico_id, especialidade_id) — senão o INSERT falha por FK nula.
+    # Adiciona os campos faltantes como DROPDOWN da entidade referenciada, exceto as FKs do
+    # atendimento corrente (paciente_id/atendimento_id), que vêm HERDADAS do carry.
+    _persist_ent = None
+    if result_fk:
+        _rs = result_fk[:-3] if result_fk.endswith("_id") else result_fk
+        _persist_ent = next((t for t in model if t.rstrip("s") == _rs), None)
+    elif save_entity:
+        _persist_ent = save_entity.get("entity")
+    if _persist_ent and _persist_ent in model:
+        import re as _re_fk
+        _ddl2 = model[_persist_ent].get("ddl", "")
+        _fks = {m.group(1): m.group(2) for m in _re_fk.finditer(
+            r'(?is)FOREIGN KEY\s*\(\s*[`"]?(\w+)[`"]?\s*\)\s*REFERENCES\s*[`"]?(\w+)', _ddl2)}
+        _notnull = {m.group(1) for m in _re_fk.finditer(
+            r'(?im)^\s*[`"]?(\w+)[`"]?\s+[^\n,]*\bNOT\s+NULL', _ddl2)}
+        _have = {i["key"] for i in inp}
+        for _col, _ref in _fks.items():
+            if _col in ("paciente_id", "atendimento_id") or _col in _have or _col not in _notnull:
+                continue
+            inp.append({"key": _col, "label": _humanize(_col[:-3] if _col.endswith("_id") else _col),
+                        "ref": _ref})
+            fk_used.append(_col)
     # useEffect é sempre necessário (o corpo tem o effect de carregar FK, guardado por HAS_FK).
     header = (
         'import React, { useState, useEffect } from "react";\n'
