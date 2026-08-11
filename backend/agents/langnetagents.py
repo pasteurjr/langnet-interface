@@ -6140,8 +6140,11 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
         for _col, _ref in _fks.items():
             if _col in ("paciente_id", "atendimento_id") or _col in _have or _col not in _notnull:
                 continue
-            inp.append({"key": _col, "label": _humanize(_col[:-3] if _col.endswith("_id") else _col),
-                        "ref": _ref})
+            # remove o campo de texto redundante do ui_spec (ex.: 'especialidade' solto) quando
+            # entra o dropdown FK ('especialidade_id') — evita dois campos iguais na tela.
+            _base = _col[:-3] if _col.endswith("_id") else _col
+            inp[:] = [i for i in inp if i["key"] != _base]
+            inp.append({"key": _col, "label": _humanize(_base), "ref": _ref})
             fk_used.append(_col)
     # useEffect é sempre necessário (o corpo tem o effect de carregar FK, guardado por HAS_FK).
     header = (
