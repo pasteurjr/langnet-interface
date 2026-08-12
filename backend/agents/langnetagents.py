@@ -3690,26 +3690,29 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str,
         )
         out_fns.append(obter); names.append(f"obter_{ent}")
 
-        # ATUALIZAR (main + substitui filhos)
-        set_clause = ", ".join(f"{c}=%s" for c in editable)
-        set_params = ", ".join(f"input_data.get('{c}')" for c in editable)
+        # ATUALIZAR (PARCIAL: só as colunas informadas — não zera as demais; filhos só se enviados)
         child_upd = ""
         for ch, fk, val in children:
             if not val: continue
-            # nome da lista no input: usa o nome da tabela filha
+            # só substitui os filhos quando a lista é enviada (senão preserva os existentes)
             child_upd += (
-                f"        cur.execute(\"DELETE FROM {ch} WHERE {fk}=%s\", [_id])\n"
-                f"        for _v in (input_data.get('{ch}') or []):\n"
-                f"            cur.execute(\"INSERT INTO {ch}({fk}, {val}) VALUES(%s,%s)\", [_id, _v])\n"
+                f"        if input_data.get('{ch}') is not None:\n"
+                f"            cur.execute(\"DELETE FROM {ch} WHERE {fk}=%s\", [_id])\n"
+                f"            for _v in (input_data.get('{ch}') or []):\n"
+                f"                cur.execute(\"INSERT INTO {ch}({fk}, {val}) VALUES(%s,%s)\", [_id, _v])\n"
             )
         atualizar = (
             f"def atualizar_{ent}_deterministic(input_data):\n"
-            f"    \"\"\"Atualiza {ent} e substitui filhos (auto-gerado).\"\"\"\n"
+            f"    \"\"\"Atualiza {ent} (PARCIAL: só colunas informadas) e substitui filhos (auto-gerado).\"\"\"\n"
             + conn_block +
             "    try:\n"
             "        cur = conn.cursor(dictionary=True)\n"
             f"        _id = input_data.get('{pk}') or input_data.get('id')\n"
-            f"        cur.execute(\"UPDATE {ent} SET {set_clause} WHERE {pk}=%s\", [{set_params}, _id])\n"
+            f"        _editable = {json.dumps(editable)}\n"
+            "        _cols = [c for c in _editable if input_data.get(c) is not None]\n"
+            "        if _cols:\n"
+            "            _set = ', '.join(c + '=%s' for c in _cols)\n"
+            f"            cur.execute('UPDATE {ent} SET ' + _set + ' WHERE {pk}=%s', [_cv(input_data.get(c), dict({json.dumps([[c,t] for c,t in m['cols']])}).get(c,'VARCHAR')) for c in _cols] + [_id])\n"
             + child_upd +
             "        conn.commit()\n"
             f"        return {{'status':'sucesso','{pk}':_id}}\n"
@@ -5901,6 +5904,25 @@ export default function %COMP%() {
           if (sid) { out[SAVE_ENTITY.fk] = sid; setCarryState(setCarry({ [SAVE_ENTITY.fk]: sid })); }
         } catch (_) { /* persistência best-effort não bloqueia a exibição do resultado */ }
       }
+      // FINALIZE: grava a saída do agente (diagnóstico final/conduta/prescrição) na entidade da
+      // cadeia JÁ criada (ex.: a Consulta atualiza o prontuário corrente), via UPDATE parcial. Best-effort.
+      if (FINALIZE) {
+        const fid = getCarry()[FINALIZE.fk];
+        let ftxt = null;
+        if (typeof rp === "string" && rp.trim()) {
+          ftxt = rp.trim();                                   // agente devolveu texto puro
+        } else if (rp && typeof rp === "object" && !Array.isArray(rp)) {
+          ftxt = Object.entries(rp)                           // agente devolveu objeto → concatena
+            .filter(([k, v]) => typeof v === "string" && v.trim() && k !== "status")
+            .map(([k, v]) => k.replace(/_/g, " ") + ": " + v).join("  •  ");
+        }
+        if (fid && ftxt) {
+          try {
+            await runTask("atualizar_" + FINALIZE.entity, { id: fid, [FINALIZE.text_col]: ftxt });
+            out.persistido_em = FINALIZE.entity + "." + FINALIZE.text_col;
+          } catch (_) { /* best-effort */ }
+        }
+      }
       setResult(out);
     }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
@@ -6137,6 +6159,22 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
             # pela triagem) — recriá-la duplicaria o atendimento e sobrescreveria o carry.
             if not _blocking and _sfk not in ("paciente_id", "atendimento_id"):
                 save_entity = {"entity": _sent, "fk": _sfk}
+    # FINALIZE — tela AGÊNTICA que FINALIZA uma entidade da cadeia JÁ criada (ex.: Consulta Médica
+    # → prontuario). Depois do agente, ATUALIZA o registro (id herdado do carry) gravando a saída do
+    # agente (diagnóstico final/conduta/prescrição) numa coluna de texto da entidade (ex.: resumo_medico).
+    finalize = None
+    if model and not is_dashboard and not chain and not result_fk and not save_entity and target:
+        _fent = screen.get("entity")
+        if _fent and _fent in model:
+            _m2 = model[_fent]
+            _ffk = (_fent[:-1] if _fent.endswith("s") else _fent) + "_id"
+            _fcols = {c for c, _ in _m2["cols"]}
+            _in_chain = "atendimento_id" in _fcols                    # entidade da cadeia do atendimento
+            _txtcol = next((c for c, t in _m2["cols"]
+                            if t in ("TEXT", "LONGTEXT")
+                            and any(k in c for k in ("resumo", "observ", "diagn", "laudo", "conclus"))), None)
+            if _in_chain and _txtcol and _ffk not in ("paciente_id", "atendimento_id"):
+                finalize = {"entity": _fent, "fk": _ffk, "text_col": _txtcol}
     # ITEM 3 — COMPLETAR FKs OBRIGATÓRIAS DA ENTIDADE PERSISTIDA: uma tela agêntica que PERSISTE
     # uma entidade (ex.: "Seleção de Médico" cria encaminhamento) precisa COLETAR as FKs NOT NULL
     # que essa entidade exige (ex.: medico_id, especialidade_id) — senão o INSERT falha por FK nula.
@@ -6178,6 +6216,7 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
         f'const CHAIN = {json.dumps(chain, ensure_ascii=False)};\n'
         f'const RESULT_FK = {json.dumps(result_fk)};\n'
         f'const SAVE_ENTITY = {json.dumps(save_entity, ensure_ascii=False)};\n'
+        f'const FINALIZE = {json.dumps(finalize, ensure_ascii=False)};\n'
     )
     body = (_AGENT_BODY.replace("%COMP%", comp_name)
             .replace("%TITLE%", screen.get("name", comp_name).replace('"', ""))
