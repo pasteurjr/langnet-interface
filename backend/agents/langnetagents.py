@@ -5806,6 +5806,24 @@ def _crud_screen(screen: dict, comp_name: str, entity: str, entity_model: dict) 
 
 
 _AGENT_BODY = r'''
+// Normaliza o resultado do agente: o ws-server às vezes devolve { raw: "...json..." } ou uma
+// string (com ou sem cerca markdown) em vez do objeto. Desembrulha para o objeto real — senão a
+// persistência (SAVE_ENTITY) recebe sem os campos (hipoteses, nivel_confianca…) e falha por NOT NULL.
+function parseAgentResult(r) {
+  let x = r;
+  if (x && typeof x === "object" && !Array.isArray(x) && typeof x.raw === "string") x = x.raw;
+  if (typeof x === "string") {
+    let s = x.trim();
+    if (s.startsWith("```")) s = s.split("\n").filter((l) => !l.trim().startsWith("```")).join("\n");
+    try { return JSON.parse(s); } catch (e) {
+      const m = s.match(/\{[\s\S]*\}/);
+      if (m) { try { return JSON.parse(m[0]); } catch (e2) {} }
+    }
+    return x;
+  }
+  return x;
+}
+
 export default function %COMP%() {
   const [form, setForm] = useState(Object.fromEntries(INPUTS.map((f) => [f.key, ""])));
   const [result, setResult] = useState(null);
@@ -5862,13 +5880,14 @@ export default function %COMP%() {
         if (Object.keys(_carry).length) setCarryState(setCarry(_carry));
       }
       const r = await runTask(TASK, ctx);
+      const rp = parseAgentResult(r);   // desembrulha { raw:"...json..." } / string em objeto real
       // anexa os IDs gerados ao resultado exibido (rastreabilidade do atendimento aberto).
-      let out = (r && typeof r === "object" && !Array.isArray(r)) ? { ...r } : { resultado: r };
+      let out = (rp && typeof rp === "object" && !Array.isArray(rp)) ? { ...rp } : { resultado: rp };
       if (CHAIN && ctx[CHAIN.fk]) out[CHAIN.fk] = ctx[CHAIN.fk];
       if (CHAIN && CHAIN.atend_fk && ctx[CHAIN.atend_fk]) out[CHAIN.atend_fk] = ctx[CHAIN.atend_fk];
       // write-back: grava o id gerado por esta etapa no ATENDIMENTO CORRENTE p/ a próxima herdar.
       if (RESULT_FK) {
-        const rid = (r && typeof r === "object") ? (r.id || r[RESULT_FK]) : null;
+        const rid = (rp && typeof rp === "object") ? (rp.id || rp[RESULT_FK]) : null;
         if (rid) { out[RESULT_FK] = rid; setCarryState(setCarry({ [RESULT_FK]: rid })); }
       }
       // SAVE_ENTITY: PERSISTE o resultado do agente na entidade do fluxo (ex.: pre_diagnosticos)
@@ -5876,7 +5895,7 @@ export default function %COMP%() {
       if (SAVE_ENTITY) {
         try {
           const payload = { ...getCarry(), ...form };
-          if (r && typeof r === "object" && !Array.isArray(r)) Object.assign(payload, r);
+          if (rp && typeof rp === "object" && !Array.isArray(rp)) Object.assign(payload, rp);
           const rs = await runTask("criar_" + SAVE_ENTITY.entity, payload);
           const sid = rs && (rs.id || rs[SAVE_ENTITY.fk]);
           if (sid) { out[SAVE_ENTITY.fk] = sid; setCarryState(setCarry({ [SAVE_ENTITY.fk]: sid })); }
