@@ -2694,6 +2694,32 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
         else:
             parsed = {{"raw": raw}}
 
+        # CONTRATO DE SAÍDA (Inserção A): valida/coage a saída do agente contra o output_schema
+        # da task. Desembrulha {{raw}}/string, coage tipos (enum->float, dict->JSON) e valida os
+        # campos obrigatórios. Falta de obrigatório -> 1 retry com o schema reforçado no prompt;
+        # persistindo -> ERRO EXPLÍCITO (fail-loud), sem emitir task_completed com saída incompleta.
+        _schema = (task_cfg or {{}}).get("output_schema")
+        _c2s = getattr(adapters_module, "_coerce_to_schema", None)
+        if _schema and callable(_c2s):
+            _src = parsed if callable(output_fn) else raw
+            _obj, _missing = _c2s(_src, _schema)
+            if _missing:
+                _hint = ("\\n\\nRESPONDA ESTRITAMENTE em JSON contendo TODOS estes campos preenchidos: "
+                         + ", ".join(_schema.get("required", [])) + ". Não escreva nada fora do JSON.")
+                try:
+                    _t2 = _build_task(task_name, agent, description + _hint)
+                    _r2 = await loop.run_in_executor(
+                        None, Crew(agents=[agent], tasks=[_t2], process=Process.sequential, verbose=False).kickoff)
+                    _obj, _missing = _c2s(getattr(_r2, "raw", None) or str(_r2), _schema)
+                except Exception:
+                    pass
+            if _missing:
+                await _send(ws, "error", {{"task_name": task_name,
+                    "error": "saída do agente não cumpre o contrato de saída; faltam: " + ", ".join(_missing),
+                    "faltantes": _missing}})
+                return
+            parsed = _obj
+
         await _send(ws, "task_completed", {{"task_name": task_name, "result": parsed}})
     except Exception as exc:
         await _send(ws, "error", {{"task_name": task_name, "error": str(exc), "traceback": traceback.format_exc()}})
@@ -3350,6 +3376,41 @@ _LIST_HELPER = (
     "    if isinstance(v, (dict, list)):\n"
     "        return _json.dumps(v, ensure_ascii=False)\n"
     "    return v\n"
+    "\n\n"
+    "def _coerce_to_schema(raw, schema):\n"
+    "    \"\"\"CONTRATO DE SAÍDA (Inserção A): normaliza/coage/valida a saída do agente contra o\n"
+    "    output_schema. Desembrulha {raw}/string -> objeto, coage por tipo (via _cv) e valida os\n"
+    "    campos required. Retorna (obj, faltantes).\"\"\"\n"
+    "    import json as _json, re as _re\n"
+    "    obj = raw\n"
+    "    if isinstance(obj, dict) and isinstance(obj.get('raw'), str):\n"
+    "        obj = obj['raw']\n"
+    "    if isinstance(obj, str):\n"
+    "        s = obj.strip()\n"
+    "        if s.startswith('```'):\n"
+    "            s = '\\n'.join(l for l in s.splitlines() if not l.strip().startswith('```'))\n"
+    "        try:\n"
+    "            obj = _json.loads(s)\n"
+    "        except Exception:\n"
+    "            _m = _re.search(r'\\{[\\s\\S]*\\}', s)\n"
+    "            try: obj = _json.loads(_m.group(0)) if _m else {'resultado': s}\n"
+    "            except Exception: obj = {'resultado': s}\n"
+    "    if not isinstance(obj, dict):\n"
+    "        obj = {'resultado': obj}\n"
+    "    props = (schema or {}).get('properties', {}) or {}\n"
+    "    for k, spec in props.items():\n"
+    "        if obj.get(k) is None:\n"
+    "            continue\n"
+    "        t = spec.get('type'); types = t if isinstance(t, list) else [t]\n"
+    "        if 'number' in types or 'integer' in types:\n"
+    "            _n = _cv(obj[k], 'FLOAT' if 'number' in types else 'INT')\n"
+    "            if _n is None:\n"
+    "                _n = (spec.get('coerce_from_enum') or {}).get(str(obj[k]).strip().lower())\n"
+    "            obj[k] = _n\n"
+    "        elif 'string' in types and isinstance(obj[k], (dict, list)):\n"
+    "            obj[k] = _json.dumps(obj[k], ensure_ascii=False)\n"
+    "    missing = [k for k in ((schema or {}).get('required') or []) if obj.get(k) in (None, '', [])]\n"
+    "    return obj, missing\n"
 )
 
 
@@ -3511,6 +3572,125 @@ def _annotate_tasks_coherence(tasks_yaml: str, schema_sql: str):
         return _yaml.safe_dump(parsed, allow_unicode=True, sort_keys=False), violations
     except Exception:
         return tasks_yaml, violations
+
+
+# ─────────────────────────────────────────────────────────────────────
+# CONTRATO DE SAÍDA (Inserção A / Fase 1): deriva um JSON Schema de saída por task
+# agêntica, do expected_output CRUZADO com as colunas NOT NULL/tipo da entidade que a
+# task persiste. `required` só p/ NOT NULL (mínimo necessário — não sobre-especificar).
+# ─────────────────────────────────────────────────────────────────────
+def _notnull_cols(ddl: str) -> set:
+    import re as _re
+    return {m.group(1) for m in _re.finditer(r'(?im)^\s*[`"]?(\w+)[`"]?\s+[^\n,]*\bNOT\s+NULL', ddl or "")}
+
+
+def _enum_options(ddl: str) -> Dict[str, List[str]]:
+    import re as _re
+    out: Dict[str, List[str]] = {}
+    for m in _re.finditer(r"(?im)^\s*[`\"]?(\w+)[`\"]?\s+ENUM\s*\(([^)]*)\)", ddl or ""):
+        opts = [o.strip().strip("'\"") for o in m.group(2).split(",") if o.strip()]
+        if opts:
+            out[m.group(1)] = opts
+    return out
+
+
+def _parse_expected_output_fields(text: str) -> Dict[str, str]:
+    """Extrai {campo: dica_de_tipo} do expected_output (prosa). Fatiar entre os INÍCIOS de campo
+    ('campo:') captura TODOS os campos mesmo quando vários estão na mesma linha. Só mantém campos
+    cuja dica contém um tipo reconhecível — evita capturar ruído de prosa."""
+    import re as _re
+    fields: Dict[str, str] = {}
+    if not text:
+        return fields
+    _typ_kw = ("json", "string", "str", "texto", "text", "enum", "number", "float",
+               "decimal", "int", "inteiro", "numero", "número", "bool", "uuid", "date",
+               "lista", "array", "objeto", "%")
+    marks = [(m.group(1), m.start(), m.end())
+             for m in _re.finditer(r'(?<![\w.])([a-z_][a-z0-9_]{2,})\s*:', text)]
+    for i, (name, _s, e) in enumerate(marks):
+        end = marks[i + 1][1] if i + 1 < len(marks) else len(text)
+        rest = text[e:end].strip()
+        if any(k in rest.lower() for k in _typ_kw) and name not in fields:
+            fields[name] = rest
+    return fields
+
+
+def _derive_output_schema(task_name: str, task_cfg: dict, model: Optional[dict]) -> Optional[dict]:
+    """JSON Schema de saída da task, do expected_output + colunas da entidade que melhor casa."""
+    exp = (task_cfg or {}).get("expected_output") or ""
+    raw_fields = _parse_expected_output_fields(exp)
+    if not raw_fields:
+        return None
+    # entidade que melhor casa os campos declarados (para tipos/NOT NULL/enum)
+    best_ent, best_hits = None, 0
+    for t, m in (model or {}).items():
+        hits = len(set(raw_fields) & {c for c, _ in m["cols"]})
+        if hits > best_hits:
+            best_ent, best_hits = t, hits
+    em = (model or {}).get(best_ent) if best_ent else None
+    coltype = {c: ty for c, ty in em["cols"]} if em else {}
+    notnull = _notnull_cols(em["ddl"]) if em else set()
+    enums = _enum_options(em["ddl"]) if em else {}
+    _JT = {"FLOAT": "number", "DOUBLE": "number", "DECIMAL": "number",
+           "INT": "integer", "BIGINT": "integer", "TINYINT": "integer"}
+    props, required = {}, []
+    for f, hint in raw_fields.items():
+        h = (hint or "").lower()
+        if f in coltype:
+            jt = _JT.get(coltype[f], "string")
+        elif any(k in h for k in ("json", "objeto", "array", "lista")):
+            jt = "string"          # objeto/array serão persistidos como JSON string (coluna TEXT)
+        elif any(k in h for k in ("float", "decimal", "numero", "número", "confian", "nivel", "nível", "percent")):
+            jt = "number"
+        elif any(k in h for k in ("int", "inteiro")):
+            jt = "integer"
+        elif "bool" in h:
+            jt = "boolean"
+        else:
+            jt = "string"
+        spec = {"type": jt}
+        if f in enums:
+            spec["enum_domain"] = enums[f]
+        if jt == "number":
+            spec["coerce_from_enum"] = {"baixa": 0.4, "baixo": 0.4, "media": 0.7, "média": 0.7,
+                                        "medio": 0.7, "médio": 0.7, "alta": 0.9, "alto": 0.9}
+        # só mantém o campo se casa coluna OU tem tipo não-trivial declarado
+        if f in coltype or jt != "string" or any(k in h for k in ("string", "texto", "text", "uuid", "date")):
+            props[f] = spec
+            if f in notnull:                     # required MÍNIMO: só o que o banco exige
+                required.append(f)
+    if not props:
+        return None
+    return {"type": "object", "required": required, "properties": props}
+
+
+def _annotate_tasks_output_schema(tasks_yaml: str, schema_sql: str) -> str:
+    """Injeta `output_schema:` por task no tasks.yaml (para o ws-server validar a saída do agente)."""
+    if not tasks_yaml or not schema_sql:
+        return tasks_yaml
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml) or {}
+    except Exception:
+        return tasks_yaml
+    if not isinstance(parsed, dict):
+        return tasks_yaml
+    model = _schema_model(schema_sql)
+    changed = False
+    for tname, cfg in parsed.items():
+        if not isinstance(cfg, dict) or "output_schema" in cfg:
+            continue
+        sch = _derive_output_schema(tname, cfg, model)
+        if sch and sch.get("properties"):
+            cfg["output_schema"] = sch
+            changed = True
+    if not changed:
+        return tasks_yaml
+    try:
+        import yaml as _yaml
+        return _yaml.safe_dump(parsed, allow_unicode=True, sort_keys=False)
+    except Exception:
+        return tasks_yaml
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -5089,6 +5269,15 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         if _coh_viol:
             print("[CODE-GEN][COERÊNCIA] task(s) citam tabela inexistente no schema: "
                   + "; ".join(f"{k} → {v}" for k, v in _coh_viol.items()))
+
+    # CONTRATO DE SAÍDA (Inserção A / Fase 1): injeta `output_schema` por task agêntica no tasks.yaml,
+    # derivado do expected_output + colunas NOT NULL/tipo da entidade. O ws-server valida a saída do
+    # agente contra esse schema (fail-loud se faltar obrigatório). O tasks.yaml anotado flui abaixo.
+    if tasks_yaml and _schema_looks_real(_schema_sql_cg):
+        _before = tasks_yaml
+        tasks_yaml = _annotate_tasks_output_schema(tasks_yaml, _schema_sql_cg)
+        if tasks_yaml != _before:
+            print("[CODE-GEN][CONTRATO] output_schema injetado nas tasks agênticas do tasks.yaml")
 
     # F2 Fase 3: tools MCP atribuídas aos agentes (etapa MCP do Projeto) entram no
     # agents_map ANTES da injeção — assim os agentes ganham as tools MCP no agents.yaml.
