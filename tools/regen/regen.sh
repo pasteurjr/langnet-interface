@@ -17,7 +17,8 @@ case "$cmd" in
   screens)  clean_pycache; "$PY" "$HERE/regen_screens.py" ;;
   adapters) clean_pycache; "$PY" "$HERE/regen_adapters_tail.py" ;;
   wsserver) clean_pycache; "$PY" "$HERE/regen_wsserver.py" ;;
-  all)      clean_pycache; "$PY" "$HERE/regen_adapters_tail.py"; "$PY" "$HERE/regen_wsserver.py"; "$PY" "$HERE/regen_screens.py" ;;
-  *) echo "uso: $0 [all|screens|adapters|wsserver]"; exit 2 ;;
+  okf)      clean_pycache; "$PY" "$HERE/regen_okf.py" ;;
+  all)      clean_pycache; "$PY" "$HERE/regen_adapters_tail.py"; "$PY" "$HERE/regen_wsserver.py"; "$PY" "$HERE/regen_okf.py"; "$PY" "$HERE/regen_screens.py" ;;
+  *) echo "uso: $0 [all|screens|adapters|wsserver|okf]"; exit 2 ;;
 esac
 echo "[regen] OK ($cmd)"

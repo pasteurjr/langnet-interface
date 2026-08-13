@@ -2677,6 +2677,17 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             except Exception:
                 pass
 
+        # CONTEXTO ATERRADO (Inserção E / Fase 2): injeta os conceitos OKF relevantes (tabelas reais
+        # do domínio + joins) para o agente NAO inventar entidades / consultar tabelas inexistentes.
+        _okf = getattr(adapters_module, "_okf_context", None)
+        if callable(_okf):
+            try:
+                _ctx = _okf(task_name, input_data, description)
+            except Exception:
+                _ctx = ""
+            if _ctx:
+                description = description.rstrip() + "\\n\\nCONTEXTO DO DOMINIO (referencia — tabelas e relacoes REAIS; use SOMENTE estas, NAO invente outras):\\n" + _ctx
+
         task = _build_task(task_name, agent, description)
         crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
 
@@ -3411,6 +3422,34 @@ _LIST_HELPER = (
     "            obj[k] = _json.dumps(obj[k], ensure_ascii=False)\n"
     "    missing = [k for k in ((schema or {}).get('required') or []) if obj.get(k) in (None, '', [])]\n"
     "    return obj, missing\n"
+    "\n\n"
+    "def _okf_context(task_name, input_data, description=''):\n"
+    "    \"\"\"CONTEXTO ATERRADO (Inserção E): seleciona conceitos OKF relevantes (tabelas citadas na\n"
+    "    descrição/inputs + vizinhos por FK) e devolve markdown p/ o agente não inventar entidades.\n"
+    "    Lê ./knowledge/tables/*.md (co-locado com adapters.py).\"\"\"\n"
+    "    import os as _os, re as _re, glob as _glob\n"
+    "    base = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'knowledge', 'tables')\n"
+    "    if not _os.path.isdir(base):\n"
+    "        return ''\n"
+    "    files = {}\n"
+    "    for p in _glob.glob(_os.path.join(base, '*.md')):\n"
+    "        try: files[_os.path.splitext(_os.path.basename(p))[0]] = open(p, encoding='utf-8').read()\n"
+    "        except Exception: pass\n"
+    "    if not files:\n"
+    "        return ''\n"
+    "    hay = (str(description) + ' ' + ' '.join(map(str, (input_data or {}).keys())) + ' ' + str(task_name)).lower()\n"
+    "    rel = set()\n"
+    "    for name in files:\n"
+    "        for tok in (name, name.rstrip('s')):\n"
+    "            if tok and tok in hay:\n"
+    "                rel.add(name); break\n"
+    "    for name in list(rel):\n"
+    "        for m in _re.finditer(r'/tables/(\\w+)\\.md', files.get(name, '')):\n"
+    "            if m.group(1) in files:\n"
+    "                rel.add(m.group(1))\n"
+    "    if not rel:\n"
+    "        rel = set(sorted(files)[:6])\n"
+    "    return '\\n\\n'.join(files[n] for n in sorted(rel)[:8])\n"
 )
 
 
@@ -3691,6 +3730,54 @@ def _annotate_tasks_output_schema(tasks_yaml: str, schema_sql: str) -> str:
         return _yaml.safe_dump(parsed, allow_unicode=True, sort_keys=False)
     except Exception:
         return tasks_yaml
+
+
+# ─────────────────────────────────────────────────────────────────────
+# BUNDLE OKF (Inserção E / Fase 2): emite o domínio como conhecimento OKF v0.2
+# (Markdown + frontmatter YAML, FKs como wikilinks → grafo) para os agentes do
+# runtime consumirem como CONTEXTO ATERRADO — ataca a alucinação na raiz.
+# ─────────────────────────────────────────────────────────────────────
+def _emit_okf_bundle(schema_sql: str, spec_md: str = "", tasks_yaml: str = "",
+                     agents_yaml: str = "") -> List[Dict[str, str]]:
+    """Gera os arquivos do bundle OKF em ws-server/knowledge/ (1 .md por tabela + index + log)."""
+    import re as _re
+    model = _schema_model(schema_sql) if schema_sql else {}
+    if not model:
+        return []
+    files: List[Dict[str, str]] = []
+
+    def add(path, content):
+        files.append({"path": "ws-server/knowledge/" + path,
+                      "content": content if content.endswith("\n") else content + "\n",
+                      "language": "markdown"})
+
+    # index.md (raiz do bundle) — okf_version só na raiz, conforme a spec OKF
+    idx = ["---", "type: Knowledge Bundle", "okf_version: 0.2",
+           "title: Conhecimento do domínio (gerado pelo LangNet)", "---", "",
+           "# Tabelas", ""]
+    idx += [f"- [{t}](/tables/{t}.md)" for t in sorted(model)]
+    add("index.md", "\n".join(idx))
+
+    # tables/<t>.md — 1 conceito por tabela, com Schema + Joins (wikilinks nas FKs)
+    for t in sorted(model):
+        m = model[t]
+        ddl = m.get("ddl", "")
+        fks = {mm.group(1): mm.group(2) for mm in _re.finditer(
+            r'(?is)FOREIGN KEY\s*\(\s*[`"]?(\w+)[`"]?\s*\)\s*REFERENCES\s*[`"]?(\w+)', ddl)}
+        lines = ["---", "type: DB Table", f"title: {t}",
+                 f"description: Tabela {t} do domínio (schema real; use SOMENTE tabelas deste bundle).",
+                 f"resource: db://{t}", "status: stable", "---", "",
+                 "# Schema", "", "| Coluna | Tipo | Referência |", "|---|---|---|"]
+        for c, ct in m["cols"]:
+            ref = f"[{fks[c]}](/tables/{fks[c]}.md)" if c in fks else ""
+            lines.append(f"| `{c}` | {ct} | {ref} |")
+        if fks:
+            lines += ["", "# Joins", ""]
+            lines += [f"- `{c}` → [{r}](/tables/{r}.md)" for c, r in fks.items()]
+        add(f"tables/{t}.md", "\n".join(lines))
+
+    add("log.md", "# Histórico\n\n" + f"{len(model)} tabelas modeladas (gerado pelo LangNet).\n")
+    return files
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -5388,6 +5475,18 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         )
         files = [f for f in files if f["path"] != "db/schema.sql"]
         files.append({"path": "db/schema.sql", "content": _init_sql, "language": "sql"})
+
+    # === BUNDLE OKF (Inserção E / Fase 2): conhecimento do domínio p/ contexto aterrado ===
+    if _schema_looks_real(_schema_sql_cg):
+        try:
+            _okf_files = _emit_okf_bundle(_schema_sql_cg, spec_md, tasks_yaml, agents_yaml)
+            _okf_paths = {f["path"] for f in _okf_files}
+            files = [f for f in files if f["path"] not in _okf_paths]
+            files.extend(_okf_files)
+            if _okf_files:
+                print(f"[CODE-GEN][OKF] bundle de conhecimento emitido ({len(_okf_files)} arquivos em ws-server/knowledge/)")
+        except Exception as _oe:
+            print(f"[CODE-GEN][OKF] falha ao emitir bundle: {_oe}")
 
     return files
 
