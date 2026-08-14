@@ -489,6 +489,16 @@ async def execute_specification_generation(
             project_name=request.project_id  # TODO: Get actual project name
         )
 
+        # Inserção C (Fase 6): reforço de QUALIDADE DE REQUISITO — os 8 elementos + gap-analysis.
+        prompt += (
+            "\n\n=== QUALIDADE DE REQUISITO (obrigatório) ===\n"
+            "Para cada Caso de Uso, cubra explicitamente os 8 elementos de uma boa especificação: "
+            "(1) Objetivo, (2) Contexto, (3) Inputs, (4) Formato de saída, (5) Restrições (o que EVITAR), "
+            "(6) Critérios de avaliação, (7) Edge cases, (8) Passos de verificação. "
+            "ANTES de detalhar cada UC, faça uma breve GAP-ANALYSIS: liste requisitos faltantes, "
+            "ambiguidades e assunções. Torne restrições e edge cases EXPLÍCITOS."
+        )
+
         print(f"[SPEC GENERATION] ✅ STEP 3 OK: Prompt built: {len(prompt)} chars")
         sys.stdout.flush()
 

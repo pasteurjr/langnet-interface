@@ -3855,6 +3855,54 @@ def _annotate_tasks_verification(tasks_yaml: str, schema_sql: str) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────
+# QUALIDADE DE REQUISITO (Inserção C / Fase 6): gate dos 8 elementos + auto-crítica.
+# ─────────────────────────────────────────────────────────────────────
+_SPEC_8_ELEMENTS = ["objetivo", "contexto", "inputs", "output",
+                    "constraints", "evaluation", "edge_cases", "verification"]
+
+
+def _task_quality_report(tasks_yaml: str, schema_sql: str = "") -> Dict[str, Dict[str, bool]]:
+    """Por task: presença dos 8 elementos de uma boa especificação. GATE que surfaça lacunas."""
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml) or {}
+    except Exception:
+        return {}
+    if not isinstance(parsed, dict):
+        return {}
+    rep: Dict[str, Dict[str, bool]] = {}
+    for tname, cfg in parsed.items():
+        if not isinstance(cfg, dict):
+            continue
+        desc = str(cfg.get("description") or "")
+        dl = desc.lower()
+        verif = cfg.get("verification") or {}
+        rep[tname] = {
+            "objetivo": bool(desc.strip()),
+            "contexto": bool(schema_sql) or ("contexto" in dl),        # bundle OKF (Fase 2)
+            "inputs": ("input" in dl) or bool(verif.get("require_inputs")),
+            "output": bool(cfg.get("output_schema") or cfg.get("expected_output")),
+            "constraints": ("constraint" in dl) or ("[coerência" in dl) or bool(cfg.get("constraints")),
+            "evaluation": bool(verif),
+            "edge_cases": ("edge" in dl) or ("fallback" in dl) or bool(cfg.get("edge_cases")),
+            "verification": bool(verif),
+        }
+    return rep
+
+
+def get_self_critique_prompt(artifact: str, checklist: Optional[List[str]] = None) -> str:
+    """Prompt reusável de AUTO-CRÍTICA (à la RLAIF): um agente critica o ARTEFATO contra o checklist
+    dos 8 elementos, apontando cada lacuna e o que acrescentar."""
+    els = checklist or ["objetivo", "contexto", "inputs", "formato de saída",
+                        "restrições (constraints)", "critérios de avaliação",
+                        "edge cases", "passos de verificação"]
+    return ("Você é um revisor de especificações. Critique o ARTEFATO abaixo contra o CHECKLIST dos 8 "
+            "elementos de uma boa especificação. Para CADA elemento ausente ou fraco, aponte a lacuna e "
+            "sugira, em 1 linha, o que acrescentar. Seja específico e conciso.\n\nCHECKLIST:\n- "
+            + "\n- ".join(els) + "\n\nARTEFATO:\n" + str(artifact))
+
+
+# ─────────────────────────────────────────────────────────────────────
 # BUNDLE OKF (Inserção E / Fase 2): emite o domínio como conhecimento OKF v0.2
 # (Markdown + frontmatter YAML, FKs como wikilinks → grafo) para os agentes do
 # runtime consumirem como CONTEXTO ATERRADO — ataca a alucinação na raiz.
@@ -3964,6 +4012,25 @@ def _emit_okf_bundle(schema_sql: str, spec_md: str = "", tasks_yaml: str = "",
                 if verif.get("output_has"):
                     tl.append(f"- output_has: {', '.join(verif['output_has'])}")
             add(f"tasks/{tname}.md", "\n".join(tl))
+
+    # quality_report.md (Inserção C / Fase 6): GATE dos 8 elementos por task — surfaça lacunas.
+    if tasks_yaml:
+        _qr = _task_quality_report(tasks_yaml, schema_sql)
+        if _qr:
+            _hdr = ["objetivo", "contexto", "inputs", "output", "constraints", "evaluation", "edge_cases", "verification"]
+            ql = ["---", "type: Quality Report", "title: Qualidade de requisito das tasks (8 elementos)",
+                  "status: stable"] + _prov() + ["---", "",
+                  "# Completude por task (✓ presente · ✗ ausente)", "",
+                  "| Task | " + " | ".join(_hdr) + " |",
+                  "|---|" + "|".join(["---"] * len(_hdr)) + "|"]
+            for tn in sorted(_qr):
+                row = _qr[tn]
+                ql.append("| " + tn + " | " + " | ".join("✓" if row.get(h) else "✗" for h in _hdr) + " |")
+            _gaps = {tn: [h for h in _hdr if not r.get(h)] for tn, r in _qr.items() if not all(r.get(h) for h in _hdr)}
+            if _gaps:
+                ql += ["", "# Lacunas (o gate aponta o que falta)", ""]
+                ql += [f"- **{tn}**: falta {', '.join(g)}" for tn, g in sorted(_gaps.items())]
+            add("quality_report.md", "\n".join(ql))
 
     _log = ["# Histórico", "", f"{len(model)} tabelas modeladas.",
             f"Gerado por {generated_by} em {generated_at}."]
@@ -5705,6 +5772,18 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
             files.extend(_okf_files)
             if _okf_files:
                 print(f"[CODE-GEN][OKF] bundle de conhecimento emitido ({len(_okf_files)} arquivos em ws-server/knowledge/)")
+            # GATE de qualidade de requisito (Inserção C / Fase 6): loga lacunas (não-bloqueante).
+            try:
+                _qrep = _task_quality_report(tasks_yaml, _schema_sql_cg)
+                _hdr8 = _SPEC_8_ELEMENTS
+                _gaps = {tn: [h for h in _hdr8 if not r.get(h)] for tn, r in _qrep.items()
+                         if not all(r.get(h) for h in _hdr8)}
+                if _gaps:
+                    print(f"[CODE-GEN][REQUISITO] gate: {len(_gaps)}/{len(_qrep)} tasks com elementos "
+                          f"faltando (ver knowledge/quality_report.md). Ex.: "
+                          + "; ".join(f"{k}→falta {v}" for k, v in list(_gaps.items())[:3]))
+            except Exception:
+                pass
         except Exception as _oe:
             print(f"[CODE-GEN][OKF] falha ao emitir bundle: {_oe}")
 

@@ -184,6 +184,15 @@ async def execute_agent_task_spec_generation(
             data_model_schema_sql=data_model_schema_sql,
         )
 
+        # Inserção C (Fase 6): reforço de QUALIDADE DE REQUISITO por task (8 elementos + gap-analysis).
+        prompt += (
+            "\n\n=== QUALIDADE DE REQUISITO (obrigatório) ===\n"
+            "Para CADA task, deixe explícitos: Objetivo, Input format, expected_output, "
+            "CONSTRAINTS (o que NÃO fazer — ex.: não consultar tabelas fora do schema; não inventar dados) "
+            "e EDGE CASES (entrada incompleta/ambígua → como tratar, ex.: rotear para fallback_manual). "
+            "Antes de gerar, faça uma breve GAP-ANALYSIS listando requisitos faltantes e assunções."
+        )
+
         # 3. Salvar mensagem de início
         save_agent_task_spec_chat_message({
             "session_id": session_id,
