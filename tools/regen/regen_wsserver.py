@@ -17,6 +17,7 @@ WS = os.path.join(APP, "ws-server")
 schema_sql = open(os.path.join(APP, "db/schema.sql")).read()
 ty = open(os.path.join(WS, "tasks.yaml")).read()
 ty2 = L._annotate_tasks_output_schema(ty, schema_sql)
+ty2 = L._annotate_tasks_verification(ty2, schema_sql)
 if ty2 != ty:
     bak = os.path.join(WS, "tasks.yaml.bak")
     if not os.path.exists(bak):

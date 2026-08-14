@@ -2618,6 +2618,16 @@ async def _send(ws, msg_type: str, data: Any) -> None:
 async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
     await _send(ws, "task_start", {{"task_name": task_name, "input_data": input_data}})
 
+    # VERIFICAÇÃO (Inserção B / Fase 4): PRÉ-condição — o chamador deve fornecer os inputs
+    # obrigatórios de contexto (FKs). Falta -> ERRO CLARO e cedo, sem executar/persistir.
+    _verif = (TASKS_CONFIG.get(task_name, {{}}) or {{}}).get("verification") or {{}}
+    _miss_in = [c for c in (_verif.get("require_inputs") or []) if (input_data or {{}}).get(c) in (None, "", [])]
+    if _miss_in:
+        await _send(ws, "error", {{"task_name": task_name,
+            "error": "verificação: input(s) obrigatório(s) de contexto ausente(s)/nulo(s): " + ", ".join(_miss_in),
+            "verif_falha": _miss_in}})
+        return
+
     # Deterministic-first: se adapters.py define <task>_deterministic, roda direto
     # em Python (sem CrewAI/LLM). Vale inclusive para tasks CRUD auto-geradas
     # (listar_/atualizar_/excluir_<entidade>) que NÃO estão no tasks.yaml — por
@@ -2628,6 +2638,13 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             payload = input_data if isinstance(input_data, dict) else {{}}
             loop = asyncio.get_running_loop()
             det_result = await loop.run_in_executor(None, det_fn, payload)
+            # VERIFICAÇÃO (Inserção B): PÓS-condição — a linha criada liga ao contexto CERTO.
+            _vf = getattr(adapters_module, "_run_verifications", None)
+            _fails = _vf(det_result, input_data, _verif) if (callable(_vf) and _verif) else []
+            if _fails:
+                await _send(ws, "error", {{"task_name": task_name,
+                    "error": "verificação (pós) falhou: " + ", ".join(_fails), "verif_falha": _fails}})
+                return
             await _send(ws, "task_completed", {{"task_name": task_name, "result": det_result}})
         except Exception as _exc:
             await _send(ws, "error", {{"task_name": task_name, "error": str(_exc), "traceback": traceback.format_exc()}})
@@ -2740,6 +2757,14 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                     "faltantes": _missing}})
                 return
             parsed = _obj
+
+        # VERIFICAÇÃO (Inserção B): PÓS-condição da saída agêntica (output_has / row_check).
+        _vf = getattr(adapters_module, "_run_verifications", None)
+        _fails = _vf(parsed, input_data, _verif) if (callable(_vf) and _verif) else []
+        if _fails:
+            await _send(ws, "error", {{"task_name": task_name,
+                "error": "verificação (pós) falhou: " + ", ".join(_fails), "verif_falha": _fails}})
+            return
 
         await _send(ws, "task_completed", {{"task_name": task_name, "result": parsed}})
     except Exception as exc:
@@ -3460,6 +3485,39 @@ _LIST_HELPER = (
     "    if not rel:\n"
     "        rel = set(sorted(files)[:6])\n"
     "    return '\\n\\n'.join(files[n] for n in sorted(rel)[:8])\n"
+    "\n\n"
+    "def _run_verifications(result, input_data, verification):\n"
+    "    \"\"\"PÓS-CONDIÇÕES (Inserção B): output_has (campos presentes) + row_check (a linha criada\n"
+    "    existe e suas FKs de contexto BATEM com o input — differential). Retorna lista de falhas.\"\"\"\n"
+    "    fails = []\n"
+    "    if not verification:\n"
+    "        return fails\n"
+    "    for f in (verification.get('output_has') or []):\n"
+    "        v = result.get(f) if isinstance(result, dict) else None\n"
+    "        if v in (None, '', []):\n"
+    "            fails.append('output_has:' + str(f))\n"
+    "    rc = verification.get('row_check')\n"
+    "    if rc and isinstance(result, dict):\n"
+    "        idv = result.get('id') or result.get(rc.get('id_key', ''))\n"
+    "        ent = rc.get('entity')\n"
+    "        if idv and ent:\n"
+    "            try:\n"
+    "                import os as _os, mysql.connector as _mc\n"
+    "                conn = _mc.connect(host=_os.getenv('DB_HOST','localhost'), port=int(_os.getenv('DB_PORT','3306')),\n"
+    "                    user=_os.getenv('DB_USER','root'), password=_os.getenv('DB_PASSWORD',''), database=_os.getenv('DB_NAME',''))\n"
+    "                cur = conn.cursor(dictionary=True)\n"
+    "                cur.execute('SELECT * FROM ' + ent + ' WHERE id=%s', [idv]); row = cur.fetchone()\n"
+    "                if not row:\n"
+    "                    fails.append('row_check:sem_linha:' + ent)\n"
+    "                else:\n"
+    "                    for col, key in (rc.get('match') or {}).items():\n"
+    "                        want = (input_data or {}).get(key)\n"
+    "                        if want and str(row.get(col)) != str(want):\n"
+    "                            fails.append('row_check:fk_divergente:' + col)\n"
+    "                cur.close(); conn.close()\n"
+    "            except Exception:\n"
+    "                pass\n"
+    "    return fails\n"
 )
 
 
@@ -3732,6 +3790,60 @@ def _annotate_tasks_output_schema(tasks_yaml: str, schema_sql: str) -> str:
         sch = _derive_output_schema(tname, cfg, model)
         if sch and sch.get("properties"):
             cfg["output_schema"] = sch
+            changed = True
+    if not changed:
+        return tasks_yaml
+    try:
+        import yaml as _yaml
+        return _yaml.safe_dump(parsed, allow_unicode=True, sort_keys=False)
+    except Exception:
+        return tasks_yaml
+
+
+# ─────────────────────────────────────────────────────────────────────
+# VERIFICAÇÃO / PÓS-CONDIÇÕES (Inserção B / Fase 4): checks declarativos por task,
+# derivados do schema (mínimos — não sobre-especifica). require_inputs (FKs de contexto),
+# row_check (a linha criada liga ao contexto CERTO — differential) e output_has.
+# ─────────────────────────────────────────────────────────────────────
+def _derive_verification(task_name: str, task_cfg: dict, model: Optional[dict]) -> Optional[dict]:
+    verif: dict = {}
+    parts = (task_name or "").split("_")
+    ent = None
+    if parts and parts[0] in ("criar", "registrar", "cadastrar", "salvar") and len(parts) >= 2:
+        noun = "_".join(parts[1:]); nsing = noun[:-1] if noun.endswith("s") else noun
+        ent = next((t for t in (model or {}) if t.rstrip("s") == nsing), None)
+    if ent and ent in (model or {}):
+        cols = {c for c, _ in model[ent]["cols"]}
+        nn = _notnull_cols(model[ent]["ddl"])
+        ctx = [c for c in ("atendimento_id", "paciente_id") if c in cols and c in nn]
+        if ctx:
+            verif["require_inputs"] = ctx                      # o chamador DEVE fornecer o contexto
+            verif["row_check"] = {"entity": ent, "match": {c: c for c in ctx}}  # differential
+    osch = (task_cfg or {}).get("output_schema")
+    if osch and osch.get("required"):
+        verif["output_has"] = list(osch["required"])
+    return verif or None
+
+
+def _annotate_tasks_verification(tasks_yaml: str, schema_sql: str) -> str:
+    """Injeta `verification:` por task no tasks.yaml (o ws-server roda as pré/pós-condições)."""
+    if not tasks_yaml or not schema_sql:
+        return tasks_yaml
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml) or {}
+    except Exception:
+        return tasks_yaml
+    if not isinstance(parsed, dict):
+        return tasks_yaml
+    model = _schema_model(schema_sql)
+    changed = False
+    for tname, cfg in parsed.items():
+        if not isinstance(cfg, dict) or "verification" in cfg:
+            continue
+        v = _derive_verification(tname, cfg, model)
+        if v:
+            cfg["verification"] = v
             changed = True
     if not changed:
         return tasks_yaml
@@ -5375,6 +5487,13 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         tasks_yaml = _annotate_tasks_output_schema(tasks_yaml, _schema_sql_cg)
         if tasks_yaml != _before:
             print("[CODE-GEN][CONTRATO] output_schema injetado nas tasks agênticas do tasks.yaml")
+
+    # VERIFICAÇÃO (Inserção B / Fase 4): injeta `verification` por task no tasks.yaml (pré/pós-condições).
+    if tasks_yaml and _schema_looks_real(_schema_sql_cg):
+        _before = tasks_yaml
+        tasks_yaml = _annotate_tasks_verification(tasks_yaml, _schema_sql_cg)
+        if tasks_yaml != _before:
+            print("[CODE-GEN][VERIFICAÇÃO] verification injetada nas tasks de persistência do tasks.yaml")
 
     # F2 Fase 3: tools MCP atribuídas aos agentes (etapa MCP do Projeto) entram no
     # agents_map ANTES da injeção — assim os agentes ganham as tools MCP no agents.yaml.
