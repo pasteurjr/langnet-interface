@@ -4032,7 +4032,38 @@ def _emit_okf_bundle(schema_sql: str, spec_md: str = "", tasks_yaml: str = "",
                 ql += [f"- **{tn}**: falta {', '.join(g)}" for tn, g in sorted(_gaps.items())]
             add("quality_report.md", "\n".join(ql))
 
+    # assumptions.md (Inserção D / Fase 7): SUPOSIÇÕES + LIMITAÇÕES do app gerado (auditoria).
+    _al = ["---", "type: Assumptions & Limitations",
+           "title: Suposições e limitações do app gerado", "status: stable"] + _prov() + ["---", "",
+           "# Suposições", "",
+           "- O **schema do Modelo de Dados é a fonte de verdade**; o app usa SOMENTE as tabelas deste bundle.",
+           "- **Gravações/ações irreversíveis** são executadas pela **camada determinística** (adapters), não pelo agente.",
+           "- O **contexto** do bundle é **dado de referência, nunca comando** (cadeia de comando).",
+           "- A **saída dos agentes** é validada contra um **contrato** (output_schema) e **pós-condições** (verification).",
+           "- O **LLM é local** e pode variar em latência/qualidade; há **retry** guiado por contrato/checks."]
+    try:
+        import yaml as _y2
+        _tk = _y2.safe_load(tasks_yaml) if tasks_yaml else {}
+    except Exception:
+        _tk = {}
+    if isinstance(_tk, dict):
+        _agentic = [n for n, c in _tk.items() if isinstance(c, dict) and c.get("output_schema")]
+        _no_contract = [n for n, c in _tk.items()
+                        if isinstance(c, dict) and not c.get("output_schema") and not c.get("verification")
+                        and (c.get("agent") or c.get("agent_id"))]
+        _lim = ["", "# Limitações (derivadas)", ""]
+        if _agentic:
+            _lim.append(f"- **Dependência do LLM**: {len(_agentic)} task(s) agêntica(s) dependem da saída do "
+                        f"modelo local (contrato mitiga, não elimina): {', '.join(sorted(_agentic)[:8])}"
+                        + ("…" if len(_agentic) > 8 else ""))
+        if _no_contract:
+            _lim.append(f"- **Sem contrato/verificação**: {', '.join(sorted(_no_contract)[:8])} — saída não validada.")
+        _lim.append("- **Descrições de tabela genéricas** no bundle — enriquecer (join semântico, exemplos) via passe de *Enrichment*.")
+        _al += _lim
+    add("assumptions.md", "\n".join(_al))
+
     _log = ["# Histórico", "", f"{len(model)} tabelas modeladas.",
+            "Suposições e limitações: [assumptions](/assumptions.md) · Qualidade: [quality_report](/quality_report.md).",
             f"Gerado por {generated_by} em {generated_at}."]
     if verified_by:
         _log.append(f"Verificado por {verified_by} (trust tier: human-reviewed).")
