@@ -3859,13 +3859,39 @@ def _annotate_tasks_verification(tasks_yaml: str, schema_sql: str) -> str:
 # (Markdown + frontmatter YAML, FKs como wikilinks → grafo) para os agentes do
 # runtime consumirem como CONTEXTO ATERRADO — ataca a alucinação na raiz.
 # ─────────────────────────────────────────────────────────────────────
+def _okf_provenance_fm(generated_by, generated_at, verified_by=None, source_ref=None, stale_after=None):
+    """Linhas de frontmatter de PROVENIÊNCIA/CONFIANÇA/ATUALIDADE no vocabulário OKF v0.2
+    (Inserção F): sources / generated:{by,at} / verified:[{by,at}] / stale_after.
+    Convenção de ator: 'langnet/<modelo>' (agente), 'human:<id>' (pessoa) — deriva o trust tier."""
+    lines = []
+    if source_ref:
+        lines += ["sources:", f"  - resource: {source_ref}"]
+    if generated_by:
+        lines += ["generated:", f"  by: {generated_by}", f"  at: {generated_at}"]
+    if verified_by:
+        lines += ["verified:", f"  - by: {verified_by}", f"    at: {generated_at}"]
+    if stale_after:
+        lines.append(f"stale_after: {stale_after}")
+    return lines
+
+
 def _emit_okf_bundle(schema_sql: str, spec_md: str = "", tasks_yaml: str = "",
-                     agents_yaml: str = "") -> List[Dict[str, str]]:
-    """Gera os arquivos do bundle OKF em ws-server/knowledge/ (1 .md por tabela + index + log)."""
+                     agents_yaml: str = "", generated_by: str = "langnet",
+                     generated_at: Optional[str] = None, verified_by: Optional[str] = None,
+                     source_ref: Optional[str] = None,
+                     stale_after: Optional[str] = None) -> List[Dict[str, str]]:
+    """Gera o bundle OKF em ws-server/knowledge/: index + tabelas (com proveniência OKF v0.2) +
+    tasks como `Attested Computation` (receipt=output_schema, attester=verification) + log."""
     import re as _re
     model = _schema_model(schema_sql) if schema_sql else {}
     if not model:
         return []
+    if not generated_at:
+        try:
+            from datetime import datetime as _dt
+            generated_at = _dt.now().isoformat(timespec="seconds")
+        except Exception:
+            generated_at = ""
     files: List[Dict[str, str]] = []
 
     def add(path, content):
@@ -3873,14 +3899,18 @@ def _emit_okf_bundle(schema_sql: str, spec_md: str = "", tasks_yaml: str = "",
                       "content": content if content.endswith("\n") else content + "\n",
                       "language": "markdown"})
 
+    _prov = lambda: _okf_provenance_fm(generated_by, generated_at, verified_by, source_ref, stale_after)
+
     # index.md (raiz do bundle) — okf_version só na raiz, conforme a spec OKF
     idx = ["---", "type: Knowledge Bundle", "okf_version: 0.2",
-           "title: Conhecimento do domínio (gerado pelo LangNet)", "---", "",
+           "title: Conhecimento do domínio (gerado pelo LangNet)"] + _prov() + ["---", "",
            "# Tabelas", ""]
     idx += [f"- [{t}](/tables/{t}.md)" for t in sorted(model)]
+    if tasks_yaml:
+        idx += ["", "# Computações (Attested Computation)", ""]
     add("index.md", "\n".join(idx))
 
-    # tables/<t>.md — 1 conceito por tabela, com Schema + Joins (wikilinks nas FKs)
+    # tables/<t>.md — 1 conceito por tabela, com proveniência + Schema + Joins (wikilinks nas FKs)
     for t in sorted(model):
         m = model[t]
         ddl = m.get("ddl", "")
@@ -3888,7 +3918,7 @@ def _emit_okf_bundle(schema_sql: str, spec_md: str = "", tasks_yaml: str = "",
             r'(?is)FOREIGN KEY\s*\(\s*[`"]?(\w+)[`"]?\s*\)\s*REFERENCES\s*[`"]?(\w+)', ddl)}
         lines = ["---", "type: DB Table", f"title: {t}",
                  f"description: Tabela {t} do domínio (schema real; use SOMENTE tabelas deste bundle).",
-                 f"resource: db://{t}", "status: stable", "---", "",
+                 f"resource: db://{t}", "status: stable"] + _prov() + ["---", "",
                  "# Schema", "", "| Coluna | Tipo | Referência |", "|---|---|---|"]
         for c, ct in m["cols"]:
             ref = f"[{fks[c]}](/tables/{fks[c]}.md)" if c in fks else ""
@@ -3898,7 +3928,48 @@ def _emit_okf_bundle(schema_sql: str, spec_md: str = "", tasks_yaml: str = "",
             lines += [f"- `{c}` → [{r}](/tables/{r}.md)" for c, r in fks.items()]
         add(f"tables/{t}.md", "\n".join(lines))
 
-    add("log.md", "# Histórico\n\n" + f"{len(model)} tabelas modeladas (gerado pelo LangNet).\n")
+    # tasks/<task>.md — conceitos `Attested Computation` (Inserção F + §10): reconhece nossos
+    # adapters determinísticos + contrato de saída (receipt) + verificação (attester) no padrão OKF.
+    try:
+        import yaml as _yaml
+        _tasks = _yaml.safe_load(tasks_yaml) if tasks_yaml else {}
+    except Exception:
+        _tasks = {}
+    if isinstance(_tasks, dict):
+        for tname, cfg in _tasks.items():
+            if not isinstance(cfg, dict):
+                continue
+            osch = cfg.get("output_schema")
+            verif = cfg.get("verification")
+            if not (osch or verif):
+                continue
+            tl = ["---", "type: Attested Computation", f"title: {tname}",
+                  f"resource: task://{tname}", "runtime: mysql", "status: stable"] + _prov() + ["---", "",
+                  "# Computação sancionada",
+                  f"Executada pela camada determinística (`adapters:{tname}_deterministic`). "
+                  "O agente PODE apenas fornecer valores para os parâmetros; NÃO edita a computação."]
+            if osch:
+                _req = ", ".join(osch.get("required") or []) or "(nenhum obrigatório)"
+                _props = ", ".join((osch.get("properties") or {}).keys()) or "—"
+                tl += ["", "# Receipt (contrato de saída)",
+                       f"- Campos obrigatórios: {_req}", f"- Propriedades: {_props}"]
+            if verif:
+                tl += ["", "# Attester (verificação)"]
+                if verif.get("require_inputs"):
+                    tl.append(f"- require_inputs: {', '.join(verif['require_inputs'])}")
+                if verif.get("row_check"):
+                    _rc = verif["row_check"]
+                    tl.append(f"- row_check: linha em [{_rc.get('entity')}](/tables/{_rc.get('entity')}.md) "
+                              f"com FKs de contexto {list((_rc.get('match') or {}).keys())}")
+                if verif.get("output_has"):
+                    tl.append(f"- output_has: {', '.join(verif['output_has'])}")
+            add(f"tasks/{tname}.md", "\n".join(tl))
+
+    _log = ["# Histórico", "", f"{len(model)} tabelas modeladas.",
+            f"Gerado por {generated_by} em {generated_at}."]
+    if verified_by:
+        _log.append(f"Verificado por {verified_by} (trust tier: human-reviewed).")
+    add("log.md", "\n".join(_log))
     return files
 
 
@@ -5419,7 +5490,7 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
             with _gdb2() as _c2:
                 _cur2 = _c2.cursor(dictionary=True)
                 _cur2.execute(
-                    "SELECT schema_sql, entities_json, target_dbms FROM data_model_sessions "
+                    "SELECT schema_sql, entities_json, target_dbms, status, approved_by FROM data_model_sessions "
                     # 'draft' incluído: o endpoint de Modelo de Dados salva a sessão como 'draft'
                     # por padrão (aprovação é opcional). Sem isso, o code-gen não achava o schema
                     # e PULAVA a geração dos adapters CRUD (listar_/excluir_) — bug #9.
@@ -5605,10 +5676,30 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         files = [f for f in files if f["path"] != "db/schema.sql"]
         files.append({"path": "db/schema.sql", "content": _init_sql, "language": "sql"})
 
-    # === BUNDLE OKF (Inserção E / Fase 2): conhecimento do domínio p/ contexto aterrado ===
+    # === BUNDLE OKF (Inserção E/F): conhecimento do domínio + PROVENIÊNCIA OKF (Fase 5) ===
     if _schema_looks_real(_schema_sql_cg):
         try:
-            _okf_files = _emit_okf_bundle(_schema_sql_cg, spec_md, tasks_yaml, agents_yaml)
+            # Proveniência OKF (Inserção F): quem gerou (modelo), quando, e — se aprovado por humano —
+            # o verified (trust tier). Best-effort a partir da sessão de Modelo de Dados (_r2).
+            _gen_by = "langnet/" + str(os.getenv("LMSTUDIO_MODEL_NAME") or "modelo-local")
+            _gen_at = None
+            try:
+                from datetime import datetime as _dt
+                _gen_at = _dt.now().isoformat(timespec="seconds")
+            except Exception:
+                pass
+            _ver_by = None
+            _src_ref = None
+            try:
+                if isinstance(_r2, dict):
+                    if str(_r2.get("status") or "").lower() in ("approved", "aprovado"):
+                        _ver_by = "human:" + str(_r2.get("approved_by") or "operador")
+                    _src_ref = "data-model://" + str(state.get("project_id") or "")
+            except Exception:
+                pass
+            _okf_files = _emit_okf_bundle(_schema_sql_cg, spec_md, tasks_yaml, agents_yaml,
+                                          generated_by=_gen_by, generated_at=_gen_at,
+                                          verified_by=_ver_by, source_ref=_src_ref)
             _okf_paths = {f["path"] for f in _okf_files}
             files = [f for f in files if f["path"] not in _okf_paths]
             files.extend(_okf_files)
