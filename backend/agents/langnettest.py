@@ -48,6 +48,10 @@ def _get_llm():
 
 
 def _call_llm(prompt: str) -> str:
+    import os as _os
+    if (_os.getenv("LLM_PROVIDER", "openai") or "").lower() == "lmstudio":
+        from agents.langnetagents import _direct_llm_complete
+        return _direct_llm_complete(prompt)
     llm = _get_llm()
     try:
         return llm.call([{"role": "user", "content": prompt}])

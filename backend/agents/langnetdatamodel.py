@@ -269,6 +269,12 @@ def _safe_json_parse(text: str) -> Any:
 
 def _call_llm(prompt: str, temperature: float = 0.2) -> str:
     """Chamada síncrona à LLM (CrewAI LLM)."""
+    # LM Studio local: chamada DIRETA em streaming (evita o estol do litellm do CrewAI
+    # em respostas longas — mesmo fix do executor principal e do LLMClient).
+    import os as _os
+    if (_os.getenv("LLM_PROVIDER", "openai") or "").lower() == "lmstudio":
+        from agents.langnetagents import _direct_llm_complete
+        return _direct_llm_complete(prompt)
     llm = _get_llm()
     try:
         return llm.call([{"role": "user", "content": prompt}])
