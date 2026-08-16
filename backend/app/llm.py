@@ -146,18 +146,44 @@ class LLMClient:
         if model_override:
             print(f"[LLM] Using model override: {model_override} (default: {self.model})")
 
-        response = self.client.chat.completions.create(
-            model=model_to_use,
-            messages=messages,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            **extra_params,  # Adiciona thinking mode se deepseek-reasoner
-            **kwargs
-        )
-
-        # ETAPA 4: Detectar truncamento
-        finish_reason = response.choices[0].finish_reason
-        content = response.choices[0].message.content
+        # LM Studio local: STREAMING. Gerações longas (ex.: spec de 24k tokens) sobre o
+        # link residencial externo estolam no não-streaming (a conexão idle é derrubada e
+        # o transporte da resposta trava em ~33KB). O streaming mantém a conexão viva
+        # (bytes fluindo) e recebe a resposta completa. Demais providers: não-streaming.
+        if self.provider == "lmstudio":
+            _stream = self.client.chat.completions.create(
+                model=model_to_use,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                stream=True,
+                **extra_params,
+                **kwargs
+            )
+            _parts = []
+            finish_reason = None
+            for _chunk in _stream:
+                try:
+                    _ch = _chunk.choices[0]
+                    if _ch.delta and _ch.delta.content:
+                        _parts.append(_ch.delta.content)
+                    if _ch.finish_reason:
+                        finish_reason = _ch.finish_reason
+                except (IndexError, AttributeError):
+                    continue
+            content = "".join(_parts)
+        else:
+            response = self.client.chat.completions.create(
+                model=model_to_use,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **extra_params,  # Adiciona thinking mode se deepseek-reasoner
+                **kwargs
+            )
+            # ETAPA 4: Detectar truncamento
+            finish_reason = response.choices[0].finish_reason
+            content = response.choices[0].message.content
 
         print(f"[LLM] finish_reason: {finish_reason}, output_length: {len(content)} chars")
 
