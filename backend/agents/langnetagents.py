@@ -99,25 +99,40 @@ def _safe_format_description(template: str, mapping: Dict[str, Any]) -> str:
 
 
 def _direct_llm_complete(description: str, expected_output: str = "") -> str:
-    """Chamada DIRETA ao LM Studio (openai SDK) — fallback quando o CrewAI retorna vazio.
-    O CrewAI + modelo local (qwen) às vezes devolve 'Invalid response from LLM call - None
-    or empty' mesmo com o modelo gerando corretamente por chamada direta. Este helper reusa a
-    MESMA descrição já formatada e devolve o texto cru para o output_func processar."""
+    """Chamada DIRETA ao LM Studio (openai SDK) — via primária para tasks SEM tools.
+    O CrewAI + litellm/httpx estola no transporte de respostas LONGAS do modelo local
+    (recebe parte e trava, ex.: 33KB de 57KB), causando 'hang' de dezenas de minutos.
+    A chamada direta em STREAMING mantém a conexão viva (bytes fluindo continuamente),
+    evitando o estol do link, e usa timeout longo compatível com gerações de ~16 min.
+    Reusa a MESMA descrição já formatada e devolve o texto cru p/ o output_func processar."""
     import os as _os
     from openai import OpenAI as _OpenAI
     base = _os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1")
     model = _os.getenv("LMSTUDIO_MODEL_NAME", "qwen2.5-coder-32b-instruct")
-    client = _OpenAI(api_key=_os.getenv("LMSTUDIO_API_KEY", "lm-studio"), base_url=base)
+    _timeout = float(_os.getenv("LMSTUDIO_TIMEOUT", "1800"))
+    client = _OpenAI(api_key=_os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
+                     base_url=base, timeout=_timeout, max_retries=1)
     prompt = description
     if expected_output:
         prompt += "\n\nFORMATO DE SAÍDA ESPERADO:\n" + expected_output
-    resp = client.chat.completions.create(
+    # STREAMING: acumula os deltas. Mantém a conexão ativa durante toda a geração
+    # (o link residencial derruba conexões idle longas — daí o estol do não-streaming).
+    stream = client.chat.completions.create(
         model=model,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=int(_os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
         temperature=0.2,
+        stream=True,
     )
-    return resp.choices[0].message.content or ""
+    parts = []
+    for chunk in stream:
+        try:
+            delta = chunk.choices[0].delta.content
+            if delta:
+                parts.append(delta)
+        except (IndexError, AttributeError):
+            continue
+    return "".join(parts)
 
 
 class _DirectResult:
@@ -8212,7 +8227,21 @@ def execute_task_with_context(
             raise AttributeError(f"Team object has neither 'kickoff' nor 'executar' method: {type(crew).__name__}")
 
         try:
-            result = _run_crew()
+            _provider_now = (os.getenv("LLM_PROVIDER", "openai") or "").lower()
+            if _provider_now == "lmstudio" and not tools_list:
+                # Task SEM tools no LLM local: via DIRETA em streaming — evita o estol do
+                # litellm/httpx do CrewAI em respostas LONGAS (recebe parte e trava). Tasks
+                # COM tools seguem pelo CrewAI (precisam da orquestração de tool-calling).
+                print(f"[DIRECT] '{task_name}' sem tools — chamada DIRETA (streaming) ao LM Studio")
+                _direct = _direct_llm_complete(task_description, task_expected_output)
+                if not _direct or len(_direct) < 20:
+                    print(f"[DIRECT] resposta curta/vazia ({len(_direct or '')} chars) — tentando CrewAI")
+                    result = _run_crew()
+                else:
+                    print(f"[DIRECT] OK — {len(_direct)} chars")
+                    result = _DirectResult(_direct)
+            else:
+                result = _run_crew()
         except Exception as _kick_err:
             _msg = str(_kick_err)
             _provider = (os.getenv("LLM_PROVIDER", "openai") or "").lower()
