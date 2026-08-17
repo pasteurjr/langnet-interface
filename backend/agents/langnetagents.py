@@ -4369,6 +4369,7 @@ def _parse_task_description_to_python(desc: str) -> str:
     with 8 spaces to fit inside ``try:`` of the wrapper). Returns "" if no SQL."""
     import re as _re
     lines_out: List[str] = []
+    _steps: List = []  # (kind, py_lines) por passo — p/ reordenar INSERT antes de UPDATE
     captured_vars: List[str] = []  # variable names bound by SELECT id captures
 
     # Split into logical "steps": lines that start with a number "N. " or bare SQL.
@@ -4436,9 +4437,24 @@ def _parse_task_description_to_python(desc: str) -> str:
         py = _emit_sql_step(query, params_str, in_loop, loop_item, loop_list,
                             capture_var, captured_vars)
         if py:
-            lines_out.extend(py)
+            _ql = query.strip().lower()
+            _kind = ('update' if _ql.startswith('update')
+                     else 'insert' if _ql.startswith('insert')
+                     else 'select' if _ql.startswith('select') else 'other')
+            _steps.append((_kind, py))
         i += 1
 
+    if not _steps:
+        return ""
+    # REORDENA: SELECT/INSERT/outros ANTES de UPDATE. O UPDATE (ex.: CONCAT em
+    # detalhes_medicos) precisa da linha JÁ criada pelo INSERT; o LLM às vezes escreve o
+    # UPDATE antes do INSERT e o UPDATE não pega nada (linha inexistente -> detalhes NULL).
+    for _k, _p in _steps:
+        if _k != 'update':
+            lines_out.extend(_p)
+    for _k, _p in _steps:
+        if _k == 'update':
+            lines_out.extend(_p)
     if not lines_out:
         return ""
 
@@ -4470,6 +4486,22 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
         indent = "    "
     else:
         indent = ""
+
+    # ROBUSTEZ do SQL gerado pelo LLM (bugs comuns nos adapters agênticos):
+    # (1) CONCAT(col, ...) com col NULL -> NULL (apaga o texto). Envolve o 1º arg em COALESCE.
+    #     Feito na STRING da query (antes do repr, que escapa as aspas corretamente — o hot-patch
+    #     via aspas simples colidia com a string Python).
+    query = _re.sub(r'CONCAT\(\s*([A-Za-z_]\w*)\s*,', r"CONCAT(COALESCE(\1, ''),", query)
+    # (2) INSERT INTO t(cols) VALUES(...) -> + ON DUPLICATE KEY UPDATE. Evita erro de UNIQUE
+    #     quando várias tasks gravam a MESMA entidade compartilhada (ex.: prontuário por paciente):
+    #     a 1ª cria, as demais atualizam. Casa VALUES até o fim ($), então CURDATE() etc. não quebram.
+    _ins = _re.match(r'(?is)^\s*INSERT\s+(?:IGNORE\s+)?INTO\s+`?(\w+)`?\s*\(([^)]+)\)\s*VALUES\s*(\(.*\))\s*$', query)
+    if _ins and 'on duplicate' not in query.lower():
+        _cols = [c.strip().strip('`') for c in _ins.group(2).split(',')]
+        _upd = (", ".join("`%s`=VALUES(`%s`)" % (c, c) for c in _cols[1:])
+                if len(_cols) > 1 else "`%s`=`%s`" % (_cols[0], _cols[0]))
+        query = "INSERT INTO `%s`(%s) VALUES%s ON DUPLICATE KEY UPDATE %s" % (
+            _ins.group(1), _ins.group(2), _ins.group(3), _upd)
 
     q_repr = repr(query)
     if py_params is not None:
