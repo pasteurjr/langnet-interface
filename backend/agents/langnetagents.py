@@ -4513,7 +4513,34 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
         if _re.match(r'^[A-Za-z_]\w*$', p) and p not in ("None", "True", "False"):
             py_parts.append((loop_item if in_loop and loop_item else _emit_get(p)))
             continue
-        # Literais / expressões (números, 'strings', a.b(...)) — mantém.
+        # Expressão complexa — provável concatenação de string com {campo} e/ou
+        # identificadores soltos (comum em tasks agênticas, ex.:
+        #   "\nSintomas: " + {sintomas} + "\nUrgência: " + nivel_urgencia).
+        # Verbatim geraria NameError ({sintomas}, nivel_urgencia indefinidos) e
+        # TypeError (str + None). Processa cada operando do '+': {campo}/identificador
+        # solto → str(input_data.get('campo') or ''); string/número/expr conhecida mantém.
+        if "+" in p and ("{" in p or _re.search(r'[A-Za-z_]\w*', p)):
+            operands = _re.split(r'\s*\+\s*', p)
+            fixed_ops: List[str] = []
+            for op in operands:
+                op = op.strip()
+                if not op:
+                    continue
+                mm2 = _re.match(r'^\{(\w+)\}$', op)
+                if mm2:
+                    fixed_ops.append(f"str(input_data.get({mm2.group(1)!r}) or '')")
+                elif (op[:1] in ('"', "'") or op[:1].isdigit()
+                      or op in ("None", "True", "False")
+                      or op in captured_vars or op == loop_item
+                      or "." in op or "(" in op):
+                    fixed_ops.append(op)  # literal / expressão / var conhecida — mantém
+                elif _re.match(r'^[A-Za-z_]\w*$', op):
+                    fixed_ops.append(f"str(input_data.get({op!r}) or '')")  # ident solto → get
+                else:
+                    fixed_ops.append(op)
+            py_parts.append(" + ".join(fixed_ops) if fixed_ops else "''")
+            continue
+        # Literais / expressões simples (números, 'strings', a.b(...)) — mantém.
         py_parts.append(p)
     return "[" + ", ".join(py_parts) + "]"
 
