@@ -2655,7 +2655,12 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
     # (listar_/atualizar_/excluir_<entidade>) que NÃO estão no tasks.yaml — por
     # isso este check vem ANTES da validação em TASKS_CONFIG.
     det_fn = getattr(adapters_module, f"{{task_name}}_deterministic", None)
-    if callable(det_fn):
+    # Deterministic-ONLY apenas para CRUD auto-gerado (listar_/atualizar_/excluir_<entidade>)
+    # que NÃO está no tasks.yaml. Tasks do tasks.yaml TÊM agente = precisam RACIOCINAR (ex.:
+    # triagem classifica urgência; pré-diagnóstico gera hipóteses). Essas caem no caminho do
+    # agente e persistem via det_fn DEPOIS (Attested Computation: agente raciocina → camada
+    # determinística persiste os campos raciocinados). Sem isso, a "clínica inteligente" só faz CRUD.
+    if callable(det_fn) and task_name not in TASKS_CONFIG:
         try:
             payload = input_data if isinstance(input_data, dict) else {{}}
             loop = asyncio.get_running_loop()
@@ -2779,6 +2784,31 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                     "faltantes": _missing}})
                 return
             parsed = _obj
+
+        # PERSISTÊNCIA SANCIONADA (Attested Computation): o agente RACIOCINOU (parsed contém os
+        # campos derivados — ex.: nivel_urgencia, hipoteses). Agora a camada determinística
+        # PERSISTE, mesclando o raciocínio ao input. É o que faltava: sem isso a task agêntica
+        # ou só fazia CRUD (bypass) ou não persistia o raciocínio.
+        if callable(det_fn):
+            try:
+                _base_in = input_data if isinstance(input_data, dict) else {{}}
+                _reasoned = parsed if isinstance(parsed, dict) else {{}}
+                _merged = dict(_base_in)
+                _merged.update(_reasoned)
+                _det_loop = asyncio.get_running_loop()
+                _det_res = await _det_loop.run_in_executor(None, det_fn, _merged)
+                if isinstance(_det_res, dict):
+                    if _det_res.get("status") == "erro":
+                        await _send(ws, "error", {{"task_name": task_name,
+                            "error": "persistência (Attested Computation) falhou: " + str(_det_res.get("error"))}})
+                        return
+                    _out = dict(_reasoned)
+                    _out.update(_det_res)
+                    parsed = _out
+            except Exception as _pe:
+                await _send(ws, "error", {{"task_name": task_name,
+                    "error": "persistência (Attested Computation) falhou: " + str(_pe)}})
+                return
 
         # VERIFICAÇÃO (Inserção B): PÓS-condição da saída agêntica (output_has / row_check).
         _vf = getattr(adapters_module, "_run_verifications", None)
