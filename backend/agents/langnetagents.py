@@ -98,12 +98,15 @@ def _safe_format_description(template: str, mapping: Dict[str, Any]) -> str:
     return _re.sub(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", _repl, template)
 
 
-def _direct_llm_complete(description: str, expected_output: str = "") -> str:
+def _direct_llm_complete(description: str, expected_output: str = "", system: str = "") -> str:
     """Chamada DIRETA ao LM Studio (openai SDK) — via primária para tasks SEM tools.
     O CrewAI + litellm/httpx estola no transporte de respostas LONGAS do modelo local
     (recebe parte e trava, ex.: 33KB de 57KB), causando 'hang' de dezenas de minutos.
     A chamada direta em STREAMING mantém a conexão viva (bytes fluindo continuamente),
     evitando o estol do link, e usa timeout longo compatível com gerações de ~16 min.
+    `system`: persona do agente (role/goal/backstory) — SEM ela o modelo tende a ignorar
+    os dados reais e preencher templates com conteúdo genérico. Replica o system prompt
+    que o CrewAI enviaria, preservando a fidelidade ao domínio.
     Reusa a MESMA descrição já formatada e devolve o texto cru p/ o output_func processar."""
     import os as _os
     from openai import OpenAI as _OpenAI
@@ -115,11 +118,15 @@ def _direct_llm_complete(description: str, expected_output: str = "") -> str:
     prompt = description
     if expected_output:
         prompt += "\n\nFORMATO DE SAÍDA ESPERADO:\n" + expected_output
+    _messages = []
+    if system and system.strip():
+        _messages.append({"role": "system", "content": system.strip()})
+    _messages.append({"role": "user", "content": prompt})
     # STREAMING: acumula os deltas. Mantém a conexão ativa durante toda a geração
     # (o link residencial derruba conexões idle longas — daí o estol do não-streaming).
     stream = client.chat.completions.create(
         model=model,
-        messages=[{"role": "user", "content": prompt}],
+        messages=_messages,
         max_tokens=int(_os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
         temperature=0.2,
         stream=True,
@@ -8233,7 +8240,23 @@ def execute_task_with_context(
                 # litellm/httpx do CrewAI em respostas LONGAS (recebe parte e trava). Tasks
                 # COM tools seguem pelo CrewAI (precisam da orquestração de tool-calling).
                 print(f"[DIRECT] '{task_name}' sem tools — chamada DIRETA (streaming) ao LM Studio")
-                _direct = _direct_llm_complete(task_description, task_expected_output)
+                # Persona do agente (role/goal/backstory) como system prompt — replica o que o
+                # CrewAI enviaria. SEM ela, o modelo ignora os dados reais (ex.: fluxo agêntico
+                # do domínio) e preenche o template com conteúdo genérico/CRUD.
+                _sys = ""
+                try:
+                    _role = getattr(agent, "role", "") or ""
+                    _goal = getattr(agent, "goal", "") or ""
+                    _back = getattr(agent, "backstory", "") or ""
+                    _parts_sys = []
+                    if _role: _parts_sys.append(f"You are {_role.strip()}.")
+                    if _back: _parts_sys.append(_back.strip())
+                    if _goal: _parts_sys.append(f"Your personal goal: {_goal.strip()}")
+                    _parts_sys.append("Baseie-se ESTRITAMENTE nos dados fornecidos (documento, requisitos, contexto). NÃO invente conteúdo genérico nem substitua o domínio real por um template padrão.")
+                    _sys = "\n\n".join(_parts_sys)
+                except Exception:
+                    _sys = ""
+                _direct = _direct_llm_complete(task_description, task_expected_output, system=_sys)
                 if not _direct or len(_direct) < 20:
                     print(f"[DIRECT] resposta curta/vazia ({len(_direct or '')} chars) — tentando CrewAI")
                     result = _run_crew()
