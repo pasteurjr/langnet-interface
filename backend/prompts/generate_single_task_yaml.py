@@ -284,6 +284,24 @@ _SQL_RULES = """
         params=[registro_id, item]
 
    c. Use nomes EXATOS de tabela e coluna do schema. NÃO invente colunas.
+
+   d. CONSISTÊNCIA DE NOME DE CAMPO (crítico): os campos que o agente RACIOCINA
+      (aparecem no Output Schema, ex.: nivel_urgencia, diagnostico_inicial,
+      especialista_sugerido) DEVEM ser gravados no SQL com o MESMO nome. Se o
+      Output Schema tem `diagnostico_inicial`, o params usa `{diagnostico_inicial}`
+      — NUNCA um sinônimo como `{diagnostico}`. Um nome trocado grava NULL e o
+      raciocínio se PERDE. Regra de ouro: todo campo do Output Schema que representa
+      uma conclusão do agente deve aparecer num INSERT/UPDATE, com nome IDÊNTICO.
+
+   e. ENTIDADE COMPARTILHADA (ex.: prontuário de um paciente): quando várias tasks
+      do fluxo (triagem→pré-diagnóstico→encaminhamento) gravam no MESMO prontuário
+      do MESMO paciente, use a FK `id_paciente` como chave e faça
+      **UPDATE ... WHERE id_paciente=%s** para ADICIONAR ao registro existente —
+      NÃO faça INSERT novo a cada task (gera duplicata/registros soltos). Referencie
+      `id_paciente` (propagado pela input), NUNCA invente/confunda com `id_prontuario`.
+
+   f. PROPAGAÇÃO DE ID: se a input traz `id_paciente` (ou o id da entidade corrente),
+      USE-O direto no WHERE/params. Não re-derive por SELECT frágil.
 """
 
 _NO_SQL_RULES = """
