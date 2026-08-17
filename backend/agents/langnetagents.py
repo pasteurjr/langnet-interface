@@ -4498,7 +4498,11 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
     _ins = _re.match(r'(?is)^\s*INSERT\s+(?:IGNORE\s+)?INTO\s+`?(\w+)`?\s*\(([^)]+)\)\s*VALUES\s*(\(.*\))\s*$', query)
     if _ins and 'on duplicate' not in query.lower():
         _cols = [c.strip().strip('`') for c in _ins.group(2).split(',')]
-        _upd = (", ".join("`%s`=VALUES(`%s`)" % (c, c) for c in _cols[1:])
+        # COALESCE(VALUES(col), col): na colisão, atualiza com o novo valor SÓ se ele não
+        # for NULL — senão mantém o existente. Evita que uma task com campo ausente (ex.: o
+        # LLM lê 'diagnostico' em vez de 'diagnostico_inicial') apague o texto que outra
+        # task (triagem) já gravou no registro compartilhado.
+        _upd = (", ".join("`%s`=COALESCE(VALUES(`%s`), `%s`)" % (c, c, c) for c in _cols[1:])
                 if len(_cols) > 1 else "`%s`=`%s`" % (_cols[0], _cols[0]))
         query = "INSERT INTO `%s`(%s) VALUES%s ON DUPLICATE KEY UPDATE %s" % (
             _ins.group(1), _ins.group(2), _ins.group(3), _upd)
