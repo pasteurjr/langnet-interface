@@ -4221,7 +4221,11 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str,
         m = model[ent]
         pk = m["pk"]
         editable = [c for c, t in m["cols"] if c != pk and c not in _TECH_COLS]
-        display = [pk] + [c for c in editable][:5]
+        # SEMPRE inclui as colunas de FK (…_id) — telas de visualização/filtro precisam delas
+        # (ex.: Visualizar Prontuário filtra por id_paciente). Sem isso o listar_ omitia a FK.
+        _fk_cols = [c for c in editable if c.endswith("_id")]
+        _other = [c for c in editable if c not in _fk_cols]
+        display = [pk] + _fk_cols + _other[:6]
         children = m["children"]
 
         # LISTAR
@@ -6616,9 +6620,12 @@ export default function %COMP%() {
         const cv = getCarry();
         let row = null;
         if (VIEW_ENTITY.filter && cv[VIEW_ENTITY.filter]) {
-          row = list.find((x) => String(x[VIEW_ENTITY.filter]) === String(cv[VIEW_ENTITY.filter]));
+          // atendimento corrente definido → mostra SÓ o registro deste paciente (sem cair
+          // em registro de outro paciente se não achar).
+          row = list.find((x) => String(x[VIEW_ENTITY.filter]) === String(cv[VIEW_ENTITY.filter])) || null;
+        } else {
+          row = list[list.length - 1] || null;   // sem atendimento corrente → registro mais recente
         }
-        row = row || list[list.length - 1] || null;   // fallback: registro mais recente
         setResult(row || {});
         return;   // finally reseta busy
       }
