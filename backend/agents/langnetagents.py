@@ -6604,8 +6604,24 @@ export default function %COMP%() {
       // atendimento_id gerados na triagem) + dados do formulário desta tela. Assim as etapas
       // seguintes (encaminhamento/prontuário/consulta) NÃO redigitam o atendimento corrente.
       // O form só sobrescreve o herdado quando preenchido (campo vazio não apaga o FK herdado).
-      const ctx = { ...(IS_DASHBOARD ? {} : getCarry()) };
+      const ctx = { ...getCarry() };   // atendimento corrente (inclui dashboards de visualização)
       for (const [k, v] of Object.entries(form)) { if (v !== "" && v != null) ctx[k] = v; }
+      // VIEW_ENTITY: tela de VISUALIZAÇÃO ligada a uma entidade — busca a linha REAL via CRUD
+      // (listar_<entidade>) filtrando pelo atendimento corrente, e exibe as colunas da entidade
+      // (nivel_urgencia, diagnostico_inicial, especialidade_encaminhada...). Sem isso, a task
+      // "visualizar_" (agente sem SQL) devolvia vazio.
+      if (VIEW_ENTITY) {
+        const rows = await runTask("listar_" + VIEW_ENTITY.entity, {}).catch(() => []);
+        const list = Array.isArray(rows) ? rows : (rows && rows.rows ? rows.rows : []);
+        const cv = getCarry();
+        let row = null;
+        if (VIEW_ENTITY.filter && cv[VIEW_ENTITY.filter]) {
+          row = list.find((x) => String(x[VIEW_ENTITY.filter]) === String(cv[VIEW_ENTITY.filter]));
+        }
+        row = row || list[list.length - 1] || null;   // fallback: registro mais recente
+        setResult(row || {});
+        return;   // finally reseta busy
+      }
       // ENCADEAMENTO (tela híbrida cadastro+agente): antes de acionar o agente, PERSISTE a
       // entidade (ex.: cadastra o paciente) e ABRE o atendimento — gerando os FKs que as etapas
       // seguintes (encaminhamento/prontuário) exigem. Best-effort: uma falha aqui (ex.: CPF já
@@ -6614,7 +6630,9 @@ export default function %COMP%() {
         try {
           const rc = await runTask("criar_" + CHAIN.entity, ctx);
           const pid = rc && (rc[CHAIN.pk] || rc.id);
-          if (pid) ctx[CHAIN.fk] = pid;   // ex.: paciente_id (usado pelo atendimento e etapas seguintes)
+          // grava o id sob AMBOS os nomes: o FK (paciente_id, p/ tabelas que referenciam) E o
+          // PK real (id_paciente, que as tasks agênticas leem) — senão o próximo passo não herda.
+          if (pid) { ctx[CHAIN.fk] = pid; if (CHAIN.pk) ctx[CHAIN.pk] = pid; }
         } catch (_) { /* segue: paciente pode já existir */ }
         if (CHAIN.atend_entity) {
           try {
@@ -6629,6 +6647,7 @@ export default function %COMP%() {
         // grava o ATENDIMENTO CORRENTE p/ as próximas telas herdarem os FKs automaticamente.
         const _carry = {};
         if (ctx[CHAIN.fk]) _carry[CHAIN.fk] = ctx[CHAIN.fk];
+        if (CHAIN.pk && ctx[CHAIN.pk]) _carry[CHAIN.pk] = ctx[CHAIN.pk];   // id_paciente p/ as tasks
         if (CHAIN.atend_fk && ctx[CHAIN.atend_fk]) _carry[CHAIN.atend_fk] = ctx[CHAIN.atend_fk];
         if (Object.keys(_carry).length) setCarryState(setCarry(_carry));
       }
@@ -6717,6 +6736,12 @@ export default function %COMP%() {
       }
       setFkOpts(next);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // VIEW_ENTITY: carrega a linha da entidade ao abrir a tela (sem precisar clicar em Atualizar).
+  useEffect(() => {
+    if (VIEW_ENTITY) { executar(); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -6848,6 +6873,24 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
         kpis = []
     # Dashboard = painel de KPIs (só quando explicitamente dashboard, OU há KPIs e NÃO é interativa).
     is_dashboard = explicit_dashboard or (len(kpis) > 0 and not interactive_agent)
+    # VIEW_ENTITY: dashboard de VISUALIZAÇÃO ligado a uma entidade (ex.: Visualizar Prontuário).
+    # Em vez de depender da task "visualizar_" (agente sem SQL → painel vazio), a tela busca a
+    # linha REAL da entidade via CRUD (listar_) filtrando pelo atendimento corrente, e os KPIs
+    # passam a ser as COLUNAS SIGNIFICATIVAS da entidade — inclusive os resultados agênticos
+    # (nivel_urgencia, diagnostico_inicial, especialidade_encaminhada).
+    view_entity = None
+    if is_dashboard and model:
+        _vent = screen.get("entity")
+        if _vent and _vent in model:
+            _vm = model[_vent]
+            _vpk = _vm.get("pk")
+            _vcols = [c for c, _ in _vm["cols"]]
+            _vfilter = "id_paciente" if "id_paciente" in _vcols else ("paciente_id" if "paciente_id" in _vcols else None)
+            view_entity = {"entity": _vent, "pk": _vpk, "filter": _vfilter}
+            _tech = {"created_at", "updated_at", _vpk}
+            _kcols = [c for c in _vcols if c not in _tech and not c.endswith("_id") and c != "id_paciente"]
+            if _kcols:
+                kpis = [{"key": c, "label": _humanize(c)} for c in _kcols[:8]]
     # ENCADEAMENTO DE PERSISTÊNCIA (tela HÍBRIDA cadastro+agente): quando a tela agêntica também
     # COLETA a identidade de uma entidade (ex.: Recepção & Triagem coleta CPF/Nome do paciente),
     # o submit primeiro CADASTRA a entidade e ABRE o atendimento (gerando os FKs paciente_id/
@@ -6967,6 +7010,7 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
         f'const RESULT_FK = {json.dumps(result_fk)};\n'
         f'const SAVE_ENTITY = {json.dumps(save_entity, ensure_ascii=False)};\n'
         f'const FINALIZE = {json.dumps(finalize, ensure_ascii=False)};\n'
+        f'const VIEW_ENTITY = {json.dumps(view_entity, ensure_ascii=False)};\n'
     )
     body = (_AGENT_BODY.replace("%COMP%", comp_name)
             .replace("%TITLE%", screen.get("name", comp_name).replace('"', ""))
