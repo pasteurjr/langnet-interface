@@ -90,6 +90,17 @@ Regras:
    a coluna deve ser "segmento"). NÃO renomeie, traduza nem pluralize de forma diferente
    da spec. As telas do protótipo ligam seus campos a estas colunas pelo nome — nomes
    divergentes quebram esse vínculo. Prefira os nomes já usados na spec ao inventar sinônimos.
+8. 🔴 RESULTADOS AGÊNTICOS = COLUNAS DEDICADAS (crítico p/ persistir o raciocínio): quando
+   uma entidade ACUMULA os resultados de passos/tarefas agênticas distintas (ex.: um
+   prontuário/ficha/registro que recebe a triagem, depois o pré-diagnóstico, depois o
+   encaminhamento), cada atributo raciocinado deve ser sua PRÓPRIA coluna tipada, com o
+   nome do atributo tal como a spec o descreve (ex.: `nivel_urgencia` ENUM, `diagnostico_inicial`
+   TEXT, `especialidade_encaminhada` VARCHAR, `data_triagem` DATETIME). NÃO colapse esses
+   atributos distintos num único campo-texto genérico (`detalhes`, `observacoes`, `dados`),
+   pois isso impede consultar/atualizar cada resultado por nome e faz um passo sobrescrever
+   o outro. Um campo-texto livre pode COEXISTIR, mas apenas para narrativa/observações
+   adicionais — nunca como o único destino dos resultados estruturados. Cada campo que a
+   spec diz ser "produzido/preenchido pelo agente X" na entidade Y ⇒ uma coluna em Y.
 
 ESPECIFICAÇÃO:
 ------
@@ -123,6 +134,12 @@ Receba o modelo conceitual abaixo e produza um modelo LÓGICO normalizado até 3
 - Adicione colunas técnicas (id UUID PK, created_at, updated_at) em todas as tabelas
 - Sugira índices para: FKs, colunas usadas em filtros comuns, colunas únicas
 - Marque colunas ENUM com valores possíveis explícitos
+- 🔴 PRESERVE colunas dedicadas de resultados agênticos: se o modelo conceitual traz colunas
+  distintas para atributos raciocinados por passos diferentes (ex.: `nivel_urgencia`,
+  `diagnostico_inicial`, `especialidade_encaminhada`), MANTENHA-AS como colunas separadas.
+  NÃO as funda num único campo-texto genérico em nome da normalização — são atributos
+  semânticos distintos da mesma entidade (não violam 3FN). Marque como ENUM as que tiverem
+  domínio fechado (ex.: `nivel_urgencia` = baixa|media|alta|critica).
 
 MODELO CONCEITUAL:
 ------
