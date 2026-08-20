@@ -302,6 +302,12 @@ _SQL_RULES = """
 
    f. PROPAGAÇÃO DE ID: se a input traz `id_paciente` (ou o id da entidade corrente),
       USE-O direto no WHERE/params. Não re-derive por SELECT frágil.
+
+   g. VALOR SEMÂNTICO CORRETO: um campo que representa uma CATEGORIA/CLASSIFICAÇÃO
+      (ex.: `especialidade_encaminhada`, `nivel_urgencia`) deve receber o VALOR da
+      categoria (ex.: "Cardiologia", "alta") — NUNCA o nome de uma instância/pessoa
+      (ex.: "Dr. João Silva") nem um id. Se o campo é uma especialidade médica, grave
+      a ESPECIALIDADE (Cardiologia, Neurologia…), não o nome do médico.
 """
 
 _NO_SQL_RULES = """
