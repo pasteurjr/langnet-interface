@@ -2793,18 +2793,14 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             try:
                 _base_in = input_data if isinstance(input_data, dict) else {{}}
                 _reasoned = parsed if isinstance(parsed, dict) else {{}}
-                # O agente às vezes FABRICA identificadores no Final Answer (ex.:
-                # "assumed_id_prontuario", ou o UUID placeholder "123e4567-...").
-                # Esses valores NÃO podem sombrear os ids REAIS resolvidos por SELECT
-                # na camada determinística — senão o INSERT/UPDATE bate FK e faz rollback,
-                # e nada do raciocínio persiste. Removemos ids placeholder do raciocínio.
-                def _is_ph_id(_v):
-                    if not isinstance(_v, str): return False
-                    _s = _v.strip().lower()
-                    return (_s.startswith("assumed") or _s in ("uuid", "<uuid>", "null", "none", "id", "")
-                            or _s == "123e4567-e89b-12d3-a456-426614174000")
+                # Identificadores são resolvidos pela camada determinística (input do
+                # atendimento corrente + SELECT), NUNCA pelo raciocínio do agente — que
+                # frequentemente FABRICA ids ("assumed_id_prontuario", "UUID_EXEMPLO",
+                # "123e4567-..."). Um id fabricado sombraria o id REAL e quebraria FK
+                # (rollback → raciocínio não persiste). Removemos TODA chave de id do
+                # raciocínio antes do merge; os ids reais vêm de _base_in + SELECT.
                 _reasoned = {{_k: _v for _k, _v in _reasoned.items()
-                             if not ((_k == "id" or _k.startswith("id_") or _k.endswith("_id")) and _is_ph_id(_v))}}
+                             if not (_k == "id" or _k.startswith("id_") or _k.endswith("_id"))}}
                 _merged = dict(_base_in)
                 _merged.update(_reasoned)
                 _det_loop = asyncio.get_running_loop()
@@ -4518,6 +4514,15 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
                 if len(_cols) > 1 else "`%s`=`%s`" % (_cols[0], _cols[0]))
         query = "INSERT INTO `%s`(%s) VALUES%s ON DUPLICATE KEY UPDATE %s" % (
             _ins.group(1), _ins.group(2), _ins.group(3), _upd)
+    # (2b) UPSERT já escrito pelo LLM com `col=VALUES(col)` cru (sem COALESCE): quando o param
+    #      vem ausente/errado (ex.: a task lê 'diagnostico' em vez de 'diagnostico_inicial'),
+    #      VALUES(col)=NULL SOBRESCREVE o valor que outra task já gravou no registro compartilhado.
+    #      Blinda TODO `col=VALUES(col)` -> `col=COALESCE(VALUES(col), col)` (não sobrescreve c/ NULL).
+    if 'on duplicate' in query.lower():
+        query = _re.sub(
+            r'(?i)`?(\w+)`?\s*=\s*VALUES\(\s*`?\1`?\s*\)',
+            lambda m: "`%s`=COALESCE(VALUES(`%s`), `%s`)" % (m.group(1), m.group(1), m.group(1)),
+            query)
 
     q_repr = repr(query)
     if py_params is not None:
