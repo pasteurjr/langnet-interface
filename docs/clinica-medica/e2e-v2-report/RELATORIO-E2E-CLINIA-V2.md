@@ -152,9 +152,48 @@ Antes da correção, `diagnostico_inicial` vinha `NULL` e o raciocínio se perdi
 
 ---
 
-## 7. Conclusão
+## 7. Rodada 2 — os 3 achados de UI, atacados e provados
+
+Os achados da seção 6 foram corrigidos **no gerador** e reprovados por novo E2E (agora **sem
+injetar** o atendimento corrente — pra provar o encadeamento nativo).
+
+| Achado | Correção no gerador | Commit |
+|--------|---------------------|--------|
+| id_paciente não encadeava (carry sob `paciente_id`, task lê `id_paciente`) | grava o id sob AMBOS os nomes (FK e PK) no ctx/carry | `d5f1d1b` |
+| "Visualizar Prontuário" vazio (task de agente sem SQL) | `VIEW_ENTITY`: busca a linha real via `listar_<ent>` filtrando pelo atendimento corrente; KPIs = colunas da entidade | `d5f1d1b` |
+| especialidade recebia nome de médico | regra g: campo de categoria recebe o valor da categoria | `cc5aada` |
+| `listar_` omitia a FK (cortava em 5 colunas) → view não achava o paciente | `listar_` sempre inclui as colunas FK; view filtra só o paciente corrente | `447dd3b` |
+
+### 7.1 Encadeamento nativo (sem injeção)
+Depois de cadastrar o paciente, a barra **Atendimento corrente** já carrega `id_paciente`
+automaticamente — a triagem/pré-diag/encaminhamento herdam sozinhas:
+
+![triagem chain](shots2/03-triagem-form.png)
+
+### 7.2 Visualizar Prontuário agora mostra o raciocínio persistido
+A tela de visualização exibe as **colunas clínicas** do prontuário do paciente corrente —
+`nivel_urgencia: alta`, `diagnostico_inicial: Infarto agudo do miocárdio`,
+`especialidade_encaminhada: Cardiologia` (especialidade, não nome de médico):
+
+![prontuario ok](shots2/10-prontuario-paciente-correto.png)
+
+Confirmado no banco (paciente da rodada nativa):
+```
+nivel_urgencia:            alta
+diagnostico_inicial:       Infarto agudo do miocárdio
+especialidade_encaminhada: Cardiologia
+```
+
+> Achado remanescente (menor): a tela híbrida "Registro de Novo Paciente" cria o paciente
+> duas vezes (o passo de cadastro do encadeamento + a própria task `registrar_paciente`). O
+> fluxo persiste corretamente no paciente do atendimento corrente; a de-duplicação fica como
+> próximo ajuste.
+
+---
+
+## 8. Conclusão
 
 O raciocínio agêntico da ClinIA agora **atravessa o pipeline inteiro e persiste** nas colunas
-dedicadas do prontuário — provado pela **interface real** e confirmado no banco. As cinco correções
-foram feitas **no gerador do LangNet** (commits `1c281e1` → `92232f8`), então valem para qualquer
-aplicação futura gerada pela plataforma, não só para a ClinIA.
+dedicadas do prontuário — provado pela **interface real** (E2E nativo, sem injeção) e confirmado
+no banco. As correções foram todas feitas **no gerador do LangNet** (commits `1c281e1` → `447dd3b`),
+então valem para qualquer aplicação futura gerada pela plataforma, não só para a ClinIA.
