@@ -2793,6 +2793,18 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             try:
                 _base_in = input_data if isinstance(input_data, dict) else {{}}
                 _reasoned = parsed if isinstance(parsed, dict) else {{}}
+                # O agente às vezes FABRICA identificadores no Final Answer (ex.:
+                # "assumed_id_prontuario", ou o UUID placeholder "123e4567-...").
+                # Esses valores NÃO podem sombrear os ids REAIS resolvidos por SELECT
+                # na camada determinística — senão o INSERT/UPDATE bate FK e faz rollback,
+                # e nada do raciocínio persiste. Removemos ids placeholder do raciocínio.
+                def _is_ph_id(_v):
+                    if not isinstance(_v, str): return False
+                    _s = _v.strip().lower()
+                    return (_s.startswith("assumed") or _s in ("uuid", "<uuid>", "null", "none", "id", "")
+                            or _s == "123e4567-e89b-12d3-a456-426614174000")
+                _reasoned = {{_k: _v for _k, _v in _reasoned.items()
+                             if not ((_k == "id" or _k.startswith("id_") or _k.endswith("_id")) and _is_ph_id(_v))}}
                 _merged = dict(_base_in)
                 _merged.update(_reasoned)
                 _det_loop = asyncio.get_running_loop()

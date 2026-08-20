@@ -134,6 +134,10 @@ Receba o modelo conceitual abaixo e produza um modelo LÓGICO normalizado até 3
 - Adicione colunas técnicas (id UUID PK, created_at, updated_at) em todas as tabelas
 - Sugira índices para: FKs, colunas usadas em filtros comuns, colunas únicas
 - Marque colunas ENUM com valores possíveis explícitos
+- 🔴 TODA coluna de data/hora de CRIAÇÃO (ex.: `data_criacao`, `data_registro`, `data_cadastro`,
+  `created_at`) deve ter `"default": "CURRENT_TIMESTAMP"`. Uma coluna de criação NOT NULL SEM
+  default quebra qualquer INSERT que a omita (erro "Field doesn't have a default value") — o que
+  acontece nos INSERTs parciais/UPSERT das tasks. Se for NOT NULL, é OBRIGATÓRIO ter default.
 - 🔴 PRESERVE colunas dedicadas de resultados agênticos: se o modelo conceitual traz colunas
   distintas para atributos raciocinados por passos diferentes (ex.: `nivel_urgencia`,
   `diagnostico_inicial`, `especialidade_encaminhada`), MANTENHA-AS como colunas separadas.
