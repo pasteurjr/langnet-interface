@@ -327,14 +327,150 @@ def normalize_schema(conceptual_model: Dict[str, Any]) -> Dict[str, Any]:
     return parsed
 
 
+def _sql_type(col: Dict[str, Any], dbms: str = "mysql") -> str:
+    """Mapeia o tipo lógico -> tipo nativo do dbms (determinístico)."""
+    t = (col.get("type") or "VARCHAR(255)").strip()
+    tu = t.upper()
+    if tu == "UUID":
+        return "CHAR(36)"
+    if tu.startswith("ENUM"):
+        vals = col.get("values") or []
+        if not vals:  # ENUM sem valores -> vira VARCHAR (evita SQL inválido)
+            return "VARCHAR(50)"
+        return "ENUM(" + ", ".join("'%s'" % str(v).replace("'", "''") for v in vals) + ")"
+    if tu in ("SERIAL", "BIGSERIAL"):
+        return "BIGINT AUTO_INCREMENT"
+    if tu == "BOOLEAN":
+        return "TINYINT(1)"
+    if tu in ("JSONB",):
+        return "JSON"
+    return t
+
+
+def _default_clause(col: Dict[str, Any]) -> str:
+    """Cláusula DEFAULT determinística. Colunas de data de CRIAÇÃO NOT NULL sem
+    default ganham CURRENT_TIMESTAMP (senão INSERTs parciais quebram)."""
+    d = col.get("default")
+    name = (col.get("name") or "").lower()
+    typ = (col.get("type") or "").upper()
+    is_creation_ts = typ in ("TIMESTAMP", "DATETIME") and any(
+        k in name for k in ("criacao", "cadastro", "registro", "created_at", "data_hora"))
+    if d is None or (isinstance(d, str) and not d.strip()):
+        if not col.get("nullable", True) and is_creation_ts:
+            return " DEFAULT CURRENT_TIMESTAMP"
+        return ""
+    d = str(d).strip()
+    if d in ("uuid_generate_v4()", "gen_random_uuid()", "(UUID())", "UUID()"):
+        return " DEFAULT (UUID())"
+    if d.upper() in ("CURRENT_TIMESTAMP", "NOW()"):
+        return " DEFAULT CURRENT_TIMESTAMP"
+    if d.startswith("'") and d.endswith("'"):
+        return " DEFAULT " + d
+    if d.replace(".", "", 1).lstrip("-").isdigit():
+        return " DEFAULT " + d
+    return " DEFAULT '%s'" % d.replace("'", "''")
+
+
+def _topo_sort_tables(tables: List[Dict], fks: List[Dict]) -> List[str]:
+    """Ordena as tabelas por dependência de FK: referenciada ANTES de quem referencia.
+    Evita 'errno 150' quando uma FK aponta para tabela definida mais abaixo."""
+    names = [t["name"] for t in tables]
+    nameset = set(names)
+    def _ref(fk):
+        r = (fk.get("references") or "")
+        return (r.split("(")[0].strip().strip('`"') if "(" in r else r.strip())
+    deps: Dict[str, set] = {n: set() for n in names}
+    for fk in fks:
+        tbl = fk.get("table"); rt = _ref(fk)
+        if tbl in deps and rt in nameset and rt != tbl:
+            deps[tbl].add(rt)
+    ordered: List[str] = []
+    seen: set = set()
+    def visit(n, stack):
+        if n in seen or n in stack:
+            return
+        for d in sorted(deps.get(n, ())):
+            visit(d, stack | {n})
+        seen.add(n); ordered.append(n)
+    for n in names:
+        visit(n, set())
+    return ordered
+
+
+def _emit_ddl_deterministic(logical_model: Dict[str, Any], dbms: str = "mysql") -> str:
+    """Emissor de DDL DETERMINÍSTICO (sem LLM). O LLM decide o modelo (entidades/colunas/
+    FKs); ESTE código escreve o SQL — sempre com sintaxe válida: COMMENT depois do ')',
+    tabelas ordenadas por dependência de FK (+ SET FOREIGN_KEY_CHECKS=0 como cinto), ENUM
+    com os valores exatos do modelo, e default de data de criação. Elimina a variância do
+    LLM (COMMENT/ordem/ENUM) que quebrava o deploy."""
+    tables = logical_model.get("tables") or []
+    fks = logical_model.get("foreign_keys") or []
+    if not tables:
+        raise ValueError("modelo lógico sem tabelas")
+    by_name = {t["name"]: t for t in tables}
+    fks_by_table: Dict[str, List[Dict]] = {}
+    for fk in fks:
+        fks_by_table.setdefault(fk.get("table"), []).append(fk)
+    order = _topo_sort_tables(tables, fks)
+
+    out: List[str] = ["SET FOREIGN_KEY_CHECKS=0;", ""]
+    for name in order:
+        t = by_name[name]
+        body: List[str] = []
+        for col in t.get("columns", []):
+            cn = col["name"]
+            typ = _sql_type(col, dbms)
+            deff = _default_clause(col)
+            if col.get("pk"):
+                line = "    `%s` %s PRIMARY KEY%s" % (cn, typ, deff)
+            else:
+                notnull = "" if col.get("nullable", True) else " NOT NULL"
+                on_update = ""
+                if cn.lower() in ("updated_at", "atualizado_em") and typ.upper() in ("TIMESTAMP", "DATETIME"):
+                    if "DEFAULT" not in deff:
+                        deff = " DEFAULT CURRENT_TIMESTAMP"
+                    on_update = " ON UPDATE CURRENT_TIMESTAMP"
+                line = "    `%s` %s%s%s%s" % (cn, typ, notnull, deff, on_update)
+            body.append(line)
+        # índices
+        for idx in (t.get("indexes") or []):
+            cols = ", ".join("`%s`" % c for c in (idx.get("columns") or []))
+            if not cols:
+                continue
+            uniq = "UNIQUE " if idx.get("unique") else ""
+            iname = idx.get("name") or ("idx_%s_%s" % (name.lower(), "_".join(idx.get("columns") or [])))
+            body.append("    %sINDEX `%s` (%s)" % (uniq, iname, cols))
+        # foreign keys
+        for fk in fks_by_table.get(name, []):
+            ref = fk.get("references") or ""
+            col = fk.get("column")
+            if not col or "(" not in ref:
+                continue
+            on_del = (fk.get("on_delete") or "").upper()
+            on_clause = (" ON DELETE %s" % on_del) if on_del in ("CASCADE", "SET NULL", "RESTRICT", "NO ACTION") else ""
+            body.append("    FOREIGN KEY (`%s`) REFERENCES %s%s" % (col, ref, on_clause))
+        # COMMENT SEMPRE depois do ')'
+        desc = (t.get("description") or "").replace("'", "''")
+        comment = (" COMMENT='%s'" % desc) if desc else ""
+        out.append("CREATE TABLE `%s` (\n%s\n)%s;" % (name, ",\n".join(body), comment))
+        out.append("")
+    out.append("SET FOREIGN_KEY_CHECKS=1;")
+    return "\n".join(out) + "\n"
+
+
 def generate_ddl(logical_model: Dict[str, Any], dbms: str = "mysql") -> str:
-    """Passo 3: gera SQL DDL do dialeto escolhido."""
-    prompt = _GENERATE_DDL_PROMPT.format(
-        dbms=dbms,
-        logical_model_json=json.dumps(logical_model, ensure_ascii=False, indent=2),
-    )
-    raw = _call_llm(prompt)
-    return _strip_code_fence(raw)
+    """Passo 3: gera SQL DDL. DETERMINÍSTICO (sem LLM) a partir do modelo lógico —
+    sintaxe sempre válida. Só cai no LLM se o modelo estiver inutilizável."""
+    try:
+        return _emit_ddl_deterministic(logical_model, dbms=dbms)
+    except Exception as _e:
+        print(f"[DATA-MODEL] emissor determinístico falhou ({_e}); fallback LLM")
+        prompt = _GENERATE_DDL_PROMPT.format(
+            dbms=dbms,
+            logical_model_json=json.dumps(logical_model, ensure_ascii=False, indent=2),
+        )
+        raw = _call_llm(prompt)
+        return _strip_code_fence(raw)
 
 
 def generate_models_py(logical_model: Dict[str, Any]) -> str:
