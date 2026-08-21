@@ -473,22 +473,179 @@ def generate_ddl(logical_model: Dict[str, Any], dbms: str = "mysql") -> str:
         return _strip_code_fence(raw)
 
 
+def _class_name(table: str) -> str:
+    """PACIENTE / paciente_agente -> Paciente / PacienteAgente (CamelCase)."""
+    return "".join(p.capitalize() for p in re.split(r"[_\s]+", table.lower()) if p) or "Tabela"
+
+
+def _sa_type(col: Dict[str, Any]) -> str:
+    t = (col.get("type") or "String").upper()
+    if t == "UUID":
+        return "String(36)"
+    m = re.match(r"VARCHAR\((\d+)\)", t)
+    if m:
+        return "String(%s)" % m.group(1)
+    if t in ("TEXT", "LONGTEXT", "MEDIUMTEXT"):
+        return "Text"
+    if t in ("INTEGER", "INT", "BIGINT", "SMALLINT", "SERIAL", "BIGSERIAL"):
+        return "Integer"
+    if t in ("TIMESTAMP", "DATETIME"):
+        return "DateTime"
+    if t == "DATE":
+        return "Date"
+    if t == "BOOLEAN":
+        return "Boolean"
+    if t.startswith("DECIMAL") or t.startswith("NUMERIC") or t.startswith("FLOAT") or t.startswith("DOUBLE"):
+        return "Numeric"
+    if t.startswith("ENUM"):
+        vals = col.get("values") or []
+        return ("SAEnum(%s)" % ", ".join(repr(str(v)) for v in vals)) if vals else "String(50)"
+    if t in ("JSON", "JSONB"):
+        return "JSON"
+    return "String(255)"
+
+
+_PY_TYPE = {"String": "str", "Text": "str", "Integer": "int", "DateTime": "datetime",
+            "Date": "date", "Boolean": "bool", "Numeric": "float", "JSON": "dict", "SAEnum": "str"}
+
+
+def _emit_models_py_deterministic(logical_model: Dict[str, Any]) -> str:
+    """models.py DETERMINÍSTICO: SQLAlchemy 2.0 (DeclarativeBase/Mapped) + Pydantic,
+    a partir do modelo lógico. Sem LLM."""
+    tables = logical_model.get("tables") or []
+    fks = logical_model.get("foreign_keys") or []
+    fk_map: Dict[tuple, str] = {}
+    for fk in fks:
+        ref = fk.get("references") or ""
+        if fk.get("table") and fk.get("column") and "(" in ref:
+            fk_map[(fk["table"], fk["column"])] = ref
+    lines = [
+        '"""models.py — gerado deterministicamente pelo LangNet (SQLAlchemy 2.0 + Pydantic)."""',
+        "from __future__ import annotations",
+        "from datetime import datetime, date",
+        "from typing import Optional",
+        "from sqlalchemy import String, Text, Integer, DateTime, Date, Boolean, Numeric, JSON, ForeignKey",
+        "from sqlalchemy import Enum as SAEnum",
+        "from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column",
+        "from pydantic import BaseModel",
+        "",
+        "class Base(DeclarativeBase):",
+        "    pass",
+        "",
+    ]
+    for t in tables:
+        cls = _class_name(t["name"])
+        lines.append("class %s(Base):" % cls)
+        lines.append("    __tablename__ = %r" % t["name"])
+        for col in t.get("columns", []):
+            cn = col["name"]
+            sat = _sa_type(col)
+            pyt = _PY_TYPE.get(sat.split("(")[0], "str")
+            args = [sat]
+            fkref = fk_map.get((t["name"], cn))
+            if fkref:
+                args.append("ForeignKey(%r)" % fkref)
+            if col.get("pk"):
+                args.append("primary_key=True")
+            nullable = col.get("nullable", True)
+            args.append("nullable=%s" % ("True" if nullable else "False"))
+            mapped = ("Optional[%s]" % pyt) if nullable and not col.get("pk") else pyt
+            lines.append("    %s: Mapped[%s] = mapped_column(%s)" % (cn, mapped, ", ".join(args)))
+        lines.append("")
+    # Pydantic schemas
+    for t in tables:
+        cls = _class_name(t["name"])
+        lines.append("class %sSchema(BaseModel):" % cls)
+        for col in t.get("columns", []):
+            pyt = _PY_TYPE.get(_sa_type(col).split("(")[0], "str")
+            opt = col.get("nullable", True) and not col.get("pk")
+            lines.append("    %s: %s = None" % (col["name"], "Optional[%s]" % pyt) if opt else "    %s: %s" % (col["name"], pyt))
+        lines.append("    class Config:")
+        lines.append("        from_attributes = True")
+        lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 def generate_models_py(logical_model: Dict[str, Any]) -> str:
-    """Passo 4: gera arquivo models.py com SQLAlchemy + Pydantic."""
-    prompt = _GENERATE_MODELS_PY_PROMPT.format(
-        logical_model_json=json.dumps(logical_model, ensure_ascii=False, indent=2),
-    )
-    raw = _call_llm(prompt)
-    return _strip_code_fence(raw)
+    """Passo 4: models.py. DETERMINÍSTICO (sem LLM); LLM só como fallback."""
+    try:
+        return _emit_models_py_deterministic(logical_model)
+    except Exception as _e:
+        print(f"[DATA-MODEL] models.py determinístico falhou ({_e}); fallback LLM")
+        raw = _call_llm(_GENERATE_MODELS_PY_PROMPT.format(
+            logical_model_json=json.dumps(logical_model, ensure_ascii=False, indent=2)))
+        return _strip_code_fence(raw)
+
+
+def _emit_alembic_deterministic(logical_model: Dict[str, Any]) -> str:
+    """0001_initial.py DETERMINÍSTICO: op.create_table na ordem topológica de FK,
+    downgrade dropa na ordem inversa. Sem LLM."""
+    tables = logical_model.get("tables") or []
+    fks = logical_model.get("foreign_keys") or []
+    by_name = {t["name"]: t for t in tables}
+    order = _topo_sort_tables(tables, fks)
+    fk_map: Dict[tuple, str] = {}
+    for fk in fks:
+        ref = fk.get("references") or ""
+        if fk.get("table") and fk.get("column") and "(" in ref:
+            fk_map[(fk["table"], fk["column"])] = ref
+
+    def _op_type(col):
+        sat = _sa_type(col)
+        base = sat.split("(")[0]
+        m = {"String": "sa.String", "Text": "sa.Text", "Integer": "sa.Integer",
+             "DateTime": "sa.DateTime", "Date": "sa.Date", "Boolean": "sa.Boolean",
+             "Numeric": "sa.Numeric", "JSON": "sa.JSON", "SAEnum": "sa.String"}
+        if base == "String" and "(" in sat:
+            return "sa.String(length=%s)" % sat.split("(")[1].rstrip(")")
+        if base == "SAEnum":
+            return "sa.String(length=50)"
+        return m.get(base, "sa.String(length=255)")
+
+    lines = [
+        '"""0001_initial — gerado deterministicamente pelo LangNet."""',
+        "from alembic import op",
+        "import sqlalchemy as sa",
+        "",
+        'revision = "0001_initial"',
+        "down_revision = None",
+        "branch_labels = None",
+        "depends_on = None",
+        "",
+        "def upgrade():",
+    ]
+    for name in order:
+        t = by_name[name]
+        lines.append("    op.create_table(")
+        lines.append("        %r," % name)
+        for col in t.get("columns", []):
+            cn = col["name"]
+            colargs = ["%r" % cn, _op_type(col)]
+            fkref = fk_map.get((name, cn))
+            if fkref:
+                colargs.append("sa.ForeignKey(%r)" % fkref)
+            if col.get("pk"):
+                colargs.append("primary_key=True")
+            colargs.append("nullable=%s" % ("True" if col.get("nullable", True) else "False"))
+            lines.append("        sa.Column(%s)," % ", ".join(colargs))
+        lines.append("    )")
+    lines.append("")
+    lines.append("def downgrade():")
+    for name in reversed(order):
+        lines.append("    op.drop_table(%r)" % name)
+    lines.append("")
+    return "\n".join(lines) + "\n"
 
 
 def generate_alembic_migration(logical_model: Dict[str, Any]) -> str:
-    """Passo 5: gera 0001_initial.py do Alembic."""
-    prompt = _GENERATE_ALEMBIC_PROMPT.format(
-        logical_model_json=json.dumps(logical_model, ensure_ascii=False, indent=2),
-    )
-    raw = _call_llm(prompt)
-    return _strip_code_fence(raw)
+    """Passo 5: 0001_initial.py. DETERMINÍSTICO (sem LLM); LLM só como fallback."""
+    try:
+        return _emit_alembic_deterministic(logical_model)
+    except Exception as _e:
+        print(f"[DATA-MODEL] alembic determinístico falhou ({_e}); fallback LLM")
+        raw = _call_llm(_GENERATE_ALEMBIC_PROMPT.format(
+            logical_model_json=json.dumps(logical_model, ensure_ascii=False, indent=2)))
+        return _strip_code_fence(raw)
 
 
 def _validate_schema_executable(schema_sql: str, dbms: str = "mysql") -> Optional[Dict[str, Any]]:
