@@ -490,7 +490,10 @@ def _pg_type(col: Dict[str, Any]) -> str:
     if tu in ("BIGSERIAL",):
         return "BIGSERIAL"
     if tu in ("BOOLEAN", "BOOL", "TINYINT(1)"):
-        return "boolean"
+        # smallint (0/1) em vez de boolean: compatível com o valor int que os adapters
+        # determinísticos passam (igual ao TINYINT(1) do MySQL) — evita "boolean but
+        # expression is of type integer" no runtime.
+        return "smallint"
     if tu.startswith("TINYINT") or tu in ("INT", "INTEGER", "MEDIUMINT", "SMALLINT"):
         return "integer"
     if tu == "BIGINT":
@@ -525,14 +528,14 @@ def _pg_default(col: Dict[str, Any], pg_type: str) -> str:
     typ = (col.get("type") or "").upper()
     is_creation_ts = typ in ("TIMESTAMP", "DATETIME") and any(
         k in name for k in ("criacao", "cadastro", "registro", "created_at", "data_hora"))
-    is_bool = pg_type == "boolean"
+    is_bool = typ in ("BOOLEAN", "BOOL", "TINYINT(1)")   # emitido como smallint (0/1)
     if d is None or (isinstance(d, str) and not d.strip()):
         if col.get("pk") and pg_type == "uuid":
             return " DEFAULT gen_random_uuid()"
         if not col.get("nullable", True) and is_creation_ts:
             return " DEFAULT CURRENT_TIMESTAMP"
         if not col.get("nullable", True) and is_bool:
-            return " DEFAULT false"
+            return " DEFAULT 0"
         return ""
     d = str(d).strip()
     if d in ("uuid_generate_v4()", "gen_random_uuid()", "(UUID())", "UUID()"):
@@ -540,7 +543,7 @@ def _pg_default(col: Dict[str, Any], pg_type: str) -> str:
     if d.upper() in ("CURRENT_TIMESTAMP", "NOW()"):
         return " DEFAULT CURRENT_TIMESTAMP"
     if is_bool:
-        return " DEFAULT " + ("true" if d.strip("'").lower() in ("1", "true", "t") else "false")
+        return " DEFAULT " + ("1" if d.strip("'").lower() in ("1", "true", "t") else "0")
     if d.startswith("'") and d.endswith("'"):
         return " DEFAULT " + d
     if d.replace(".", "", 1).lstrip("-").isdigit():

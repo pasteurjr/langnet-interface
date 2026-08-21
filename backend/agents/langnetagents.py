@@ -4503,10 +4503,16 @@ def _norm_enum(v: str) -> str:
 
 
 def _build_enum_canon(schema_sql: str) -> Dict[str, str]:
-    """{forma_normalizada -> valor exato do schema} a partir de todos os ENUMs do DDL."""
+    """{forma_normalizada -> valor exato do schema} a partir dos ENUMs (MySQL) OU dos
+    CHECK (col IN (...)) do DDL PostgreSQL."""
     import re as _re
     canon: Dict[str, str] = {}
     for m in _re.finditer(r"(?i)ENUM\s*\(([^)]*)\)", schema_sql or ""):
+        for tok in _re.findall(r"'([^']*)'", m.group(1)):
+            if tok:
+                canon[_norm_enum(tok)] = tok
+    # PostgreSQL: valores de ENUM vêm como CHECK ("col" IN ('a','b',...))
+    for m in _re.finditer(r'(?i)CHECK\s*\(\s*["`]?\w+["`]?\s+IN\s*\(([^)]*)\)', schema_sql or ""):
         for tok in _re.findall(r"'([^']*)'", m.group(1)):
             if tok:
                 canon[_norm_enum(tok)] = tok
@@ -4540,15 +4546,21 @@ _SCHEMA_FK_CTX: Dict[str, Dict[str, str]] = {}
 
 
 def _build_schema_fk_map(schema_sql: str) -> Dict[str, Dict[str, str]]:
-    """{tabela -> {tabela_referenciada: coluna_fk}} a partir dos FOREIGN KEY do DDL."""
+    """{tabela -> {tabela_referenciada: coluna_fk}} a partir dos FOREIGN KEY do DDL.
+    Dialect-agnostic: aceita identificadores com crase (MySQL) ou aspas duplas (PostgreSQL)."""
     import re as _re
     fkmap: Dict[str, Dict[str, str]] = {}
     if not schema_sql:
         return fkmap
-    for m in _re.finditer(r'(?is)CREATE\s+TABLE\s+`?(\w+)`?\s*\((.*?)\)\s*(?:COMMENT|ENGINE|;)', schema_sql):
-        tbl, body = m.group(1), m.group(2)
+    # split por CREATE TABLE: cada bloco é o corpo de uma tabela até a próxima
+    parts = _re.split(r'(?i)\bCREATE\s+TABLE\s+', schema_sql)
+    for part in parts[1:]:
+        m = _re.match(r'["`]?(\w+)["`]?', part)
+        if not m:
+            continue
+        tbl = m.group(1)
         for fm in _re.finditer(
-                r'(?is)FOREIGN\s+KEY\s*\(\s*`?(\w+)`?\s*\)\s*REFERENCES\s+`?(\w+)`?', body):
+                r'(?is)FOREIGN\s+KEY\s*\(\s*["`]?(\w+)["`]?\s*\)\s*REFERENCES\s+["`]?(\w+)["`]?', part):
             fkmap.setdefault(tbl, {})[fm.group(2)] = fm.group(1)
     return fkmap
 
@@ -4645,7 +4657,9 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
     #     MySQL exige GEOMETRY (erro 4079 Illegal parameter data type varchar for ST_*). Envolve
     #     o placeholder em ST_GeomFromText(%s) para que a string WKT vire geometria no runtime.
     if "st_geomfromtext" not in query.lower():
-        query = _re.sub(r'(?i)(\bST_\w+\s*\([^,()]+,\s*)%s', r'\1ST_GeomFromText(%s)', query)
+        # SRID 4674 (SIRGAS 2000) no wrap — senão o WKT vira geometria SRID 0 e ST_Intersects
+        # falha com "mixed SRID geometries" contra colunas 4674.
+        query = _re.sub(r'(?i)(\bST_\w+\s*\([^,()]+,\s*)%s', r'\1ST_GeomFromText(%s, 4674)', query)
 
     q_repr = repr(query)
     if py_params is not None:
@@ -5623,6 +5637,37 @@ except Exception as _e:
 '''
 
 
+def _postgresify_sql_py(src: str) -> str:
+    """Converte código Python+SQL gerado para MySQL -> PostgreSQL/PostGIS (P3, dbms=postgis).
+    Aplicável a adapters.py e database_tool.py. Placeholders %s e funções ST_* (PostGIS) já são
+    compatíveis; aqui trocamos driver/conexão/cursor, removemos backticks, convertemos o upsert
+    MySQL e funções MySQL-only."""
+    import re as _re
+    s = src
+    # driver + conexão (preserva indentação: substituição em linha única, sem \n)
+    s = s.replace("import os, mysql.connector", "import os, psycopg2, psycopg2.extras")
+    s = s.replace("import mysql.connector", "import psycopg2, psycopg2.extras")
+    s = s.replace("mysql.connector.connect(", "psycopg2.connect(")
+    s = s.replace("mysql.connector.Error", "psycopg2.Error")
+    s = s.replace("mysql.connector", "psycopg2")  # catch-all p/ referências remanescentes
+    s = s.replace("database=os.getenv('DB_NAME'", "dbname=os.getenv('DB_NAME'")
+    s = s.replace("database=_os.getenv('DB_NAME'", "dbname=_os.getenv('DB_NAME'")
+    s = s.replace("'DB_PORT', '3306'", "'DB_PORT', '5432'")
+    s = s.replace("'DB_USER', 'root'", "'DB_USER', 'postgres'")
+    # cursor dict (psycopg2 usa RealDictCursor)
+    s = s.replace("cursor(dictionary=True)", "cursor(cursor_factory=psycopg2.extras.RealDictCursor)")
+    # psycopg2 não tem lastrowid
+    s = s.replace("cur.lastrowid", "None").replace("cursor.lastrowid", "None")
+    # identificadores: PG não aceita backticks (nomes lowercase -> sem aspas)
+    s = s.replace("`", "")
+    # upsert: ON DUPLICATE KEY UPDATE ... -> ON CONFLICT DO NOTHING (até o fim da string SQL)
+    s = _re.sub(r"ON DUPLICATE KEY UPDATE[^'\"]*", "ON CONFLICT DO NOTHING ", s)
+    # funções MySQL-only
+    s = _re.sub(r"\bCURDATE\(\)", "CURRENT_DATE", s)
+    s = _re.sub(r"\bNOW\(\)", "CURRENT_TIMESTAMP", s)
+    return s
+
+
 def _ship_geoprocessing_into_app(add_fn, tools_py: str, needed_tools: set) -> str:
     """Se o app precisa de geoprocessamento_tool, embarca a tool real (2 arquivos) e
     registra no TOOL_REGISTRY. Retorna o tools_py (possivelmente com o bloco de registro)."""
@@ -5881,19 +5926,24 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # (ex.: 'baixa' -> 'baixo' se o schema usa masculino), evitando "Data truncated" no runtime.
     global _ENUM_CANON_CTX
     _ENUM_CANON_CTX = {}
+    _cg_dbms = (state.get("target_dbms") or "").lower()   # DBMS-alvo do app gerado (P3)
     try:
         _sch_enum = state.get("data_model_schema_sql") or ""
-        if not (_sch_enum and "CREATE TABLE" in _sch_enum.upper()):
+        if not (_sch_enum and "CREATE TABLE" in _sch_enum.upper()) or not _cg_dbms:
             from app.database import get_db_connection as _gdbE
             with _gdbE() as _cE:
                 _cuE = _cE.cursor(dictionary=True)
                 _cuE.execute(
-                    "SELECT schema_sql FROM data_model_sessions WHERE project_id=%s "
+                    "SELECT schema_sql, target_dbms FROM data_model_sessions WHERE project_id=%s "
                     "AND status IN ('completed','approved','draft') ORDER BY created_at DESC LIMIT 1",
                     (str(state.get('project_id') or ''),))
                 _rE = _cuE.fetchone(); _cuE.close()
             if _rE:
-                _sch_enum = _rE.get("schema_sql") or ""
+                if not (_sch_enum and "CREATE TABLE" in _sch_enum.upper()):
+                    _sch_enum = _rE.get("schema_sql") or ""
+                _cg_dbms = _cg_dbms or (_rE.get("target_dbms") or "").lower()
+        _cg_dbms = _cg_dbms or "mysql"
+        print(f"[CODE-GEN] DBMS-alvo: {_cg_dbms}")
         _ENUM_CANON_CTX = _build_enum_canon(_sch_enum)
         if _ENUM_CANON_CTX:
             print(f"[CODE-GEN] ENUM canon: {len(_ENUM_CANON_CTX)} raizes ({list(_ENUM_CANON_CTX.values())[:6]})")
@@ -5907,6 +5957,8 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         print(f"[CODE-GEN] enum canon falhou: {_ee}")
         _ENUM_CANON_CTX = {}
         _SCHEMA_FK_CTX = {}
+    _cg_dbms = (_cg_dbms or "mysql")
+    _cg_is_pg = _cg_dbms in ("postgres", "postgresql", "postgis", "postgresql+postgis")
 
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)
     _list_helper_added = False
@@ -6050,7 +6102,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Agora vai como subdir 'ws-server/' do pacote visualtasksexec.
     add("ws-server/main.py", _template_main_py(project_name, ws_port))
     add("ws-server/websocket_server.py", _template_websocket_server_py(ws_port))
-    add("ws-server/database_tool.py", _template_database_tool_py())
+    _db_tool_py = _template_database_tool_py()
+    if _cg_is_pg:
+        _db_tool_py = _postgresify_sql_py(_db_tool_py)
+    add("ws-server/database_tool.py", _db_tool_py)
     # Injeta import do database_tool real e substitui classe stub se existir
     tools_py = _inject_real_database_tool(tools_py)
     # P1: remove QUALQUER mock das tools padrão (embedding/vector/pdf/csv/email) —
@@ -6067,6 +6122,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     _mcp_py = _generate_mcp_tools_py(_mcp_assign)
     if _mcp_py:
         add("ws-server/mcp_tools.py", _mcp_py)
+    # P3: converte a camada de dados para PostgreSQL/PostGIS quando o DBMS-alvo é postgres.
+    if _cg_is_pg:
+        adapters_py = _postgresify_sql_py(adapters_py)
+        print("[CODE-GEN] adapters.py convertidos para psycopg2/PostGIS")
     add("ws-server/adapters.py", adapters_py if adapters_py.endswith("\n") else adapters_py + "\n")
     if agents_yaml:
         add("ws-server/agents.yaml", agents_yaml if agents_yaml.endswith("\n") else agents_yaml + "\n", "yaml")
@@ -6077,6 +6136,8 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     _extra_pkgs = _detect_extra_packages(tools_py)
     if "geoprocessamento_tool" in _needed_tools:
         _extra_pkgs = sorted(set(_extra_pkgs) | set(_GEO_REQUIREMENTS))
+    if _cg_is_pg:
+        _extra_pkgs = sorted(set(_extra_pkgs) | {"psycopg2-binary>=2.9"})
     add("ws-server/requirements.txt", _template_requirements_txt(_extra_pkgs), "text")
     add("ws-server/.env.example", _template_env_example(detected_tools), "text")
     add("ws-server/Dockerfile", _template_dockerfile(), "dockerfile")
