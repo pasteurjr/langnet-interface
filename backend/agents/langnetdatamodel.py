@@ -469,10 +469,165 @@ def _emit_ddl_deterministic(logical_model: Dict[str, Any], dbms: str = "mysql") 
     return "\n".join(out) + "\n"
 
 
+def _is_postgres(dbms: str) -> bool:
+    return (dbms or "").lower() in ("postgres", "postgresql", "postgis", "postgresql+postgis")
+
+
+def _pg_type(col: Dict[str, Any]) -> str:
+    """Tipo lógico -> tipo nativo PostgreSQL/PostGIS (determinístico)."""
+    t = (col.get("type") or "VARCHAR(255)").strip()
+    tu = t.upper()
+    if tu == "UUID":
+        return "uuid"
+    if tu.startswith("ENUM"):
+        vals = col.get("values") or []
+        if not vals:
+            return "VARCHAR(50)"
+        n = max((len(str(v)) for v in vals), default=20)
+        return "VARCHAR(%d)" % max(20, n + 5)  # CHECK carrega os valores (ver _emit_ddl_postgis)
+    if tu in ("SERIAL",):
+        return "SERIAL"
+    if tu in ("BIGSERIAL",):
+        return "BIGSERIAL"
+    if tu in ("BOOLEAN", "BOOL", "TINYINT(1)"):
+        return "boolean"
+    if tu.startswith("TINYINT") or tu in ("INT", "INTEGER", "MEDIUMINT", "SMALLINT"):
+        return "integer"
+    if tu == "BIGINT":
+        return "bigint"
+    if tu == "GEOMETRY" or tu.startswith("GEOMETRY") or tu in ("POINT", "POLYGON", "LINESTRING", "MULTIPOLYGON"):
+        srid = int(col.get("srid", 4674))               # 4674 = SIRGAS 2000 (oficial MG/Brasil)
+        gtype = col.get("geometry_type") or ("Geometry" if tu == "GEOMETRY" else t.capitalize())
+        return "geometry(%s,%d)" % (gtype, srid)
+    if tu == "GEOGRAPHY":
+        return "geography"
+    if tu in ("TEXT", "LONGTEXT", "MEDIUMTEXT", "TINYTEXT"):
+        return "text"
+    if tu in ("DATETIME", "TIMESTAMP"):
+        return "timestamp"
+    if tu in ("JSON", "JSONB"):
+        return "jsonb"
+    if tu in ("FLOAT", "DOUBLE", "REAL"):
+        return "double precision"
+    if tu.startswith("DECIMAL") or tu.startswith("NUMERIC"):
+        return t.lower()
+    if tu == "DATE":
+        return "DATE"
+    if tu.startswith("CHAR("):
+        return t
+    return t  # VARCHAR(n), etc. — válidos em PG
+
+
+def _pg_default(col: Dict[str, Any], pg_type: str) -> str:
+    """Cláusula DEFAULT determinística para PostgreSQL."""
+    d = col.get("default")
+    name = (col.get("name") or "").lower()
+    typ = (col.get("type") or "").upper()
+    is_creation_ts = typ in ("TIMESTAMP", "DATETIME") and any(
+        k in name for k in ("criacao", "cadastro", "registro", "created_at", "data_hora"))
+    is_bool = pg_type == "boolean"
+    if d is None or (isinstance(d, str) and not d.strip()):
+        if col.get("pk") and pg_type == "uuid":
+            return " DEFAULT gen_random_uuid()"
+        if not col.get("nullable", True) and is_creation_ts:
+            return " DEFAULT CURRENT_TIMESTAMP"
+        if not col.get("nullable", True) and is_bool:
+            return " DEFAULT false"
+        return ""
+    d = str(d).strip()
+    if d in ("uuid_generate_v4()", "gen_random_uuid()", "(UUID())", "UUID()"):
+        return " DEFAULT gen_random_uuid()"
+    if d.upper() in ("CURRENT_TIMESTAMP", "NOW()"):
+        return " DEFAULT CURRENT_TIMESTAMP"
+    if is_bool:
+        return " DEFAULT " + ("true" if d.strip("'").lower() in ("1", "true", "t") else "false")
+    if d.startswith("'") and d.endswith("'"):
+        return " DEFAULT " + d
+    if d.replace(".", "", 1).lstrip("-").isdigit():
+        return " DEFAULT " + d
+    return " DEFAULT '%s'" % d.replace("'", "''")
+
+
+def _emit_ddl_postgis(logical_model: Dict[str, Any]) -> str:
+    """Emissor de DDL DETERMINÍSTICO para PostgreSQL + PostGIS. Espelha o emissor MySQL,
+    mas com: aspas duplas, `geometry(...,SRID)`, ENUM->CHECK, boolean, SERIAL, uuid
+    gen_random_uuid(), índices/COMMENT como statements separados, e índice GiST espacial."""
+    tables = logical_model.get("tables") or []
+    fks = logical_model.get("foreign_keys") or []
+    if not tables:
+        raise ValueError("modelo lógico sem tabelas")
+    by_name = {t["name"]: t for t in tables}
+    fks_by_table: Dict[str, List[Dict]] = {}
+    for fk in fks:
+        fks_by_table.setdefault(fk.get("table"), []).append(fk)
+    order = _topo_sort_tables(tables, fks)
+
+    out: List[str] = ["CREATE EXTENSION IF NOT EXISTS postgis;", ""]
+    post: List[str] = []  # CREATE INDEX + COMMENT ON (depois das tabelas)
+    for name in order:
+        t = by_name[name]
+        body: List[str] = []
+        geom_cols: List[str] = []
+        for col in t.get("columns", []):
+            cn = col["name"]
+            pgt = _pg_type(col)
+            if pgt.startswith("geometry") or pgt == "geography":
+                geom_cols.append(cn)
+            deff = _pg_default(col, pgt)
+            if col.get("pk"):
+                body.append('    "%s" %s PRIMARY KEY%s' % (cn, pgt, deff))
+                continue
+            notnull = "" if col.get("nullable", True) else " NOT NULL"
+            check = ""
+            if (col.get("type") or "").upper().startswith("ENUM") and col.get("values"):
+                vals = ", ".join("'%s'" % str(v).replace("'", "''") for v in col["values"])
+                check = ' CHECK ("%s" IN (%s))' % (cn, vals)
+            body.append('    "%s" %s%s%s%s' % (cn, pgt, notnull, deff, check))
+        # FKs inline (a ordem topológica garante que a tabela referenciada já existe)
+        for fk in fks_by_table.get(name, []):
+            ref = fk.get("references") or ""
+            col = fk.get("column")
+            if not col or "(" not in ref:
+                continue
+            on_del = (fk.get("on_delete") or "").upper()
+            on_clause = (" ON DELETE %s" % on_del) if on_del in ("CASCADE", "SET NULL", "RESTRICT", "NO ACTION") else ""
+            body.append('    FOREIGN KEY ("%s") REFERENCES %s%s' % (col, ref, on_clause))
+        out.append('CREATE TABLE "%s" (\n%s\n);' % (name, ",\n".join(body)))
+        out.append("")
+        # índices (statements separados; geometria -> GiST)
+        covered_geom = set()
+        for idx in (t.get("indexes") or []):
+            cols = idx.get("columns") or []
+            if not cols:
+                continue
+            uniq = "UNIQUE " if idx.get("unique") else ""
+            iname = idx.get("name") or ("idx_%s_%s" % (name.lower(), "_".join(cols)))
+            if len(cols) == 1 and cols[0] in geom_cols:
+                post.append('CREATE INDEX "%s" ON "%s" USING GIST ("%s");' % (iname, name, cols[0]))
+                covered_geom.add(cols[0])
+            else:
+                q = ", ".join('"%s"' % c for c in cols)
+                post.append('CREATE %sINDEX "%s" ON "%s" (%s);' % (uniq, iname, name, q))
+        # índice GiST espacial automático p/ colunas de geometria sem índice explícito
+        for gc in geom_cols:
+            if gc not in covered_geom:
+                post.append('CREATE INDEX "idx_%s_%s_gist" ON "%s" USING GIST ("%s");' % (name.lower(), gc, name, gc))
+        # COMMENT ON (statement separado)
+        desc = (t.get("description") or "").replace("'", "''")
+        if desc:
+            post.append('COMMENT ON TABLE "%s" IS \'%s\';' % (name, desc))
+    if post:
+        out.append("")
+        out.extend(post)
+    return "\n".join(out) + "\n"
+
+
 def generate_ddl(logical_model: Dict[str, Any], dbms: str = "mysql") -> str:
     """Passo 3: gera SQL DDL. DETERMINÍSTICO (sem LLM) a partir do modelo lógico —
     sintaxe sempre válida. Só cai no LLM se o modelo estiver inutilizável."""
     try:
+        if _is_postgres(dbms):
+            return _emit_ddl_postgis(logical_model)
         return _emit_ddl_deterministic(logical_model, dbms=dbms)
     except Exception as _e:
         print(f"[DATA-MODEL] emissor determinístico falhou ({_e}); fallback LLM")
