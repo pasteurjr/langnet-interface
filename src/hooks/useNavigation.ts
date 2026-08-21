@@ -53,15 +53,15 @@ const PROJECT_MENU_ITEMS: MenuItem[] = [
   },
   {
     id: 'tasks',
-    label: 'Tarefas',
+    label: 'Agentes & Tarefas',
     icon: '📋',
-    path: '/tasks'
+    path: '/agent-task'
   },
   {
     id: 'yaml',
-    label: 'YAML',
+    label: 'YAML de Agentes e Tarefas',
     icon: '📄',
-    path: '/yaml'
+    path: '/yaml-generation'
   },
   {
     id: 'petri-net',
@@ -71,9 +71,9 @@ const PROJECT_MENU_ITEMS: MenuItem[] = [
   },
   {
     id: 'code',
-    label: 'Código',
+    label: 'Geração de Código',
     icon: '💻',
-    path: '/code'
+    path: '/code-generation'
   },
   {
     id: 'deploy',
