@@ -4532,6 +4532,59 @@ def _align_enum_literals(query: str, canon: Dict[str, str]) -> str:
     return _re.sub(r"'([^']+)'", _rep, query)
 
 
+# COERÊNCIA tabela⟷FROM (Gap uso do solo): mapa de FK do schema para reparar SELECTs que
+# referenciam `tabela.coluna` sem a tabela estar no FROM/JOIN — típico de consultas
+# geoespaciais que o LLM escreve mal (ex.: ST_Intersects(zoneamento.geometria, %s) num
+# FROM regra_aplicavel). Setado no code-gen (onde o schema está disponível).
+_SCHEMA_FK_CTX: Dict[str, Dict[str, str]] = {}
+
+
+def _build_schema_fk_map(schema_sql: str) -> Dict[str, Dict[str, str]]:
+    """{tabela -> {tabela_referenciada: coluna_fk}} a partir dos FOREIGN KEY do DDL."""
+    import re as _re
+    fkmap: Dict[str, Dict[str, str]] = {}
+    if not schema_sql:
+        return fkmap
+    for m in _re.finditer(r'(?is)CREATE\s+TABLE\s+`?(\w+)`?\s*\((.*?)\)\s*(?:COMMENT|ENGINE|;)', schema_sql):
+        tbl, body = m.group(1), m.group(2)
+        for fm in _re.finditer(
+                r'(?is)FOREIGN\s+KEY\s*\(\s*`?(\w+)`?\s*\)\s*REFERENCES\s+`?(\w+)`?', body):
+            fkmap.setdefault(tbl, {})[fm.group(2)] = fm.group(1)
+    return fkmap
+
+
+def _repair_query_joins(query: str, fkmap: Dict[str, Dict[str, str]]):
+    """Repara um SELECT que referencia `T.col` com T fora do FROM/JOIN: injeta
+    `JOIN T ON T.id = <from>.<fk>` quando existe FK <from> -> T. Retorna
+    (query_reparada, ok). ok=False => referência insatisfazível (sem FK) — o passo
+    deve ser PULADO para não emitir SQL que quebra (1054 Unknown column)."""
+    import re as _re
+    if not query.lstrip().lower().startswith("select"):
+        return query, True
+    fm = _re.search(r'(?is)\bfrom\s+`?(\w+)`?', query)
+    if not fm:
+        return query, True
+    from_tbl = fm.group(1)
+    present = {from_tbl.lower()}
+    for jm in _re.finditer(r'(?is)\bjoin\s+`?(\w+)`?', query):
+        present.add(jm.group(1).lower())
+    qualified = {q for q in _re.findall(r'\b([a-zA-Z_]\w*)\.\w+', query)}
+    joins: List[str] = []
+    for t in qualified:
+        if t.lower() in present:
+            continue
+        fkcol = (fkmap.get(from_tbl, {}) or {}).get(t)
+        if fkcol:
+            joins.append("JOIN %s ON %s.id = %s.%s" % (t, t, from_tbl, fkcol))
+            present.add(t.lower())
+        else:
+            return query, False  # não há FK p/ satisfazer a referência — pular passo
+    if joins:
+        query = _re.sub(r'(?is)(\bfrom\s+`?' + _re.escape(from_tbl) + r'`?)',
+                        r'\1 ' + " ".join(joins), query, count=1)
+    return query, True
+
+
 def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
                    loop_list: str, capture_var: str, captured_vars: List[str]) -> List[str]:
     """Emit Python lines for a single SQL step."""
@@ -4581,6 +4634,18 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
             query)
     # (3) COERÊNCIA DE ENUM: canoniza literais de ENUM ao domínio real do schema (baixa<->baixo).
     query = _align_enum_literals(query, _ENUM_CANON_CTX)
+    # (4) COERÊNCIA tabela⟷FROM: repara SELECT que referencia `T.col` sem JOIN (injeta FK JOIN);
+    #     se insatisfazível, PULA o passo — não emite SQL que quebra (ex.: ST_Intersects espacial).
+    if is_select:
+        query, _join_ok = _repair_query_joins(query, _SCHEMA_FK_CTX)
+        if not _join_ok:
+            return []  # passo insatisfazível → não emite (evita 1054); demais passos persistem
+
+    # (5) PARÂMETRO ESPACIAL: ST_<fn>(col, %s) recebe o placeholder como VARCHAR (WKT), mas
+    #     MySQL exige GEOMETRY (erro 4079 Illegal parameter data type varchar for ST_*). Envolve
+    #     o placeholder em ST_GeomFromText(%s) para que a string WKT vire geometria no runtime.
+    if "st_geomfromtext" not in query.lower():
+        query = _re.sub(r'(?i)(\bST_\w+\s*\([^,()]+,\s*)%s', r'\1ST_GeomFromText(%s)', query)
 
     q_repr = repr(query)
     if py_params is not None:
@@ -4588,25 +4653,30 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
     else:
         lines.append(f"{indent}cur.execute({q_repr})")
 
-    if is_select and capture_var:
-        # Coluna REALMENTE selecionada (SELECT <col> FROM ...) — não assumir 'id'.
-        # 'SELECT atendimento_id FROM ...' capturado como 'id' devolvia sempre None.
-        sel_col = "id"
-        _selm = _re.match(r'(?is)^\s*select\s+(.+?)\s+from\b', query)
-        if _selm:
-            first = _selm.group(1).split(",")[0].strip().split()[0]  # 1ª coluna, sem alias
-            first = first.replace("`", "").replace('"', "")
-            if "." in first:
-                first = first.split(".")[-1]                          # remove prefixo de tabela
-            if _re.match(r'^\w+$', first):
-                sel_col = first
-        lines.append(f"{indent}_row = cur.fetchone()")
-        # PREFERE o input_data (contexto propagado — ex.: atendimento_id do atendimento corrente);
-        # o SELECT é só FALLBACK. Assim o adapter respeita o que a UI enviou em vez de re-derivar
-        # por lookup frágil/circular (ex.: buscar atendimento_id num prontuário que ainda não existe).
-        lines.append(f"{indent}{capture_var} = input_data.get({capture_var!r}) or (_row[{sel_col!r}] if _row else None)")
-        if capture_var not in captured_vars:
-            captured_vars.append(capture_var)
+    if is_select:
+        # DRENA o result-set SEMPRE (mesmo sem captura): um SELECT cujas linhas não são
+        # lidas deixa "Unread result found" e o PRÓXIMO cur.execute quebra (mysql-connector).
+        # fetchall() consome tudo; a captura usa a 1ª linha.
+        lines.append(f"{indent}_rows = cur.fetchall()")
+        if capture_var:
+            # Coluna REALMENTE selecionada (SELECT <col> FROM ...) — não assumir 'id'.
+            # 'SELECT atendimento_id FROM ...' capturado como 'id' devolvia sempre None.
+            sel_col = "id"
+            _selm = _re.match(r'(?is)^\s*select\s+(.+?)\s+from\b', query)
+            if _selm:
+                first = _selm.group(1).split(",")[0].strip().split()[0]  # 1ª coluna, sem alias
+                first = first.replace("`", "").replace('"', "")
+                if "." in first:
+                    first = first.split(".")[-1]                          # remove prefixo de tabela
+                if _re.match(r'^\w+$', first):
+                    sel_col = first
+            lines.append(f"{indent}_row = _rows[0] if _rows else None")
+            # PREFERE o input_data (contexto propagado — ex.: atendimento_id do atendimento corrente);
+            # o SELECT é só FALLBACK. Assim o adapter respeita o que a UI enviou em vez de re-derivar
+            # por lookup frágil/circular (ex.: buscar atendimento_id num prontuário que ainda não existe).
+            lines.append(f"{indent}{capture_var} = input_data.get({capture_var!r}) or (_row[{sel_col!r}] if _row else None)")
+            if capture_var not in captured_vars:
+                captured_vars.append(capture_var)
 
     return lines
 
@@ -4680,6 +4750,14 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
                 else:
                     fixed_ops.append(op)
             py_parts.append(" + ".join(fixed_ops) if fixed_ops else "''")
+            continue
+        # Referência pontuada a var indefinida (ex.: LLM escreveu `regra.descricao` sem
+        # definir o loop `regra` → NameError em runtime). Se a BASE não é var conhecida
+        # (capturada/loop) nem chamada de função (a.b(...)), rebaixa para o campo de
+        # entrada com o nome do atributo: `regra.descricao` → input_data.get('descricao').
+        _dot = _re.match(r'^([A-Za-z_]\w*)\.([A-Za-z_]\w*)$', p)
+        if _dot and _dot.group(1) not in captured_vars and _dot.group(1) != loop_item:
+            py_parts.append(_emit_get(_dot.group(2)))
             continue
         # Literais / expressões simples (números, 'strings', a.b(...)) — mantém.
         py_parts.append(p)
@@ -5774,9 +5852,16 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         _ENUM_CANON_CTX = _build_enum_canon(_sch_enum)
         if _ENUM_CANON_CTX:
             print(f"[CODE-GEN] ENUM canon: {len(_ENUM_CANON_CTX)} raizes ({list(_ENUM_CANON_CTX.values())[:6]})")
+        # COERÊNCIA tabela⟷FROM (Gap uso do solo): mapa de FK p/ _emit_sql_step reparar
+        # SELECTs com `T.col` sem JOIN (ex.: ST_Intersects geoespacial) usando o MESMO schema.
+        global _SCHEMA_FK_CTX
+        _SCHEMA_FK_CTX = _build_schema_fk_map(_sch_enum)
+        if _SCHEMA_FK_CTX:
+            print(f"[CODE-GEN] FK map: {sum(len(v) for v in _SCHEMA_FK_CTX.values())} FKs em {len(_SCHEMA_FK_CTX)} tabelas")
     except Exception as _ee:
         print(f"[CODE-GEN] enum canon falhou: {_ee}")
         _ENUM_CANON_CTX = {}
+        _SCHEMA_FK_CTX = {}
 
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)
     _list_helper_added = False

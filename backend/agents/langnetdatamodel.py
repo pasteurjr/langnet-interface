@@ -355,9 +355,20 @@ def _default_clause(col: Dict[str, Any]) -> str:
     typ = (col.get("type") or "").upper()
     is_creation_ts = typ in ("TIMESTAMP", "DATETIME") and any(
         k in name for k in ("criacao", "cadastro", "registro", "created_at", "data_hora"))
+    # Coluna-flag booleana (BOOLEAN -> TINYINT(1), ou TINYINT(1)/BOOL declarado): quando
+    # NOT NULL e SEM default, o INSERT do adapter que não popula a flag quebra
+    # (1364 Field 'lida' doesn't have a default value). Damos DEFAULT 0 — mesma lógica
+    # do CURRENT_TIMESTAMP p/ timestamps de criação: torna INSERTs parciais robustos.
+    is_bool_flag = typ in ("BOOLEAN", "BOOL", "TINYINT(1)") or (
+        typ.startswith("TINYINT") and any(
+            k in name for k in ("lida", "ativo", "ativa", "flag", "is_", "habilitado",
+                                "aprovado", "aprovada", "enviado", "enviada", "consentimento",
+                                "obrigatorio", "obrigatoria", "visivel", "deletado")))
     if d is None or (isinstance(d, str) and not d.strip()):
         if not col.get("nullable", True) and is_creation_ts:
             return " DEFAULT CURRENT_TIMESTAMP"
+        if not col.get("nullable", True) and is_bool_flag:
+            return " DEFAULT 0"
         return ""
     d = str(d).strip()
     if d in ("uuid_generate_v4()", "gen_random_uuid()", "(UUID())", "UUID()"):
