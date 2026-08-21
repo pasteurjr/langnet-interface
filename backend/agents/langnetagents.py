@@ -4485,6 +4485,53 @@ def _parse_task_description_to_python(desc: str) -> str:
     return body
 
 
+# COERÊNCIA DE ENUM (Fraqueza C.2): mapa normalizado->canônico dos valores de ENUM do
+# schema corrente. Setado no code-gen (onde o schema está disponível) e lido em _emit_sql_step
+# para canonizar literais de ENUM na SQL dos adapters — evita "Data truncated" quando o valor
+# literal do tasks.yaml (ex.: 'baixa') diverge do ENUM do modelo de dados (ex.: 'baixo').
+_ENUM_CANON_CTX: Dict[str, str] = {}
+
+
+def _norm_enum(v: str) -> str:
+    """Normaliza um token de ENUM: minúsculo, sem acento, sem vogal de gênero final (a/o)."""
+    import unicodedata as _ud
+    s = _ud.normalize("NFKD", str(v).strip().lower())
+    s = "".join(ch for ch in s if not _ud.combining(ch))
+    if len(s) > 2 and s[-1] in ("a", "o"):
+        s = s[:-1]
+    return s
+
+
+def _build_enum_canon(schema_sql: str) -> Dict[str, str]:
+    """{forma_normalizada -> valor exato do schema} a partir de todos os ENUMs do DDL."""
+    import re as _re
+    canon: Dict[str, str] = {}
+    for m in _re.finditer(r"(?i)ENUM\s*\(([^)]*)\)", schema_sql or ""):
+        for tok in _re.findall(r"'([^']*)'", m.group(1)):
+            if tok:
+                canon[_norm_enum(tok)] = tok
+    return canon
+
+
+def _align_enum_literals(query: str, canon: Dict[str, str]) -> str:
+    """Substitui literais de ENUM na query pelo valor EXATO do schema (por raiz normalizada).
+    Só toca literais de palavra única alfabética que casam um token de ENUM conhecido."""
+    if not canon:
+        return query
+    import re as _re
+
+    def _rep(mm):
+        lit = mm.group(1)
+        if " " in lit or not lit.replace("_", "").isalpha() or len(lit) > 20:
+            return mm.group(0)
+        target = canon.get(_norm_enum(lit))
+        if target and target != lit:
+            return "'%s'" % target
+        return mm.group(0)
+
+    return _re.sub(r"'([^']+)'", _rep, query)
+
+
 def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
                    loop_list: str, capture_var: str, captured_vars: List[str]) -> List[str]:
     """Emit Python lines for a single SQL step."""
@@ -4532,6 +4579,8 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
             r'(?i)`?(\w+)`?\s*=\s*VALUES\(\s*`?\1`?\s*\)',
             lambda m: "`%s`=COALESCE(VALUES(`%s`), `%s`)" % (m.group(1), m.group(1), m.group(1)),
             query)
+    # (3) COERÊNCIA DE ENUM: canoniza literais de ENUM ao domínio real do schema (baixa<->baixo).
+    query = _align_enum_literals(query, _ENUM_CANON_CTX)
 
     q_repr = repr(query)
     if py_params is not None:
@@ -5704,6 +5753,31 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # como Qwen2.5-coder-32b travam depois de ~4 tool calls sequenciais em
     # cadeia, então CRUD determinístico em Python é a única forma robusta
     # de executar tasks de persistência em cascata.
+    # COERÊNCIA DE ENUM (C.2): resolve o schema do modelo de dados corrente e monta o mapa
+    # canônico ANTES de gerar os adapters — assim _emit_sql_step canoniza os literais de ENUM
+    # (ex.: 'baixa' -> 'baixo' se o schema usa masculino), evitando "Data truncated" no runtime.
+    global _ENUM_CANON_CTX
+    _ENUM_CANON_CTX = {}
+    try:
+        _sch_enum = state.get("data_model_schema_sql") or ""
+        if not (_sch_enum and "CREATE TABLE" in _sch_enum.upper()):
+            from app.database import get_db_connection as _gdbE
+            with _gdbE() as _cE:
+                _cuE = _cE.cursor(dictionary=True)
+                _cuE.execute(
+                    "SELECT schema_sql FROM data_model_sessions WHERE project_id=%s "
+                    "AND status IN ('completed','approved','draft') ORDER BY created_at DESC LIMIT 1",
+                    (str(state.get('project_id') or ''),))
+                _rE = _cuE.fetchone(); _cuE.close()
+            if _rE:
+                _sch_enum = _rE.get("schema_sql") or ""
+        _ENUM_CANON_CTX = _build_enum_canon(_sch_enum)
+        if _ENUM_CANON_CTX:
+            print(f"[CODE-GEN] ENUM canon: {len(_ENUM_CANON_CTX)} raizes ({list(_ENUM_CANON_CTX.values())[:6]})")
+    except Exception as _ee:
+        print(f"[CODE-GEN] enum canon falhou: {_ee}")
+        _ENUM_CANON_CTX = {}
+
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)
     _list_helper_added = False
     if _det_snippet:
