@@ -5593,6 +5593,51 @@ def _inject_tool_registry_stub(tools_py: str, all_tool_names: List[str]) -> str:
     return tools_py.rstrip() + "\n" + stub
 
 
+def _geoprocessing_asset(fname: str) -> str:
+    """Lê um arquivo do pacote geoprocessing/ do gerador (a tool real a embarcar)."""
+    import os as _os
+    p = _os.path.join(_os.path.dirname(__file__), "geoprocessing", fname)
+    with open(p, encoding="utf-8") as f:
+        return f.read()
+
+
+# Libs geoespaciais que a GeoprocessamentoTool exige (vão pro requirements.txt do app gerado).
+_GEO_REQUIREMENTS = ["shapely>=2.0", "pyproj>=3.5", "geopandas>=1.0", "pyogrio>=0.7",
+                     "owslib>=0.29", "psycopg2-binary>=2.9"]
+
+# Bloco anexado ao tools.py para registrar a tool REAL no lugar do stub None.
+_GEO_TOOL_REGISTER = '''
+
+# ─── geoprocessamento_tool REAL (embarcado pelo LangNet: shapely+pyproj+PostGIS+QGIS+WFS) ───
+# Substitui o stub None por uma tool geoespacial completa (análise espacial, conformidade de
+# uso do solo via PostGIS, 679 algoritmos QGIS/GDAL/GRASS e carga de bases OGC/WFS/IDE Sisema).
+try:
+    from geoprocessamento_tool import geoprocessamento_tool as _geo_tool
+    if _geo_tool is not None:
+        try:
+            TOOL_REGISTRY['geoprocessamento_tool'] = _geo_tool
+        except Exception:
+            TOOL_REGISTRY = {'geoprocessamento_tool': _geo_tool}
+except Exception as _e:
+    print('[tools] geoprocessamento_tool indisponivel:', _e)
+'''
+
+
+def _ship_geoprocessing_into_app(add_fn, tools_py: str, needed_tools: set) -> str:
+    """Se o app precisa de geoprocessamento_tool, embarca a tool real (2 arquivos) e
+    registra no TOOL_REGISTRY. Retorna o tools_py (possivelmente com o bloco de registro)."""
+    if "geoprocessamento_tool" not in needed_tools:
+        return tools_py
+    try:
+        add_fn("ws-server/geoprocessamento_tool.py", _geoprocessing_asset("geoprocessamento_tool.py"))
+        add_fn("ws-server/qgis_bridge.py", _geoprocessing_asset("qgis_bridge.py"))
+        tools_py = (tools_py.rstrip() + "\n" + _GEO_TOOL_REGISTER)
+        print("[CODE-GEN] geoprocessamento_tool REAL embarcada (shapely/pyproj/PostGIS/QGIS/WFS)")
+    except Exception as _e:
+        print(f"[CODE-GEN] falha ao embarcar geoprocessamento_tool: {_e}")
+    return tools_py
+
+
 def _autofill_tasks_yaml_agents(
     tasks_yaml: str,
     agents_yaml: str,
@@ -6011,6 +6056,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # P1: remove QUALQUER mock das tools padrão (embedding/vector/pdf/csv/email) —
     # as versões REAIS vêm de tools_std.py. Zero mock no código gerado.
     tools_py = _strip_std_mock_tools(tools_py)
+    # Embarca a GeoprocessamentoTool REAL quando o domínio precisa (uso do solo/geoespacial):
+    # substitui o stub None por uma tool completa (shapely/pyproj/PostGIS/QGIS/WFS).
+    _needed_tools = set(detected_tools) | set(all_tool_names)
+    tools_py = _ship_geoprocessing_into_app(add, tools_py, _needed_tools)
     add("ws-server/tools.py", tools_py if tools_py.endswith("\n") else tools_py + "\n")
     add("ws-server/tools_std.py", _generate_tools_std_py())
     add("ws-server/tools_ext.py", _generate_tools_ext_py())
@@ -6025,7 +6074,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         add("ws-server/tasks.yaml", tasks_yaml if tasks_yaml.endswith("\n") else tasks_yaml + "\n", "yaml")
     if petri_with_logica:
         add("ws-server/petri_net.json", json.dumps(petri_with_logica, ensure_ascii=False, indent=2), "json")
-    add("ws-server/requirements.txt", _template_requirements_txt(_detect_extra_packages(tools_py)), "text")
+    _extra_pkgs = _detect_extra_packages(tools_py)
+    if "geoprocessamento_tool" in _needed_tools:
+        _extra_pkgs = sorted(set(_extra_pkgs) | set(_GEO_REQUIREMENTS))
+    add("ws-server/requirements.txt", _template_requirements_txt(_extra_pkgs), "text")
     add("ws-server/.env.example", _template_env_example(detected_tools), "text")
     add("ws-server/Dockerfile", _template_dockerfile(), "dockerfile")
 
