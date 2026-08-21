@@ -2614,6 +2614,11 @@ def _build_agent(agent_id: str) -> Agent:
         allow_delegation=cfg.get("allow_delegation", False),
         tools=tools,
         llm=chosen_llm,
+        # CAP de iterações: sem isto o agente pode entrar em LOOP infinito quando insiste
+        # numa tool não-configurada (ex.: database_tool é stub fail-loud). Ao bater o limite,
+        # o CrewAI força o Final Answer — que aciona a persistência determinística (Attested).
+        max_iter=int(cfg.get("max_iter", 6)),
+        max_retry_limit=int(cfg.get("max_retry_limit", 2)),
     )
 
 
