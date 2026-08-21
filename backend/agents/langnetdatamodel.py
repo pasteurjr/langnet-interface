@@ -814,10 +814,62 @@ def generate_alembic_migration(logical_model: Dict[str, Any]) -> str:
         return _strip_code_fence(raw)
 
 
+def _validate_schema_executable_pg(schema_sql: str) -> Optional[Dict[str, Any]]:
+    """Validação EXECUTÁVEL PostgreSQL/PostGIS: aplica o schema num SCHEMA temporário do
+    banco PostGIS (que já tem a extensão) e devolve erros REAIS. Best-effort."""
+    try:
+        import uuid as _uuid
+        import os as _os
+        import psycopg2
+    except Exception:
+        return None
+    host = _os.getenv("PG_HOST", "127.0.0.1"); port = int(_os.getenv("PG_PORT", "5432"))
+    user = _os.getenv("PG_USER", "producao"); pw = _os.getenv("PG_PASSWORD", "112358123")
+    db = _os.getenv("PG_DB", "uso_solo_gis")
+    schema = "_ddlval_" + _uuid.uuid4().hex[:12]
+    errors: List[str] = []
+    conn = None
+    try:
+        conn = psycopg2.connect(host=host, port=port, user=user, password=pw, dbname=db, connect_timeout=6)
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute('CREATE SCHEMA "%s"' % schema)
+        cur.execute('SET search_path TO "%s", public' % schema)
+        for stmt in [s.strip() for s in schema_sql.split(";") if s.strip()]:
+            if stmt.upper().startswith("CREATE EXTENSION"):
+                continue  # postgis já está em public (search_path cobre)
+            try:
+                cur.execute(stmt)
+            except Exception as _se:
+                errors.append(str(_se))
+        cur.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema=%s", (schema,))
+        ntables = cur.fetchone()[0]
+        cur.execute('DROP SCHEMA "%s" CASCADE' % schema)
+        cur.close()
+        return {"applied": len(errors) == 0, "tables_created": int(ntables), "errors": errors[:5]}
+    except Exception as _e:
+        try:
+            if conn:
+                _c2 = conn.cursor(); _c2.execute('DROP SCHEMA IF EXISTS "%s" CASCADE' % schema); _c2.close()
+        except Exception:
+            pass
+        return {"applied": False, "tables_created": 0, "errors": [str(_e)]}
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+
 def _validate_schema_executable(schema_sql: str, dbms: str = "mysql") -> Optional[Dict[str, Any]]:
     """Validação EXECUTÁVEL: aplica o schema num banco TEMPORÁRIO e retorna erros REAIS
     (não heurística de LLM). Best-effort — devolve None se não houver DB/driver."""
-    if dbms != "mysql" or not (schema_sql or "").strip():
+    if not (schema_sql or "").strip():
+        return None
+    if _is_postgres(dbms):
+        return _validate_schema_executable_pg(schema_sql)
+    if dbms != "mysql":
         return None
     try:
         import uuid as _uuid
@@ -863,14 +915,14 @@ def _validate_schema_executable(schema_sql: str, dbms: str = "mysql") -> Optiona
             pass
 
 
-def validate_quality(schema_sql: str) -> Dict[str, Any]:
+def validate_quality(schema_sql: str, dbms: str = "mysql") -> Dict[str, Any]:
     """Passo 6: valida o schema. AUTORITATIVO por execução real (aplica num banco
-    temporário) + sugestões do LLM como complemento. Se o schema não aplica, rebaixa o
-    score e injeta o erro REAL — em vez de o validador LLM 'achar' que está bom."""
+    temporário do DBMS-alvo) + sugestões do LLM como complemento. Se o schema não aplica,
+    rebaixa o score e injeta o erro REAL — em vez de o validador LLM 'achar' que está bom."""
     prompt = _VALIDATE_QUALITY_PROMPT.format(schema_sql=schema_sql[:40000])
     raw = _call_llm(prompt)
     parsed = _safe_json_parse(raw) or {"score": 0, "issues": [], "suggestions": []}
-    exe = _validate_schema_executable(schema_sql)
+    exe = _validate_schema_executable(schema_sql, dbms=dbms)
     if exe is not None:
         parsed["executable"] = exe
         if exe["applied"]:
@@ -878,9 +930,10 @@ def validate_quality(schema_sql: str) -> Dict[str, Any]:
         else:
             parsed.setdefault("issues", [])
             _msg = exe["errors"][0] if exe["errors"] else "erro desconhecido ao aplicar"
+            _alvo = "PostgreSQL/PostGIS" if _is_postgres(dbms) else "MySQL"
             parsed["issues"].insert(0, {
                 "severity": "high", "table": "(schema)",
-                "issue": "O SCHEMA NÃO APLICA no MySQL: " + _msg[:300]})
+                "issue": ("O SCHEMA NÃO APLICA no %s: " % _alvo) + _msg[:300]})
             parsed["score"] = min(int(parsed.get("score", 100) or 100), 25)
     return parsed
 
@@ -938,7 +991,7 @@ def execute_data_model_workflow(
     alembic = generate_alembic_migration(logical)
 
     _tick("validate_quality", 92)
-    validation = validate_quality(schema_sql)
+    validation = validate_quality(schema_sql, dbms=target_dbms)
 
     _tick("build_descriptor", 97)
     data_model_yaml = build_yaml_descriptor(logical, target_dbms)
@@ -989,7 +1042,7 @@ Retorne SOMENTE o YAML final (completo, com tudo que já existia + a mudança)."
         parsed = yaml.safe_load(new_yaml)
         logical = {"tables": parsed.get("tables", []), "foreign_keys": parsed.get("foreign_keys", [])}
         schema_sql_new = generate_ddl(logical, dbms=target_dbms)
-        validation = validate_quality(schema_sql_new)
+        validation = validate_quality(schema_sql_new, dbms=target_dbms)
         return {
             "data_model_yaml": new_yaml,
             "schema_sql": schema_sql_new,
