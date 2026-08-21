@@ -491,11 +491,74 @@ def generate_alembic_migration(logical_model: Dict[str, Any]) -> str:
     return _strip_code_fence(raw)
 
 
+def _validate_schema_executable(schema_sql: str, dbms: str = "mysql") -> Optional[Dict[str, Any]]:
+    """Validação EXECUTÁVEL: aplica o schema num banco TEMPORÁRIO e retorna erros REAIS
+    (não heurística de LLM). Best-effort — devolve None se não houver DB/driver."""
+    if dbms != "mysql" or not (schema_sql or "").strip():
+        return None
+    try:
+        import uuid as _uuid
+        import mysql.connector
+        from app.database import DB_CONFIG  # mesmas creds do backend (com defaults)
+    except Exception:
+        return None
+    host = DB_CONFIG.get("host"); user = DB_CONFIG.get("user")
+    if not (host and user):
+        return None
+    tmpdb = "_ddlval_" + _uuid.uuid4().hex[:12]
+    errors: List[str] = []
+    conn = None
+    try:
+        conn = mysql.connector.connect(
+            host=host, port=int(DB_CONFIG.get("port", 3306)),
+            user=user, password=DB_CONFIG.get("password", ""))
+        cur = conn.cursor()
+        cur.execute("CREATE DATABASE `%s` CHARACTER SET utf8mb4" % tmpdb)
+        cur.execute("USE `%s`" % tmpdb)
+        for stmt in [s.strip() for s in schema_sql.split(";") if s.strip()]:
+            try:
+                cur.execute(stmt)
+            except Exception as _se:
+                errors.append(str(_se))
+        cur.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=%s", (tmpdb,))
+        ntables = cur.fetchone()[0]
+        cur.execute("DROP DATABASE `%s`" % tmpdb)
+        conn.commit(); cur.close()
+        return {"applied": len(errors) == 0, "tables_created": int(ntables), "errors": errors[:5]}
+    except Exception as _e:
+        try:
+            if conn:
+                _c2 = conn.cursor(); _c2.execute("DROP DATABASE IF EXISTS `%s`" % tmpdb); conn.commit(); _c2.close()
+        except Exception:
+            pass
+        return {"applied": False, "tables_created": 0, "errors": [str(_e)]}
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
+
+
 def validate_quality(schema_sql: str) -> Dict[str, Any]:
-    """Passo 6: valida qualidade do schema."""
+    """Passo 6: valida o schema. AUTORITATIVO por execução real (aplica num banco
+    temporário) + sugestões do LLM como complemento. Se o schema não aplica, rebaixa o
+    score e injeta o erro REAL — em vez de o validador LLM 'achar' que está bom."""
     prompt = _VALIDATE_QUALITY_PROMPT.format(schema_sql=schema_sql[:40000])
     raw = _call_llm(prompt)
     parsed = _safe_json_parse(raw) or {"score": 0, "issues": [], "suggestions": []}
+    exe = _validate_schema_executable(schema_sql)
+    if exe is not None:
+        parsed["executable"] = exe
+        if exe["applied"]:
+            parsed["applied_ok"] = True
+        else:
+            parsed.setdefault("issues", [])
+            _msg = exe["errors"][0] if exe["errors"] else "erro desconhecido ao aplicar"
+            parsed["issues"].insert(0, {
+                "severity": "high", "table": "(schema)",
+                "issue": "O SCHEMA NÃO APLICA no MySQL: " + _msg[:300]})
+            parsed["score"] = min(int(parsed.get("score", 100) or 100), 25)
     return parsed
 
 
