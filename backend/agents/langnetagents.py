@@ -1246,8 +1246,18 @@ def enrich_requirements_output_func(state: LangNetFullState, result: Any) -> Lan
         parsed = _lenient_json(parsed["team_result"])
     if not isinstance(parsed, dict):
         parsed = {}
+    # FALLBACK de estrutura: o 32B às vezes ACHATA a saída (retorna functional_requirements/
+    # non_functional_requirements/business_rules no TOPO, sem aninhar em enriched_requirements).
+    # Remonta o enriched_requirements a partir do topo — senão os requisitos enriquecidos somem
+    # e o generate_document cai num extract raso.
     if not parsed.get("enriched_requirements"):
-        print("[WARN] enrich_requirements: enriched vazio após parse leniente")
+        _top = {k: parsed[k] for k in ("functional_requirements", "non_functional_requirements",
+                                       "business_rules") if parsed.get(k)}
+        if _top:
+            parsed["enriched_requirements"] = _top
+            print(f"[FIX] enrich_requirements: estrutura achatada remontada ({sum(len(v) for v in _top.values() if isinstance(v, list))} itens)")
+        else:
+            print("[WARN] enrich_requirements: enriched vazio após parse leniente")
 
     updated_state = {
         **state,
