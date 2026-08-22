@@ -1200,6 +1200,33 @@ def enrich_requirements_input_func(state: LangNetFullState) -> Dict[str, Any]:
     }
 
 
+def _lenient_json(raw: Any) -> Any:
+    """Parse JSON TOLERANTE ao output do LLM local (Qwen 32B): tolera cercas markdown
+    (```json), prosa antes do objeto e 'Extra data' depois (usa raw_decode para pegar só
+    o 1º objeto). Evita que enrich_requirements/validate_quality descartem TUDO (parsed={})
+    quando o modelo emite JSON válido + texto extra, o que zerava os requisitos enriquecidos."""
+    import json as _j
+    import re as _re
+    if isinstance(raw, (dict, list)):
+        return raw
+    s = str(raw).strip()
+    m = _re.search(r"```(?:json)?\s*(.*?)```", s, _re.S)
+    if m:
+        s = m.group(1).strip()
+    for opener in ("{", "["):
+        idx = s.find(opener)
+        if idx >= 0:
+            try:
+                obj, _end = _j.JSONDecoder().raw_decode(s[idx:])
+                return obj
+            except Exception:
+                continue
+    try:
+        return _j.loads(s)
+    except Exception:
+        return {}
+
+
 def enrich_requirements_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
     """Update state with enrich_requirements results"""
     # Extract output (same pattern as other output funcs)
@@ -1214,24 +1241,13 @@ def enrich_requirements_output_func(state: LangNetFullState, result: Any) -> Lan
     else:
         output_json = str(result)
 
-    try:
-        parsed = json.loads(output_json)
-        # Handle nested team_result if present (Claude Code pattern)
-        if isinstance(parsed, dict) and "team_result" in parsed:
-            team_result_str = parsed["team_result"]
-            if isinstance(team_result_str, str):
-                # Remove markdown code blocks
-                team_result_str = team_result_str.strip()
-                if team_result_str.startswith("```json"):
-                    team_result_str = team_result_str[7:]
-                elif team_result_str.startswith("```"):
-                    team_result_str = team_result_str[3:]
-                if team_result_str.endswith("```"):
-                    team_result_str = team_result_str[:-3]
-                parsed = json.loads(team_result_str.strip())
-    except json.JSONDecodeError as e:
-        print(f"[ERROR] enrich_requirements JSON parsing failed: {e}")
+    parsed = _lenient_json(output_json)
+    if isinstance(parsed, dict) and "team_result" in parsed and isinstance(parsed["team_result"], str):
+        parsed = _lenient_json(parsed["team_result"])
+    if not isinstance(parsed, dict):
         parsed = {}
+    if not parsed.get("enriched_requirements"):
+        print("[WARN] enrich_requirements: enriched vazio após parse leniente")
 
     updated_state = {
         **state,
@@ -1267,23 +1283,10 @@ def validate_quality_output_func(state: LangNetFullState, result: Any) -> LangNe
     else:
         output_json = str(result)
 
-    try:
-        parsed = json.loads(output_json)
-        # Handle nested team_result if present (Claude Code pattern)
-        if isinstance(parsed, dict) and "team_result" in parsed:
-            team_result_str = parsed["team_result"]
-            if isinstance(team_result_str, str):
-                # Remove markdown code blocks
-                team_result_str = team_result_str.strip()
-                if team_result_str.startswith("```json"):
-                    team_result_str = team_result_str[7:]
-                elif team_result_str.startswith("```"):
-                    team_result_str = team_result_str[3:]
-                if team_result_str.endswith("```"):
-                    team_result_str = team_result_str[:-3]
-                parsed = json.loads(team_result_str.strip())
-    except json.JSONDecodeError as e:
-        print(f"[ERROR] validate_quality JSON parsing failed: {e}")
+    parsed = _lenient_json(output_json)
+    if isinstance(parsed, dict) and "team_result" in parsed and isinstance(parsed["team_result"], str):
+        parsed = _lenient_json(parsed["team_result"])
+    if not isinstance(parsed, dict):
         parsed = {}
 
     updated_state = {
