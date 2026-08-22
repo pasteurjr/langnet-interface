@@ -4463,6 +4463,28 @@ def _parse_task_description_to_python(desc: str) -> str:
 
     if not _steps:
         return ""
+    # P3.3 CONFORMIDADE ESPACIAL: um SELECT espacial (ST_Intersects) traz as REGRAS que
+    # incidem na localização do imóvel; o INSERT seguinte deve rodar UMA VEZ POR REGRA
+    # (gerar um requisito por regra aplicável), não uma vez só. Envolve o INSERT num
+    # `for _row in _rows:` (o SELECT já emitiu `_rows = cur.fetchall()`) e mapeia o campo
+    # de texto do INSERT para a coluna da regra (_row['descricao']). É a avaliação real de
+    # conformidade de uso do solo, determinística (sem depender do contrato agêntico).
+    _re2 = __import__("re")
+    _conf_steps = []
+    for _i, (_k, _p) in enumerate(_steps):
+        _prev_spatial = (_i > 0 and _steps[_i - 1][0] == "select"
+                         and any("ST_Intersects" in _ln or "ST_Contains" in _ln for _ln in _steps[_i - 1][1]))
+        if _k == "insert" and _prev_spatial:
+            _looped = ["for _row in _rows:"]
+            for _ln in _p:
+                _ln2 = _re2.sub(r"input_data\.get\('(?:descricao\w*|texto\w*|regra\w*)'\)",
+                                "_row.get('descricao')", _ln)
+                _ln2 = _ln2.replace("(_row.get('descricao') or _hoje())", "_row.get('descricao')")
+                _looped.append("    " + _ln2)
+            _conf_steps.append((_k, _looped))
+        else:
+            _conf_steps.append((_k, _p))
+    _steps = _conf_steps
     # REORDENA: SELECT/INSERT/outros ANTES de UPDATE. O UPDATE (ex.: CONCAT em
     # detalhes_medicos) precisa da linha JÁ criada pelo INSERT; o LLM às vezes escreve o
     # UPDATE antes do INSERT e o UPDATE não pega nada (linha inexistente -> detalhes NULL).
