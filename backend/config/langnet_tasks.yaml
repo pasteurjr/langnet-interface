@@ -152,6 +152,17 @@ extract_requirements:
   description: >
     [Requirements Extraction] Extract requirements from DOCUMENTS + INSTRUCTIONS, then INFER technical needs.
 
+    ═══════════════════════════════════════════════════════════
+    REGRA DE EXAUSTIVIDADE (obrigatória):
+    ═══════════════════════════════════════════════════════════
+    Extraia TODOS os requisitos de TODOS os documentos e instruções — NÃO resuma, NÃO
+    generalize, NÃO agrupe conceitos distintos num só. Cada capacidade, regra, parâmetro,
+    restrição ou dado quantitativo vira UM requisito próprio (um FR por parâmetro/regra).
+    Cubra TODOS os documentos por igual — se há N documentos, cada um DEVE contribuir com
+    seus requisitos (não deixe nenhum documento sub-representado). Prefira COMPLETUDE a
+    brevidade: é melhor 60 requisitos específicos do que 15 genéricos. Cada requisito cita
+    a fonte (documento/instrução).
+
     YOU RECEIVE 3 INPUT SOURCES:
     - document_content: {document_content} (factual information from uploaded files)
     - additional_instructions: {additional_instructions} (project goals and context)
@@ -584,6 +595,18 @@ research_additional_info:
 enrich_requirements:
   description: >
     [Requirements Enrichment] Validate completeness and add critical missing requirements.
+
+    ═══════════════════════════════════════════════════════════
+    REGRA ABSOLUTA DE PRESERVAÇÃO (NÃO VIOLE — senão a saída é INVÁLIDA):
+    ═══════════════════════════════════════════════════════════
+    Você NÃO PODE remover, resumir, encurtar, mesclar ou reescrever NENHUM requisito já
+    presente em requirements_json. Sua tarefa é REVISAR e ACRESCENTAR, JAMAIS substituir.
+    OBRIGATÓRIO: COPIE **VERBATIM** (texto integral, id e descrição) TODOS os requisitos de
+    requirements_json para enriched_requirements.functional_requirements /
+    non_functional_requirements / business_rules, e SÓ ENTÃO ANEXE os requisitos faltantes
+    (marcados com "ai_suggested": true). O enriched_requirements DEVE conter, no mínimo,
+    a QUANTIDADE TOTAL de requisitos da entrada MAIS os novos — nunca menos.
+    Se a contagem de saída for menor que a de entrada, você FALHOU: refaça copiando todos.
 
     YOU WILL RECEIVE:
     - requirements_json: {requirements_json} (extracted requirements from documents and instructions)
