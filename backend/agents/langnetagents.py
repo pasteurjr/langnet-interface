@@ -192,9 +192,10 @@ def get_llm(use_deepseek: bool = False):
             lm_base = os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1")
             lm_model = os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b")
             # CrewAI/LiteLLM exige provider prefix "openai/" para APIs OpenAI-compatible.
-            # O app/llm.py (OpenAI SDK direto) rejeita esse prefix, então mantemos o
-            # .env sem prefix e adicionamos aqui só para o CrewAI LLM.
-            if lm_model and not lm_model.startswith("openai/") and "/" not in lm_model:
+            # SEMPRE prefixa (mesmo com barra no id, ex.: qwen/qwen3.8-27b -> openai/qwen/qwen3.8-27b);
+            # senao litellm interpreta 'qwen/...' como provider 'qwen' inexistente e falha.
+            # O app/llm.py (OpenAI SDK direto) usa o id cru do .env (sem esse prefix).
+            if lm_model and not lm_model.startswith("openai/"):
                 lm_model = f"openai/{lm_model}"
             print(f"[LangNet] Using LM Studio at {lm_base} — model={lm_model}")
             _llm_cache[cache_key] = CrewLLM(
@@ -2501,7 +2502,7 @@ def _build_llm_flash() -> LLM:
         # LM Studio API OpenAI-compatible. Sem custo por token.
         # Modelo FAST (mesmo do reasoning aqui — LM Studio típico só tem R1 carregado).
         _m = os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b")
-        if _m and not _m.startswith("openai/") and "/" not in _m:
+        if _m and not _m.startswith("openai/"):
             _m = f"openai/{{_m}}"
         return LLM(
             model=_m,
@@ -2528,7 +2529,7 @@ def _build_llm_pro() -> LLM:
     if prov == "lmstudio":
         # R1 já raciocina por padrão — sem flag necessário. Mesmo modelo do flash aqui.
         _m = os.getenv("LMSTUDIO_MODEL_NAME_PRO", os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b"))
-        if _m and not _m.startswith("openai/") and "/" not in _m:
+        if _m and not _m.startswith("openai/"):
             _m = f"openai/{{_m}}"
         return LLM(
             model=_m,
@@ -8345,7 +8346,12 @@ TASK_REGISTRY = {
         "requires": [],
         "produces": ["document_content", "document_structure", "document_metadata"],
         "agent": AGENTS["document_analyst"],
-        "tools": [LANGNET_TOOLS["document_reader"]],
+        # SEM tools: o conteúdo do documento já é passado INLINE na descrição
+        # (analyze_document_input_func -> document_content), então a document_reader é
+        # redundante. Removê-la faz a task ir pela CHAMADA DIRETA (streaming) em vez do
+        # CrewAI/litellm, que ESTOLA no transporte de respostas longas do LLM local
+        # (bytes congelam -> hang). Corrige o travamento do pipeline de requisitos.
+        "tools": [],
         "phase": "document_analysis"
     },
     "extract_requirements": {
