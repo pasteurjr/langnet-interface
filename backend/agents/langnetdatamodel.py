@@ -373,8 +373,12 @@ def _default_clause(col: Dict[str, Any]) -> str:
     d = str(d).strip()
     if d in ("uuid_generate_v4()", "gen_random_uuid()", "(UUID())", "UUID()"):
         return " DEFAULT (UUID())"
-    if d.upper() in ("CURRENT_TIMESTAMP", "NOW()"):
+    # Funções SQL de data/hora: nunca entre aspas (senão viram literal string inválido).
+    _du = d.upper().rstrip("()")
+    if _du in ("CURRENT_TIMESTAMP", "NOW", "LOCALTIMESTAMP"):
         return " DEFAULT CURRENT_TIMESTAMP"
+    if _du == "CURRENT_DATE":
+        return " DEFAULT (CURRENT_DATE)"   # MySQL exige expressão entre parênteses
     if d.startswith("'") and d.endswith("'"):
         return " DEFAULT " + d
     if d.replace(".", "", 1).lstrip("-").isdigit():
@@ -540,8 +544,16 @@ def _pg_default(col: Dict[str, Any], pg_type: str) -> str:
     d = str(d).strip()
     if d in ("uuid_generate_v4()", "gen_random_uuid()", "(UUID())", "UUID()"):
         return " DEFAULT gen_random_uuid()"
-    if d.upper() in ("CURRENT_TIMESTAMP", "NOW()"):
+    # Funções SQL de data/hora: NUNCA entre aspas (aspas -> literal string -> PostgreSQL
+    # rejeita: 'invalid input syntax for type date: "CURRENT_DATE"'). O LLM às vezes devolve
+    # o default como "CURRENT_DATE"/"CURRENT_TIME" além de CURRENT_TIMESTAMP/NOW().
+    _du = d.upper().rstrip("()")
+    if _du in ("CURRENT_TIMESTAMP", "NOW", "LOCALTIMESTAMP"):
         return " DEFAULT CURRENT_TIMESTAMP"
+    if _du == "CURRENT_DATE":
+        return " DEFAULT CURRENT_DATE"
+    if _du in ("CURRENT_TIME", "LOCALTIME"):
+        return " DEFAULT " + _du
     if is_bool:
         return " DEFAULT " + ("1" if d.strip("'").lower() in ("1", "true", "t") else "0")
     if d.startswith("'") and d.endswith("'"):
