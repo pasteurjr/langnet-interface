@@ -137,6 +137,18 @@ class LLMClient:
         # Use model override if provided, otherwise use default
         model_to_use = model_override if model_override else self.model
 
+        # Qwen3 é modelo de RACIOCÍNIO: por padrão emite <think>...</think> que consome TODO
+        # o max_tokens (aqui até 65536) sem produzir o documento. /no_think desliga o reasoning
+        # (essas gerações são estruturadas, não precisam de chain-of-thought). Sem isso a spec
+        # sai vazia ou poluída. Espelha o fix de agents/langnetagents.py::_direct_llm_complete.
+        _is_qwen3 = "qwen3" in (model_to_use or "").lower()
+        if _is_qwen3:
+            if messages and messages[0]["role"] == "system":
+                messages[0]["content"] = "/no_think\n" + messages[0]["content"]
+            else:
+                messages.insert(0, {"role": "system", "content": "/no_think"})
+            messages[-1]["content"] = messages[-1]["content"] + " /no_think"
+
         # ETAPA 3: Garantir thinking mode ativo explicitamente para DeepSeek-Reasoner
         extra_params = {}
         if self.provider == "deepseek" and "reasoner" in model_to_use.lower():
@@ -184,6 +196,16 @@ class LLMClient:
             # ETAPA 4: Detectar truncamento
             finish_reason = response.choices[0].finish_reason
             content = response.choices[0].message.content
+
+        # Rede de segurança p/ modelos de raciocínio (qwen3): remove <think>...</think> vazado.
+        # Se o bloco veio truncado (sem </think>), o modelo estourou o teto raciocinando —
+        # devolve vazio p/ o chamador tratar (em vez de salvar raciocínio como se fosse a spec).
+        if content and "<think>" in content:
+            import re as _re
+            if "</think>" in content:
+                content = _re.sub(r"<think>.*?</think>", "", content, flags=_re.DOTALL).strip()
+            else:
+                content = ""
 
         print(f"[LLM] finish_reason: {finish_reason}, output_length: {len(content)} chars")
 
