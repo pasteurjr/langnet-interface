@@ -109,12 +109,20 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     que o CrewAI enviaria, preservando a fidelidade ao domínio.
     Reusa a MESMA descrição já formatada e devolve o texto cru p/ o output_func processar."""
     import os as _os
+    import httpx as _httpx
     from openai import OpenAI as _OpenAI
     base = _os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1")
     model = _os.getenv("LMSTUDIO_MODEL_NAME", "qwen2.5-coder-32b-instruct")
     _timeout = float(_os.getenv("LMSTUDIO_TIMEOUT", "1800"))
+    # READ timeout (tempo entre bytes) SEPARADO do total: o link externo (DDNS) às vezes
+    # estola no MEIO do stream — conexão fica ESTABLISHED mas SEM bytes por dezenas de min,
+    # pendurando até o timeout total. Uma geração legítima produz chunks continuamente
+    # (< read s entre tokens, mesmo no prefill de prompts grandes), então read=300s pega o
+    # estol silencioso e falha ~12x mais rápido → o retry abaixo refaz a chamada.
+    _read = float(_os.getenv("LMSTUDIO_READ_TIMEOUT", "300"))
+    _to = _httpx.Timeout(_timeout, read=_read, connect=30.0)
     client = _OpenAI(api_key=_os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
-                     base_url=base, timeout=_timeout, max_retries=1)
+                     base_url=base, timeout=_to, max_retries=1)
     prompt = description
     if expected_output:
         prompt += "\n\nFORMATO DE SAÍDA ESPERADO:\n" + expected_output
