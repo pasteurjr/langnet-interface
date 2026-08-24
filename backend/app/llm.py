@@ -137,12 +137,15 @@ class LLMClient:
         # Use model override if provided, otherwise use default
         model_to_use = model_override if model_override else self.model
 
-        # Qwen3 é modelo de RACIOCÍNIO: por padrão emite <think>...</think> que consome TODO
-        # o max_tokens (aqui até 65536) sem produzir o documento. /no_think desliga o reasoning
-        # (essas gerações são estruturadas, não precisam de chain-of-thought). Sem isso a spec
-        # sai vazia ou poluída. Espelha o fix de agents/langnetagents.py::_direct_llm_complete.
+        # Qwen3 é modelo de RACIOCÍNIO: por padrão gera reasoning (canal reasoning_content +
+        # <think>) que consome milhares de tokens do teto SEM virar conteúdo — trunca o doc no
+        # meio. O `/no_think` no prompt REDUZ mas NÃO elimina o reasoning em prompts grandes.
+        # A chave que DESLIGA de verdade é chat_template_kwargs.enable_thinking=false (extra_body).
+        # Mantém-se /no_think como reforço redundante. Espelha _direct_llm_complete.
         _is_qwen3 = "qwen3" in (model_to_use or "").lower()
+        extra_params = {}
         if _is_qwen3:
+            extra_params["extra_body"] = {"chat_template_kwargs": {"enable_thinking": False}}
             if messages and messages[0]["role"] == "system":
                 messages[0]["content"] = "/no_think\n" + messages[0]["content"]
             else:
@@ -150,7 +153,6 @@ class LLMClient:
             messages[-1]["content"] = messages[-1]["content"] + " /no_think"
 
         # ETAPA 3: Garantir thinking mode ativo explicitamente para DeepSeek-Reasoner
-        extra_params = {}
         if self.provider == "deepseek" and "reasoner" in model_to_use.lower():
             extra_params["extra_body"] = {"thinking": {"type": "enabled"}}
             print(f"[LLM] Thinking mode explicitamente ativado para {model_to_use}")

@@ -118,12 +118,14 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     prompt = description
     if expected_output:
         prompt += "\n\nFORMATO DE SAÍDA ESPERADO:\n" + expected_output
-    # Qwen3 é modelo de RACIOCÍNIO: por padrão emite um bloco <think>...</think> que pode
-    # consumir TODO o max_tokens (ex.: 28000 tokens de reasoning) sem produzir resposta final.
-    # Resultado: a chamada direta volta vazia (após strip do <think>) e caía no CrewAI — que
-    # estola no link externo. A convenção do Qwen3 é `/no_think` no prompt p/ desligar o
-    # raciocínio; essas tasks são extração estruturada, não precisam de chain-of-thought.
+    # Qwen3 é modelo de RACIOCÍNIO: por padrão emite raciocínio (canal reasoning_content +
+    # <think>) que consome milhares de tokens do teto SEM virar conteúdo — empurra a saída
+    # útil pro limite e TRUNCA JSON/DDL no meio. O `/no_think` no prompt REDUZ mas NÃO elimina
+    # o reasoning em prompts grandes/complexos (medido: extract deixou vazar ~8500 tokens de
+    # reasoning oculto). A chave que DESLIGA de verdade é `chat_template_kwargs.enable_thinking
+    # =false` (extra_body abaixo). Mantém-se /no_think como reforço redundante e inócuo.
     _is_qwen3 = "qwen3" in (model or "").lower()
+    _extra = {"chat_template_kwargs": {"enable_thinking": False}} if _is_qwen3 else {}
     _sys = (system or "").strip()
     if _is_qwen3:
         _sys = ("/no_think\n" + _sys).strip() if _sys else "/no_think"
@@ -131,24 +133,42 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     if _sys:
         _messages.append({"role": "system", "content": _sys})
     _messages.append({"role": "user", "content": prompt + (" /no_think" if _is_qwen3 else "")})
-    # STREAMING: acumula os deltas. Mantém a conexão ativa durante toda a geração
-    # (o link residencial derruba conexões idle longas — daí o estol do não-streaming).
-    stream = client.chat.completions.create(
-        model=model,
-        messages=_messages,
-        max_tokens=int(_os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
-        temperature=0.2,
-        stream=True,
-    )
-    parts = []
-    for chunk in stream:
+    # STREAMING com RETRY: acumula os deltas mantendo a conexão ativa durante a geração.
+    # O link residencial externo (DDNS) tem BLIPS transitórios — o TCP connect falha por
+    # alguns segundos ([Errno 110] ConnectTimeout -> APITimeoutError). Como cada etapa é uma
+    # chamada e pipelines têm 7+ chamadas sequenciais, um único blip derrubaria tudo. Tenta
+    # até 4x com backoff crescente p/ absorver a queda momentânea do link.
+    from openai import APITimeoutError as _APITimeout, APIConnectionError as _APIConn
+    import time as _time
+    _txt = ""
+    _last_err = None
+    for _attempt in range(4):
         try:
-            delta = chunk.choices[0].delta.content
-            if delta:
-                parts.append(delta)
-        except (IndexError, AttributeError):
-            continue
-    _txt = "".join(parts)
+            stream = client.chat.completions.create(
+                model=model,
+                messages=_messages,
+                max_tokens=int(_os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
+                temperature=0.2,
+                stream=True,
+                extra_body=_extra,
+            )
+            parts = []
+            for chunk in stream:
+                try:
+                    delta = chunk.choices[0].delta.content
+                    if delta:
+                        parts.append(delta)
+                except (IndexError, AttributeError):
+                    continue
+            _txt = "".join(parts)
+            break
+        except (_APITimeout, _APIConn) as _e:
+            _last_err = _e
+            _wait = 6 * (_attempt + 1)
+            print(f"[DIRECT] tentativa {_attempt+1}/4 falhou ({type(_e).__name__}) — retry em {_wait}s")
+            _time.sleep(_wait)
+    else:
+        raise _last_err if _last_err else RuntimeError("LLM stream falhou (sem erro capturado)")
     # Rede de segurança: se algum <think> vazar (mesmo com /no_think), remove-o e devolve
     # o que vier DEPOIS de </think>. Se o modelo estourou o teto dentro do <think> (sem
     # fechar a tag), retorna vazio p/ o chamador acionar o fallback determinístico.
