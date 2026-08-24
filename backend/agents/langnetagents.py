@@ -1515,6 +1515,71 @@ def _extract_md_field_lenient(raw: Any, field: str = "requirements_document_md")
     return ''.join(out).strip()
 
 
+def _build_requirements_doc_fallback(state: LangNetFullState) -> str:
+    """Render DETERMINÍSTICO (sem LLM) do documento de requisitos a partir dos requisitos já
+    extraídos/enriquecidos no estado. Usado quando o generate_document (LLM) volta VAZIO —
+    tipicamente porque o prompt gigante (todos os requisitos preservados) estoura o prefill
+    do LLM local. Garante um documento COMPLETO com os requisitos reais, sem custo de LLM."""
+    from datetime import datetime as _dt
+
+    def _asdict(v):
+        if isinstance(v, str):
+            v = _lenient_json(v)
+        return v if isinstance(v, dict) else {}
+
+    _sources = [
+        _asdict(state.get("enriched_requirements")),
+        _asdict(state.get("requirements_data")),
+        _asdict(state.get("requirements_json")),
+        _asdict(state.get("extracted_requirements")),
+    ]
+
+    def _pick(key):
+        for s in _sources:
+            if s.get(key):
+                return s.get(key)
+            # às vezes vem aninhado (ex.: {"requirements": {"functional_requirements": [...]}})
+            for v in s.values():
+                if isinstance(v, dict) and v.get(key):
+                    return v.get(key)
+        return state.get(key) or []
+
+    fr = _pick("functional_requirements")
+    nfr = _pick("non_functional_requirements")
+    br = _pick("business_rules")
+
+    def _fmt(items):
+        out = []
+        for i, it in enumerate(items or [], 1):
+            if isinstance(it, dict):
+                rid = it.get("id") or it.get("req_id") or it.get("code") or f"REQ-{i:03d}"
+                desc = (it.get("description") or it.get("text") or it.get("requirement")
+                        or it.get("title") or "")
+                extra = "; ".join(f"{k}: {v}" for k, v in it.items()
+                                  if k not in ("id", "req_id", "code", "description", "text",
+                                               "requirement", "title") and isinstance(v, (str, int, float)))
+                out.append(f"- **{rid}**: {desc}" + (f"  _( {extra} )_" if extra else ""))
+            elif isinstance(it, str) and it.strip():
+                out.append(f"- {it.strip()}")
+        return "\n".join(out) or "_(nenhum)_"
+
+    if not (fr or nfr or br):
+        return ""
+
+    proj = state.get("project_name", "") or "Projeto"
+    instr = (state.get("additional_instructions") or "")[:400]
+    doc = (
+        f"# Documento de Requisitos\n## {proj}\n\n---\n\n"
+        f"**Versão:** 2.0 · **Data:** {_dt.now().strftime('%Y-%m-%d %H:%M')} · "
+        f"**Geração:** render determinístico (LLM do generate_document indisponível)\n\n"
+        f"**Instruções de origem:** {instr}\n\n---\n\n"
+        f"## 1. Requisitos Funcionais ({len(fr)})\n{_fmt(fr)}\n\n"
+        f"## 2. Requisitos Não-Funcionais ({len(nfr)})\n{_fmt(nfr)}\n\n"
+        f"## 3. Regras de Negócio ({len(br)})\n{_fmt(br)}\n"
+    )
+    return doc
+
+
 def generate_document_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
     """Update state with generate_document results and extract requirements document"""
     print(f"\n{'='*80}")
@@ -1586,6 +1651,16 @@ def generate_document_output_func(state: LangNetFullState, result: Any) -> LangN
             print(f"[DEBUG] raw salvo p/ diagnóstico em {_dbg}")
         except Exception:
             pass
+        # 4) FALLBACK DETERMINÍSTICO: renderiza o doc a partir dos requisitos do estado
+        # (sem LLM). Cobre o caso do generate_document estolar/voltar vazio no LLM local
+        # por prompt gigante — garante documento COMPLETO com os requisitos reais.
+        try:
+            _det = _build_requirements_doc_fallback(state)
+            if _det:
+                requirements_doc_md = _det
+                print(f"[FIX] generate_document vazio -> render DETERMINÍSTICO ({len(_det)} chars)")
+        except Exception as _fe:
+            print(f"[FIX] fallback determinístico falhou: {_fe}")
 
     print(f"[DEBUG] FINAL requirements_doc_md length: {len(requirements_doc_md)}")
     if requirements_doc_md:
@@ -8752,9 +8827,19 @@ def execute_task_with_context(
                 print(f"[FALLBACK] CrewAI vazio em '{task_name}' — usando chamada DIRETA ao LM Studio")
                 _direct = _direct_llm_complete(task_description, task_expected_output)
                 if not _direct or len(_direct) < 20:
-                    raise
-                print(f"[FALLBACK] chamada direta OK — {len(_direct)} chars")
-                result = _DirectResult(_direct)
+                    if task_name == "generate_document":
+                        print("[FIX] generate_document sem saída do LLM — seguirá p/ render determinístico")
+                        result = _DirectResult("")
+                    else:
+                        raise
+                else:
+                    print(f"[FALLBACK] chamada direta OK — {len(_direct)} chars")
+                    result = _DirectResult(_direct)
+            elif task_name == "generate_document":
+                # LLM do generate_document estolou/timeout/erro: NÃO derruba o pipeline —
+                # o output_func renderiza o documento DETERMINISTICAMENTE a partir dos requisitos.
+                print(f"[FIX] generate_document falhou no LLM ({type(_kick_err).__name__}) — seguirá p/ render determinístico")
+                result = _DirectResult("")
             else:
                 raise
 
