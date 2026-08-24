@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     # LM Studio: usar LMSTUDIO_* (sem underscore) — já declarados acima nas linhas 49-50.
     lmstudio_api_key: str = Field(default="lm-studio", env="LMSTUDIO_API_KEY")
     lmstudio_max_tokens: int = Field(default=16000, env="LMSTUDIO_MAX_TOKENS")
+    lmstudio_timeout: int = Field(default=1800, env="LMSTUDIO_TIMEOUT")
 
     # Anthropic Claude
     anthropic_api_key: str = Field(default="", env="ANTHROPIC_API_KEY")
