@@ -118,10 +118,19 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     prompt = description
     if expected_output:
         prompt += "\n\nFORMATO DE SAÍDA ESPERADO:\n" + expected_output
+    # Qwen3 é modelo de RACIOCÍNIO: por padrão emite um bloco <think>...</think> que pode
+    # consumir TODO o max_tokens (ex.: 28000 tokens de reasoning) sem produzir resposta final.
+    # Resultado: a chamada direta volta vazia (após strip do <think>) e caía no CrewAI — que
+    # estola no link externo. A convenção do Qwen3 é `/no_think` no prompt p/ desligar o
+    # raciocínio; essas tasks são extração estruturada, não precisam de chain-of-thought.
+    _is_qwen3 = "qwen3" in (model or "").lower()
+    _sys = (system or "").strip()
+    if _is_qwen3:
+        _sys = ("/no_think\n" + _sys).strip() if _sys else "/no_think"
     _messages = []
-    if system and system.strip():
-        _messages.append({"role": "system", "content": system.strip()})
-    _messages.append({"role": "user", "content": prompt})
+    if _sys:
+        _messages.append({"role": "system", "content": _sys})
+    _messages.append({"role": "user", "content": prompt + (" /no_think" if _is_qwen3 else "")})
     # STREAMING: acumula os deltas. Mantém a conexão ativa durante toda a geração
     # (o link residencial derruba conexões idle longas — daí o estol do não-streaming).
     stream = client.chat.completions.create(
@@ -139,7 +148,17 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
                 parts.append(delta)
         except (IndexError, AttributeError):
             continue
-    return "".join(parts)
+    _txt = "".join(parts)
+    # Rede de segurança: se algum <think> vazar (mesmo com /no_think), remove-o e devolve
+    # o que vier DEPOIS de </think>. Se o modelo estourou o teto dentro do <think> (sem
+    # fechar a tag), retorna vazio p/ o chamador acionar o fallback determinístico.
+    import re as _re
+    if "<think>" in _txt:
+        if "</think>" in _txt:
+            _txt = _re.sub(r"<think>.*?</think>", "", _txt, flags=_re.DOTALL).strip()
+        else:
+            _txt = ""  # bloco de raciocínio truncado — sem resposta útil
+    return _txt
 
 
 class _DirectResult:
@@ -8812,8 +8831,23 @@ def execute_task_with_context(
                     _sys = ""
                 _direct = _direct_llm_complete(task_description, task_expected_output, system=_sys)
                 if not _direct or len(_direct) < 20:
-                    print(f"[DIRECT] resposta curta/vazia ({len(_direct or '')} chars) — tentando CrewAI")
-                    result = _run_crew()
+                    # NÃO cai no CrewAI: no LLM local (qwen3 + link externo) o CrewAI/litellm
+                    # ESTOLA no transporte de respostas longas — trava dezenas de min. Uma volta
+                    # vazia aqui já significa que o modelo raciocinou até o teto sem resposta;
+                    # reenviar via CrewAI só piora. Retry DIRETO uma vez (a persona pode ter
+                    # induzido reasoning); se ainda vazio: determinístico p/ generate_document,
+                    # senão levanta p/ falhar limpo (em vez de pendurar).
+                    print(f"[DIRECT] resposta curta/vazia ({len(_direct or '')} chars) — retry direto sem persona")
+                    _direct = _direct_llm_complete(task_description, task_expected_output, system="")
+                    if not _direct or len(_direct) < 20:
+                        if task_name == "generate_document":
+                            print("[FIX] generate_document sem saída — render determinístico")
+                            result = _DirectResult("")
+                        else:
+                            raise RuntimeError(f"LLM local retornou vazio em '{task_name}' (mesmo com /no_think)")
+                    else:
+                        print(f"[DIRECT] retry OK — {len(_direct)} chars")
+                        result = _DirectResult(_direct)
                 else:
                     print(f"[DIRECT] OK — {len(_direct)} chars")
                     result = _DirectResult(_direct)
