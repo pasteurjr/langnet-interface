@@ -21,3 +21,13 @@ docs/clinica-medica/.token
 docs/clinica-medica/*.log
 docs/clinica-medica/*.nohup
 docs/clinica-medica/backend.log
+
+# scratch/sensiveis da sessao de geracao (nao commitar)
+backups/
+*.run.log
+tools/solo_v3/
+tools/clinia_v2/
+tools/clinia_v3/
+**/.token
+*.pyc
+backend/.env.bak*
