@@ -36,7 +36,7 @@ class UpdateRequest(BaseModel):
 
 class ChatMessageRequest(BaseModel):
     content: str
-    target_dbms: Optional[str] = "mysql"
+    target_dbms: Optional[str] = None  # None => usa o dbms da própria sessão (não força mysql)
 
 
 class ApprovalRequest(BaseModel):
@@ -326,7 +326,10 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
     """Refina o Data Model via chat (LLM re-gera artefatos)."""
     row = _fetch_session(session_id)
     current_yaml = row.get("data_model_yaml") or ""
-    dbms = req.target_dbms or row.get("target_dbms") or "mysql"
+    # O dbms da SESSÃO é autoritativo — é o dialeto com que o modelo foi gerado (ex.: postgresql/
+    # PostGIS). Refinar não troca de dialeto. Antes, o default "mysql" do request vencia e o refino
+    # reescrevia um schema PostGIS em MySQL (perdia geometry(...,4674) e a extensão postgis).
+    dbms = row.get("target_dbms") or req.target_dbms or "mysql"
 
     try:
         result = refine_data_model(current_yaml, req.content, target_dbms=dbms)
