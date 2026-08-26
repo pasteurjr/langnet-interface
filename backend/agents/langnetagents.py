@@ -4587,7 +4587,28 @@ def _parse_task_description_to_python(desc: str) -> str:
     capture_re = _re.compile(r'Guarde\b.*?\bem\s+(\w+)\b', _re.I)
 
     # Normalize: work line-by-line, sliding a small state (inside a loop or not).
-    raw_lines = desc.split("\n")
+    # COALESCE de query multi-linha: o LLM às vezes quebra `query="SELECT ... \n FROM ... \n WHERE"`
+    # em várias linhas. O parser é orientado a linha e `query="([^"]+)"` exige a aspa de
+    # fechamento NA MESMA linha — sem isso o passo (o SELECT que captura o escalar agregado)
+    # some. Junta as linhas até fechar a aspa, colapsando o SQL numa linha só.
+    def _coalesce_quoted(_text: str) -> str:
+        _ls = _text.split("\n")
+        _out: List[str] = []
+        _k = 0
+        while _k < len(_ls):
+            _cur = _ls[_k]
+            if 'query="' in _cur and _cur.count('"') % 2 == 1:
+                _k += 1
+                while _k < len(_ls) and _cur.count('"') % 2 == 1:
+                    _cur = _cur.rstrip() + " " + _ls[_k].strip()
+                    _k += 1
+                _out.append(_cur)
+            else:
+                _out.append(_cur)
+                _k += 1
+        return "\n".join(_out)
+
+    raw_lines = _coalesce_quoted(desc).split("\n")
     i = 0
     n = len(raw_lines)
     while i < n:
