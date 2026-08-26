@@ -30,3 +30,10 @@ Cada task tem uma função **`_deterministic`** com o SQL correto e parametrizad
 - [ ] Data-tasks (SQL/espacial) rodarem pelo caminho determinístico por padrão.
 
 > Nota: o E2E provou o propósito geoespacial (PostGIS + ST_Intersects real com dado real) e destravou definitivamente a questão do CrewAI/tool use do qwen3.8.
+
+## Decisão sobre o bug 5 (agent-SQL) — Opção B
+Manter o caminho agêntico, mas **expor cada função `_deterministic` como uma TOOL de alto nível**
+(ex.: `calcular_sobreposicao_app(lote_id)`) que por dentro roda o SQL determinístico correto.
+O agente decide QUANDO chamar (function-calling nativo, destravado pela crewai 1.15), e o SQL
+espacial fica na tool (não é o LLM que escreve `%s`). Alinha com a filosofia "Attested Computation":
+agente orquestra/raciocina, camada determinística executa. A implementar no gerador.
