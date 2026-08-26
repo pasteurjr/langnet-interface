@@ -322,6 +322,24 @@ _SQL_RULES = """
       categoria (ex.: "Cardiologia", "alta") — NUNCA o nome de uma instância/pessoa
       (ex.: "Dr. João Silva") nem um id. Se o campo é uma especialidade médica, grave
       a ESPECIALIDADE (Cardiologia, Neurologia…), não o nome do médico.
+
+   h. COMPUTAÇÃO/AGREGAÇÃO — faça a conta DENTRO do SQL, NUNCA em prosa. Quando a
+      task calcula um agregado sobre várias linhas (soma de áreas, total, contagem,
+      máximo, média, "existe alguma", área de sobreposição total), a AGREGAÇÃO tem de
+      estar na própria query (SUM/COUNT/MAX/AVG/BOOL_OR/CASE), com um ALIAS `AS <nome>`,
+      e você CAPTURA o escalar com "Guarde o resultado em <nome>". Depois use `{<nome>}`
+      no INSERT/UPDATE. Exemplo (área total de sobreposição com APP, espacial):
+        1. query="SELECT COALESCE(SUM(ST_Area(ST_Intersection(l.geometria, a.geometria))), 0) AS area_sobreposicao_app
+                  FROM lote l JOIN app a ON ST_Intersects(l.geometria, a.geometria) WHERE l.id=%s"
+           params=[{lote_id}]
+           Guarde o resultado em area_sobreposicao_app.
+        2. query="UPDATE laudo SET area_sobreposicao_app=%s WHERE lote_id=%s"
+           params=[area_sobreposicao_app, {lote_id}]
+      ❌ PROIBIDO descrever acumulação em linguagem natural — o gerador determinístico
+      NÃO interpreta prosa. NUNCA escreva "Para cada lote, se a área > 0 some ao total";
+      "Determine X como True se houver…"; "acumule na lista". Se precisar de um número,
+      ele SAI de um SUM/COUNT/CASE no SQL com AS <nome>. Filtros/condições viram WHERE
+      ou CASE WHEN dentro da query (ex.: `SUM(CASE WHEN area>0 THEN area ELSE 0 END)`).
 """
 
 _NO_SQL_RULES = """

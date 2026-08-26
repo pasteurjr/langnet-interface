@@ -4787,8 +4787,18 @@ def _repair_query_joins(query: str, fkmap: Dict[str, Dict[str, str]]):
         return query, True
     from_tbl = fm.group(1)
     present = {from_tbl.lower()}
-    for jm in _re.finditer(r'(?is)\bjoin\s+`?(\w+)`?', query):
-        present.add(jm.group(1).lower())
+    # ALIASES: `FROM lote l` / `JOIN app AS a` — a referência qualificada usa o ALIAS
+    # (l.geometria), não o nome da tabela. Sem registrar o alias, um SELECT espacial
+    # padrão (FROM lote l JOIN app a ON ST_Intersects(l.geom, a.geom)) era julgado
+    # insatisfazível (l/a "sem FK") e o passo era PULADO → o escalar computado (área de
+    # sobreposição) nunca era produzido. Palavras-chave SQL após a tabela NÃO são alias.
+    _KW = {"on", "where", "join", "left", "right", "inner", "outer", "cross", "full",
+           "group", "order", "limit", "having", "using", "and", "or", "as", "natural"}
+    for tm in _re.finditer(r'(?is)\b(?:from|join)\s+`?(\w+)`?(?:\s+(?:as\s+)?`?([a-zA-Z_]\w*)`?)?', query):
+        present.add(tm.group(1).lower())
+        _alias = tm.group(2)
+        if _alias and _alias.lower() not in _KW:
+            present.add(_alias.lower())
     qualified = {q for q in _re.findall(r'\b([a-zA-Z_]\w*)\.\w+', query)}
     joins: List[str] = []
     for t in qualified:
@@ -4885,17 +4895,25 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
             # Coluna REALMENTE selecionada (SELECT <col> FROM ...) — não assumir 'id'.
             # 'SELECT atendimento_id FROM ...' capturado como 'id' devolvia sempre None.
             sel_col = "id"
-            # PRIORIDADE 1: alias explícito no FIM da query (SELECT <expr> AS <alias>) — captura o
-            # valor computado (ex.: ST_Area(...) AS area_sobreposicao). Busca na QUERY INTEIRA porque
-            # a query externa pode não ter FROM próprio (só a subquery tem) e o _selm truncaria no
-            # FROM da subquery. Sem isso, ST_Area(... caía em 'id' e capturava None.
-            _asm = _re.search(r'(?is)\bas\s+([A-Za-z_]\w*)\s*$', query.strip())
-            if _asm:
-                sel_col = _asm.group(1)
+            # O que capturar da linha (SELECT <col> FROM ...) — não assumir 'id'.
+            # 'SELECT atendimento_id FROM ...' capturado como 'id' devolvia sempre None.
+            # select-list = tudo entre SELECT e o FROM DE MAIS ALTO NÍVEL. Uma agregação
+            # espacial (SELECT SUM(ST_Area(ST_Intersection(...))) AS total FROM lote l JOIN app a)
+            # expõe o valor pelo ALIAS `total`, que vem ANTES do FROM (não no fim da query).
+            _selm = _re.match(r'(?is)^\s*select\s+(.+?)\s+from\b', query)
+            _sel_scope = _selm.group(1) if _selm else query
+            # PRIORIDADE 1: se o "Guarde em X" nomeia um alias que EXISTE no select-list
+            # (SELECT ... AS X), captura exatamente esse X — casa o nome pedido com a coluna.
+            if capture_var and _re.search(r'(?is)\bas\s+`?' + _re.escape(capture_var) + r'`?\b', _sel_scope):
+                sel_col = capture_var
             else:
-                _selm = _re.match(r'(?is)^\s*select\s+(.+?)\s+from\b', query)
-                if _selm:
-                    first = _selm.group(1).split(",")[0].strip().split()[0]  # 1ª coluna, sem alias
+                # PRIORIDADE 2: primeiro alias `AS <alias>` do select-list (valor computado).
+                _asm = (_re.search(r'(?is)\bas\s+([A-Za-z_]\w*)\b', _sel_scope)
+                        or _re.search(r'(?is)\bas\s+([A-Za-z_]\w*)\s*$', query.strip()))
+                if _asm:
+                    sel_col = _asm.group(1)
+                elif _selm:
+                    first = _sel_scope.split(",")[0].strip().split()[0]  # 1ª coluna, sem alias
                     first = first.replace("`", "").replace('"', "")
                     if "." in first:
                         first = first.split(".")[-1]                     # remove prefixo de tabela
