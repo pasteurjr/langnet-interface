@@ -4575,8 +4575,11 @@ def _parse_task_description_to_python(desc: str) -> str:
     # Optionally preceded by "Para CADA <it> em {<lista>}:" for loops.
     query_re = _re.compile(r'query="([^"]+)"')
     params_re = _re.compile(r'params=\[([^\]]*)\]')
-    loop_re = _re.compile(r'Para CADA\s+([\wÀ-ÿ]+)\s+em\s+\{(\w+)\}\s*:', _re.I | _re.U)
-    capture_re = _re.compile(r'Guarde em\s+(\w+)', _re.I)
+    # Loop: "Para CADA <item> em {<lista>}:" OU "Para CADA <item> em <lista>:" (chaves opcionais).
+    loop_re = _re.compile(r'Para CADA\s+([\wÀ-ÿ]+)\s+em\s+\{?(\w+)\}?\s*:', _re.I | _re.U)
+    # Captura: "Guarde em X" e variações "Guarde o resultado/a lista de resultados/o valor ... em X".
+    # Não-greedy até o PRIMEIRO "em <var>" após "Guarde".
+    capture_re = _re.compile(r'Guarde\b.*?\bem\s+(\w+)\b', _re.I)
 
     # Normalize: work line-by-line, sliding a small state (inside a loop or not).
     raw_lines = desc.split("\n")
@@ -4877,14 +4880,22 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
             # Coluna REALMENTE selecionada (SELECT <col> FROM ...) — não assumir 'id'.
             # 'SELECT atendimento_id FROM ...' capturado como 'id' devolvia sempre None.
             sel_col = "id"
-            _selm = _re.match(r'(?is)^\s*select\s+(.+?)\s+from\b', query)
-            if _selm:
-                first = _selm.group(1).split(",")[0].strip().split()[0]  # 1ª coluna, sem alias
-                first = first.replace("`", "").replace('"', "")
-                if "." in first:
-                    first = first.split(".")[-1]                          # remove prefixo de tabela
-                if _re.match(r'^\w+$', first):
-                    sel_col = first
+            # PRIORIDADE 1: alias explícito no FIM da query (SELECT <expr> AS <alias>) — captura o
+            # valor computado (ex.: ST_Area(...) AS area_sobreposicao). Busca na QUERY INTEIRA porque
+            # a query externa pode não ter FROM próprio (só a subquery tem) e o _selm truncaria no
+            # FROM da subquery. Sem isso, ST_Area(... caía em 'id' e capturava None.
+            _asm = _re.search(r'(?is)\bas\s+([A-Za-z_]\w*)\s*$', query.strip())
+            if _asm:
+                sel_col = _asm.group(1)
+            else:
+                _selm = _re.match(r'(?is)^\s*select\s+(.+?)\s+from\b', query)
+                if _selm:
+                    first = _selm.group(1).split(",")[0].strip().split()[0]  # 1ª coluna, sem alias
+                    first = first.replace("`", "").replace('"', "")
+                    if "." in first:
+                        first = first.split(".")[-1]                     # remove prefixo de tabela
+                    if _re.match(r'^\w+$', first):
+                        sel_col = first
             lines.append(f"{indent}_row = _rows[0] if _rows else None")
             # PREFERE o input_data (contexto propagado — ex.: atendimento_id do atendimento corrente);
             # o SELECT é só FALLBACK. Assim o adapter respeita o que a UI enviou em vez de re-derivar
