@@ -2887,7 +2887,12 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
         crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
 
         loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(None, crew.kickoff)
+        # CrewAI 1.x: kickoff() exige event loop; rodar em thread executor quebra
+        # (RuntimeError: no running event loop). Usa a API async nativa quando existir.
+        if hasattr(crew, "kickoff_async"):
+            result = await crew.kickoff_async()
+        else:
+            result = await loop.run_in_executor(None, crew.kickoff)
 
         raw = getattr(result, "raw", None) or str(result)
 
@@ -2914,8 +2919,11 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                          + ", ".join(_schema.get("required", [])) + ". Não escreva nada fora do JSON.")
                 try:
                     _t2 = _build_task(task_name, agent, description + _hint)
-                    _r2 = await loop.run_in_executor(
-                        None, Crew(agents=[agent], tasks=[_t2], process=Process.sequential, verbose=False).kickoff)
+                    _c2 = Crew(agents=[agent], tasks=[_t2], process=Process.sequential, verbose=False)
+                    if hasattr(_c2, "kickoff_async"):
+                        _r2 = await _c2.kickoff_async()
+                    else:
+                        _r2 = await loop.run_in_executor(None, _c2.kickoff)
                     _obj, _missing = _c2s(getattr(_r2, "raw", None) or str(_r2), _schema)
                 except Exception:
                     pass
@@ -3003,8 +3011,11 @@ async def run_websocket_server(host: str = "localhost", port: int = {ws_port}):
 
 def _template_requirements_txt(_extra_pkgs: List[str] = None) -> str:
     base = [
-        "crewai>=0.30.0",
-        "crewai-tools>=0.1.0",
+        # crewai>=1.15: a serie 1.x usa function-calling NATIVO no loop do agente
+        # (_invoke_loop_native_tools passa tools=). A 0.x usava ReAct em texto, que
+        # modelos de raciocinio (ex.: qwen3) NAO completam (retornam vazio na continuacao).
+        "crewai>=1.15.0",
+        "crewai-tools>=0.60.0",
         "langchain>=0.1.0",
         "langchain-openai>=0.1.0",
         "openai>=1.0.0",
@@ -5812,6 +5823,11 @@ def _postgresify_sql_py(src: str) -> str:
     s = s.replace("database=_os.getenv('DB_NAME'", "dbname=_os.getenv('DB_NAME'")
     s = s.replace("'DB_PORT', '3306'", "'DB_PORT', '5432'")
     s = s.replace("'DB_USER', 'root'", "'DB_USER', 'postgres'")
+    # opções de conexão: mysql.connector usa connection_timeout/autocommit no connect();
+    # o psycopg2 usa connect_timeout e NÃO aceita autocommit no connect() (é atributo da
+    # conexão). Sem isso: psycopg2.ProgrammingError: invalid connection option.
+    s = s.replace("connection_timeout=", "connect_timeout=")
+    s = _re.sub(r"\n[ \t]*autocommit\s*=\s*(?:True|False)\s*,", "", s)
     # cursor dict (psycopg2 usa RealDictCursor)
     s = s.replace("cursor(dictionary=True)", "cursor(cursor_factory=psycopg2.extras.RealDictCursor)")
     # psycopg2 não tem lastrowid
