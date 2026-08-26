@@ -252,6 +252,7 @@ REGRAS ABSOLUTAS:
    Começa em `{task_name}:` e termina antes da próxima chave top-level.
 2. Formato:
      {task_name}:
+       execution: deterministic   # ou 'agent' — classifique pela natureza (ver REGRA 6)
        agent: <agent_snake_case>
        description: >
          <descrição + input format + Process steps numerados>
@@ -262,6 +263,19 @@ REGRAS ABSOLUTAS:
    parametro por chave-abre + nome + chave-fecha, formato CrewAI oficial.
    Nunca use duas ou quatro chaves — o CrewAI trata isso como literal
    e a task quebra em runtime.
+6. execution (OBRIGATÓRIO em TODA task): classifique pela NATUREZA da task:
+   - `deterministic` → COMPUTAÇÃO ou CRUD de lógica FIXA: consultar/inserir/
+     atualizar/excluir dados; cálculo SQL/espacial/matemático EXATO (área,
+     sobreposição ST_Intersects/ST_Area, CA/TO, recuos, faixas por regra,
+     declividade). Não há julgamento — um algoritmo fixo resolve. Roda em
+     CÓDIGO, sem LLM: exato, auditável, reproduzível, barato.
+   - `agent` → exige JULGAMENTO/linguagem: classificar por interpretação (ex.:
+     classe de impacto COPAM do caso), COMPOR texto (laudo/parecer/narrativa),
+     decidir, tratar caso ambíguo, resumir.
+   Régua: se um algoritmo FIXO produz a resposta → `deterministic`; se precisa
+   "pensar"/redigir/interpretar → `agent`. Em documentos LEGAIS (laudos), os
+   CÁLCULOS são SEMPRE `deterministic` (auditáveis); só a COMPOSIÇÃO do texto
+   do laudo é `agent`.
 """
 
 _SQL_RULES = """
@@ -320,6 +334,7 @@ _EXAMPLE_HDR = "EXEMPLO REAL de task com SQL (siga este padrão EXATO):"
 
 _EXAMPLE_SQL = """```
 cadastrar_pessoa:
+  execution: deterministic
   agent: pessoa_manager_agent
   description: >
     Cadastrar pessoa no banco respeitando o schema normalizado.

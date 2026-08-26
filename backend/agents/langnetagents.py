@@ -2796,12 +2796,17 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
     # (listar_/atualizar_/excluir_<entidade>) que NÃO estão no tasks.yaml — por
     # isso este check vem ANTES da validação em TASKS_CONFIG.
     det_fn = getattr(adapters_module, f"{{task_name}}_deterministic", None)
-    # Deterministic-ONLY apenas para CRUD auto-gerado (listar_/atualizar_/excluir_<entidade>)
-    # que NÃO está no tasks.yaml. Tasks do tasks.yaml TÊM agente = precisam RACIOCINAR (ex.:
-    # triagem classifica urgência; pré-diagnóstico gera hipóteses). Essas caem no caminho do
-    # agente e persistem via det_fn DEPOIS (Attested Computation: agente raciocina → camada
-    # determinística persiste os campos raciocinados). Sem isso, a "clínica inteligente" só faz CRUD.
-    if callable(det_fn) and task_name not in TASKS_CONFIG:
+    # ROTEAMENTO por NATUREZA da task (execution: deterministic | agent no tasks.yaml):
+    #  - COMPUTAÇÃO/CRUD (SQL/espacial/matemática, algoritmo FIXO) → DETERMINÍSTICO: exato,
+    #    auditável (ex.: área de sobreposição de APP num laudo LEGAL não pode ser "aproximada"
+    #    por LLM), reproduzível, barato. Roda em Python sem CrewAI/LLM.
+    #  - JULGAMENTO/composição (classificar impacto, compor laudo, decidir) → AGENTE (crewai
+    #    1.x, function-calling nativo): precisa de linguagem/decisão.
+    # COMPAT: task sem `execution` (apps antigos) ou CRUD auto-gerado fora do tasks.yaml
+    # mantêm o determinístico-first (agent-SQL é frágil — foi o bug do E2E). O roteamento
+    # só desvia para o AGENTE quando `execution: agent` for EXPLÍCITO no tasks.yaml.
+    _task_exec = (TASKS_CONFIG.get(task_name) or {{}}).get("execution")
+    if callable(det_fn) and _task_exec != "agent":
         try:
             payload = input_data if isinstance(input_data, dict) else {{}}
             loop = asyncio.get_running_loop()

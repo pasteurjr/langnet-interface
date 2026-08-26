@@ -84,6 +84,7 @@ FORMATO tasks.yaml (seguir EXATAMENTE o padrão do framework):
 
 ```yaml
 task_name:
+  execution: deterministic   # ou 'agent' — classifique pela natureza (ver REGRA 7)
   description: >
     Descrição detalhada da tarefa.
     Input data format: [descrição do input]
@@ -105,6 +106,17 @@ task_name:
 REGRAS CRÍTICAS:
 1. Nome da task: snake_case com verbo+objeto (ex: read_email, classify_message)
 2. Description: "fazendo o parametro X = {{X}}" para parametrização
+7. execution (OBRIGATÓRIO em TODA task): classifique pela NATUREZA:
+   - `deterministic` → COMPUTAÇÃO ou CRUD de lógica FIXA: consultar/inserir/atualizar/excluir
+     dados; cálculo SQL/espacial/matemático EXATO (área, sobreposição ST_Intersects/ST_Area,
+     CA/TO, recuos, faixas por regra, declividade). Não há julgamento — um algoritmo fixo
+     resolve. Roda em CÓDIGO, sem LLM: exato, auditável, reproduzível, barato.
+   - `agent` → exige JULGAMENTO/linguagem: classificar por interpretação (ex.: classe de
+     impacto COPAM do caso), COMPOR texto (ex.: laudo/parecer/narrativa), decidir, tratar
+     caso ambíguo, resumir.
+   Régua: se um algoritmo FIXO produz a resposta → `deterministic`; se precisa "pensar"/
+   redigir/interpretar → `agent`. Em documentos LEGAIS (laudos), os CÁLCULOS são SEMPRE
+   `deterministic` (auditáveis); só a COMPOSIÇÃO do texto do laudo é `agent`.
 3. Process steps: numerados (1., 2., 3.)
 4. Expected_output: TEXTUAL PURO, como linguagem natural
    - "Retornar um texto em formato JSON contendo as seguintes keys:"
