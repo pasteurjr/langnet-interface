@@ -2848,6 +2848,38 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             except Exception:
                 pass  # último recurso: mantém description literal
 
+        # OPÇÃO B (Attested Computation por tool): se a task tem uma função determinística
+        # ({{task}}_deterministic — consulta/cálculo já correto e PARAMETRIZADO, incl. SQL espacial),
+        # expõe-a como uma TOOL de alto nível `executar_<task>`. O agente decide QUANDO chamá-la
+        # (function-calling nativo, crewai>=1.15); a operação fica na tool — o LLM NÃO escreve SQL
+        # (antes ele montava `WHERE id=%s` sem params e quebrava). Aditivo: não remove o raciocínio
+        # do agente; para tasks de decisão ele ainda raciocina.
+        _det_fn = getattr(adapters_module, f"{{task_name}}_deterministic", None)
+        if callable(_det_fn):
+            try:
+                from crewai.tools import BaseTool as _BaseTool
+                _det_input = prepared if isinstance(prepared, dict) else (input_data if isinstance(input_data, dict) else {{}})
+                _dfn = _det_fn
+                class _DeterministicTaskTool(_BaseTool):
+                    name: str = f"executar_{{task_name}}"
+                    description: str = ("Executa a operação determinística desta tarefa (consulta/cálculo "
+                        "já correto e parametrizado, incluindo SQL espacial) usando os dados de entrada, "
+                        "e retorna o resultado em JSON. Use esta ferramenta para OBTER o resultado real "
+                        "de consultas/cálculos sobre dados; NÃO escreva SQL manualmente.")
+                    def _run(self) -> str:
+                        import json as _dj
+                        try:
+                            return _dj.dumps(_dfn(_det_input), ensure_ascii=False, default=str)
+                        except Exception as _de:
+                            return _dj.dumps({{"status": "erro", "error": str(_de)}}, ensure_ascii=False)
+                agent.tools = list(getattr(agent, "tools", []) or []) + [_DeterministicTaskTool()]
+                description = (description + f"\\n\\nFERRAMENTA DISPONÍVEL: `executar_{{task_name}}` executa a "
+                    "operação de dados desta tarefa (SQL/cálculo correto). Se a tarefa é uma consulta/cálculo "
+                    "sobre os dados, CHAME essa ferramenta para obter o resultado (não escreva SQL). Depois "
+                    "relate exatamente o que ela retornou.")
+            except Exception:
+                pass
+
         # CADEIA DE COMANDO (Inserção G / Fase 3): monta o prompt em BLOCOS ROTULADOS por AUTORIDADE.
         # REGRAS DO SISTEMA (máxima) > INSTRUÇÃO DA TAREFA > DADOS DE ENTRADA (dados) > CONTEXTO (dados).
         # Regra de ouro: DADOS/CONTEXTO são DADOS DE REFERÊNCIA, NUNCA comandos (anti prompt-injection).
