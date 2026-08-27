@@ -4721,6 +4721,15 @@ def _parse_task_description_to_python(desc: str) -> str:
         if _lm:
             loop_lists.add(_lm.group(2))
     list_captured: set = set()  # nomes capturados como lista de linhas (mutado em _emit_sql_step)
+    # PRÉ-SCAN 2: vars capturadas ACESSADAS por campo (X.campo) num passo posterior — ex.:
+    # "Guarde em zoneamento_info" e depois "WHERE zoneamento_id = zoneamento_info.id". Essas
+    # devem capturar a LINHA (dict _row), não um escalar, e X.campo vira X['campo'] (senão vira
+    # AttributeError: 'str'/None object has no attribute 'campo' em runtime).
+    _capture_names = set(m.group(1) for m in
+                         (capture_re.search(_l) for _l in raw_lines) if m)
+    _dot_bases = set(__import__("re").findall(r'\b([A-Za-z_]\w*)\.[A-Za-z_]\w*', _coalesce_quoted(desc)))
+    dot_accessed = _capture_names & _dot_bases     # capturas usadas via .campo depois
+    row_captured: set = set()  # nomes capturados como LINHA única (dict), mutado em _emit_sql_step
 
     i = 0
     n = len(raw_lines)
@@ -4773,7 +4782,8 @@ def _parse_task_description_to_python(desc: str) -> str:
                 break
 
         py = _emit_sql_step(query, params_str, in_loop, loop_item, loop_list,
-                            capture_var, captured_vars, loop_lists, list_captured)
+                            capture_var, captured_vars, loop_lists, list_captured,
+                            dot_accessed, row_captured)
         if py:
             _ql = query.strip().lower()
             _kind = ('update' if _ql.startswith('update')
@@ -4955,16 +4965,21 @@ def _repair_query_joins(query: str, fkmap: Dict[str, Dict[str, str]]):
 
 def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
                    loop_list: str, capture_var: str, captured_vars: List[str],
-                   loop_lists: set = None, list_captured: set = None) -> List[str]:
+                   loop_lists: set = None, list_captured: set = None,
+                   dot_accessed: set = None, row_captured: set = None) -> List[str]:
     """Emit Python lines for a single SQL step.
 
     loop_lists: nomes usados como fonte de loop ("Para CADA x em NOME") em toda a task —
       se um SELECT captura em NOME, guardamos as LINHAS (lista), não um escalar.
     list_captured: conjunto (mutável) dos nomes capturados como LISTA de linhas do SELECT —
-      um loop sobre esses itera as linhas (dict) diretamente, com item['campo']."""
+      um loop sobre esses itera as linhas (dict) diretamente, com item['campo'].
+    dot_accessed: capturas usadas depois como X.campo → capturam a LINHA (dict _row).
+    row_captured: conjunto (mutável) dos nomes capturados como LINHA única (dict)."""
     import re as _re
     loop_lists = loop_lists or set()
     list_captured = list_captured if list_captured is not None else set()
+    dot_accessed = dot_accessed or set()
+    row_captured = row_captured if row_captured is not None else set()
     query_lower = query.strip().lower()
     is_select = query_lower.startswith("select")
 
@@ -4975,7 +4990,7 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
 
     # Build params Python expression list
     py_params = _translate_params(params_str, captured_vars, loop_item, in_loop,
-                                  loop_item_is_row=_loop_over_rows)
+                                  loop_item_is_row=_loop_over_rows, row_captured=row_captured)
 
     lines: List[str] = []
     if in_loop and loop_list:
@@ -5081,6 +5096,12 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
                 # loop caía em input_data vazio → nenhum INSERT).
                 lines.append(f"{indent}{capture_var} = _rows")
                 list_captured.add(capture_var)
+            elif capture_var in dot_accessed:
+                # A variável é acessada depois como capture_var.campo → captura a LINHA (dict),
+                # não um escalar. Assim capture_var['campo'] funciona (antes: virava o id escalar
+                # e capture_var.id dava AttributeError em runtime).
+                lines.append(f"{indent}{capture_var} = _rows[0] if _rows else None")
+                row_captured.add(capture_var)
             else:
                 lines.append(f"{indent}_row = _rows[0] if _rows else None")
                 # PREFERE o input_data (contexto propagado — ex.: atendimento_id do atendimento corrente);
@@ -5094,7 +5115,8 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
 
 
 def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
-                      in_loop: bool = False, loop_item_is_row: bool = False) -> str:
+                      in_loop: bool = False, loop_item_is_row: bool = False,
+                      row_captured: set = None) -> str:
     """Turn ``{nome}, {descricao}, persona_id, canal`` into a Python list literal
     ``[input_data.get('nome'), input_data.get('descricao'), persona_id, canal]``.
 
@@ -5122,12 +5144,19 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
         # NOT NULL de data ausente → hoje (evita '1048 Column ... cannot be null')
         return f"({base} or _hoje())" if _date_col(col) else base
 
+    row_captured = row_captured or set()
     parts = [p.strip() for p in params_str.split(",") if p.strip()]
     py_parts: List[str] = []
     for p in parts:
         m = _re.match(r'^\{(\w+)\}$', p)
         if m:
             py_parts.append(_emit_get(m.group(1)))
+            continue
+        # Captura de LINHA acessada por campo: "zoneamento_info.id" → zoneamento_info.get('id')
+        # (a var foi capturada como dict _row porque é usada com .campo depois).
+        _capdot = _re.match(r'^([A-Za-z_]\w*)\.([A-Za-z_]\w*)$', p)
+        if _capdot and _capdot.group(1) in row_captured:
+            py_parts.append(f"{_capdot.group(1)}.get({_capdot.group(2)!r})")
             continue
         # Loop sobre linhas de SELECT (loop_item é um dict-row): "regra.descricao" e
         # "regra['descricao']" → acesso por chave no dict da linha.
