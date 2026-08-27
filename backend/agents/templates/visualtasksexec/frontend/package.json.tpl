@@ -5,7 +5,10 @@
   "dependencies": {
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-scripts": "5.0.1"
+    "react-scripts": "5.0.1",
+    "leaflet": "^1.9.4",
+    "leaflet-draw": "^1.0.4",
+    "recharts": "^2.12.7"
   },
   "devDependencies": {
     "ajv": "^8.12.0"

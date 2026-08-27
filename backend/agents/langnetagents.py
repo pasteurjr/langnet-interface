@@ -6742,7 +6742,12 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
                         s["entity"] = _tbl          # persiste p/ o resto da geração
                         break
         entity_exists = bool(entity and entity in model)
-        kind = _classify_screen(s, entity_exists)
+        # Tela RICA: se o ui_spec emitiu componente rico (map/chart/upload/...), renderiza a tela
+        # rica (mapa Leaflet com desenho, gráfico Recharts, upload) — precede a classificação CRUD.
+        if _screen_rich_types(s):
+            kind = "rich"
+        else:
+            kind = _classify_screen(s, entity_exists)
         if kind == "crud" and entity:
             covered_entities.add(entity)
         # módulo: pela task alvo → módulo do agent_task_spec, senão heurística
@@ -6755,7 +6760,9 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
         # (15+) fragmentavam o menu — não são usados para agrupar.
         module = _infer_module(s, kind)
 
-        if kind == "crud":
+        if kind == "rich":
+            src = _rich_screen(s, comp_name, entity, model, task_fields)
+        elif kind == "crud":
             src = _crud_screen(s, comp_name, entity, model.get(entity, {}))
         elif kind == "report":
             src = _report_screen(s, comp_name, task_fields)
@@ -7147,6 +7154,158 @@ export default function %COMP%() {
   );
 }
 '''
+
+
+_RICH_TYPES = {"map", "chart", "image", "gallery", "file-upload", "file-preview", "kanban", "timeline"}
+
+
+def _screen_rich_types(screen: dict) -> set:
+    """Tipos de componente RICOS presentes na tela (map/chart/upload/...)."""
+    return {c.get("type") for c in (screen.get("components") or []) if c.get("type") in _RICH_TYPES}
+
+
+def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fields: dict) -> str:
+    """Renderiza uma tela RICA (mapa Leaflet com desenho, gráfico Recharts, upload) que dispara a
+    task via wsClient. MVP genérico: geoespacial é um tipo entre vários. Carrega data-uc/data-fr."""
+    comps = screen.get("components") or []
+    rich = _screen_rich_types(screen)
+    has_map = "map" in rich
+    has_chart = "chart" in rich
+    has_upload = bool(rich & {"file-upload", "file-preview"})
+    uc = (screen.get("uc") or [""])[0] or ""
+    fr = ",".join(screen.get("fr") or screen.get("frs") or [])
+    name = screen.get("name") or comp_name
+    # task alvo
+    target = None
+    for a in (screen.get("actions") or []):
+        if a.get("kind") in ("task", "crud") and a.get("target"):
+            target = a["target"]; break
+    target = _resolve_task_target(target, task_fields, name) or (target or "")
+    action_label = next((a.get("label") for a in (screen.get("actions") or [])
+                         if a.get("kind") in ("task", "crud")), "Consultar")
+    # campo de geometria (destino do WKT desenhado)
+    geom_field = "localizacao"
+    for c in comps:
+        if c.get("type") == "map":
+            geom_field = c.get("field") or (c.get("bindTo") or "").split(".")[-1] or "localizacao"
+            break
+    # inputs simples (não-ricos)
+    inputs = [(c.get("field"), c.get("label") or _humanize(c.get("field") or ""))
+              for c in comps if c.get("type") in ("text", "number", "date", "select", "textarea") and c.get("field")]
+    inputs_jsx = "".join(
+        '<div style={{marginBottom:10}}><label style={{display:"block",fontSize:13,fontWeight:600,color:"#334155",marginBottom:4}}>'
+        + (lbl or "") + '</label>'
+        + '<input value={form["' + (k or "") + '"]||""} onChange={(e)=>setForm({...form,["' + (k or "") + '"]:e.target.value})} '
+        + 'style={{width:"100%",padding:"9px 12px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:14}} /></div>'
+        for k, lbl in inputs)
+
+    map_jsx = ('<div style={{display:"flex",gap:16,marginTop:8}}>'
+               '<div style={{flex:2}}><div style={{fontSize:12,color:"#64748b",marginBottom:6}}>Desenhe a área do empreendimento no mapa:</div>'
+               '<div ref={mapRef} style={{height:420,borderRadius:12,border:"1px solid #cbd5e1"}} />'
+               '{wkt && <div style={{fontSize:11,color:"#16a34a",marginTop:6}}>Geometria capturada ✓</div>}</div>'
+               '<div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:"#334155",marginBottom:6}}>Resultado da análise</div>'
+               '<div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:14,minHeight:120,fontSize:13}}>'
+               '{result ? <pre style={{whiteSpace:"pre-wrap",margin:0}}>{JSON.stringify(result,null,2)}</pre> : <span style={{color:"#94a3b8"}}>Desenhe a área e clique em ' + action_label + '.</span>}</div></div></div>') if has_map else ""
+
+    upload_jsx = ('<div style={{marginTop:12}}><div style={{fontSize:13,fontWeight:600,color:"#334155",marginBottom:6}}>Importar arquivo</div>'
+                  '<label style={{display:"block",border:"2px dashed #cbd5e1",borderRadius:12,padding:24,textAlign:"center",color:"#64748b",cursor:"pointer"}}>'
+                  '{file ? ("Arquivo: "+file.name) : "Arraste o Shapefile/GeoJSON/PDF aqui ou clique para escolher"}'
+                  '<input type="file" style={{display:"none"}} onChange={(e)=>setFile(e.target.files[0])} /></label></div>') if has_upload else ""
+
+    chart_jsx = ('<div style={{marginTop:16}}>{chartData.length>0 && <ResponsiveContainer width="100%" height={260}>'
+                 '<BarChart data={chartData}><XAxis dataKey={Object.keys(chartData[0]||{})[0]} /><YAxis />'
+                 '<Tooltip /><Bar dataKey={Object.keys(chartData[0]||{}).find(k=>typeof chartData[0][k]==="number")||"total"} fill="#4f46e5" />'
+                 '</BarChart></ResponsiveContainer>}</div>') if has_chart else ""
+
+    imports = ['import React, { useEffect, useRef, useState } from "react";',
+               'import { runTask } from "./wsClient";']
+    if has_map:
+        imports += ['import L from "leaflet";', 'import "leaflet/dist/leaflet.css";',
+                    'import "leaflet-draw";', 'import "leaflet-draw/dist/leaflet.draw.css";']
+    if has_chart:
+        imports += ['import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";']
+
+    tmpl = '''__IMPORTS__
+
+// Traceability: UC __UC__ | FR __FR__  (tela rica auto-gerada por LangNet)
+export default function __COMP__() {
+  const mapRef = useRef(null);
+  const [wkt, setWkt] = useState("");
+  const [form, setForm] = useState({});
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [file, setFile] = useState(null);
+
+  useEffect(() => {
+    if (!__HAS_MAP__ || !mapRef.current || mapRef.current._built) return;
+    mapRef.current._built = true;
+    const map = L.map(mapRef.current).setView([-19.9, -44.0], 12);
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "\\u00a9 OpenStreetMap" }).addTo(map);
+    const drawn = new L.FeatureGroup(); map.addLayer(drawn);
+    const dc = new L.Control.Draw({ edit: { featureGroup: drawn },
+      draw: { polygon: true, rectangle: true, marker: true, polyline: false, circle: false, circlemarker: false } });
+    map.addControl(dc);
+    map.on(L.Draw.Event.CREATED, (e) => {
+      drawn.clearLayers(); drawn.addLayer(e.layer);
+      const g = e.layer.toGeoJSON().geometry; setWkt(toWKT(g));
+    });
+  }, []);
+
+  function toWKT(g) {
+    const p = (c) => c[0] + " " + c[1];
+    if (g.type === "Point") return "POINT(" + p(g.coordinates) + ")";
+    if (g.type === "Polygon") return "POLYGON((" + g.coordinates[0].map(p).join(", ") + "))";
+    return "";
+  }
+
+  async function submit() {
+    setBusy(true); setErr(""); setResult(null);
+    try {
+      const input = { ...form };
+      if (__HAS_MAP__ && wkt) input["__GEOM__"] = wkt;
+      const r = await runTask("__TARGET__", input);
+      setResult(r);
+    } catch (e) { setErr(String((e && e.message) || e)); }
+    setBusy(false);
+  }
+
+  const chartData = (result && (result.items || result.dados || result.data)) || [];
+
+  return (
+    <div data-uc="__UC__" data-fr="__FR__" style={{ padding: 24, maxWidth: 1100 }}>
+      <h1 style={{ fontSize: 20, fontWeight: 700, color: "#0f172a", marginBottom: 16 }}>__NAME__</h1>
+      __INPUTS__
+      __MAP__
+      __UPLOAD__
+      <button onClick={submit} disabled={busy}
+        style={{ marginTop: 16, background: busy ? "#94a3b8" : "#4f46e5", color: "#fff", padding: "10px 18px", borderRadius: 8, border: 0, fontWeight: 600, cursor: "pointer" }}>
+        {busy ? "Processando..." : "__ACTION__"}
+      </button>
+      {err && <div style={{ color: "#b91c1c", marginTop: 10 }}>{err}</div>}
+      __CHART__
+      {result && !__HAS_MAP__ && <pre style={{ marginTop: 14, background: "#f6f8fa", padding: 14, borderRadius: 8, fontSize: 12, overflow: "auto" }}>{JSON.stringify(result, null, 2)}</pre>}
+    </div>
+  );
+}
+'''
+    repl = {
+        "__IMPORTS__": "\n".join(imports),
+        "__COMP__": comp_name,
+        "__NAME__": name.replace('"', "'"),
+        "__UC__": uc, "__FR__": fr,
+        "__TARGET__": target,
+        "__GEOM__": geom_field,
+        "__ACTION__": (action_label or "Consultar").replace('"', "'"),
+        "__HAS_MAP__": "true" if has_map else "false",
+        "__INPUTS__": inputs_jsx,
+        "__MAP__": map_jsx,
+        "__UPLOAD__": upload_jsx,
+        "__CHART__": chart_jsx,
+    }
+    for k, v in repl.items():
+        tmpl = tmpl.replace(k, v)
+    return tmpl
 
 
 def _crud_screen(screen: dict, comp_name: str, entity: str, entity_model: dict) -> str:
