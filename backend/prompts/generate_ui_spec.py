@@ -254,9 +254,10 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem cercas ```), no formato
   "entity": "nome_da_tabela_principal_ou_null",
   "layout": "form | table | dashboard | detail",
   "components": [
-    {{"type": "text|textarea|number|date|select|multiselect|checkbox|table|readonly",
+    {{"type": "text|textarea|number|date|select|multiselect|checkbox|radio|table|readonly|metric-card|map|chart|image|gallery|file-upload|file-preview|kanban|timeline|rich-text",
       "field": "nome_campo", "label": "Rótulo", "required": true|false,
-      "bindTo": "tabela.coluna (ou tabela_filha[].coluna para listas), ou null"}}
+      "bindTo": "tabela.coluna (ou tabela_filha[].coluna para listas), ou null",
+      "props": {{}} }}
   ],
   "actions": [
     {{"label": "Salvar", "kind": "task|crud|navigate", "target": "nome_task_ou_rota", "primary": true|false}}
@@ -326,6 +327,31 @@ REGRAS:
        <div class="text-xs text-emerald-600 mt-1">▲ 8% vs. semana anterior</div></div>
      numa grade grid grid-cols-4 gap-4. NUNCA <input> vazio pra métrica.
    - Inputs só quando o usuário digita/escolhe (formulários, filtro de período, disparo).
+6. 🗺️📊 COMPONENTES RICOS — a tela DEVE representar a NATUREZA REAL do caso de uso (veja o
+   arquétipo/croqui do UC no wireframe abaixo). NÃO reduza tudo a formulário/tabela. Emita o
+   `type` certo em `components[]` E renderize-o de verdade no `mockup_html` (mantendo o shell
+   Tailwind: menu lateral + header + card). Catálogo:
+   - **map** (geoespacial): se o UC lida com localização/área/zoneamento OU a tabela tem coluna
+     GEOMETRY. Componente `type:"map"`, `bindTo` na coluna de geometria, `props` com
+     layers (ex.: zoneamento, app) e draw:true. No mockup: inclua o CSS+JS do Leaflet via CDN
+     (cdn.jsdelivr.net/npm/leaflet) e um `<div id="map" style="height:420px">` com camada de
+     tiles do OpenStreetMap; mostre um polígono de exemplo desenhado e um botão "Desenhar área"
+     e um painel lateral de resultado. NUNCA um `<input>` de "coordenada"/"WKT" cru.
+   - **chart**: telas de indicador/relatório/monitoramento. Componente `type:"chart"`, `props`
+     com chartType (bar|line|pie|area) e title. No mockup: CDN do Chart.js
+     (cdn.jsdelivr.net/npm/chart.js) + um `<canvas>` por gráfico, além dos metric-cards.
+   - **metric-card**: KPI único (número + variação) — os cards da regra 5.
+   - **file-upload** + **file-preview**: UC importa/anexa arquivo (Shapefile/GeoJSON/PDF/CSV/imagem).
+     `type:"file-upload"` com `props.accept`. No mockup: uma DROPZONE tracejada
+     ("arraste o arquivo aqui ou clique") + uma área de PRÉVIA do conteúdo importado.
+   - **image**/**gallery**: exibir/gerenciar imagens. No mockup: grade de miniaturas (grid grid-cols-3)
+     com aspecto quadrado e hover.
+   - **kanban**/**timeline**: itens por status/etapas/histórico. No mockup: colunas por status
+     (kanban) OU lista vertical de eventos com marcadores (timeline).
+   - **rich-text**: conteúdo formatado longo (laudo, parecer) — área de edição/exibição estilizada.
+   REGRA DE FIDELIDADE: o componente rico escolhido tem que casar com o arquétipo do wireframe do UC
+   e com os RFs relacionados; se o UC é claramente de mapa/gráfico/importação, é ERRO entregar só um
+   formulário.
 
 {agentic_note}
 
@@ -352,12 +378,38 @@ _AGENTIC_NOTE = (
 )
 
 
+def infer_screen_capabilities(uc: Dict[str, str], sub_schema: str) -> str:
+    """Deriva DETERMINISTICAMENTE as capacidades ricas que a tela DEVE ter, a partir dos
+    tipos de coluna do schema + palavras-chave do UC (nome/objetivo/fluxo/wireframe/rfs).
+    Guia o LLM a materializar o componente certo (não só formulário)."""
+    blob = " ".join(str(uc.get(k, "")) for k in
+                    ("name", "objetivo", "flow", "wireframe", "screen_title", "rfs", "fr")).lower()
+    caps = []
+    has_geom = bool(re.search(r'\bgeometry\b|\bgeometry\s*\(|\bgeography\b', sub_schema or "", re.I))
+    if has_geom or re.search(r'localiza|mapa|geoespac|zoneament|coordenad|pol[íi]gono|territ[óo]rio|geo\b|latitude|rota', blob):
+        caps.append('map (mapa interativo com desenhar/selecionar a geometria + camadas; NÃO campo de texto de coordenada)')
+    if re.search(r'dashboard|indicador|m[ée]trica|relat[óo]rio|monitor|painel|estat[íi]stica|kpi|gr[áa]fico', blob):
+        caps.append('chart (gráficos + cards de KPI)')
+    if re.search(r'importa|upload|anexa|carrega.{0,12}arquivo|shapefile|geojson|\.csv|planilha|\bpdf\b|documento', blob):
+        caps.append('file-upload + file-preview (dropzone + prévia do arquivo importado)')
+    if re.search(r'imagem|foto|galeria|m[íi]dia', blob) or re.search(r'\b\w+\s+(?:BLOB|LONGBLOB)\b', sub_schema or "", re.I):
+        caps.append('image/gallery (grade de imagens)')
+    if re.search(r'status|etapa|andamento|kanban|fluxo de aprova|hist[óo]rico|linha do tempo|timeline', blob):
+        caps.append('kanban ou timeline (itens por status/etapas)')
+    if not caps:
+        return ""
+    return ("\n## 🔴 CAPACIDADES OBRIGATÓRIAS DESTA TELA (derivadas do UC + schema)\n"
+            "Esta tela DEVE incluir os componentes ricos abaixo (não entregue só formulário):\n- "
+            + "\n- ".join(caps) + "\n")
+
+
 def build_single_screen_prompt(uc: Dict[str, str], sub_schema: str,
                                project_name: str = "Sistema",
                                nav_items: Optional[str] = None) -> str:
     schema_block = ""
     if sub_schema:
         schema_block = f"## SCHEMA REAL DAS TABELAS RELEVANTES\n\n```sql\n{sub_schema}\n```"
+    schema_block += infer_screen_capabilities(uc, sub_schema)
     return _INSTRUCTIONS.format(
         project_name=project_name or "Sistema",
         nav_items=nav_items or "Dashboard, e os itens principais do produto",
