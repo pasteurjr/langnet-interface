@@ -343,9 +343,24 @@ _SQL_RULES = """
 """
 
 _NO_SQL_RULES = """
-5. Esta task NÃO persiste dados. Descreva as chamadas às tools (database_tool,
-   sql_query_tool, api_call_tool, etc.) que serão feitas. Se ela consulta o
-   banco (SELECT), pode escrever a query, mas não é obrigatório.
+5. Esta task NÃO persiste dados (não faz INSERT/UPDATE/DELETE). Descreva as chamadas
+   às tools que fará. REGRAS:
+   a. Se a task CONSULTA o banco (SELECT) — inclusive para montar dashboards, relatórios
+      ou agregações — escreva a consulta SEMPRE no formato canônico, EM LINHAS PRÓPRIAS:
+         query="SELECT ... FROM ... WHERE ..."
+         params=[{param1}, {param2}]
+      NUNCA escreva SQL em prosa (ex.: "execute a consulta: SELECT ..."). O gerador
+      determinístico SÓ reconhece o formato query="...". SQL em prosa = task que não faz nada.
+   b. AGREGAÇÃO/CONTAGEM/SOMA/MÉDIA: faça a conta DENTRO do SQL (SUM/COUNT/AVG/MAX/
+      GROUP BY/CASE), com ALIAS `AS <nome>`, e capture com "Guarde o resultado em <nome>".
+      NUNCA descreva a agregação em linguagem natural ("para cada indicador, some os
+      valores") — o determinístico não interpreta prosa; o número SAI de um SUM/COUNT no SQL.
+      Ex.: query="SELECT tipo, COUNT(*) AS total FROM consulta WHERE municipio_id=%s
+                  AND data_hora BETWEEN %s AND %s GROUP BY tipo"
+           params=[{municipio_id}, {data_inicial}, {data_final}]
+           Guarde o resultado em indicadores.
+   c. Para chamadas a tools que NÃO são SQL (api_call_tool, pdf_reader, etc.), descreva
+      normalmente — o passo SQL segue o formato acima.
 """
 
 _EXAMPLE_HDR = "EXEMPLO REAL de task com SQL (siga este padrão EXATO):"
