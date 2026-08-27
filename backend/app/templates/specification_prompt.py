@@ -352,9 +352,15 @@ Para CADA caso de uso (MÍNIMO 10):
 
 #### Fluxo Principal
 
+🔵 Descreva a INTERAÇÃO REAL coerente com o arquétipo da tela — não reduza tudo a "preenche campo/
+clica botão". Use o verbo certo da interação: em tela **map**, "desenha a área no mapa"/"seleciona a
+camada"/"clica no lote"; em **chart/dashboard**, "escolhe o período"/"passa o mouse na barra do
+gráfico"; em **upload**, "arrasta o Shapefile"/"confere a prévia das feições"; em **gallery**,
+"abre a imagem". Cada elemento rico citado aqui DEVE aparecer no wireframe (regra 6.1).
+
 | # | Ação do Ator | Resposta do Sistema |
 |---|--------------|---------------------|
-| 1 | [ação concreta e real do ator — usar nome real do elemento UI clicado/preenchido] | [o sistema exibe/faz: descrever elementos UI visíveis — nome da tela, campos, botões, mensagens com texto exato] |
+| 1 | [ação concreta e real do ator — usar nome real do elemento UI clicado/preenchido/desenhado] | [o sistema exibe/faz: descrever elementos UI visíveis — nome da tela, campos, botões, mapa/gráfico/prévia, mensagens com texto exato] |
 | 2 | [próxima ação — pode ser "O usuário pode opcionalmente:"] | [resposta do sistema ou deixar em branco se for cabeçalho de sub-ações] |
 | 2.1 | [sub-ação opcional A — ex: "Clica em 'Cancelar'"] | [resposta específica — ex: "Sistema fecha o modal e retorna à tela anterior sem salvar dados"] |
 | 2.2 | [sub-ação opcional B] | [resposta específica com elementos UI] |
@@ -381,20 +387,79 @@ Para CADA caso de uso (MÍNIMO 10):
 ''' + ('''
 **Tela:** [nome real da tela]
 
+🔴 ESCOLHA O ARQUÉTIPO DA TELA — NÃO desenhe um formulário por padrão. O croqui deve REPRESENTAR
+a natureza REAL do caso de uso. Escolha o arquétipo pelo OBJETIVO do UC + seus RFs Relacionados +
+os TIPOS de dado que ele manipula:
+- **map** (mapa geoespacial): se o UC lida com localização/área/zoneamento/rota, OU a entidade tem
+  coluna geométrica (GEOMETRY/geometry). Croqui = área de mapa + camadas + ferramenta de
+  DESENHAR/SELECIONAR a geometria + painel de resultado. NUNCA um campo de texto para "coordenada".
+- **chart/dashboard**: se o UC é indicador/relatório/monitoramento/análise com números agregados.
+  Croqui = cards de KPI + GRÁFICOS (barra/linha/pizza), com filtros de período.
+- **upload/preview**: se o UC importa/anexa/carrega arquivo (Shapefile, GeoJSON, PDF, CSV, planilha,
+  imagem). Croqui = dropzone "arraste o arquivo" + PRÉVIA do conteúdo importado + botão processar.
+- **gallery**: se o UC exibe/gerencia imagens/fotos/mídia. Croqui = grade de miniaturas + visualizador.
+- **timeline/kanban**: se o UC acompanha itens por STATUS/etapas/histórico. Croqui = colunas por
+  status (kanban) OU linha do tempo de eventos.
+- **table/list**: listagem/busca de muitos registros. Croqui = busca + tabela + ações por linha.
+- **form**: SÓ quando o UC é realmente cadastro/edição simples de campos. Croqui = campos + botões.
+
+O croqui abaixo é APENAS UM EXEMPLO de padrão (form). Reproduza o padrão do ARQUÉTIPO CERTO deste UC,
+com os elementos REAIS do Fluxo (regra 6.1: todo elemento citado no fluxo aparece no croqui e vice-versa).
+
+EXEMPLOS DE ARQUÉTIPO (adapte ao UC real):
+
+form:
 ```
 ┌─────────────────────────────────────────────┐
-│  [Título real da tela]                      │
+│  [Título da tela]                           │
 ├─────────────────────────────────────────────┤
-│                                             │
-│  [Campo 1]: [____________________________] │
-│  [Campo 2]: [____________________________] │
-│                                             │
-│  ┌──────────────────┐  ┌─────────────────┐ │
-│  │  Botão Principal │  │    Cancelar     │ │
-│  └──────────────────┘  └─────────────────┘ │
-│                                             │
+│  [Campo 1]: [____________________________]  │
+│  [Campo 2]: [____________________________]  │
+│  [ Salvar ]   [ Cancelar ]                  │
 └─────────────────────────────────────────────┘
 ```
+
+map (UC geoespacial — ex.: consulta por localização):
+```
+┌───────────────────────────────────────────────────────────┐
+│  [Título]        Camadas: [x]Zoneamento [x]APP [ ]Lotes    │
+├──────────────────────────────────┬────────────────────────┤
+│                                  │  Resultado da análise:  │
+│     ░░░ MAPA INTERATIVO ░░░       │  • Zona: Industrial     │
+│     ░  [✎ Desenhar área]  ░       │  • Regras aplicáveis:   │
+│     ░  polígono do imóvel ░       │    - Licença ambiental  │
+│     ░░░░░░░░░░░░░░░░░░░░░░░       │    - EIV                │
+│  Zoom [+][-]   [ Consultar ]     │  [ Gerar laudo ]        │
+└──────────────────────────────────┴────────────────────────┘
+```
+
+chart/dashboard (UC de indicadores):
+```
+┌───────────────────────────────────────────────────────────┐
+│  [Título]                 Período: [ Últimos 30 dias ▼ ]   │
+├───────────────────────────────────────────────────────────┤
+│  ┌─Consultas─┐ ┌─Aprovadas─┐ ┌─Pendentes─┐ ┌─Tempo médio─┐ │
+│  │   1.240   │ │    980    │ │    260    │ │   2,3 dias  │ │
+│  └───────────┘ └───────────┘ └───────────┘ └─────────────┘ │
+│  ┌── Conformidade por zona (barras) ──┐ ┌─ Evolução (linha)┐│
+│  │ ▆▆▆  ▆▆   ▆▆▆▆  ▆                 │ │   ╱╲   ╱╲╱        ││
+│  └────────────────────────────────────┘ └──────────────────┘│
+└───────────────────────────────────────────────────────────┘
+```
+
+upload/preview (UC de importação de arquivo):
+```
+┌─────────────────────────────────────────────┐
+│  [Título]                                   │
+├─────────────────────────────────────────────┤
+│  ┌───── arraste o Shapefile/GeoJSON ─────┐  │
+│  │        ⭱  ou clique para escolher      │  │
+│  └───────────────────────────────────────┘  │
+│  Prévia: 18 feições · SRID 4674 · Polygon   │
+│  [ Processar importação ]                   │
+└─────────────────────────────────────────────┘
+```
+
 ''' if wireframe_format == 'ascii' else '''
 **Tela:** [nome real da tela]
 
