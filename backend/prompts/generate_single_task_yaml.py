@@ -47,6 +47,12 @@ def parse_task_blocks(agent_task_spec_document: str) -> List[Dict[str, str]]:
       | **Módulo** | ... |
       ---
     """
+    # Mapa AG-XX -> nome snake_case a partir da tabela de OVERVIEW dos agentes
+    # (Seção 1 da ATS: "| AG-01 | consulta_agent | ... |"). O campo Agent por task
+    # costuma vir só como "AG-02" (sem o nome), então precisamos resolver aqui — senão
+    # o tasks.yaml referencia "AG-02" e o app quebra (agents.yaml usa a chave snake_case).
+    agent_map = _parse_agent_overview(agent_task_spec_document)
+
     blocks = []
     # Split on task section headers (#### T-...) or agent headers (#### AG-)
     pattern = re.compile(
@@ -55,15 +61,25 @@ def parse_task_blocks(agent_task_spec_document: str) -> List[Dict[str, str]]:
     )
     for m in pattern.finditer(agent_task_spec_document):
         raw = m.group(1)
-        task = _parse_single_block(raw)
+        task = _parse_single_block(raw, agent_map)
         if task and task.get("name"):
             blocks.append(task)
     return blocks
 
 
-def _parse_single_block(raw: str) -> Optional[Dict[str, str]]:
+def _parse_agent_overview(doc: str) -> Dict[str, str]:
+    """{AG-XX -> nome_snake_case} a partir da tabela de visão geral dos agentes.
+    Linha típica: | AG-01 | consulta_agent | Consulta | GPT-4o | Sim |"""
+    amap: Dict[str, str] = {}
+    for m in re.finditer(r'\|\s*(AG-\d+)\s*\|\s*([A-Za-z_][\w]*)\s*\|', doc):
+        amap[m.group(1).strip()] = m.group(2).strip()
+    return amap
+
+
+def _parse_single_block(raw: str, agent_map: Optional[Dict[str, str]] = None) -> Optional[Dict[str, str]]:
     """Extract fields from one task block by matching table rows."""
     fields: Dict[str, str] = {"raw": raw}
+    agent_map = agent_map or {}
 
     header_m = re.search(r'####\s+(T-[\w-]+):\s*(.+)', raw)
     if header_m:
@@ -85,7 +101,11 @@ def _parse_single_block(raw: str) -> Optional[Dict[str, str]]:
             # Extract snake_case agent name from "AG-XX (Human Name)" pattern.
             # The tasks.yaml expects the snake_case identifier, not the AG-XX id.
             paren = re.search(r'\(([^)]+)\)', val)
-            if paren:
+            _agid = re.match(r'^\s*(AG-\d+)\s*$', val)
+            if _agid and agent_map.get(_agid.group(1)):
+                # "AG-02" puro -> resolve pelo overview p/ o nome snake_case real
+                fields["agent_snake"] = agent_map[_agid.group(1)]
+            elif paren:
                 human = paren.group(1).strip()
                 snake = re.sub(r'[^a-z0-9]+', '_', human.lower()).strip('_')
                 if snake and not snake.endswith('_agent'):
