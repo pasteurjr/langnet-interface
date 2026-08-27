@@ -4609,6 +4609,16 @@ def _parse_task_description_to_python(desc: str) -> str:
         return "\n".join(_out)
 
     raw_lines = _coalesce_quoted(desc).split("\n")
+    # PRÉ-SCAN: nomes usados como FONTE de loop ("Para CADA x em NOME"). Se um SELECT
+    # captura em NOME ("Guarde o resultado em NOME"), guardamos as LINHAS (lista) e o
+    # loop itera os dicts — fecha o padrão SELECT→lista→loop de INSERT por linha.
+    loop_lists = set()
+    for _ln in raw_lines:
+        _lm = loop_re.search(_ln)
+        if _lm:
+            loop_lists.add(_lm.group(2))
+    list_captured: set = set()  # nomes capturados como lista de linhas (mutado em _emit_sql_step)
+
     i = 0
     n = len(raw_lines)
     while i < n:
@@ -4660,7 +4670,7 @@ def _parse_task_description_to_python(desc: str) -> str:
                 break
 
         py = _emit_sql_step(query, params_str, in_loop, loop_item, loop_list,
-                            capture_var, captured_vars)
+                            capture_var, captured_vars, loop_lists, list_captured)
         if py:
             _ql = query.strip().lower()
             _kind = ('update' if _ql.startswith('update')
@@ -4682,7 +4692,10 @@ def _parse_task_description_to_python(desc: str) -> str:
     for _i, (_k, _p) in enumerate(_steps):
         _prev_spatial = (_i > 0 and _steps[_i - 1][0] == "select"
                          and any("ST_Intersects" in _ln or "ST_Contains" in _ln for _ln in _steps[_i - 1][1]))
-        if _k == "insert" and _prev_spatial:
+        # NÃO duplica o wrap se o INSERT JÁ é um loop explícito (padrão "Para CADA regra em
+        # lista_regras" já emitido como `for ... in ...:` iterando as linhas capturadas).
+        _already_loop = bool(_p) and _p[0].lstrip().startswith("for ")
+        if _k == "insert" and _prev_spatial and not _already_loop:
             _looped = ["for _row in _rows:"]
             for _ln in _p:
                 _ln2 = _re2.sub(r"input_data\.get\('(?:descricao\w*|texto\w*|regra\w*)'\)",
@@ -4838,20 +4851,38 @@ def _repair_query_joins(query: str, fkmap: Dict[str, Dict[str, str]]):
 
 
 def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
-                   loop_list: str, capture_var: str, captured_vars: List[str]) -> List[str]:
-    """Emit Python lines for a single SQL step."""
+                   loop_list: str, capture_var: str, captured_vars: List[str],
+                   loop_lists: set = None, list_captured: set = None) -> List[str]:
+    """Emit Python lines for a single SQL step.
+
+    loop_lists: nomes usados como fonte de loop ("Para CADA x em NOME") em toda a task —
+      se um SELECT captura em NOME, guardamos as LINHAS (lista), não um escalar.
+    list_captured: conjunto (mutável) dos nomes capturados como LISTA de linhas do SELECT —
+      um loop sobre esses itera as linhas (dict) diretamente, com item['campo']."""
     import re as _re
+    loop_lists = loop_lists or set()
+    list_captured = list_captured if list_captured is not None else set()
     query_lower = query.strip().lower()
     is_select = query_lower.startswith("select")
 
+    # Loop sobre linhas capturadas de um SELECT anterior (ex.: "Guarde o resultado em
+    # lista_regras" seguido de "Para CADA regra em lista_regras")? Então itera a LISTA
+    # capturada (dicts), e os params item.campo/item viram item['campo'].
+    _loop_over_rows = bool(in_loop and loop_list and loop_list in list_captured)
+
     # Build params Python expression list
-    py_params = _translate_params(params_str, captured_vars, loop_item, in_loop)
+    py_params = _translate_params(params_str, captured_vars, loop_item, in_loop,
+                                  loop_item_is_row=_loop_over_rows)
 
     lines: List[str] = []
     if in_loop and loop_list:
-        # _as_list normaliza string "a, b" -> ["a","b"] (o frontend já envia lista via
-        # splitList, mas isso torna o adapter robusto a chamadas diretas com string).
-        lines.append(f"for {loop_item} in _as_list(input_data.get({loop_list!r})):")
+        if _loop_over_rows:
+            # itera as linhas capturadas do SELECT (lista de dicts) diretamente
+            lines.append(f"for {loop_item} in ({loop_list} or []):")
+        else:
+            # _as_list normaliza string "a, b" -> ["a","b"] (o frontend já envia lista via
+            # splitList, mas isso torna o adapter robusto a chamadas diretas com string).
+            lines.append(f"for {loop_item} in _as_list(input_data.get({loop_list!r})):")
         indent = "    "
     else:
         indent = ""
@@ -4940,11 +4971,19 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
                         first = first.split(".")[-1]                     # remove prefixo de tabela
                     if _re.match(r'^\w+$', first):
                         sel_col = first
-            lines.append(f"{indent}_row = _rows[0] if _rows else None")
-            # PREFERE o input_data (contexto propagado — ex.: atendimento_id do atendimento corrente);
-            # o SELECT é só FALLBACK. Assim o adapter respeita o que a UI enviou em vez de re-derivar
-            # por lookup frágil/circular (ex.: buscar atendimento_id num prontuário que ainda não existe).
-            lines.append(f"{indent}{capture_var} = input_data.get({capture_var!r}) or (_row[{sel_col!r}] if _row else None)")
+            if capture_var in loop_lists:
+                # A variável é FONTE de um loop adiante ("Para CADA x em capture_var") →
+                # captura a LISTA de linhas (dicts) do SELECT, não um escalar. Assim o loop
+                # itera as linhas reais e faz item['campo'] (antes: capturava _row['id'] e o
+                # loop caía em input_data vazio → nenhum INSERT).
+                lines.append(f"{indent}{capture_var} = _rows")
+                list_captured.add(capture_var)
+            else:
+                lines.append(f"{indent}_row = _rows[0] if _rows else None")
+                # PREFERE o input_data (contexto propagado — ex.: atendimento_id do atendimento corrente);
+                # o SELECT é só FALLBACK. Assim o adapter respeita o que a UI enviou em vez de re-derivar
+                # por lookup frágil/circular (ex.: buscar atendimento_id num prontuário que ainda não existe).
+                lines.append(f"{indent}{capture_var} = input_data.get({capture_var!r}) or (_row[{sel_col!r}] if _row else None)")
             if capture_var not in captured_vars:
                 captured_vars.append(capture_var)
 
@@ -4952,7 +4991,7 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
 
 
 def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
-                      in_loop: bool = False) -> str:
+                      in_loop: bool = False, loop_item_is_row: bool = False) -> str:
     """Turn ``{nome}, {descricao}, persona_id, canal`` into a Python list literal
     ``[input_data.get('nome'), input_data.get('descricao'), persona_id, canal]``.
 
@@ -4987,6 +5026,17 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
         if m:
             py_parts.append(_emit_get(m.group(1)))
             continue
+        # Loop sobre linhas de SELECT (loop_item é um dict-row): "regra.descricao" e
+        # "regra['descricao']" → acesso por chave no dict da linha.
+        if loop_item_is_row and loop_item:
+            _rowdot = _re.match(r'^' + _re.escape(loop_item) + r'\.([A-Za-z_]\w*)$', p)
+            if _rowdot:
+                py_parts.append(f"{loop_item}.get({_rowdot.group(1)!r})")
+                continue
+            _rowidx = _re.match(r'^' + _re.escape(loop_item) + r'\[', p)
+            if _rowidx or p == loop_item:
+                py_parts.append(p)
+                continue
         if p in captured_vars or p == loop_item:
             py_parts.append(p)
             continue
