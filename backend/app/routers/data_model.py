@@ -39,6 +39,10 @@ class ChatMessageRequest(BaseModel):
     target_dbms: Optional[str] = None  # None => usa o dbms da própria sessão (não força mysql)
 
 
+class ChangeDbmsRequest(BaseModel):
+    target_dbms: str = Field(..., description="postgresql | postgis | mysql | sqlite")
+
+
 class ApprovalRequest(BaseModel):
     approve: bool = True
 
@@ -244,6 +248,77 @@ def generate_data_model(project_id: str, req: GenerateRequest, current_user=Depe
         pass
 
     return {"session_id": session_id, "status": "draft", **result}
+
+
+@router.post("/{session_id}/change-dbms")
+def change_dbms(session_id: str, req: ChangeDbmsRequest, current_user=Depends(get_current_user)):
+    """Reemite os artefatos do Data Model para um novo DBMS-alvo de forma DETERMINÍSTICA
+    (sem LLM), reaproveitando o modelo lógico (entities_json). Cria uma nova sessão draft.
+
+    Antes, trocar de dialeto (ex.: MySQL → PostGIS) exigia regenerar o modelo inteiro pelo
+    LLM (~30min). O modelo lógico já contém as entidades; a emissão de DDL/models/alembic é
+    determinística (generate_ddl(dbms=...)), então a troca de dialeto é instantânea e coerente."""
+    row = _fetch_session(session_id)
+    ej = row.get("entities_json")
+    if not ej:
+        raise HTTPException(status_code=400,
+                            detail="Sessão sem entities_json (modelo lógico) — não há como reemitir o DDL")
+    try:
+        logical = json.loads(ej) if isinstance(ej, str) else ej
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"entities_json inválido: {e}")
+
+    from agents.langnetdatamodel import (
+        generate_ddl, generate_models_py, generate_alembic_migration,
+        build_yaml_descriptor, validate_quality,
+    )
+    dbms = req.target_dbms
+    try:
+        schema_sql = generate_ddl(logical, dbms=dbms)
+        models_py = generate_models_py(logical)
+        alembic = generate_alembic_migration(logical)
+        yaml_desc = build_yaml_descriptor(logical, dbms)
+        validation = validate_quality(schema_sql, dbms=dbms)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Falha ao reemitir DDL para {dbms}: {e}")
+
+    result = {
+        "data_model_yaml": yaml_desc,
+        "schema_sql": schema_sql,
+        "models_py": models_py,
+        "alembic_migration": alembic,
+        "entities_json": ej if isinstance(ej, str) else json.dumps(ej, ensure_ascii=False),
+        "validation_report": json.dumps(validation, ensure_ascii=False) if isinstance(validation, (dict, list)) else str(validation),
+    }
+    new_id = str(uuid.uuid4())
+    with get_db_connection() as conn:
+      cur = conn.cursor()
+      try:
+        cur.execute(
+            """INSERT INTO data_model_sessions
+               (id, project_id, user_id, specification_session_id, specification_version,
+                version, status, target_dbms, data_model_yaml, schema_sql, models_py,
+                alembic_migration, entities_json, validation_report)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+            (
+                new_id, row["project_id"], current_user["id"],
+                row.get("specification_session_id"), row.get("specification_version") or 1,
+                1, "draft", dbms,
+                result["data_model_yaml"], result["schema_sql"], result["models_py"],
+                result["alembic_migration"], result["entities_json"], result["validation_report"],
+            ),
+        )
+        conn.commit()
+      finally:
+        cur.close()
+    try:
+        _save_version(new_id, {**result, "target_dbms": dbms},
+                      change_type="initial_generation",
+                      change_description=f"Reemissão determinística do DDL para {dbms} (sem LLM)",
+                      user_id=current_user["id"])
+    except Exception:
+        pass
+    return {"session_id": new_id, "status": "draft", "target_dbms": dbms, **result}
 
 
 @router.get("/project/{project_id}/latest")
