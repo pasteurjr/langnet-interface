@@ -9,10 +9,13 @@ especificações funcionais.
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 import uuid
+import logging
 from datetime import datetime
 import json
 import yaml
 import asyncio
+
+logger = logging.getLogger(__name__)
 
 from app.models.agent_task import (
     AgentTaskGenerationRequest,
@@ -68,8 +71,13 @@ async def fetch_specification_document(spec_session_id: str, version: int, conne
 
 
 async def fetch_requirements_context(spec_session_id: str, connection) -> str:
-    """Busca os requisitos relacionados para contexto adicional"""
-    # Buscar requirements_session_id associado à especificação
+    """Busca os requisitos relacionados para contexto adicional.
+
+    É CONTEXTO OPCIONAL: a geração de agentes/tarefas usa o agent_task_spec_document
+    como input principal. A tabela legada `requirements_generations` (schema antigo) não
+    existe mais no banco atual — se a consulta falhar (tabela/coluna ausente) OU não houver
+    requisitos, retorna None e a geração segue sem esse contexto extra. NUNCA deve derrubar
+    a geração inteira (era o 500 '1146 requirements_generations doesn't exist')."""
     query = """
         SELECT sg.requirements_session_id, rg.requirements_json
         FROM execution_specification_sessions sg
@@ -77,14 +85,16 @@ async def fetch_requirements_context(spec_session_id: str, connection) -> str:
         WHERE sg.id = %s
         LIMIT 1
     """
-    cursor = connection.cursor(dictionary=True)
-    cursor.execute(query, (spec_session_id,))
-    result = cursor.fetchone()
-    cursor.close()
-
-    if result and result.get("requirements_json"):
-        return result["requirements_json"]
-
+    try:
+        cursor = connection.cursor(dictionary=True)
+        cursor.execute(query, (spec_session_id,))
+        result = cursor.fetchone()
+        cursor.close()
+        if result and result.get("requirements_json"):
+            return result["requirements_json"]
+    except Exception as _exc:
+        # tabela/coluna legada ausente (schema drift) — contexto opcional, não é fatal
+        logger.warning(f"fetch_requirements_context ignorado ({type(_exc).__name__}): {_exc}")
     return None
 
 
