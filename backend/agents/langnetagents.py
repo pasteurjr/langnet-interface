@@ -7327,7 +7327,9 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
                  '<Tooltip /><Bar dataKey={Object.keys(chartData[0]||{}).find(k=>typeof chartData[0][k]==="number")||"total"} fill="#4f46e5" />'
                  '</BarChart></ResponsiveContainer>}</div>') if has_chart else ""
 
-    imports = ['import React, { useEffect, useRef, useState } from "react";',
+    # Imports: só puxa Leaflet/hooks de mapa quando a tela TEM mapa (senão 'L is not defined' quebra o build).
+    react_hooks = ["useEffect", "useRef", "useState"] if has_map else ["useState"]
+    imports = ['import React, { ' + ", ".join(react_hooks) + ' } from "react";',
                'import { runTask } from "./wsClient";']
     if has_map:
         imports += ['import L from "leaflet";', 'import "leaflet/dist/leaflet.css";',
@@ -7335,20 +7337,14 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
     if has_chart:
         imports += ['import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";']
 
-    tmpl = '''__IMPORTS__
-
-// Traceability: UC __UC__ | FR __FR__  (tela rica auto-gerada por LangNet)
-export default function __COMP__() {
-  const mapRef = useRef(null);
-  const [wkt, setWkt] = useState("");
-  const [form, setForm] = useState({});
-  const [result, setResult] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [file, setFile] = useState(null);
-
-  useEffect(() => {
-    if (!__HAS_MAP__ || !mapRef.current || mapRef.current._built) return;
+    # Blocos condicionais (evita referenciar L/mapRef/wkt em telas sem mapa).
+    state_block = ""
+    if has_map:
+        state_block += '  const mapRef = useRef(null);\n  const [wkt, setWkt] = useState("");\n'
+    if has_upload:
+        state_block += '  const [file, setFile] = useState(null);\n'
+    effect_block = ('''  useEffect(() => {
+    if (!mapRef.current || mapRef.current._built) return;
     mapRef.current._built = true;
     const map = L.map(mapRef.current).setView([-19.9, -44.0], 12);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "\\u00a9 OpenStreetMap" }).addTo(map);
@@ -7368,13 +7364,27 @@ export default function __COMP__() {
     if (g.type === "Polygon") return "POLYGON((" + g.coordinates[0].map(p).join(", ") + "))";
     return "";
   }
+''') if has_map else ""
+    # #1: manda o WKT sob MÚLTIPLAS chaves para casar com o input da task (localizacao/geometria/coluna).
+    geom_submit = ('      if (wkt) { input["__GEOM__"] = wkt; input["localizacao"] = wkt; input["geometria"] = wkt; }\n'
+                   .replace("__GEOM__", geom_field)) if has_map else ""
+    result_fallback = ('{result && <pre style={{ marginTop: 14, background: "#f6f8fa", padding: 14, borderRadius: 8, fontSize: 12, overflow: "auto" }}>{JSON.stringify(result, null, 2)}</pre>}'
+                       if not has_map else "")
 
-  async function submit() {
+    tmpl = '''__IMPORTS__
+
+// Traceability: UC __UC__ | FR __FR__  (tela rica auto-gerada por LangNet)
+export default function __COMP__() {
+__STATE__  const [form, setForm] = useState({});
+  const [result, setResult] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+__EFFECT__  async function submit() {
     setBusy(true); setErr(""); setResult(null);
     try {
       const input = { ...form };
-      if (__HAS_MAP__ && wkt) input["__GEOM__"] = wkt;
-      const r = await runTask("__TARGET__", input);
+__GEOMSUBMIT__      const r = await runTask("__TARGET__", input);
       setResult(r);
     } catch (e) { setErr(String((e && e.message) || e)); }
     setBusy(false);
@@ -7394,7 +7404,7 @@ export default function __COMP__() {
       </button>
       {err && <div style={{ color: "#b91c1c", marginTop: 10 }}>{err}</div>}
       __CHART__
-      {result && !__HAS_MAP__ && <pre style={{ marginTop: 14, background: "#f6f8fa", padding: 14, borderRadius: 8, fontSize: 12, overflow: "auto" }}>{JSON.stringify(result, null, 2)}</pre>}
+      __RESULTFALLBACK__
     </div>
   );
 }
@@ -7405,13 +7415,15 @@ export default function __COMP__() {
         "__NAME__": name.replace('"', "'"),
         "__UC__": uc, "__FR__": fr,
         "__TARGET__": target,
-        "__GEOM__": geom_field,
         "__ACTION__": (action_label or "Consultar").replace('"', "'"),
-        "__HAS_MAP__": "true" if has_map else "false",
+        "__STATE__": state_block,
+        "__EFFECT__": effect_block,
+        "__GEOMSUBMIT__": geom_submit,
         "__INPUTS__": inputs_jsx,
         "__MAP__": map_jsx,
         "__UPLOAD__": upload_jsx,
         "__CHART__": chart_jsx,
+        "__RESULTFALLBACK__": result_fallback,
     }
     for k, v in repl.items():
         tmpl = tmpl.replace(k, v)
