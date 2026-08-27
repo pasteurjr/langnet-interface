@@ -63,7 +63,27 @@ as 8 tasks do ATS usam). Contra os **26 FRs da especificação**, o real é **~8
 FR-008 declividade) **sem task**. Isto é o gap estrutural já sinalizado — a matriz deve passar a
 carregar os 26 FRs da spec para expor a lacuna real (melhoria recomendada).
 
-## 6. Conclusão
+## 6. E2E AO VIVO pelo mapa (ws-server + PostGIS) — FUNCIONANDO
+
+Subi o **ws-server** (porta 5023) contra **PostGIS** (`uso_solo_e2e`, zona ZUR-1 cobrindo BH, 3
+regras) e naveguei o app:
+
+1. Abri **Consulta de Regramentos** → o mapa OpenStreetMap carrega.
+2. **Desenhei um retângulo** sobre Belo Horizonte com a ferramenta do Leaflet → "Geometria capturada ✓".
+3. Cliquei **Nova Consulta** → o app enviou `execute_task consultar_regramentos_ambientais` pelo
+   **WebSocket** com a geometria em WKT.
+4. O ws-server roteou para o caminho **determinístico** → `ST_Intersects` no PostGIS → respondeu
+   `task_completed`.
+5. O painel exibiu: **zona ZUR-1 Zona Urbana** + **3 regras aplicáveis** (Licença ambiental
+   obrigatória, EIV, recuo frontal). Ver screenshot.
+
+Ou seja: **desenhar a área no mapa → consulta espacial real → regras retornando**, ponta a ponta.
+(Um defeito adicional foi achado e corrigido aqui: SELECT encadeado `zoneamento_info.id` gerava
+`AttributeError` — fix no parser, commit 3bf3a6a.)
+
+![E2E: retângulo desenhado no mapa e as regras da zona no painel de resultado](shots/e2e-2-resultado.png)
+
+## 7. Conclusão
 
 Respondendo à pergunta original: **era o prompt, não o modelo.** O mesmo qwen3.8, com arquétipos e
 vocabulário ricos desde a especificação, gerou um app com mapa OpenStreetMap real, ferramentas de
