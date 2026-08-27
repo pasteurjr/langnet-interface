@@ -5943,13 +5943,23 @@ except Exception as _e:
 '''
 
 
-def _postgresify_sql_py(src: str) -> str:
+def _postgresify_sql_py(src: str, srid: int = 4674) -> str:
     """Converte código Python+SQL gerado para MySQL -> PostgreSQL/PostGIS (P3, dbms=postgis).
     Aplicável a adapters.py e database_tool.py. Placeholders %s e funções ST_* (PostGIS) já são
     compatíveis; aqui trocamos driver/conexão/cursor, removemos backticks, convertemos o upsert
-    MySQL e funções MySQL-only."""
+    MySQL e funções MySQL-only.
+
+    srid: SRID das colunas geométricas do schema (SIRGAS 2000 = 4674 por padrão). No PostGIS uma
+    coluna `geometry(Geometry,4674)` REJEITA comparação com geometria SRID 0 ('mixed SRID').
+    Diferente do MySQL/MariaDB (colunas SRID-agnósticas), aqui um `ST_GeomFromText(%s)` sem SRID
+    quebra o ST_Intersects. Anexamos o SRID do schema ao ST_GeomFromText de arg único."""
     import re as _re
     s = src
+    # SRID nas construções de geometria a partir de texto: ST_GeomFromText(<arg>) -> (<arg>, srid).
+    # Só quando há UM único argumento (sem SRID explícito) — não mexe se o SRID já foi informado.
+    if srid:
+        s = _re.sub(r"ST_GeomFromText\(\s*(%s|'[^']*')\s*\)",
+                    r"ST_GeomFromText(\1, %d)" % int(srid), s)
     # driver + conexão (preserva indentação: substituição em linha única, sem \n)
     s = s.replace("import os, mysql.connector", "import os, psycopg2, psycopg2.extras")
     s = s.replace("import mysql.connector", "import psycopg2, psycopg2.extras")
@@ -6270,6 +6280,15 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         _SCHEMA_FK_CTX = {}
     _cg_dbms = (_cg_dbms or "mysql")
     _cg_is_pg = _cg_dbms in ("postgres", "postgresql", "postgis", "postgresql+postgis")
+    # SRID das colunas geométricas do schema PostGIS (geometry(Geometry,4674)) — usado para
+    # anexar o SRID ao ST_GeomFromText nos adapters (senão ST_Intersects quebra em 'mixed SRID').
+    _cg_srid = 4674
+    try:
+        _sm = __import__("re").search(r'geometry\([^,)]+,\s*(\d+)\s*\)', _schema_sql_cg or "", __import__("re").I)
+        if _sm:
+            _cg_srid = int(_sm.group(1))
+    except Exception:
+        pass
 
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)
     _list_helper_added = False
@@ -6415,7 +6434,7 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     add("ws-server/websocket_server.py", _template_websocket_server_py(ws_port))
     _db_tool_py = _template_database_tool_py()
     if _cg_is_pg:
-        _db_tool_py = _postgresify_sql_py(_db_tool_py)
+        _db_tool_py = _postgresify_sql_py(_db_tool_py, _cg_srid)
     add("ws-server/database_tool.py", _db_tool_py)
     # Injeta import do database_tool real e substitui classe stub se existir
     tools_py = _inject_real_database_tool(tools_py)
@@ -6435,7 +6454,7 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         add("ws-server/mcp_tools.py", _mcp_py)
     # P3: converte a camada de dados para PostgreSQL/PostGIS quando o DBMS-alvo é postgres.
     if _cg_is_pg:
-        adapters_py = _postgresify_sql_py(adapters_py)
+        adapters_py = _postgresify_sql_py(adapters_py, _cg_srid)
         print("[CODE-GEN] adapters.py convertidos para psycopg2/PostGIS")
     add("ws-server/adapters.py", adapters_py if adapters_py.endswith("\n") else adapters_py + "\n")
     if agents_yaml:
