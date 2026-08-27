@@ -130,6 +130,16 @@ def _parse_single_block(raw: str, agent_map: Optional[Dict[str, str]] = None) ->
             fields["module"] = val
         elif "rationale" in key:
             fields["rationale"] = val
+        elif "uc" in key and ("relacion" in key or "relacionado" in key or key.strip() in ("uc", "casos de uso")):
+            # "UC Relacionado": UC-004 (Consultar...) -> ["UC-004"]
+            ucs = re.findall(r'UC-?\d+', val)
+            if ucs:
+                fields["uc_related"] = ucs
+        elif ("rf" in key or "fr" in key) and "relacion" in key:
+            # "RF Relacionado" / "FR Relacionado": FR-003, FR-013 -> ["FR-003","FR-013"]
+            frs = re.findall(r'(?:FR|RF)-?\d+', val)
+            if frs:
+                fields["fr_related"] = [f.replace("RF", "FR") for f in frs]
 
     return fields if fields.get("name") else None
 

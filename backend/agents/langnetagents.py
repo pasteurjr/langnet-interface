@@ -3770,6 +3770,104 @@ _LIST_HELPER = (
 )
 
 
+def _fmt_traceability_comment(tr: dict, indent: str = "    ") -> str:
+    """Linha de comentário de rastreabilidade p/ o topo de uma função gerada, a partir do
+    bloco {uc, fr} do tasks.yaml. Ex.: '    # Traceability: UC-004 | FR-003, FR-013\\n'. '' se vazio."""
+    if not isinstance(tr, dict):
+        return ""
+    def _as_list(v):
+        if v is None:
+            return []
+        return v if isinstance(v, list) else [v]
+    uc = ", ".join(str(x) for x in _as_list(tr.get("uc")))
+    fr = ", ".join(str(x) for x in _as_list(tr.get("fr")))
+    if not uc and not fr:
+        return ""
+    parts = []
+    if uc:
+        parts.append(f"UC {uc}")
+    if fr:
+        parts.append(f"FR {fr}")
+    return f"{indent}# Traceability: " + " | ".join(parts) + "\n"
+
+
+def _task_traceability_map(tasks_yaml: str) -> Dict[str, dict]:
+    """{task_name: {uc:[...], fr:[...]}} a partir do bloco traceability do tasks.yaml."""
+    out: Dict[str, dict] = {}
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml) or {}
+    except Exception:
+        return out
+    if not isinstance(parsed, dict):
+        return out
+    for tname, cfg in parsed.items():
+        if isinstance(cfg, dict) and isinstance(cfg.get("traceability"), dict):
+            tr = cfg["traceability"]
+            _l = lambda v: (v if isinstance(v, list) else [v]) if v is not None else []
+            out[tname] = {"uc": _l(tr.get("uc")), "fr": _l(tr.get("fr"))}
+    return out
+
+
+def _emit_traceability_matrix(tasks_yaml: str, ui_spec: dict, spec_md: str) -> str:
+    """Matriz de rastreabilidade consolidada (docs/RASTREABILIDADE.md): FR → UC → Task(s) →
+    Tela(s), a partir do traceability do tasks.yaml + uc/fr das telas do ui_spec + o universo de
+    FR/UC mencionado no ATS. Expõe FRs SEM cobertura de task/tela (não esconde o colapso)."""
+    import re as _re
+    tmap = _task_traceability_map(tasks_yaml)          # task -> {uc:[], fr:[]}
+    screens = (ui_spec or {}).get("screens", []) if isinstance(ui_spec, dict) else []
+    # universo de FR/UC: do ATS + do que apareceu em tasks/telas
+    universe_fr = set(_re.findall(r'\bFR-?\d+', spec_md or ""))
+    universe_uc = set(_re.findall(r'\bUC-?\d+', spec_md or ""))
+    fr_to_tasks: Dict[str, set] = {}
+    fr_to_ucs: Dict[str, set] = {}
+    uc_to_tasks: Dict[str, set] = {}
+    for tname, tr in tmap.items():
+        for fr in tr.get("fr", []):
+            universe_fr.add(str(fr)); fr_to_tasks.setdefault(str(fr), set()).add(tname)
+            for uc in tr.get("uc", []):
+                fr_to_ucs.setdefault(str(fr), set()).add(str(uc))
+        for uc in tr.get("uc", []):
+            universe_uc.add(str(uc)); uc_to_tasks.setdefault(str(uc), set()).add(tname)
+    uc_to_screens: Dict[str, set] = {}
+    for s in screens:
+        for uc in (s.get("uc") or []):
+            uc_to_screens.setdefault(str(uc), set()).add(s.get("name") or s.get("id") or "?")
+        for fr in (s.get("fr") or s.get("frs") or []):
+            universe_fr.add(str(fr)); fr_to_ucs.setdefault(str(fr), set()).add(",".join(s.get("uc") or []))
+
+    def _srt(items):
+        return sorted(items, key=lambda x: (len(x), x))
+
+    lines = ["# Matriz de Rastreabilidade (auto-gerada por LangNet)", "",
+             "Rastreia cada Requisito Funcional (FR) → Caso de Uso (UC) → Task → Tela.",
+             "Fonte: traceability do tasks.yaml (derivado do ATS) + uc/fr das telas do UI Spec.", "",
+             "| FR | UC(s) | Task(s) | Tela(s) |", "|----|-------|---------|---------|"]
+    covered = 0
+    for fr in _srt(universe_fr):
+        ucs = _srt(fr_to_ucs.get(fr, set()))
+        tasks = _srt(fr_to_tasks.get(fr, set()))
+        scr = set()
+        for uc in ucs:
+            scr |= uc_to_screens.get(uc, set())
+        if tasks or scr:
+            covered += 1
+        lines.append(f"| {fr} | {', '.join(ucs) or '—'} | {', '.join(tasks) or '—'} | {', '.join(_srt(scr)) or '—'} |")
+
+    # lacunas: FR sem NENHUMA task nem tela
+    gaps = [fr for fr in _srt(universe_fr)
+            if not fr_to_tasks.get(fr) and not any(uc_to_screens.get(uc) for uc in fr_to_ucs.get(fr, set()))]
+    lines += ["", f"**Cobertura:** {covered}/{len(universe_fr)} FR com task ou tela.", ""]
+    if gaps:
+        lines += ["## ⚠️ FRs SEM cobertura de task/tela",
+                  "Estes requisitos foram especificados mas NÃO viraram task nem tela — revisar o pipeline:",
+                  ""]
+        lines += [f"- {fr}" for fr in gaps]
+    else:
+        lines.append("Todos os FRs conhecidos têm alguma task ou tela associada.")
+    return "\n".join(lines) + "\n"
+
+
 def _generate_deterministic_adapters(tasks_yaml: str) -> str:
     """Parse each task's `description` (which by v4 convention embeds SQL steps
     of the form ``query="..."`` / ``params=[...]``) and emit a Python function
@@ -3814,11 +3912,16 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
         if not body:
             continue
 
+        # Rastreabilidade FR/UC (do bloco traceability do tasks.yaml, derivado do ATS).
+        _tr = cfg.get("traceability") if isinstance(cfg.get("traceability"), dict) else {}
+        _trace_line = _fmt_traceability_comment(_tr)
+
         # Emit function
         fn_src = (
             f"def {task_name}_deterministic(input_data):\n"
             f"    \"\"\"Auto-generated by LangNet: executes {task_name}'s CRUD steps\n"
             f"    directly against MySQL, bypassing the CrewAI agent.\"\"\"\n"
+            f"{_trace_line}"
             f"    import os\n"
             f"    import mysql.connector\n"
             f"    conn = mysql.connector.connect(\n"
@@ -6457,10 +6560,12 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         adapters_py = _postgresify_sql_py(adapters_py, _cg_srid)
         print("[CODE-GEN] adapters.py convertidos para psycopg2/PostGIS")
     add("ws-server/adapters.py", adapters_py if adapters_py.endswith("\n") else adapters_py + "\n")
+    _trace_hdr = "# Rastreabilidade FR/UC por task no bloco 'traceability'. Matriz: docs/RASTREABILIDADE.md\n"
     if agents_yaml:
         add("ws-server/agents.yaml", agents_yaml if agents_yaml.endswith("\n") else agents_yaml + "\n", "yaml")
     if tasks_yaml:
-        add("ws-server/tasks.yaml", tasks_yaml if tasks_yaml.endswith("\n") else tasks_yaml + "\n", "yaml")
+        _ty = tasks_yaml if tasks_yaml.endswith("\n") else tasks_yaml + "\n"
+        add("ws-server/tasks.yaml", _trace_hdr + _ty, "yaml")
     if petri_with_logica:
         add("ws-server/petri_net.json", json.dumps(petri_with_logica, ensure_ascii=False, indent=2), "json")
     _extra_pkgs = _detect_extra_packages(tools_py)
@@ -6492,6 +6597,11 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Gera componentes React por tela e SUBSTITUI o App.jsx do template para
     # que a UI de negócio seja a principal e o executor de Petri vire aba Admin.
     ui_spec = state.get("ui_spec") or {}
+    # Matriz de rastreabilidade consolidada (FR → UC → Task → Tela) + FRs sem cobertura.
+    try:
+        add("docs/RASTREABILIDADE.md", _emit_traceability_matrix(tasks_yaml or "", ui_spec, spec_md or ""), "markdown")
+    except Exception as _tm_exc:
+        print(f"[CODE-GEN] matriz de rastreabilidade pulada: {_tm_exc}")
     if ui_spec and ui_spec.get("screens"):
         # schema pra montar telas CRUD ricas (mesma fonte do CRUD determinístico)
         _schema_for_ui = locals().get("_schema_sql_cg") or state.get("data_model_schema_sql") or ""

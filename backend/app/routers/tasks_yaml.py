@@ -214,6 +214,32 @@ async def execute_tasks_yaml_generation(
         })
 
 
+def _inject_traceability(chunk: str, task: dict) -> str:
+    """Injeta DETERMINISTICAMENTE um bloco `traceability: {uc, fr}` logo após a linha
+    `task_name:` do YAML, a partir do UC/RF Relacionado extraído do ATS. Rastreabilidade
+    requisito→UC no artefato downstream (o ws-server ignora a chave extra em TASKS_CONFIG)."""
+    ucs = task.get("uc_related") or []
+    frs = task.get("fr_related") or []
+    if not ucs and not frs:
+        return chunk
+    def _yaml_val(items):
+        items = [str(x) for x in items]
+        return items[0] if len(items) == 1 else "[" + ", ".join(items) + "]"
+    lines = ["  traceability:"]
+    if ucs:
+        lines.append(f"    uc: {_yaml_val(ucs)}")
+    if frs:
+        lines.append(f"    fr: {_yaml_val(frs)}")
+    block = "\n".join(lines)
+    out = chunk.split("\n")
+    for i, ln in enumerate(out):
+        # primeira linha que abre a task (ex.: "consultar_regramentos:") — sem indentação, termina em ':'
+        if ln and not ln.startswith((" ", "\t")) and ln.rstrip().endswith(":"):
+            out.insert(i + 1, block)
+            return "\n".join(out)
+    return block + "\n" + chunk  # fallback
+
+
 async def _generate_task_by_task(
     task_blocks: list,
     tables: dict,
@@ -242,6 +268,7 @@ async def _generate_task_by_task(
             continue
 
         chunk, was_retried = result
+        chunk = _inject_traceability(chunk, task)
         chunks.append(chunk)
         if was_retried:
             stats["retried"] += 1
