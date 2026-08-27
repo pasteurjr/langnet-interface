@@ -215,6 +215,33 @@ async def execute_agent_task_spec_generation(
             max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
         )
 
+        # COBERTURA (determinístico): todo UC da spec tem de virar task. Se faltar, 1 retry
+        # pedindo as tasks faltantes — evita que UCs de cálculo (Calcular CA/TO, Recuos) sumam.
+        try:
+            import re as _re
+            _spec_ucs = set(_re.findall(r'\bUC-\d+\b', spec_document))
+            _covered = set(_re.findall(r'\bUC-\d+\b', agent_task_spec_document))
+            _missing = sorted(_spec_ucs - _covered, key=lambda x: (len(x), x))
+            if _missing:
+                print(f"[AGENT_TASK_SPEC] ⚠️ UCs sem task: {_missing} — retry de cobertura")
+                _retry_prompt = (prompt +
+                    "\n\n## ⚠️ CORREÇÃO DE COBERTURA (OBRIGATÓRIO)\n"
+                    f"O documento anterior DEIXOU DE FORA estes casos de uso: {', '.join(_missing)}.\n"
+                    "Gere as tasks faltantes (pelo menos UMA por UC listado), respeitando a regra de "
+                    "FIDELIDADE DE CÁLCULO (se o UC é de cálculo/simulação, a Descrição tem a fórmula/"
+                    "passos, não um cadastro genérico). REESCREVA o documento COMPLETO incluindo TODAS "
+                    "as tasks: as que já existiam MAIS as novas. Não omita nenhuma task anterior.")
+                _fixed = await get_llm_response_async(
+                    prompt=_retry_prompt,
+                    system="Você é um arquiteto de sistemas multi-agente especializado em CrewAI.",
+                    temperature=0.6, max_tokens=65536)
+                # só adota o retry se ele de fato cobriu mais UCs (não regrediu)
+                if len(set(_re.findall(r'\bUC-\d+\b', _fixed)) & _spec_ucs) > len(_covered & _spec_ucs):
+                    agent_task_spec_document = _fixed
+                    print(f"[AGENT_TASK_SPEC] ✅ retry cobriu {len(set(_re.findall(r'UC-\\d+', _fixed)) & _spec_ucs)}/{len(_spec_ucs)} UCs")
+        except Exception as _cov_exc:
+            print(f"[AGENT_TASK_SPEC] checagem de cobertura pulada: {_cov_exc}")
+
         end_time = datetime.now()
         generation_time_ms = int((end_time - start_time).total_seconds() * 1000)
 

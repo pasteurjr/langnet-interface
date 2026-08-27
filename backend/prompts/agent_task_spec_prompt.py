@@ -119,6 +119,26 @@ Regras derivadas deste schema (aplique em cada task que persiste dados):
 
 ## INSTRUÇÕES CRÍTICAS
 
+🔴🔴 COBERTURA TOTAL DOS CASOS DE USO (REGRA DOMINANTE — acima de tudo):
+A Seção 5 (Casos de Uso) da especificação lista TODOS os UCs. Você DEVE gerar PELO MENOS UMA task
+para CADA UC — sem exceção. Antes de fechar o documento, LISTE os UC-XXX da spec e confirme que
+cada um tem uma task com "UC Relacionado: UC-XXX". NÃO descarte UCs por parecerem "abstratos"
+(cálculo, simulação, relatório, exportação, auditoria): eles TAMBÉM viram task. O nº de tasks NÃO
+é limitado — gere quantas forem necessárias (uma por UC, no mínimo). A Matriz de Rastreabilidade
+(Seção 4) tem de cobrir 100% dos UCs; um UC sem task é ERRO.
+
+🔴🔴 FIDELIDADE DE CÁLCULO (REGRA DOMINANTE): quando o UC é de COMPUTAÇÃO — nome com
+Calcular/Simular/Avaliar/Verificar/Estimar, OU o RF pede cálculo (coeficiente de aproveitamento/CA,
+taxa de ocupação/TO, recuos, gabarito, altura, declividade, área de APP, reserva legal, faixas,
+permeabilidade) — a task NÃO pode ser um cadastro/consulta genérico. A **Descrição** DEVE conter os
+PASSOS DO CÁLCULO (a fórmula real, em SQL quando possível), ex.:
+- Calcular CA/TO: query="SELECT (e.area_construida / z.area_terreno) AS ca, (e.area_projecao / z.area_terreno) AS to FROM empreendimento e JOIN zoneamento z ON ... WHERE e.id=%s"; Guarde em ca/to; compare com o CA/TO MÁXIMO da zona e retorne conforme/não-conforme.
+- Recuos e gabarito: comparar a medida do projeto com o recuo/gabarito MÍNIMO da zona (SELECT do parâmetro da zona + comparação).
+- Área de APP / faixas / interseção espacial: ST_Area(ST_Intersection(...)) e ST_Buffer no PostGIS.
+- Declividade (depende de terreno/DEM): usar a **geoprocessamento_tool** (não SQL puro).
+Essas tasks são de natureza COMPUTAÇÃO (o próximo estágio emite `execution: deterministic`); a
+Descrição precisa dos passos numerados com as fórmulas/queries, não uma frase genérica.
+
 1. **Número de Agentes:** Gerar entre 8 e {max_agents} agentes especializados
 2. **Princípio SRP:** Cada agente tem UMA responsabilidade única
 3. **LLM Assignment:** Especificar LLM apropriado para cada agente:
