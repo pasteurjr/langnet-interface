@@ -103,8 +103,14 @@ def _parse_single_block(raw: str, agent_map: Optional[Dict[str, str]] = None) ->
             paren = re.search(r'\(([^)]+)\)', val)
             _agid = re.match(r'^\s*(AG-\d+)\s*$', val)
             if _agid and agent_map.get(_agid.group(1)):
-                # "AG-02" puro -> resolve pelo overview p/ o nome snake_case real
-                fields["agent_snake"] = agent_map[_agid.group(1)]
+                # "AG-02" puro -> resolve pelo overview p/ o nome snake_case real.
+                # agents.yaml usa a convenção <nome>_agent (sufixo) — aplica o MESMO
+                # sufixo aqui para as chaves casarem (ex.: legislacao_importer ->
+                # legislacao_importer_agent), senão o app quebra (agente não encontrado).
+                _snake = agent_map[_agid.group(1)]
+                if not _snake.endswith('_agent'):
+                    _snake = f"{_snake}_agent"
+                fields["agent_snake"] = _snake
             elif paren:
                 human = paren.group(1).strip()
                 snake = re.sub(r'[^a-z0-9]+', '_', human.lower()).strip('_')
