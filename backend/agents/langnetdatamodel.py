@@ -114,7 +114,10 @@ Regras:
      DECIMAL, `consulta.conforme` BOOLEAN).
    Sem essas colunas, a fórmula `CA = area_construida / area_terreno` não tem de onde ler os dados e o
    cálculo fica IMPOSSÍVEL. Regra de ouro: todo cálculo mencionado na spec ⇒ suas variáveis (entradas,
-   parâmetros e saída) existem como colunas no modelo.
+   parâmetros e saída) existem como colunas no modelo. ⚠️ Esta regra PREVALECE sobre a regra 1/5: se a
+   §8 (Regras de Negócio) ou os fluxos descrevem o cálculo, CRIE as colunas mesmo que a §6 (Modelo de
+   Dados) da spec não as liste — o cálculo é o requisito, e ele PRECISA dessas colunas para funcionar.
+   LEIA a §8 (Regras de Negócio) e as pós-condições dos UCs de cálculo antes de fechar o modelo.
 
 ESPECIFICAÇÃO:
 ------
@@ -323,7 +326,7 @@ def _call_llm(prompt: str, temperature: float = 0.2) -> str:
 # ────────────────────────────────────────────────────────────────────────
 def extract_entities(specification_document: str) -> Dict[str, Any]:
     """Passo 1: extrai entidades do texto da specification."""
-    prompt = _EXTRACT_ENTITIES_PROMPT.format(specification_document=specification_document[:60000])
+    prompt = _EXTRACT_ENTITIES_PROMPT.format(specification_document=specification_document[:120000])
     raw = _call_llm(prompt)
     parsed = _safe_json_parse(raw)
     if not parsed or "entities" not in parsed:
