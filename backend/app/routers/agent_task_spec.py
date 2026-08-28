@@ -215,30 +215,45 @@ async def execute_agent_task_spec_generation(
             max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
         )
 
-        # COBERTURA (determinístico): todo UC da spec tem de virar task. Se faltar, 1 retry
-        # pedindo as tasks faltantes — evita que UCs de cálculo (Calcular CA/TO, Recuos) sumam.
+        # COBERTURA (determinístico): todo UC da spec tem de virar task. Loop de até 3 tentativas
+        # gerando SÓ os blocos de task dos UCs faltantes e ANEXANDO (append não regride, ao contrário
+        # de reescrever o doc). Evita que UCs de cálculo (Calcular CA/TO, Recuos) sumam.
         try:
             import re as _re
             _spec_ucs = set(_re.findall(r'\bUC-\d+\b', spec_document))
-            _covered = set(_re.findall(r'\bUC-\d+\b', agent_task_spec_document))
-            _missing = sorted(_spec_ucs - _covered, key=lambda x: (len(x), x))
-            if _missing:
-                print(f"[AGENT_TASK_SPEC] ⚠️ UCs sem task: {_missing} — retry de cobertura")
-                _retry_prompt = (prompt +
-                    "\n\n## ⚠️ CORREÇÃO DE COBERTURA (OBRIGATÓRIO)\n"
-                    f"O documento anterior DEIXOU DE FORA estes casos de uso: {', '.join(_missing)}.\n"
-                    "Gere as tasks faltantes (pelo menos UMA por UC listado), respeitando a regra de "
-                    "FIDELIDADE DE CÁLCULO (se o UC é de cálculo/simulação, a Descrição tem a fórmula/"
-                    "passos, não um cadastro genérico). REESCREVA o documento COMPLETO incluindo TODAS "
-                    "as tasks: as que já existiam MAIS as novas. Não omita nenhuma task anterior.")
-                _fixed = await get_llm_response_async(
-                    prompt=_retry_prompt,
+            for _attempt in range(3):
+                _covered = set(_re.findall(r'\bUC-\d+\b', agent_task_spec_document))
+                _missing = sorted(_spec_ucs - _covered, key=lambda x: (len(x), x))
+                if not _missing:
+                    break
+                print(f"[AGENT_TASK_SPEC] ⚠️ cobertura tentativa {_attempt+1}: UCs sem task: {_missing}")
+                _focus = (
+                    "# GERAÇÃO DE TASKS FALTANTES (apenas blocos de task)\n\n"
+                    "A partir da ESPECIFICAÇÃO FUNCIONAL abaixo, gere APENAS os blocos de task no formato "
+                    "`#### T-XXX-YYY: Título` seguido da tabela |Atributo|Especificação|, para os casos de "
+                    f"uso que AINDA NÃO têm task: {', '.join(_missing)}. UMA task no mínimo por UC. Cada "
+                    "bloco DEVE ter os campos: **Nome**, **Descrição** (com PASSOS SQL/fórmula — se o UC é "
+                    "de cálculo, a fórmula REAL, ex.: area_construida/area_terreno AS ca), **Agent**, "
+                    "**Tools**, **Input Schema**, **Output Schema**, **Módulo**, **UC Relacionado**, "
+                    "**RF Relacionado**, **Rationale**. NÃO gere agentes, matriz nem texto fora dos "
+                    "blocos `#### T-`.\n\n## ESPECIFICAÇÃO FUNCIONAL\n" + spec_document + "\n"
+                    + (f"\n## SCHEMA REAL\n```sql\n{data_model_schema_sql}\n```\n" if data_model_schema_sql else ""))
+                _blocks = await get_llm_response_async(prompt=_focus,
                     system="Você é um arquiteto de sistemas multi-agente especializado em CrewAI.",
-                    temperature=0.6, max_tokens=65536)
-                # só adota o retry se ele de fato cobriu mais UCs (não regrediu)
-                if len(set(_re.findall(r'\bUC-\d+\b', _fixed)) & _spec_ucs) > len(_covered & _spec_ucs):
-                    agent_task_spec_document = _fixed
-                    print(f"[AGENT_TASK_SPEC] ✅ retry cobriu {len(set(_re.findall(r'UC-\\d+', _fixed)) & _spec_ucs)}/{len(_spec_ucs)} UCs")
+                    temperature=0.5, max_tokens=32000)
+                _new = "\n".join(_re.findall(r'(?s)####\s+T-.*?(?=####\s+T-|\Z)', _blocks)).strip()
+                if not _new or not (_spec_ucs & set(_re.findall(r'\bUC-\d+\b', _new))):
+                    print("[AGENT_TASK_SPEC] retry não trouxe blocos úteis; parando loop de cobertura")
+                    break
+                # insere os blocos ANTES da Seção 4 (matriz) se existir, senão no fim
+                _m4 = _re.search(r'(?m)^###\s+4\.', agent_task_spec_document)
+                if _m4:
+                    agent_task_spec_document = (agent_task_spec_document[:_m4.start()]
+                                                + _new + "\n\n" + agent_task_spec_document[_m4.start():])
+                else:
+                    agent_task_spec_document = agent_task_spec_document.rstrip() + "\n\n" + _new + "\n"
+            _fc = len(_spec_ucs & set(_re.findall(r'\bUC-\d+\b', agent_task_spec_document)))
+            print(f"[AGENT_TASK_SPEC] ✅ cobertura final: {_fc}/{len(_spec_ucs)} UCs")
         except Exception as _cov_exc:
             print(f"[AGENT_TASK_SPEC] checagem de cobertura pulada: {_cov_exc}")
 

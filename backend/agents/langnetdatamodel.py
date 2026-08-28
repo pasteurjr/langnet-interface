@@ -101,6 +101,20 @@ Regras:
    o outro. Um campo-texto livre pode COEXISTIR, mas apenas para narrativa/observações
    adicionais — nunca como o único destino dos resultados estruturados. Cada campo que a
    spec diz ser "produzido/preenchido pelo agente X" na entidade Y ⇒ uma coluna em Y.
+9. 🔴 INSUMOS E PARÂMETROS DE CÁLCULO = COLUNAS (crítico p/ os cálculos RODAREM): quando a spec
+   descreve CÁLCULOS ou regras quantitativas (coeficiente de aproveitamento/CA, taxa de ocupação/TO,
+   recuos, gabarito/altura, declividade, área de APP, reserva legal, permeabilidade, faixas), o modelo
+   DEVE conter as colunas que esses cálculos CONSOMEM e PRODUZEM:
+   - VALORES DE ENTRADA da fórmula como colunas numéricas tipadas (ex.: `lote.area_terreno` DECIMAL,
+     `edificacao.area_construida` DECIMAL, `edificacao.altura` DECIMAL, `edificacao.area_projecao` DECIMAL);
+   - PARÂMETROS por zona/legislação como colunas (ex.: `zona.ca_maximo` DECIMAL, `zona.to_maxima`
+     DECIMAL, `zona.recuo_frontal_min` DECIMAL, `zona.gabarito_max` DECIMAL) — em geral numa entidade
+     de parâmetros da zona;
+   - RESULTADOS calculados como colunas dedicadas quando a spec os persiste (ex.: `consulta.ca_calculado`
+     DECIMAL, `consulta.conforme` BOOLEAN).
+   Sem essas colunas, a fórmula `CA = area_construida / area_terreno` não tem de onde ler os dados e o
+   cálculo fica IMPOSSÍVEL. Regra de ouro: todo cálculo mencionado na spec ⇒ suas variáveis (entradas,
+   parâmetros e saída) existem como colunas no modelo.
 
 ESPECIFICAÇÃO:
 ------
