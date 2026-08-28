@@ -324,9 +324,34 @@ def _call_llm(prompt: str, temperature: float = 0.2) -> str:
 # ────────────────────────────────────────────────────────────────────────
 # Pipeline steps
 # ────────────────────────────────────────────────────────────────────────
+def _section6_entities(spec: str) -> List[str]:
+    """Parseia deterministicamente os nomes de entidade da §6 (Modelo de Dados Conceitual),
+    dos bullets '- **Nome:** ...'. É a lista AUTORITATIVA — a extração LLM tende a colapsar
+    Lote+Edificacao em 'empreendimento' e largar ParametroZona/APP/Declividade se não for forçada."""
+    m = re.search(r'(?s)##\s*6\..*?(?=\n##\s*7\.|\Z)', spec or "")
+    if not m:
+        return []
+    names = re.findall(r'^\s*[-*]\s*\*\*([A-Za-zÀ-ÿ][\wÀ-ÿ ]{1,40}?)\s*:?\*\*', m.group(0), re.M)
+    seen, out = set(), []
+    for n in names:
+        n = n.strip()
+        if n and n.lower() not in seen:
+            seen.add(n.lower()); out.append(n)
+    return out
+
+
 def extract_entities(specification_document: str) -> Dict[str, Any]:
     """Passo 1: extrai entidades do texto da specification."""
     prompt = _EXTRACT_ENTITIES_PROMPT.format(specification_document=specification_document[:120000])
+    # ENTIDADES OBRIGATÓRIAS da §6 (fonte autoritativa) — força o LLM a não colapsar/omitir.
+    _s6 = _section6_entities(specification_document)
+    if _s6:
+        prompt += ("\n\n## 🔴 ENTIDADES OBRIGATÓRIAS (da §6 Modelo de Dados — FONTE AUTORITATIVA)\n"
+                   "O seu output DEVE conter uma entidade para CADA item abaixo, com os atributos que a §6/§8 "
+                   "descrevem (inclusive as colunas de cálculo: área, CA/TO, recuos, gabarito). NÃO colapse "
+                   "duas entidades em uma (ex.: NÃO junte Lote e Edificacao num 'empreendimento'), NÃO omita "
+                   "nenhuma, NÃO troque por sinônimos dos casos de uso:\n- " + "\n- ".join(_s6))
+        print(f"[DATA_MODEL] §6 impõe {len(_s6)} entidades: {_s6}")
     raw = _call_llm(prompt)
     parsed = _safe_json_parse(raw)
     if not parsed or "entities" not in parsed:
