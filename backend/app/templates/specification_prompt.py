@@ -495,14 +495,29 @@ upload/preview (UC de importação de arquivo):
 
 ## 6. Modelo de Dados Conceitual
 {f'''
+🔴 COERÊNCIA COM OS CÁLCULOS (obrigatória): o Modelo de Dados TEM de suportar TODO cálculo/regra
+quantitativa descrita nos Casos de Uso (§5) e nas Regras de Negócio (§8). Se um UC é "Calcular CA e TO",
+"Calcular Recuos", "Avaliar Declividade" ou "Delimitar APP", então as ENTIDADES e ATRIBUTOS que esse
+cálculo consome e produz DEVEM existir aqui. Exemplos do que NÃO pode faltar:
+- entidade de LOTE/terreno com `area_terreno`; entidade de EDIFICAÇÃO com `area_construida`,
+  `area_projecao`, `altura` (insumos de CA/TO/gabarito);
+- entidade de PARÂMETROS por zona com `ca_maximo`, `to_maxima`, `recuo_frontal_min`, `recuo_lateral_min`,
+  `gabarito_max`, `taxa_permeabilidade_min` (os limites que o cálculo compara);
+- entidades de APP, RESERVA LEGAL, DECLIVIDADE quando a spec as calcula;
+- atributos de RESULTADO onde o cálculo é persistido (`ca_calculado`, `to_calculada`, `conforme`).
+Regra de ouro: para CADA fórmula da §8, suas variáveis (entradas, parâmetros, saída) são atributos de
+alguma entidade aqui. Um UC de cálculo sem as colunas correspondentes na §6 é INCOERÊNCIA — corrija.
+
 ### 6.1 Entidades Principais
-Listar e descrever cada entidade do sistema.
+Listar e descrever cada entidade do sistema (uma entidade por linha no formato `- **Nome:** descrição`).
+Inclua as entidades de cálculo (lote, edificação, parâmetros de zona, APP, etc.) quando a §5/§8 as exigir.
 
 ### 6.2 Relacionamentos
 Descrever relacionamentos entre entidades.
 
 ### 6.3 Atributos Principais
-Para cada entidade, listar atributos-chave e seus tipos.
+Para cada entidade, listar atributos-chave e seus tipos — INCLUINDO as colunas numéricas dos cálculos
+(áreas, coeficientes, recuos, gabarito) e as colunas de resultado (conforme, valores calculados).
 
 ### 6.4 Regras de Integridade
 Constraints e validações importantes.
