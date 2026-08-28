@@ -340,9 +340,26 @@ def _section6_entities(spec: str) -> List[str]:
     return out
 
 
+def _focus_spec_for_extraction(spec: str, budget: int = 62000) -> str:
+    """Recorte FOCADO da spec p/ a extração de entidades: mandar a spec inteira (90KB+) estoura o
+    timeout do LLM local, e cortar em N chars derruba a §6 (Modelo de Dados) e §8 (Regras de Negócio)
+    quando elas ficam no fim. Aqui garantimos §6 + §8 (as seções que definem entidades/atributos e as
+    fórmulas) SEMPRE presentes, mais a cabeça (intro/requisitos/UCs) até o budget."""
+    if not spec or len(spec) <= budget:
+        return spec or ""
+    def _sec(n):
+        m = re.search(r'(?s)\n(##\s*' + str(n) + r'\..*?)(?=\n##\s*\d+\.|\Z)', "\n" + spec)
+        return m.group(1).strip() if m else ""
+    tail = "\n\n".join(x for x in (_sec(6), _sec(8)) if x)
+    if not tail:
+        return spec[:budget]  # spec sem §6/§8 estruturados → corte simples
+    head = spec[:max(1000, budget - len(tail) - 40)]
+    return head + "\n\n[... seções intermediárias omitidas — ver §6/§8 abaixo ...]\n\n" + tail
+
+
 def extract_entities(specification_document: str) -> Dict[str, Any]:
     """Passo 1: extrai entidades do texto da specification."""
-    prompt = _EXTRACT_ENTITIES_PROMPT.format(specification_document=specification_document[:120000])
+    prompt = _EXTRACT_ENTITIES_PROMPT.format(specification_document=_focus_spec_for_extraction(specification_document))
     # ENTIDADES OBRIGATÓRIAS da §6 (fonte autoritativa) — força o LLM a não colapsar/omitir.
     _s6 = _section6_entities(specification_document)
     if _s6:
