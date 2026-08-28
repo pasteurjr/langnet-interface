@@ -130,20 +130,10 @@ async def create_specification_session(
         with get_db_connection() as conn:
             cursor = conn.cursor()
 
-            # Verify requirements session exists
-            cursor.execute("""
-                SELECT id FROM execution_sessions
-                WHERE id = %s AND project_id = %s
-            """, (request.requirements_session_id, request.project_id))
-
-            if not cursor.fetchone():
-                cursor.close()
-                raise HTTPException(
-                    status_code=404,
-                    detail="Requirements session not found"
-                )
-
-            # Verify requirements version exists
+            # Verify requirements existem — a FONTE real é session_requirements_version (que a
+            # geração usa, execute_specification_generation §STEP 1). A checagem antiga exigia uma
+            # linha em execution_sessions (fluxo legado) e bloqueava projetos cujos requisitos vivem
+            # só em session_requirements_version (ex.: c4871aaf) — 404 indevido. Validar aqui a versão.
             cursor.execute("""
                 SELECT version FROM session_requirements_version
                 WHERE session_id = %s AND version = %s
@@ -153,7 +143,7 @@ async def create_specification_session(
                 cursor.close()
                 raise HTTPException(
                     status_code=404,
-                    detail=f"Requirements version {request.requirements_version} not found"
+                    detail=f"Requirements {request.requirements_session_id} v{request.requirements_version} não encontrados"
                 )
 
             # Create specification session
