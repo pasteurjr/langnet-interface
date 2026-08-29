@@ -3868,6 +3868,63 @@ def _emit_traceability_matrix(tasks_yaml: str, ui_spec: dict, spec_md: str) -> s
     return "\n".join(lines) + "\n"
 
 
+def _extract_task_blocks(tasks_yaml: str) -> List[dict]:
+    """Extrai blocos de task de forma TOLERANTE a YAML inválido. Nomes de task com
+    ':'/acentos/espaços (ex.: 'T-005-001: Edição de Parâmetros...') quebram
+    yaml.safe_load e antes ZERAVAM todos os adapters determinísticos por-task
+    (bug: uma única task malformada anulava o calculador). Aqui detectamos chaves
+    de topo `^<identificador>:` (coluna 0), capturamos cada bloco até a próxima e
+    extraímos description/expected_output/traceability por texto. Nomes que não são
+    identificadores Python válidos são simplesmente ignorados (não viram função)."""
+    import re as _re
+    lines = (tasks_yaml or "").split("\n")
+    key_re = _re.compile(r'^([A-Za-z_]\w*):\s*$')
+    heads = [(i, m.group(1)) for i, ln in enumerate(lines) for m in [key_re.match(ln)] if m]
+    blocks = []
+    for k, (start, name) in enumerate(heads):
+        end = heads[k + 1][0] if k + 1 < len(heads) else len(lines)
+        blocks.append((name, lines[start + 1:end]))
+
+    def _field_text(body, field):
+        fre = _re.compile(r'^(\s*)' + _re.escape(field) + r'\s*:\s*(.*)$')
+        for i, ln in enumerate(body):
+            m = fre.match(ln)
+            if not m:
+                continue
+            indent = len(m.group(1))
+            inline = m.group(2).strip()
+            if inline and inline not in ('>', '|', '>-', '|-', '>+', '|+'):
+                return inline
+            out = []
+            for ln2 in body[i + 1:]:
+                if not ln2.strip():
+                    out.append('')
+                    continue
+                if (len(ln2) - len(ln2.lstrip())) <= indent:
+                    break
+                out.append(ln2.strip())
+            return "\n".join(out).strip()
+        return ""
+
+    res = []
+    for name, body in blocks:
+        desc = _field_text(body, 'description')
+        if not desc:
+            continue
+        tr = {}
+        btxt = "\n".join(body)
+        mu = _re.search(r'\buc\s*:\s*(.+)', btxt)
+        mf = _re.search(r'\bfr\s*:\s*(.+)', btxt)
+        if mu:
+            tr['uc'] = mu.group(1).strip()
+        if mf:
+            tr['fr'] = mf.group(1).strip()
+        res.append({'name': name, 'description': desc,
+                    'expected_output': _field_text(body, 'expected_output'),
+                    'traceability': tr})
+    return res
+
+
 def _generate_deterministic_adapters(tasks_yaml: str) -> str:
     """Parse each task's `description` (which by v4 convention embeds SQL steps
     of the form ``query="..."`` / ``params=[...]``) and emit a Python function
@@ -3891,29 +3948,35 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
     Anything not matching is skipped — the task falls through to the CrewAI path.
     """
     import re as _re
-    try:
-        import yaml as _yaml
-        parsed = _yaml.safe_load(tasks_yaml) or {}
-    except Exception:
-        return ""
-    if not isinstance(parsed, dict):
-        return ""
+    # TOLERANTE a YAML inválido (nomes de task malformados): extrai blocos por texto.
+    blocks = _extract_task_blocks(tasks_yaml)
+    if not blocks:  # compat: se não achou nada, tenta o yaml estrito
+        try:
+            import yaml as _yaml
+            parsed = _yaml.safe_load(tasks_yaml) or {}
+            if isinstance(parsed, dict):
+                blocks = [{'name': k,
+                           'description': (v.get('description') or '') if isinstance(v, dict) else '',
+                           'expected_output': (v.get('expected_output') or '') if isinstance(v, dict) else '',
+                           'traceability': (v.get('traceability') or {}) if isinstance(v, dict) else {}}
+                          for k, v in parsed.items()]
+        except Exception:
+            blocks = []
 
     generated: List[str] = []
     generated_names: List[str] = []
-    for task_name, cfg in parsed.items():
-        if not isinstance(cfg, dict):
-            continue
-        desc = cfg.get("description") or ""
-        if not isinstance(desc, str):
+    for _blk in blocks:
+        task_name = _blk.get('name') or ''
+        desc = _blk.get('description') or ""
+        if not isinstance(desc, str) or not desc:
             continue
 
-        body = _parse_task_description_to_python(desc)
+        body = _parse_task_description_to_python(desc, _blk.get('expected_output') or "")
         if not body:
             continue
 
         # Rastreabilidade FR/UC (do bloco traceability do tasks.yaml, derivado do ATS).
-        _tr = cfg.get("traceability") if isinstance(cfg.get("traceability"), dict) else {}
+        _tr = _blk.get("traceability") if isinstance(_blk.get("traceability"), dict) else {}
         _trace_line = _fmt_traceability_comment(_tr)
 
         # Emit function
@@ -3951,12 +4014,25 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
         return ""
 
     header = (
-        "\n\n# ─── Deterministic CRUD adapters (auto-generated by LangNet) ───\n"
-        "# Cada função <task>_deterministic(input_data) executa os passos SQL da\n"
-        "# description da task DIRETO no MySQL, sem chamar LLM/CrewAI. O\n"
-        "# websocket_server usa essas funções por padrão quando existem, caindo\n"
-        "# de volta pro agente CrewAI só quando não há função deterministic.\n"
+        "\n\n# ─── Deterministic adapters (auto-generated by LangNet) ───\n"
+        "# Cada função <task>_deterministic(input_data) executa os passos da\n"
+        "# description da task DIRETO no banco (SQL + COMPUTAÇÃO: aritmética e\n"
+        "# comparação de conformidade), sem chamar LLM/CrewAI. O websocket_server\n"
+        "# usa essas funções por padrão quando existem, caindo de volta pro agente\n"
+        "# CrewAI só quando não há função deterministic.\n"
         f"# Tasks geradas: {', '.join(generated_names)}\n"
+        "def _num(v):\n"
+        "    from decimal import Decimal, InvalidOperation\n"
+        "    if v is None: return None\n"
+        "    try: return Decimal(str(v))\n"
+        "    except (InvalidOperation, ValueError, TypeError): return None\n"
+        "def _safe_div(a, b):\n"
+        "    a, b = _num(a), _num(b)\n"
+        "    if a is None or b is None or b == 0: return None\n"
+        "    return a / b\n"
+        "def _flt(v):\n"
+        "    v = _num(v)\n"
+        "    return float(v) if v is not None else None\n"
     )
     return header + "\n\n".join(generated) + "\n"
 
@@ -4668,10 +4744,180 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str,
     return header + "\n\n".join(out_fns) + "\n"
 
 
-def _parse_task_description_to_python(desc: str) -> str:
-    """Parses a task description's SQL steps and returns the Python body (indented
-    with 8 spaces to fit inside ``try:`` of the wrapper). Returns "" if no SQL."""
+def _parse_computation_task(desc: str, expected_output: str = "") -> str:
+    """Corpo Python (indentado 8 espaços) para tasks de COMPUTAÇÃO multi-passo:
+    SELECT (captura de linha) → expõe colunas como variáveis → aritmética
+    (ca=area_construida/area_terreno, Decimal-safe) → 2º SELECT → comparação de
+    conformidade (status='conforme' se calculado ≤ limite) → _result JSON.
+    Retorna "" quando não parece computação — aí o caminho CRUD assume. É o que
+    faltava para o gerador emitir a CALCULADORA determinística (não só CRUD)."""
     import re as _re
+
+    def _coalesce(_t):
+        _ls = _t.split("\n"); _out = []; _k = 0
+        while _k < len(_ls):
+            _cur = _ls[_k]
+            if 'query="' in _cur and _cur.count('"') % 2 == 1:
+                _k += 1
+                while _k < len(_ls) and _cur.count('"') % 2 == 1:
+                    _cur = _cur.rstrip() + " " + _ls[_k].strip(); _k += 1
+                _out.append(_cur)
+            else:
+                _out.append(_cur); _k += 1
+        return "\n".join(_out)
+
+    raw = _coalesce(desc).split("\n")
+    query_re = _re.compile(r'query="([^"]+)"')
+    params_re = _re.compile(r'params=\[([^\]]*)\]')
+    capture_re = _re.compile(r'Guarde\b.*?\bem\s+(\w+)\b', _re.I)
+    arith_re = _re.compile(r'^\s*([a-z_]\w*)\s*=\s*([A-Za-z0-9_.\s()/*+\-]+?)\s*$')
+
+    def _is_arith(l):
+        m = arith_re.match(l)
+        return m if (m and _re.search(r'[/*+\-]', m.group(2)) and not m.group(2).strip().isdigit()) else None
+
+    has_arith = any(_is_arith(l) for l in raw)
+    has_status = bool(_re.search(r'status_\w+', desc, _re.I)) and bool(_re.search(r'conforme', desc, _re.I))
+    if not (has_arith or has_status):
+        return ""
+
+    seq = []; scalars = set(); computed = []; status_vars = []; compare_pairs = []
+
+    def _cols_from_select(q):
+        m = _re.search(r'(?is)\bSELECT\b(.+?)\bFROM\b', q)
+        if not m:
+            return []
+        seg = m.group(1); cols = []; depth = 0; cur = ''
+        for ch in seg:
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            if ch == ',' and depth == 0:
+                cols.append(cur); cur = ''
+            else:
+                cur += ch
+        cols.append(cur)
+        names = []
+        for c in cols:
+            c = c.strip()
+            ma = _re.search(r'(?i)\bAS\s+([A-Za-z_]\w*)\s*$', c)
+            if ma:
+                names.append(ma.group(1))
+            elif _re.match(r'^[A-Za-z_]\w*\.[A-Za-z_]\w*$', c):
+                names.append(c.split('.')[-1])
+            elif _re.match(r'^[A-Za-z_]\w*$', c):
+                names.append(c)
+        return names
+
+    def _tparams(ps):
+        out = []
+        for tok in [t.strip() for t in ps.split(',') if t.strip()]:
+            mm = _re.match(r'^\{?([A-Za-z_][\w.]*)\}?$', tok)
+            if mm:
+                nm = mm.group(1); base = nm.split('.')[0]
+                if base in scalars:
+                    out.append(nm if '.' not in nm else "%s.get('%s')" % (base, nm.split('.', 1)[1]))
+                else:
+                    out.append("input_data.get('%s')" % base)
+            else:
+                out.append("input_data.get(%r)" % tok)
+        return "[" + ", ".join(out) + "]"
+
+    def _texpr(e):
+        e = e.strip()
+        md = _re.match(r'^([A-Za-z_]\w*)\s*/\s*([A-Za-z_]\w*)$', e)
+        if md:
+            return "_safe_div(%s, %s)" % (md.group(1), md.group(2))
+        return _re.sub(r'[A-Za-z_]\w*', lambda mm: "_num(%s)" % mm.group(0), e)
+
+    i = 0; n = len(raw)
+    while i < n:
+        line = raw[i]
+        qm = query_re.search(line)
+        if qm:
+            q = qm.group(1).strip(); ps = ""
+            pm = params_re.search(line)
+            if pm:
+                ps = pm.group(1)
+            else:
+                for j in range(i + 1, min(i + 4, n)):
+                    pj = params_re.search(raw[j])
+                    if pj:
+                        ps = pj.group(1); break
+            cap = None
+            for j in range(i, min(i + 5, n)):
+                cm = capture_re.search(raw[j])
+                if cm:
+                    cap = cm.group(1); break
+            if q.lower().lstrip().startswith('select'):
+                rowvar = "_row_%d" % len(seq)
+                seq.append("cur.execute(%r, %s)" % (q, _tparams(ps)))
+                seq.append("%s = cur.fetchone() or {}" % rowvar)
+                if cap:
+                    seq.append("%s = %s" % (cap, rowvar)); scalars.add(cap)
+                for col in _cols_from_select(q):
+                    seq.append("%s = %s.get('%s')" % (col, rowvar, col)); scalars.add(col)
+            else:
+                seq.append("cur.execute(%r, %s)" % (q, _tparams(ps)))
+            i += 1; continue
+        am = _is_arith(line)
+        if am:
+            var = am.group(1)
+            seq.append("%s = %s" % (var, _texpr(am.group(2))))
+            scalars.add(var); computed.append(var)
+            i += 1; continue
+        if _re.search(r'(?i)\bcompar', line):
+            for a, b in _re.findall(r'([A-Za-z_]\w*)\s+com\s+([A-Za-z_]\w*)', line):
+                compare_pairs.append((a, b))
+        if _re.search(r'status_\w+', line, _re.I) and _re.search(r'(?i)conforme', line):
+            for sv in _re.findall(r'(status_\w+)', line):
+                if sv not in status_vars:
+                    status_vars.append(sv)
+        i += 1
+
+    if not seq and not status_vars:
+        return ""
+
+    for sv in status_vars:
+        seg = sv[len('status_'):]
+        pair = next((p for p in compare_pairs
+                     if p[0].startswith(seg) or seg in p[0] or p[1].startswith(seg)), None)
+        if pair:
+            a, b = pair
+            seq.append("%s = 'conforme' if (_num(%s) is not None and _num(%s) is not None and "
+                       "_num(%s) <= _num(%s)) else 'nao_conforme'" % (sv, a, b, a, b))
+        else:
+            seq.append("%s = None" % sv)
+        scalars.add(sv)
+
+    fields = _re.findall(r'([A-Za-z_]\w*)\s*\(', expected_output) if expected_output else []
+    result_map = {}
+    for f in fields:
+        if f in scalars:
+            result_map[f] = f
+        else:
+            cand = [v for v in computed + status_vars if f.startswith(v) or v.startswith(f[:6])]
+            if cand:
+                result_map[f] = cand[0]
+    if not result_map:
+        for v in computed + status_vars:
+            result_map[v] = v
+    parts = ["'status': 'sucesso'"]
+    for f, v in result_map.items():
+        parts.append("%r: %s" % (f, "_flt(%s)" % v if v in computed else v))
+    seq.append("_result = {%s}" % ", ".join(parts))
+    return "\n".join("        " + l for l in seq) + "\n"
+
+
+def _parse_task_description_to_python(desc: str, expected_output: str = "") -> str:
+    """Parses a task description's steps and returns the Python body (indented
+    with 8 spaces to fit inside ``try:`` of the wrapper). Returns "" if nothing
+    parseable. Tenta COMPUTAÇÃO (aritmética/conformidade) primeiro; senão CRUD/SQL."""
+    import re as _re
+    _comp = _parse_computation_task(desc, expected_output)
+    if _comp:
+        return _comp
     lines_out: List[str] = []
     _steps: List = []  # (kind, py_lines) por passo — p/ reordenar INSERT antes de UPDATE
     captured_vars: List[str] = []  # variable names bound by SELECT id captures
