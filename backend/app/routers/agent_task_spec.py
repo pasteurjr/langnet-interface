@@ -257,6 +257,49 @@ async def execute_agent_task_spec_generation(
         except Exception as _cov_exc:
             print(f"[AGENT_TASK_SPEC] checagem de cobertura pulada: {_cov_exc}")
 
+        # COBERTURA POR-FR (guardrail de rastreabilidade): a cobertura por-UC NÃO basta —
+        # a matriz da spec costuma mapear só uma parte dos FR a UCs, então FR sem UC ficam
+        # órfãos (no v3 do uso do solo: 19/37 FR sem NENHUMA task). Aqui garantimos ≥1 task
+        # por FR: geramos blocos SÓ para os FR ainda não citados por task alguma, exigindo que
+        # cada bloco cite o **RF Relacionado: FR-XXX**. Ver agents/langnettraceability.py.
+        try:
+            import re as _re
+            _spec_frs = set(_re.findall(r'\bFR-\d{2,3}\b', spec_document))
+            for _attempt in range(3):
+                _covered_fr = set(_re.findall(r'\bFR-\d{2,3}\b', agent_task_spec_document))
+                _missing_fr = sorted(_spec_frs - _covered_fr, key=lambda x: int(x.split('-')[1]))
+                if not _missing_fr:
+                    break
+                print(f"[AGENT_TASK_SPEC] ⚠️ cobertura FR tentativa {_attempt+1}: FR sem task: {_missing_fr}")
+                _focus = (
+                    "# GERAÇÃO DE TASKS FALTANTES POR REQUISITO (apenas blocos `#### T-`)\n\n"
+                    "Da ESPECIFICAÇÃO abaixo, gere APENAS blocos de task `#### T-XXX-YYY: Título` (com a "
+                    "tabela |Atributo|Especificação|) para COBRIR os requisitos funcionais que AINDA NÃO têm "
+                    f"task: {', '.join(_missing_fr)}. Uma task no mínimo por FR (pode agrupar FR afins numa "
+                    "task). Cada bloco DEVE ter **Nome**, **Descrição** (com PASSOS SQL/fórmula reais quando "
+                    "for cálculo), **Agent**, **Tools**, **Input Schema**, **Output Schema**, **Módulo**, "
+                    "**UC Relacionado**, **RF Relacionado** (citando EXPLICITAMENTE os FR-XXX cobertos), "
+                    "**Rationale**. NÃO gere agentes/matriz/texto fora dos blocos.\n\n## ESPECIFICAÇÃO "
+                    "FUNCIONAL\n" + spec_document + "\n"
+                    + (f"\n## SCHEMA REAL\n```sql\n{data_model_schema_sql}\n```\n" if data_model_schema_sql else ""))
+                _blocks = await get_llm_response_async(prompt=_focus,
+                    system="Você é um arquiteto de sistemas multi-agente especializado em CrewAI.",
+                    temperature=0.5, max_tokens=32000)
+                _new = "\n".join(_re.findall(r'(?s)####\s+T-.*?(?=####\s+T-|\Z)', _blocks)).strip()
+                if not _new or not (_spec_frs & set(_re.findall(r'\bFR-\d{2,3}\b', _new))):
+                    print("[AGENT_TASK_SPEC] retry FR não trouxe blocos úteis; parando loop")
+                    break
+                _m4 = _re.search(r'(?m)^###\s+4\.', agent_task_spec_document)
+                if _m4:
+                    agent_task_spec_document = (agent_task_spec_document[:_m4.start()]
+                                                + _new + "\n\n" + agent_task_spec_document[_m4.start():])
+                else:
+                    agent_task_spec_document = agent_task_spec_document.rstrip() + "\n\n" + _new + "\n"
+            _ffc = len(_spec_frs & set(_re.findall(r'\bFR-\d{2,3}\b', agent_task_spec_document)))
+            print(f"[AGENT_TASK_SPEC] ✅ cobertura FR final: {_ffc}/{len(_spec_frs)} FRs")
+        except Exception as _cov_exc:
+            print(f"[AGENT_TASK_SPEC] checagem de cobertura FR pulada: {_cov_exc}")
+
         end_time = datetime.now()
         generation_time_ms = int((end_time - start_time).total_seconds() * 1000)
 

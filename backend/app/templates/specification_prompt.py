@@ -625,11 +625,20 @@ Lista alfabética de termos técnicos e de domínio:
 ## 13. Rastreabilidade
 
 ### 13.1 Matriz de Rastreabilidade
-Tabela relacionando requisitos originais com elementos desta especificação:
+Tabela relacionando requisitos originais com elementos desta especificação.
 
-| Requisito Original | Seção Especificação | RF | UC | RN |
-|--------------------|---------------------|----|----|-----|
-| [ID Requisito]     | [Seção X.Y]        | RF-XXX | UC-XXX | RN-XXX |
+🔴 **COMPLETUDE OBRIGATÓRIA (guardrail de rastreabilidade):** a matriz DEVE ter **UMA LINHA PARA CADA**
+requisito do Documento de Requisitos — **todos os FR-XXX, todos os NFR-XXX e todos os BR-XXX**, sem
+exceção. **CADA FR-XXX tem de estar mapeado a PELO MENOS UM UC-XXX** que o realiza (se um FR não é
+coberto por nenhum dos UCs já escritos, CRIE/adicione o UC correspondente na Seção 5 e mapeie-o aqui —
+nenhum FR pode ficar órfão). Se houver 37 FR, a matriz tem 37 linhas de FR. Um FR sem UC = documento
+REJEITADO. Use os IDs LITERAIS dos requisitos (FR‑XXX permanece FR‑XXX; nunca vira RF).
+
+| Requisito Original | Seção Especificação | UC que o realiza | RN |
+|--------------------|---------------------|------------------|-----|
+| FR-XXX             | [Seção X.Y]         | UC-XXX (≥1, obrigatório p/ todo FR) | RN-XXX |
+| NFR-XXX            | [Seção X.Y]         | — | — |
+| BR-XXX             | [Seção X.Y]         | UC-XXX | RN-XXX |
 
 ---
 
