@@ -4836,7 +4836,7 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
         line = raw[i]
         qm = query_re.search(line)
         if qm:
-            q = qm.group(1).strip(); ps = ""
+            q = _canon_table_names(qm.group(1).strip()); ps = ""
             pm = params_re.search(line)
             if pm:
                 ps = pm.group(1)
@@ -5146,6 +5146,41 @@ def _align_enum_literals(query: str, canon: Dict[str, str]) -> str:
 # FROM regra_aplicavel). Setado no code-gen (onde o schema está disponível).
 _SCHEMA_FK_CTX: Dict[str, Dict[str, str]] = {}
 
+# Conjunto de tabelas REAIS do Modelo de Dados (setado no code-gen). Usado por
+# _canon_table_names para corrigir tasks que citam nome de tabela que não existe
+# (ex.: task escreveu `zonas` mas o DM tem `zoneamentos`; `elevacoes` vs `mde_elevacoes`).
+_DM_TABLES_CTX: set = set()
+
+
+def _canon_table_names(query: str) -> str:
+    """Canoniza nomes de tabela na SQL contra o Modelo de Dados: se um nome após
+    FROM/JOIN/INTO/UPDATE não existe no DM, troca pela tabela REAL mais parecida
+    (substring/prefixo → menor). Determinístico; corrige o gap Task→DM do portão."""
+    if not _DM_TABLES_CTX:
+        return query
+    import re as _re
+    real = _DM_TABLES_CTX
+
+    def _best(bad: str):
+        b = bad.lower()
+        if b in real:
+            return None
+        # 1) contenção (mde_elevacoes ⊃ elevacoes); 2) fuzzy (zonas → zoneamentos)
+        cand = [t for t in real if b in t or t in b]
+        if not cand:
+            import difflib
+            cand = difflib.get_close_matches(b, list(real), n=1, cutoff=0.6)
+        if not cand:
+            return None
+        return min(cand, key=lambda t: abs(len(t) - len(b)))
+
+    def _rep(m):
+        kw, tbl = m.group(1), m.group(2)
+        repl = _best(tbl)
+        return f"{kw} {repl}" if repl else m.group(0)
+
+    return _re.sub(r'(?i)\b(FROM|JOIN|INTO|UPDATE)\s+([a-z_][a-z0-9_]*)', _rep, query)
+
 
 def _build_schema_fk_map(schema_sql: str) -> Dict[str, Dict[str, str]]:
     """{tabela -> {tabela_referenciada: coluna_fk}} a partir dos FOREIGN KEY do DDL.
@@ -5226,6 +5261,8 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
     list_captured = list_captured if list_captured is not None else set()
     dot_accessed = dot_accessed or set()
     row_captured = row_captured if row_captured is not None else set()
+    # Task→DM: canoniza nomes de tabela contra o Modelo de Dados (ex.: zonas→zoneamentos).
+    query = _canon_table_names(query)
     query_lower = query.strip().lower()
     is_select = query_lower.startswith("select")
 
@@ -6652,10 +6689,17 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         _SCHEMA_FK_CTX = _build_schema_fk_map(_sch_enum)
         if _SCHEMA_FK_CTX:
             print(f"[CODE-GEN] FK map: {sum(len(v) for v in _SCHEMA_FK_CTX.values())} FKs em {len(_SCHEMA_FK_CTX)} tabelas")
+        # Conjunto de tabelas REAIS do DM p/ canonizar nomes de tabela nas tasks (Task→DM).
+        global _DM_TABLES_CTX
+        _DM_TABLES_CTX = set(m.group(1).lower() for m in
+                             __import__('re').finditer(r'(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([a-z_][a-z0-9_]*)', _sch_enum or ""))
+        if _DM_TABLES_CTX:
+            print(f"[CODE-GEN] DM tables: {len(_DM_TABLES_CTX)} (canon de nome de tabela ligado)")
     except Exception as _ee:
         print(f"[CODE-GEN] enum canon falhou: {_ee}")
         _ENUM_CANON_CTX = {}
         _SCHEMA_FK_CTX = {}
+        _DM_TABLES_CTX = set()
     _cg_dbms = (_cg_dbms or "mysql")
     _cg_is_pg = _cg_dbms in ("postgres", "postgresql", "postgis", "postgresql+postgis")
     # SRID das colunas geométricas do schema PostGIS (geometry(Geometry,4674)) — usado para

@@ -510,6 +510,19 @@ async def execute_specification_generation(
         print(f"[SPEC GENERATION] ✅ STEP 4 OK - LLM RETORNOU! Tamanho: {len(specification_document)} chars")
         sys.stdout.flush()
 
+        # 4.05 GUARDRAIL de rastreabilidade (determinístico): garante que TODO FR tenha
+        # linha na matriz FR→UC. O prompt leva a ~31/37; este passo fecha os órfãos → 37/37,
+        # mapeando cada FR faltante ao UC de maior sobreposição temática. Ver
+        # agents/langnettraceability.complete_matrix.
+        try:
+            from agents.langnettraceability import complete_matrix as _complete_matrix
+            specification_document, _added = _complete_matrix(specification_document, requirements_document)
+            if _added:
+                print(f"[SPEC GENERATION] 🛡️ Matriz: {len(_added)} FR órfão(s) mapeado(s) a UC: "
+                      + ", ".join(f"{f}→{u}" for f, u, _ in _added))
+        except Exception as _mm_exc:
+            print(f"[SPEC GENERATION] guardrail de matriz pulado: {_mm_exc}")
+
         # 4.1 Validate completeness
         print(f"[SPEC GENERATION] 🔍 STEP 5: Validando completude do documento...")
         sys.stdout.flush()

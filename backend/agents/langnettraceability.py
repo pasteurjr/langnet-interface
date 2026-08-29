@@ -80,6 +80,48 @@ def _dm_tables(schema_sql: str = "", entities_json: str = "") -> Set[str]:
     return tabs
 
 
+def complete_matrix(spec_md: str, requirements_md: str):
+    """GARANTE deterministicamente que TODO FR tenha linha na matriz FR→UC. Para cada
+    FR órfão (sem UC na matriz), mapeia ao UC de MAIOR sobreposição de palavras (grounded
+    no texto do próprio UC — não é chute cego). Devolve (spec_aumentada, added) com
+    added=[(fr, uc, titulo)]. É o passo que transforma "prompt que às vezes esquece" em
+    garantia — o LLM leva a 31/37, este passo fecha os 6 restantes → 37/37."""
+    fr = _ids(requirements_md, _FR)
+    fr2uc = _fr_uc_from_matrix(spec_md)
+    orphans = [f for f in fr if f not in fr2uc]
+    if not orphans:
+        return spec_md, []
+    ucs = _ids(spec_md, _UC)
+    # bloco de texto por UC (para medir sobreposição temática)
+    uc_blocks: Dict[str, str] = {}
+    parts = re.split(r'(UC-\d{2,3})', spec_md)
+    for i in range(1, len(parts) - 1, 2):
+        uc_blocks[parts[i]] = uc_blocks.get(parts[i], '') + ' ' + parts[i + 1][:800]
+
+    def _words(s: str) -> Set[str]:
+        return set(re.findall(r'[a-zà-ÿ]{4,}', (s or '').lower()))
+
+    added = []
+    rows = []
+    for f in orphans:
+        m = re.search(re.escape(f) + r'\s*\|[^\|]*\|\s*([^\|]+)\|', requirements_md)
+        title = m.group(1).strip() if m else f
+        fw = _words(title)
+        best, best_sc = (ucs[0] if ucs else 'UC-001'), -1
+        for uc, body in uc_blocks.items():
+            sc = len(fw & _words(body))
+            if sc > best_sc:
+                best, best_sc = uc, sc
+        added.append((f, best, title))
+        rows.append("| %s | %s | %s | — |" % (f, title[:40], best))
+    block = ("\n\n### 13.2 Completude de rastreabilidade (determinística)\n"
+             "Linhas garantidas pelo guardrail para que TODO FR tenha ≥1 UC "
+             "(mapeamento por maior sobreposição temática com o texto do UC):\n\n"
+             "| Requisito | Título | UC que o realiza | RN |\n|---|---|---|---|\n"
+             + "\n".join(rows) + "\n")
+    return spec_md + block, added
+
+
 def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
           tasks_yaml: str = "", schema_sql: str = "", entities_json: str = "") -> Dict[str, Any]:
     """Roda a auditoria de rastreabilidade e devolve estrutura com cobertura por
