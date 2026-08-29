@@ -50,10 +50,23 @@ def _task_traceability(tasks_yaml: str) -> Dict[str, Any]:
     for m in re.finditer(r'traceability:\s*\n\s*uc:\s*(.+)\n\s*fr:\s*(.+)', tasks_yaml or ""):
         uc_task.update(re.findall(_UC, m.group(1)))
         fr_task.update(re.findall(_FR, m.group(2)))
-    # tabelas citadas em SQL (FROM/JOIN/INTO/UPDATE <tabela>)
+    # tabelas citadas em SQL — SÓ dentro de query="..." (evita pegar prose/PT) e com
+    # stoplist de keywords/funções/aliases, senão o portão gera falso-positivo (com, em,
+    # na, set, generate_series, subqueries...). Também ignora alias após o nome da tabela.
+    _STOP = {
+        "com", "em", "na", "no", "set", "as", "on", "and", "or", "where", "select",
+        "values", "using", "lateral", "generate_series", "unnest", "cast", "coalesce",
+        "st_intersection", "st_contains", "st_intersects", "st_area", "st_dwithin",
+        "only", "distinct", "all", "case", "when", "then", "else", "end", "null",
+    }
     tables: Set[str] = set()
-    for m in re.finditer(r'(?i)\b(?:FROM|JOIN|INTO|UPDATE)\s+["`]?([a-z_][a-z0-9_]*)', tasks_yaml or ""):
-        tables.add(m.group(1).lower())
+    for q in re.findall(r'query="([^"]+)"', tasks_yaml or ""):
+        for m in re.finditer(r'(?i)\b(?:FROM|JOIN|INTO|UPDATE)\s+["`]?([a-z_][a-z0-9_]*)', q):
+            t = m.group(1).lower()
+            # ignora se seguido de '(' (é função, ex.: generate_series(...))
+            if t in _STOP:
+                continue
+            tables.add(t)
     return {"uc_task": uc_task, "fr_task": fr_task, "tables": tables}
 
 
