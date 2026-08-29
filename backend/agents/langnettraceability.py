@@ -50,6 +50,19 @@ def _task_traceability(tasks_yaml: str) -> Dict[str, Any]:
     for m in re.finditer(r'traceability:\s*\n\s*uc:\s*(.+)\n\s*fr:\s*(.+)', tasks_yaml or ""):
         uc_task.update(re.findall(_UC, m.group(1)))
         fr_task.update(re.findall(_FR, m.group(2)))
+
+    # QUALIDADE: FRs por task (nome de task de topo -> #FR na sua traceability). Uma task
+    # que cita muitos FR é "stuffing" — o laço de cobertura empilhou requisitos numa task
+    # catch-all em vez de gerar tasks focadas. O portão deve SURFAR isso, não mascarar.
+    per_task: Dict[str, int] = {}
+    for m in re.finditer(r'(?m)^([a-z_][a-z0-9_]*):\s*$', tasks_yaml or ""):
+        name = m.group(1)
+        start = m.end()
+        nxt = re.search(r'(?m)^[a-z_][a-z0-9_]*:\s*$', (tasks_yaml or "")[start:])
+        body = (tasks_yaml or "")[start:start + (nxt.start() if nxt else len(tasks_yaml or ""))]
+        nfr = len(set(re.findall(_FR, body)))
+        if nfr:
+            per_task[name] = nfr
     # tabelas citadas em SQL — SÓ dentro de query="..." (evita pegar prose/PT) e com
     # stoplist de keywords/funções/aliases, senão o portão gera falso-positivo (com, em,
     # na, set, generate_series, subqueries...). Também ignora alias após o nome da tabela.
@@ -68,7 +81,7 @@ def _task_traceability(tasks_yaml: str) -> Dict[str, Any]:
             if t in _STOP or t in cte:
                 continue
             tables.add(t)
-    return {"uc_task": uc_task, "fr_task": fr_task, "tables": tables}
+    return {"uc_task": uc_task, "fr_task": fr_task, "tables": tables, "per_task_fr": per_task}
 
 
 def _dm_tables(schema_sql: str = "", entities_json: str = "") -> Set[str]:
@@ -157,6 +170,12 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
         return f in fr_task or any(u in uc_task for u in fr2uc.get(f, set()))
     gap_impl = [f for f in fr if not implemented(f)]
 
+    # QUALIDADE de implementação: tasks "stuffing" (catch-all que empilha muitos FR em vez
+    # de tasks focadas). Cobertura 37/37 não vale nada se 18 FR caem numa task só. Limite = 6.
+    _STUFF = 6
+    stuffing = sorted(((n, k) for n, k in tt.get("per_task_fr", {}).items() if k > _STUFF),
+                      key=lambda x: -x[1])
+
     # Salto 4: task -> DM (tabela usada existe no modelo?). Tolera near-match: o code-gen
     # canoniza nomes contra o DM (zonas→zoneamentos, elevacoes→mde_elevacoes), então só é
     # violação REAL se a tabela não existe E não casa (contenção/fuzzy) com nenhuma do DM.
@@ -170,7 +189,7 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
         return bool(_dl.get_close_matches(t, list(dm), n=1, cutoff=0.6))
     tbl_violations = sorted(t for t in tt["tables"] if dm and not _resolves(t)) if dm else []
 
-    gate_pass = not (gap_spec or gap_nfr or gap_br or gap_impl or tbl_violations)
+    gate_pass = not (gap_spec or gap_nfr or gap_br or gap_impl or tbl_violations or stuffing)
     return {
         "inventory": {"FR": fr, "NFR": nfr, "BR": br, "UC_spec": _ids(spec_md, _UC)},
         "hops": {
@@ -181,6 +200,7 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
             "FR_to_impl": {"cov": len(fr) - len(gap_impl), "total": len(fr),
                            "gaps": [(f, titulo(f)) for f in gap_impl]},
             "task_to_DM": {"violations": tbl_violations},
+            "task_stuffing": {"tasks": stuffing},
         },
         "gate_pass": gate_pass,
     }
@@ -213,5 +233,9 @@ def format_report(res: Dict[str, Any]) -> str:
         L.append("       %-8s %s" % (f, t))
     v = h["task_to_DM"]["violations"]
     L.append("  %-26s %s" % ("Task→Modelo de Dados", "OK" if not v else "TABELA INEXISTENTE: " + ", ".join(v)))
+    st = h.get("task_stuffing", {}).get("tasks") or []
+    L.append("  %-26s %s" % ("Qualidade (FR por task)",
+                             "OK" if not st else "STUFFING (task catch-all): "
+                             + ", ".join("%s=%dFR" % (n, k) for n, k in st)))
     L.append("═" * 66)
     return "\n".join(L)
