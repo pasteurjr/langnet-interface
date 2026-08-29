@@ -61,10 +61,11 @@ def _task_traceability(tasks_yaml: str) -> Dict[str, Any]:
     }
     tables: Set[str] = set()
     for q in re.findall(r'query="([^"]+)"', tasks_yaml or ""):
+        # nomes de CTE (WITH x AS (...), , y AS (...)) NÃO são tabelas do modelo
+        cte = set(m.group(1).lower() for m in re.finditer(r'(?i)(?:WITH|,)\s+([a-z_][a-z0-9_]*)\s+AS\s*\(', q))
         for m in re.finditer(r'(?i)\b(?:FROM|JOIN|INTO|UPDATE)\s+["`]?([a-z_][a-z0-9_]*)', q):
             t = m.group(1).lower()
-            # ignora se seguido de '(' (é função, ex.: generate_series(...))
-            if t in _STOP:
+            if t in _STOP or t in cte:
                 continue
             tables.add(t)
     return {"uc_task": uc_task, "fr_task": fr_task, "tables": tables}
@@ -156,8 +157,18 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
         return f in fr_task or any(u in uc_task for u in fr2uc.get(f, set()))
     gap_impl = [f for f in fr if not implemented(f)]
 
-    # Salto 4: task -> DM (tabela usada existe no modelo?)
-    tbl_violations = sorted(t for t in tt["tables"] if dm and t not in dm) if dm else []
+    # Salto 4: task -> DM (tabela usada existe no modelo?). Tolera near-match: o code-gen
+    # canoniza nomes contra o DM (zonas→zoneamentos, elevacoes→mde_elevacoes), então só é
+    # violação REAL se a tabela não existe E não casa (contenção/fuzzy) com nenhuma do DM.
+    import difflib as _dl
+
+    def _resolves(t: str) -> bool:
+        if t in dm:
+            return True
+        if any(t in d or d in t for d in dm):
+            return True
+        return bool(_dl.get_close_matches(t, list(dm), n=1, cutoff=0.6))
+    tbl_violations = sorted(t for t in tt["tables"] if dm and not _resolves(t)) if dm else []
 
     gate_pass = not (gap_spec or gap_nfr or gap_br or gap_impl or tbl_violations)
     return {
