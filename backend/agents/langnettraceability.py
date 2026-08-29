@@ -51,18 +51,19 @@ def _task_traceability(tasks_yaml: str) -> Dict[str, Any]:
         uc_task.update(re.findall(_UC, m.group(1)))
         fr_task.update(re.findall(_FR, m.group(2)))
 
-    # QUALIDADE: FRs por task (nome de task de topo -> #FR na sua traceability). Uma task
-    # que cita muitos FR é "stuffing" — o laço de cobertura empilhou requisitos numa task
-    # catch-all em vez de gerar tasks focadas. O portão deve SURFAR isso, não mascarar.
-    per_task: Dict[str, int] = {}
+    # QUALIDADE: conjunto de FR citados por cada task (nome de topo -> {FR}). Usado para
+    # medir cobertura EXCLUSIVA (quantos FR uma task é a ÚNICA a cobrir): stuffing REAL é
+    # uma task que SOZINHA implementa muitos FR — não uma que apenas super-cita FR que já
+    # têm task focada própria (isso é poluição de citação, não lump de implementação).
+    per_task: Dict[str, Set[str]] = {}
     for m in re.finditer(r'(?m)^([a-z_][a-z0-9_]*):\s*$', tasks_yaml or ""):
         name = m.group(1)
         start = m.end()
         nxt = re.search(r'(?m)^[a-z_][a-z0-9_]*:\s*$', (tasks_yaml or "")[start:])
         body = (tasks_yaml or "")[start:start + (nxt.start() if nxt else len(tasks_yaml or ""))]
-        nfr = len(set(re.findall(_FR, body)))
-        if nfr:
-            per_task[name] = nfr
+        fset = set(re.findall(_FR, body))
+        if fset:
+            per_task[name] = fset
     # tabelas citadas em SQL — SÓ dentro de query="..." (evita pegar prose/PT) e com
     # stoplist de keywords/funções/aliases, senão o portão gera falso-positivo (com, em,
     # na, set, generate_series, subqueries...). Também ignora alias após o nome da tabela.
@@ -170,11 +171,17 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
         return f in fr_task or any(u in uc_task for u in fr2uc.get(f, set()))
     gap_impl = [f for f in fr if not implemented(f)]
 
-    # QUALIDADE de implementação: tasks "stuffing" (catch-all que empilha muitos FR em vez
-    # de tasks focadas). Cobertura 37/37 não vale nada se 18 FR caem numa task só. Limite = 6.
+    # QUALIDADE de implementação: stuffing REAL = task que SOZINHA cobre muitos FR (é o único
+    # lugar que implementa N features). Super-citação (task lista FR que já têm task própria)
+    # não conta — mede-se cobertura EXCLUSIVA. Limite = 6.
     _STUFF = 6
-    stuffing = sorted(((n, k) for n, k in tt.get("per_task_fr", {}).items() if k > _STUFF),
-                      key=lambda x: -x[1])
+    _per_task = tt.get("per_task_fr", {})
+    _cov_count: Dict[str, int] = {}
+    for _fs in _per_task.values():
+        for _f in _fs:
+            _cov_count[_f] = _cov_count.get(_f, 0) + 1
+    _sole = {n: [f for f in fs if _cov_count.get(f) == 1] for n, fs in _per_task.items()}
+    stuffing = sorted(((n, len(s)) for n, s in _sole.items() if len(s) > _STUFF), key=lambda x: -x[1])
 
     # Salto 4: task -> DM (tabela usada existe no modelo?). Tolera near-match: o code-gen
     # canoniza nomes contra o DM (zonas→zoneamentos, elevacoes→mde_elevacoes), então só é
