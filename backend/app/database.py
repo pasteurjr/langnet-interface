@@ -32,8 +32,10 @@ DB_CONFIG = {
 POOL_CONFIG = {
     **DB_CONFIG,
     "pool_name": "langnet_pool",
-    # Pool maior (era 10) — o app tem vários routers + background tasks concorrentes.
-    "pool_size": int(os.getenv("DB_POOL_SIZE", "20")),
+    # Pool ENXUTO: o banco é DDNS remoto (camerascasas.no-ip.info) e não tolera abrir
+    # muitas conexões de uma vez — o init do pool (que abre pool_size conexões de uma vez)
+    # estourava timeout com 20. 5 inicializa rápido e confiável; excedente cai no fallback direto.
+    "pool_size": int(os.getenv("DB_POOL_SIZE", "5")),
     "pool_reset_session": True,
 }
 
@@ -67,10 +69,12 @@ def _checkout_connection():
     (PoolError), degrada para uma conexão DIRETA em vez de pendurar a requisição —
     marcada com _langnet_direct pra ser realmente fechada no finally.
     """
-    pool = get_db_pool()
     try:
+        pool = get_db_pool()
         conn = pool.get_connection()
-    except Exception as e:  # noqa: BLE001 — inclui PoolError (pool exhausted)
+    except Exception as e:  # noqa: BLE001 — inclui PoolError (exhausted) E falha de INIT do pool
+        # Cobre TAMBÉM o caso do init_db_pool() estourar timeout ao abrir as conexões iniciais
+        # contra o DDNS remoto — antes isso propagava como 500; agora degrada para conexão direta.
         print(f"⚠️ Pool indisponível ({e}); usando conexão direta (fallback).")
         conn = mysql.connector.connect(**DB_CONFIG)
         conn._langnet_direct = True
