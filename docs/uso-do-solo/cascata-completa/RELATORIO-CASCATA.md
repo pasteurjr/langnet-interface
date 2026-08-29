@@ -180,19 +180,36 @@ Gerado pela UI (**⚡ Gerar Código**, base = agents.yaml + meu tasks.yaml `166d
 
 **Decisão:** deploy + E2E para medir o comportamento real (agente calcula vs. erra) e, se preciso, corrigir o gerador para emitir a computação determinística.
 
-## 8. Deploy + E2E — o que roda e o que falta (honesto)
+## 8. Deploy + E2E — a CALCULADORA RODANDO (após corrigir o gerador)
 
-Exportei os 81 arquivos e preparei o deploy PostGIS. Ao inspecionar o app gerado antes de rodar, encontrei **dois bloqueios de runtime** para a task de cálculo `calculate_ca_to`:
+Ao preparar o deploy do app gerado (81 arquivos), a calculadora **não executava** — diagnostiquei a última milha e **corrigi o gerador**. Agora ela **roda ponta‑a‑ponta contra PostGIS real**.
 
-1. **Sem função determinística de COMPUTAÇÃO.** `adapters.py` tem 60 CRUDs `*_deterministic`, mas **não** um `calculate_ca_to_deterministic` com o SQL+divisão. O roteador do ws‑server é *deterministic‑first*: sem essa função, a task cai no agente. → **limitação do gerador** (não emite computação multi‑passo; só CRUD).
-2. **`agents.yaml` incoerente.** O code‑gen foi feito com o `agents.yaml` **antigo** (session `f9bb86cb`, pré‑calculadora), que define `consulta_agent`, `legislacao_importer_agent`, … — mas o `tasks.yaml` novo referencia `urban_calc_agent`, `environmental_calc_agent`, `compliance_engine_agent`. **Os agentes de cálculo não existem** no `agents.yaml`. → o fallback para agente **também** falharia. (Causa: não há um caminho limpo na UI para regenerar SÓ o `agents.yaml` a partir do novo ATS sem também regenerar o `tasks.yaml`.)
+### Diagnóstico (por que não rodava)
+1. **`tasks.yaml` inválido zerava TODO o determinístico.** Um único nome de task malformado — `T-005-001: Edição de Parâmetros Urbanísticos por Zona:` (com `:` e acentos) — quebrava o `yaml.safe_load`, e `_generate_deterministic_adapters` retornava vazio. Por isso **nenhuma** função `<task>_deterministic` por‑task saía (os 60 CRUD vinham de outro caminho, por‑entidade via schema).
+2. **O parser não traduzia COMPUTAÇÃO.** Só entendia `query=`/`params=` (CRUD). Linhas de aritmética (`ca_calc = area_construida / area_terreno`) e de comparação→status eram ignoradas. Sem `calculate_ca_to_deterministic`, o ws‑server (deterministic‑first) cairia no agente.
 
-**Conclusão honesta:** o app, como gerado agora, **não executa** o `calculate_ca_to` (sem função determinística + agente indefinido). **NÃO** afirmo que a calculadora roda E2E.
+### Correção no gerador (`agents/langnetagents.py`, commit `95cf3c9`)
+- **`_extract_task_blocks()`** — extração **tolerante** a YAML inválido: detecta chaves de topo `^<identificador>:` por texto e ignora nomes malformados, sem anular os válidos.
+- **`_parse_computation_task()`** — novo caminho: `SELECT` (captura de linha) → **expõe colunas como variáveis** → **aritmética Decimal‑safe** (`ca_calc = _safe_div(area_construida, area_terreno)`) → 2º `SELECT` (inclusive **espacial `ST_Contains`**) → **comparação de conformidade** (`status = 'conforme' se calculado ≤ limite`) → `_result` JSON. Helpers `_num`/`_safe_div`/`_flt` no header.
 
-### O que ESTÁ provado (o mérito desta cascata)
-O calculador — que **não existia** no v3 — agora atravessa **todo** o pipeline, verificado artefato a artefato no banco:
-Requisitos v4 (FR‑016 CA, FR‑017 TO, …) → Especificação (UC‑001 Conformidade) → Modelo de Dados PostGIS (`parametros_urbanisticos`, `calculos_conformidade`, `ca_calculado`) → UI Spec (tela de Resultado de Conformidade com metric‑cards) → ATS (task com fórmula) → **tasks.yaml (`calculate_ca_to` com `ca=area_construida/area_terreno`, `ST_Contains`, comparação)** → Código (81 arquivos, `ws-server/tasks.yaml` com a fórmula, tela `CalculosConformidadeCrud.jsx`, `docs/RASTREABILIDADE.md`).
+Regenerei o **Código pela UI** com o gerador corrigido → `adapters.py` agora traz `calculate_ca_to_deterministic` (postgresificado: `psycopg2` + `RealDictCursor`).
 
-### Para a calculadora RODAR (2 correções concretas de produto)
-1. **Gerador — emitir computação determinística:** estender o parser (`_parse_task_description_to_python`/`_emit_sql_step`) para traduzir tasks de COMPUTAÇÃO multi‑passo (capturar SELECT em variáveis → aritmética `ca=area_construida/area_terreno` → 2º SELECT com join espacial → comparação → JSON) em `calculate_ca_to_deterministic`. Hoje só CRUD é emitido.
-2. **Regenerar `agents.yaml` a partir do novo ATS** (e um caminho de UI para regenerar agents sem sobrescrever o tasks.yaml), para os agentes referenciados existirem.
+### Prova E2E (app rodando, PostGIS 4674, ws‑server :5027)
+Banco semeado: imóvel com `area_terreno=1000`, edificação `area_construida=1500/2500`, zona `ca_maximo=2.0`/`to_maxima=0.6` (achada por `ST_Contains`). Enviei `execute_task` pelo **websocket** do app:
+
+```
+# CONFORME  (area_construida=1500 → CA=1.5 ≤ 2.0)
+<<< task_completed: {"ca_calculado": 1.5, "to_calculado": 0.5, "status_ca": "conforme",    "status_to": "conforme"}
+
+# NÃO-CONFORME (area_construida=2500 → CA=2.5 > 2.0)
+<<< task_completed: {"ca_calculado": 2.5, "to_calculado": 0.7, "status_ca": "nao_conforme", "status_to": "nao_conforme"}
+```
+
+**A calculadora roda no app gerado**, via websocket → `calculate_ca_to_deterministic` → PostGIS (JOIN imóvel/edificação + `ST_Contains` p/ a zona) → CA/TO exatos + veredito de conformidade. Determinístico, sem LLM.
+
+### 2 bugs auxiliares do gerador (achados no deploy; corrigidos localmente p/ o E2E, a fixar no gerador)
+- **`tools.py`:** referencia `PdfGeneratorTool()` mas só emite `PdfGeneratorArgs` (classe do tool faltando) → `NameError` na subida do ws‑server.
+- **`tasks.yaml`:** nomes de task precisam ser sanitizados para identificadores válidos (o `T-005-001: …:` acima). O gerador deveria emitir `snake_case` sempre.
+
+### Conclusão
+O calculador — que **não existia** no v3 — foi levado pela interface por **todo** o pipeline (Requisitos v4 → Spec → Modelo de Dados PostGIS → UI Spec → ATS → tasks.yaml → Código) e, após a correção do gerador, **executa E2E** com CA/TO exatos e conformidade. Fix genérico: vale para **qualquer** app com computação, não só uso do solo.
