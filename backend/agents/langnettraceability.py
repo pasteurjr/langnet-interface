@@ -95,6 +95,78 @@ def _dm_tables(schema_sql: str = "", entities_json: str = "") -> Set[str]:
     return tabs
 
 
+def _dm_columns(schema_sql: str = "") -> Dict[str, Set[str]]:
+    """{tabela -> {colunas}} a partir do DDL. Base do check Task→DM de COLUNA (uma coluna
+    citada num query= tem de existir em alguma tabela do FROM/JOIN — senão o SQL quebra no
+    runtime, como o `SELECT area_construida FROM imoveis` que só descobrimos no E2E)."""
+    cols: Dict[str, Set[str]] = {}
+    for blk in re.split(r'(?i)\bCREATE\s+TABLE\s+', schema_sql or "")[1:]:
+        m = re.match(r'["`]?([a-z_]\w*)', blk)
+        if not m:
+            continue
+        cset: Set[str] = set()
+        body = blk[blk.find('('):] if '(' in blk else ''
+        for line in body.split('\n'):
+            cm = re.match(r'\s*["`]?([a-z_]\w*)["`]?\s+[A-Za-z]', line.strip())
+            if cm and cm.group(1).upper() not in ('FOREIGN', 'PRIMARY', 'UNIQUE', 'CHECK', 'CONSTRAINT'):
+                cset.add(cm.group(1).lower())
+        cols[m.group(1).lower()] = cset
+    return cols
+
+
+def _query_column_violations(tasks_yaml: str, dm_cols: Dict[str, Set[str]]) -> List:
+    """Para cada query= das tasks, valida que as colunas da lista do SELECT existem em
+    alguma tabela do FROM/JOIN. Conservador: ignora funções (col(...)), '*', apelidos AS e
+    literais — só marca coluna nua fora do schema. Devolve [(tabela_from, coluna)]."""
+    if not dm_cols:
+        return []
+    import difflib as _dl
+    real = set(dm_cols.keys())
+
+    def _resolve(t: str) -> str:
+        t = t.lower()
+        if t in real:
+            return t
+        cand = [d for d in real if t in d or d in t] or _dl.get_close_matches(t, list(real), n=1, cutoff=0.6)
+        return cand[0] if cand else ''
+    viol = []
+    for q in re.findall(r'query="([^"]+)"', tasks_yaml or ""):
+        tabs = [_resolve(m.group(1)) for m in re.finditer(r'(?i)\b(?:FROM|JOIN)\s+["`]?([a-z_]\w*)', q)]
+        tabs = [t for t in tabs if t]
+        if not tabs:
+            continue
+        valid = set()
+        for t in tabs:
+            valid |= dm_cols.get(t, set())
+        if not valid:
+            continue
+        ms = re.search(r'(?is)\bSELECT\b(.+?)\bFROM\b', q)
+        if not ms:
+            continue
+        seg = ms.group(1)
+        parts, depth, cur = [], 0, ''
+        for ch in seg:
+            if ch == '(':
+                depth += 1
+            elif ch == ')':
+                depth -= 1
+            if ch == ',' and depth == 0:
+                parts.append(cur); cur = ''
+            else:
+                cur += ch
+        parts.append(cur)
+        for c in parts:
+            c = c.strip()
+            if not c or '(' in c or '*' in c or ' as ' in c.lower():
+                continue
+            c = c.split('.')[-1].strip().strip('"`')
+            if re.match(r'^[a-z_]\w*$', c) and c not in valid:
+                viol.append((tabs[0], c))
+    # dedup preservando ordem
+    seen = set()
+    return [x for x in viol if not (x in seen or seen.add(x))]
+
+
 def complete_matrix(spec_md: str, requirements_md: str):
     """GARANTE deterministicamente que TODO FR tenha linha na matriz FR→UC. Para cada
     FR órfão (sem UC na matriz), mapeia ao UC de MAIOR sobreposição de palavras (grounded
@@ -196,7 +268,10 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
         return bool(_dl.get_close_matches(t, list(dm), n=1, cutoff=0.6))
     tbl_violations = sorted(t for t in tt["tables"] if dm and not _resolves(t)) if dm else []
 
-    gate_pass = not (gap_spec or gap_nfr or gap_br or gap_impl or tbl_violations or stuffing)
+    # Salto 4b: task -> DM no nível de COLUNA (o SQL cita coluna que não existe no schema).
+    col_violations = _query_column_violations(tasks_yaml, _dm_columns(schema_sql))
+
+    gate_pass = not (gap_spec or gap_nfr or gap_br or gap_impl or tbl_violations or stuffing or col_violations)
     return {
         "inventory": {"FR": fr, "NFR": nfr, "BR": br, "UC_spec": _ids(spec_md, _UC)},
         "hops": {
@@ -207,6 +282,7 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
             "FR_to_impl": {"cov": len(fr) - len(gap_impl), "total": len(fr),
                            "gaps": [(f, titulo(f)) for f in gap_impl]},
             "task_to_DM": {"violations": tbl_violations},
+            "task_to_DM_columns": {"violations": col_violations},
             "task_stuffing": {"tasks": stuffing},
         },
         "gate_pass": gate_pass,
@@ -239,7 +315,11 @@ def format_report(res: Dict[str, Any]) -> str:
     for f, t in imp["gaps"]:
         L.append("       %-8s %s" % (f, t))
     v = h["task_to_DM"]["violations"]
-    L.append("  %-26s %s" % ("Task→Modelo de Dados", "OK" if not v else "TABELA INEXISTENTE: " + ", ".join(v)))
+    L.append("  %-26s %s" % ("Task→DM (tabela)", "OK" if not v else "TABELA INEXISTENTE: " + ", ".join(v)))
+    cv = h.get("task_to_DM_columns", {}).get("violations") or []
+    L.append("  %-26s %s" % ("Task→DM (coluna)",
+                             "OK" if not cv else "COLUNA INEXISTENTE: "
+                             + ", ".join("%s.%s" % (t, c) for t, c in cv[:8])))
     st = h.get("task_stuffing", {}).get("tasks") or []
     L.append("  %-26s %s" % ("Qualidade (FR por task)",
                              "OK" if not st else "STUFFING (task catch-all): "
