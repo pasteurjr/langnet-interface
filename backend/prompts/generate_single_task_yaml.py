@@ -52,6 +52,16 @@ def parse_task_blocks(agent_task_spec_document: str) -> List[Dict[str, str]]:
     # costuma vir só como "AG-02" (sem o nome), então precisamos resolver aqui — senão
     # o tasks.yaml referencia "AG-02" e o app quebra (agents.yaml usa a chave snake_case).
     agent_map = _parse_agent_overview(agent_task_spec_document)
+    # ROSTER de agentes válidos (elenco do ATS, transliterado+_agent) = as chaves que o
+    # agents.yaml define. Toda referência de agente nas tasks é resolvida contra ele — assim
+    # tasks.yaml e agents.yaml ficam COERENTES (senão o app quebra: agente não encontrado).
+    import unicodedata as _ud2
+
+    def _norm_ag(n: str) -> str:
+        n = _ud2.normalize('NFKD', n).encode('ascii', 'ignore').decode('ascii').lower()
+        n = re.sub(r'[^a-z0-9_]+', '_', n).strip('_')
+        return n if n.endswith('_agent') else (f"{n}_agent" if n else n)
+    roster = set(_norm_ag(v) for v in agent_map.values() if v)
 
     blocks = []
     # Split on task section headers (#### T-...) or agent headers (#### AG-)
@@ -61,7 +71,7 @@ def parse_task_blocks(agent_task_spec_document: str) -> List[Dict[str, str]]:
     )
     for m in pattern.finditer(agent_task_spec_document):
         raw = m.group(1)
-        task = _parse_single_block(raw, agent_map)
+        task = _parse_single_block(raw, agent_map, roster)
         if task and task.get("name"):
             blocks.append(task)
     return blocks
@@ -76,7 +86,8 @@ def _parse_agent_overview(doc: str) -> Dict[str, str]:
     return amap
 
 
-def _parse_single_block(raw: str, agent_map: Optional[Dict[str, str]] = None) -> Optional[Dict[str, str]]:
+def _parse_single_block(raw: str, agent_map: Optional[Dict[str, str]] = None,
+                        roster: Optional[set] = None) -> Optional[Dict[str, str]]:
     """Extract fields from one task block by matching table rows."""
     fields: Dict[str, str] = {"raw": raw}
     agent_map = agent_map or {}
@@ -98,28 +109,32 @@ def _parse_single_block(raw: str, agent_map: Optional[Dict[str, str]] = None) ->
             fields["description"] = val
         elif key == "agent":
             fields["agent"] = val
-            # Extract snake_case agent name from "AG-XX (Human Name)" pattern.
-            # The tasks.yaml expects the snake_case identifier, not the AG-XX id.
-            paren = re.search(r'\(([^)]+)\)', val)
-            _agid = re.match(r'^\s*(AG-\d+)\s*$', val)
+            # Resolve o agente para uma chave que EXISTA no agents.yaml. Bugs corrigidos:
+            # (1) "AG-04 (Cálculo Urbano Agent)" caía no fallback e slugificava o título com
+            #     acento quebrado (á->_) -> c_lculo_urbano_agent; agora casa o prefixo AG-XX
+            #     (mesmo com parênteses) pelo overview.
+            # (2) acento transliterado (legislação->legislacao) p/ bater com o agents.yaml.
+            # (3) nomes FORA do elenco (inventados pelo laço de cobertura) mapeados ao roster
+            #     por similaridade — senão o app quebra (agente não definido).
+            import unicodedata as _ud
+
+            def _tl(s: str) -> str:
+                return _ud.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
+            _agid = re.match(r'^\s*(AG-\d+)', val)  # prefixo: aceita "AG-04 (...)"
             if _agid and agent_map.get(_agid.group(1)):
-                # "AG-02" puro -> resolve pelo overview p/ o nome snake_case real.
-                # agents.yaml usa a convenção <nome>_agent (sufixo) — aplica o MESMO
-                # sufixo aqui para as chaves casarem (ex.: legislacao_importer ->
-                # legislacao_importer_agent), senão o app quebra (agente não encontrado).
                 _snake = agent_map[_agid.group(1)]
-                if not _snake.endswith('_agent'):
-                    _snake = f"{_snake}_agent"
-                fields["agent_snake"] = _snake
-            elif paren:
-                human = paren.group(1).strip()
-                snake = re.sub(r'[^a-z0-9]+', '_', human.lower()).strip('_')
-                if snake and not snake.endswith('_agent'):
-                    snake = f"{snake}_agent"
-                fields["agent_snake"] = snake
             else:
-                # already snake_case? use as-is
-                fields["agent_snake"] = val
+                _pr = re.search(r'\(([^)]+)\)', val)
+                _snake = _tl(_pr.group(1) if _pr else val)
+            _snake = re.sub(r'[^a-z0-9_]+', '_', _tl(_snake).lower()).strip('_')
+            if _snake and not _snake.endswith('_agent'):
+                _snake = f"{_snake}_agent"
+            if roster and _snake and _snake not in roster:
+                import difflib as _dl
+                _c = _dl.get_close_matches(_snake, list(roster), n=1, cutoff=0.4)
+                if _c:
+                    _snake = _c[0]
+            fields["agent_snake"] = _snake
         elif key == "tools":
             fields["tools"] = val
         elif "input" in key and "schema" in key:
