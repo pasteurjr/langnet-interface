@@ -167,6 +167,30 @@ def _query_column_violations(tasks_yaml: str, dm_cols: Dict[str, Set[str]]) -> L
     return [x for x in viol if not (x in seen or seen.add(x))]
 
 
+def _query_join_violations(tasks_yaml: str) -> List:
+    """Query que referencia `alias.col` com o alias FORA do FROM/JOIN (ex.: spatial
+    ST_Intersects(a.geometria, i.geometria) com `i` = imoveis nunca juntado). O SQL
+    quebra no runtime ("missing FROM-clause entry for table i"). Determinístico."""
+    _KW = {"on", "where", "join", "left", "right", "inner", "outer", "cross", "full",
+           "group", "order", "limit", "having", "using", "and", "or", "as", "natural",
+           "select", "from", "set", "values", "into"}
+    viol = []
+    for q in re.findall(r'query="([^"]+)"', tasks_yaml or ""):
+        present = set()
+        for m in re.finditer(r'(?i)\b(?:FROM|JOIN)\s+["`]?(\w+)["`]?(?:\s+(?:AS\s+)?["`]?([a-zA-Z_]\w*)["`]?)?', q):
+            present.add(m.group(1).lower())
+            al = m.group(2)
+            if al and al.lower() not in _KW:
+                present.add(al.lower())
+        if not present:
+            continue
+        for al in set(re.findall(r'\b([a-zA-Z_]\w*)\.\w+', q)):
+            if al.lower() not in present and al.lower() not in _KW:
+                viol.append((al, q[:48]))
+    seen = set()
+    return [x for x in viol if not (x in seen or seen.add(x))]
+
+
 def complete_matrix(spec_md: str, requirements_md: str):
     """GARANTE deterministicamente que TODO FR tenha linha na matriz FR→UC. Para cada
     FR órfão (sem UC na matriz), mapeia ao UC de MAIOR sobreposição de palavras (grounded
@@ -270,8 +294,10 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
 
     # Salto 4b: task -> DM no nível de COLUNA (o SQL cita coluna que não existe no schema).
     col_violations = _query_column_violations(tasks_yaml, _dm_columns(schema_sql))
+    # Salto 4c: query referencia alias.col com o alias fora do FROM/JOIN (JOIN espacial faltante).
+    join_violations = _query_join_violations(tasks_yaml)
 
-    gate_pass = not (gap_spec or gap_nfr or gap_br or gap_impl or tbl_violations or stuffing or col_violations)
+    gate_pass = not (gap_spec or gap_nfr or gap_br or gap_impl or tbl_violations or stuffing or col_violations or join_violations)
     return {
         "inventory": {"FR": fr, "NFR": nfr, "BR": br, "UC_spec": _ids(spec_md, _UC)},
         "hops": {
@@ -283,6 +309,7 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
                            "gaps": [(f, titulo(f)) for f in gap_impl]},
             "task_to_DM": {"violations": tbl_violations},
             "task_to_DM_columns": {"violations": col_violations},
+            "task_query_joins": {"violations": join_violations},
             "task_stuffing": {"tasks": stuffing},
         },
         "gate_pass": gate_pass,
@@ -320,6 +347,9 @@ def format_report(res: Dict[str, Any]) -> str:
     L.append("  %-26s %s" % ("Task→DM (coluna)",
                              "OK" if not cv else "COLUNA INEXISTENTE: "
                              + ", ".join("%s.%s" % (t, c) for t, c in cv[:8])))
+    jv = h.get("task_query_joins", {}).get("violations") or []
+    L.append("  %-26s %s" % ("Task→DM (JOIN/FROM)",
+                             "OK" if not jv else "ALIAS FORA DO FROM: " + ", ".join(a for a, _ in jv[:8])))
     st = h.get("task_stuffing", {}).get("tasks") or []
     L.append("  %-26s %s" % ("Qualidade (FR por task)",
                              "OK" if not st else "STUFFING (task catch-all): "
