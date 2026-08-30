@@ -467,8 +467,17 @@ def build_single_task_prompt(
         example = ""
 
     schema_block = ""
-    if sub_schema and persistence:
-        schema_block = f"\n## SCHEMA REAL DAS TABELAS QUE ESTA TASK USA\n\n```sql\n{sub_schema}\n```\n"
+    if sub_schema:  # SEMPRE mostra o schema (inclusive p/ tasks só-SELECT) — senão o LLM
+        # inventa coluna que não existe (ex.: SELECT area_construida FROM imoveis, quando
+        # area_construida está em edificacoes) e o SQL quebra no runtime.
+        schema_block = (
+            f"\n## SCHEMA REAL DAS TABELAS QUE ESTA TASK USA\n\n```sql\n{sub_schema}\n```\n"
+            "🔴 FIDELIDADE DE COLUNA (OBRIGATÓRIO): use SOMENTE tabelas e colunas que EXISTEM no\n"
+            "schema acima. É PROIBIDO inventar coluna. Se a coluna que você precisa está em OUTRA\n"
+            "tabela, faça o JOIN correto pela FK (ex.: `area_construida`/`area_projecao`/`altura_total`\n"
+            "ficam em `edificacoes`, NÃO em `imoveis` — para calcular CA/TO, JOIN edificacoes ON\n"
+            "edificacoes.imovel_id = imoveis.id). Todo `SELECT col` tem de casar com o FROM/JOIN.\n"
+        )
 
     retry_block = ""
     if retry_hint:
