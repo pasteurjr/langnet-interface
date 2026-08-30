@@ -170,6 +170,7 @@ async def execute_tasks_yaml_generation(
                 )
             else:
                 tasks_yaml_content = "\n".join(chunks)
+                tasks_yaml_content = _sanitize_task_keys(tasks_yaml_content)
                 print(f"[TASKS_YAML] chunked OK: {stats['ok']} ok, {stats['retried']} retried, "
                       f"{stats['failed']} failed, {stats['with_sql']} with SQL")
 
@@ -212,6 +213,30 @@ async def execute_tasks_yaml_generation(
             "status": "failed",
             "generation_log": str(e)
         })
+
+
+def _sanitize_task_keys(yaml_text: str) -> str:
+    """Garante que TODA chave de task no topo seja um identificador YAML válido:
+    remove crases (`` `nome`: `` -> `nome:`), translitera acento e troca espaço/':' por '_'
+    (o `T-005-001: Edição...:` que invalidava o yaml.safe_load do ws-server). Só reescreve
+    linhas de chave que PRECISAM — não toca em valores indentados nem em chaves já limpas."""
+    import re as _re
+    import unicodedata as _ud
+    out = []
+    for ln in yaml_text.split("\n"):
+        if ln[:1] in (" ", "\t", "#", "-", ""):
+            out.append(ln)
+            continue
+        m = _re.match(r'^\s*`?\s*(.+?)\s*`?\s*:\s*$', ln)
+        if m:
+            raw = m.group(1)
+            key = _ud.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
+            key = _re.sub(r'[^A-Za-z0-9_]+', '_', key).strip('_').lower()
+            if key and ln.strip() != f"{key}:":
+                out.append(f"{key}:")
+                continue
+        out.append(ln)
+    return "\n".join(out)
 
 
 def _inject_traceability(chunk: str, task: dict) -> str:

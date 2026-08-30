@@ -4770,10 +4770,14 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
     query_re = _re.compile(r'query="([^"]+)"')
     params_re = _re.compile(r'params=\[([^\]]*)\]')
     capture_re = _re.compile(r'Guarde\b.*?\bem\s+(\w+)\b', _re.I)
-    arith_re = _re.compile(r'^\s*([a-z_]\w*)\s*=\s*([A-Za-z0-9_.\s()/*+\-]+?)\s*$')
+    # Fórmula pode vir em linha isolada OU embutida em prosa ("4. Calcular CA: ca=a/b.").
+    # Ancora no FIM da linha (aceita ponto final) e permite prefixo — casa os dois casos.
+    arith_re = _re.compile(r'\b([a-z_]\w*)\s*=\s*([A-Za-z0-9_.\s()/*+\-]+?)\s*\.?\s*$')
 
     def _is_arith(l):
-        m = arith_re.match(l)
+        if 'query=' in l or 'params=' in l or '%s' in l or '{' in l:
+            return None  # linha de SQL/params, não aritmética
+        m = arith_re.search(l)
         return m if (m and _re.search(r'[/*+\-]', m.group(2)) and not m.group(2).strip().isdigit()) else None
 
     has_arith = any(_is_arith(l) for l in raw)
@@ -6936,6 +6940,11 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Sem isso, o app assumia um banco pré-existente com o schema certo — se não batesse,
     # as telas ficavam vazias/erro. Agora o schema viaja com o código: db/schema.sql pode
     # ser rodado à mão OU inicializa o MySQL do docker-compose automaticamente.
+    # Sanea tipo geometry malformado que o refino do DM às vezes gera:
+    # geometry(Geometry(geometry,4674),4674) -> geometry(Geometry,4674). Senão o
+    # db/schema.sql nem roda no PostGIS ("type modifiers must be simple constants").
+    _schema_sql_cg = __import__('re').sub(
+        r'(?i)geometry\(\s*Geometry\([^)]*\)\s*,\s*(\d+)\s*\)', r'geometry(Geometry,\1)', _schema_sql_cg or "")
     if _schema_looks_real(_schema_sql_cg):
         _init_sql = (
             "-- Schema do banco gerado pelo LangNet — coerente com o código deste app.\n"
