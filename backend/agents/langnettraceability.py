@@ -174,14 +174,27 @@ def _query_join_violations(tasks_yaml: str) -> List:
     _KW = {"on", "where", "join", "left", "right", "inner", "outer", "cross", "full",
            "group", "order", "limit", "having", "using", "and", "or", "as", "natural",
            "select", "from", "set", "values", "into"}
+    def _add_tbl(present, item):
+        item = re.split(r'(?i)\bON\b', item.strip())[0].strip()  # tira "ON <cond>"
+        tm = re.match(r'["`]?(\w+)["`]?(?:\s+(?:AS\s+)?["`]?([a-zA-Z_]\w*)["`]?)?', item)
+        if tm:
+            present.add(tm.group(1).lower())
+            if tm.group(2) and tm.group(2).lower() not in _KW:
+                present.add(tm.group(2).lower())
+
     viol = []
     for q in re.findall(r'query="([^"]+)"', tasks_yaml or ""):
         present = set()
-        for m in re.finditer(r'(?i)\b(?:FROM|JOIN)\s+["`]?(\w+)["`]?(?:\s+(?:AS\s+)?["`]?([a-zA-Z_]\w*)["`]?)?', q):
+        # UPDATE/INTO
+        for m in re.finditer(r'(?i)\b(?:UPDATE|INTO)\s+["`]?(\w+)["`]?', q):
             present.add(m.group(1).lower())
-            al = m.group(2)
-            if al and al.lower() not in _KW:
-                present.add(al.lower())
+        # cláusula FROM ... (até WHERE/GROUP/ORDER/LIMIT/HAVING) — tabelas separadas por
+        # vírgula (cross join clássico `FROM a, b`) E por JOIN. Sem isso o portão dava
+        # falso-positivo em `FROM apps a, imoveis i` (achava `i` fora do FROM).
+        fm = re.search(r'(?is)\bFROM\b(.+?)(?:\bWHERE\b|\bGROUP\s+BY\b|\bORDER\s+BY\b|\bLIMIT\b|\bHAVING\b|$)', q)
+        if fm:
+            for part in re.split(r'(?i)(?:\b(?:INNER|LEFT|RIGHT|FULL|CROSS|OUTER|NATURAL)\b\s*)*\bJOIN\b|,', fm.group(1)):
+                _add_tbl(present, part)
         if not present:
             continue
         for al in set(re.findall(r'\b([a-zA-Z_]\w*)\.\w+', q)):
