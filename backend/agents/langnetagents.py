@@ -4888,7 +4888,10 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
 
     def _tparams(ps):
         out = []
+        _sqlnow = {"current_date", "current_timestamp", "current_time", "now()", "getdate()", "sysdate", "sysdate()"}
         for tok in _split_top_p(ps):
+            if tok.lower().strip() in _sqlnow:  # literal SQL de data como param bound → hoje
+                out.append("_hoje()"); continue
             mm = _re.match(r'^\{?([A-Za-z_][\w.]*)\}?$', tok)
             if mm and '{' not in tok[1:]:  # token simples {x}/x/x.y (não dict)
                 nm = mm.group(1); base = nm.split('.')[0]
@@ -5782,7 +5785,15 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
 
     parts = _split_top(params_str)
     py_parts: List[str] = []
+    _SQL_NOW = {"current_date", "current_timestamp", "current_time", "now()", "getdate()",
+                "sysdate", "sysdate()"}
     for p in parts:
+        # Literal SQL de data/hora usado como PARÂMETRO bound (ex.: `CURRENT_DATE`): não é
+        # input — vira valor de data Python, senão saía input_data.get('CURRENT_DATE')=None →
+        # viola NOT NULL (achado no E2E: mapas_versionados.valido_de).
+        if p.lower().strip() in _SQL_NOW:
+            py_parts.append("_hoje()")
+            continue
         # {{var}} (chave dupla, estilo template) → var local se capturada (ex.: campo extraído
         # de scenario_data), senão input direto. Sem isto saía como set-literal → NameError.
         m2 = _re.match(r'^\{\{(\w+)\}\}$', p)
