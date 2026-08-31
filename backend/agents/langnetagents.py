@@ -4858,9 +4858,17 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
                 rowvar = "_row_%d" % len(seq)
                 seq.append("cur.execute(%r, %s)" % (q, _tparams(ps)))
                 seq.append("%s = cur.fetchone() or {}" % rowvar)
+                _cols = _cols_from_select(q)
                 if cap:
-                    seq.append("%s = %s" % (cap, rowvar)); scalars.add(cap)
-                for col in _cols_from_select(q):
+                    # SELECT de 1 coluna só (ex.: COUNT(*) AS conflito_app) → a captura é o
+                    # ESCALAR, não a linha; senão passar {cap} como param vira RealDictRow
+                    # ("can't adapt type 'RealDictRow'"). Multi-coluna → captura a linha (dict).
+                    if len(_cols) == 1:
+                        seq.append("%s = %s.get('%s')" % (cap, rowvar, _cols[0]))
+                    else:
+                        seq.append("%s = %s" % (cap, rowvar))
+                    scalars.add(cap)
+                for col in _cols:
                     seq.append("%s = %s.get('%s')" % (col, rowvar, col)); scalars.add(col)
             else:
                 seq.append("cur.execute(%r, %s)" % (q, _tparams(ps)))
