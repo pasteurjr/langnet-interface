@@ -7,7 +7,7 @@ from pptx.util import Inches, Pt
 from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
 
 DECK_TITLE = "Engenharia de IA e Desenvolvimento de Software Orientado a Especificação"
-TOTAL = 68
+TOTAL = 70
 META = []
 
 def reg(n, block, title, minutes, acum, script, label=None):
@@ -111,37 +111,114 @@ def s4(prs):
 
 
 def s5(prs):
-    s = D._blank(prs); D.header(s, 1, "Bloco 1 · Linha do tempo", "Onde a IA já está na área de vocês")
-    colw = (D.SW-1.2-0.4)/2
-    b, t = D.panel(s, 0.6, 2.05, colw, 3.5, block=12 if False else 1)  # antes: cinza
-    D._rect(s, 0.6, 2.05, colw, 3.5, fill=D.FAM['slate'][2], rounded=True, radius=0.06)
-    D._rect(s, 0.6, 2.05, 0.12, 3.5, fill=D.FAM['slate'][0])
-    D._txt(s, 0.9, 2.2, colw-0.5, 0.5, [[("ANTES", {"size": 15, "bold": True, "color": D.FAM['slate'][0]})]])
-    D.bullets(s, [
-        (0, [("escores de risco tabulares e preditivos de sepse", "n")]),
-        (0, [("redes convolucionais (CNN) em imagem médica", "n")]),
-        (0, [("alertas disparados por ", "n"), ("regra fixa", "b")]),
-    ], x=0.9, y=2.85, w=colw-0.6, size=16, block=12 if False else 1)
-    x2 = 0.6+colw+0.4
-    D._rect(s, x2, 2.05, colw, 3.5, fill=D.FAM['violet'][2], rounded=True, radius=0.06)
-    D._rect(s, x2, 2.05, 0.12, 3.5, fill=D.FAM['violet'][0])
-    D._txt(s, x2+0.3, 2.2, colw-0.5, 0.5, [[("AGORA", {"size": 15, "bold": True, "color": D.FAM['violet'][0]})]])
-    D.bullets(s, [
-        (0, [("extração ", "b"), ("estruturada", "n"), (" de texto clínico livre", "n")]),
-        (0, [("critérios de caso sobre a ", "n"), ("evolução narrativa", "b"), (" do prontuário", "n")]),
-        (0, [("agentes com ferramentas sobre as ", "n"), ("bases hospitalares", "b")]),
-    ], x=x2+0.3, y=2.85, w=colw-0.6, size=16, block=1)
-    D.callout(s, 1, [("O que mudou foi o acesso ao ", {"size": 18, "color": D.INK}),
-                     ("texto livre do prontuário", {"size": 18, "bold": True, "color": D.FAM['violet'][0]}),
-                     (" — antes ilegível para a máquina, agora estruturável.", {"size": 18, "color": D.INK})],
-              y=5.75, h=1.0)
+    s = D._blank(prs); D.header(s, 1, "Bloco 1 · IA na área de vocês",
+                                "IA na saúde (1/3) — Prognóstico e avaliação de risco")
+    D._txt(s, 0.6, 1.95, D.SW-1.2, 0.55,
+           [[("Prognóstico = ", {"size": 14.5, "color": D.INK}),
+             ("prever o risco de um evento futuro", {"size": 14.5, "bold": True, "color": D.FAM['violet'][0]}),
+             (" (adoecer, agravar, morrer). A IA já fazia isto sobre tabelas; agora, lendo o ", {"size": 14.5, "color": D.INK}),
+             ("texto livre do prontuário", {"size": 14.5, "bold": True, "color": D.FAM['violet'][0]}),
+             (", passa a fazê-lo sobre a narrativa clínica.", {"size": 14.5, "color": D.INK})]])
+    D.table(s, 1, ["Algoritmo (nome por extenso)", "O que faz — para que serve", "Onde entra na infectologia (IRAS)"],
+            [["*Escore de Risco",
+              "Soma ponderada dos fatores do paciente e devolve um número que estima o risco.",
+              "Risco de infecção por paciente (sítio cirúrgico, corrente sanguínea) a partir de dispositivos, tempo de internação e comorbidades."],
+             ["*Regressão Logística",
+              "Traça a fronteira que separa 'o evento vai ocorrer' de 'não vai'.",
+              "Classificar quem tem alto risco de infectar e priorizar a vigilância ativa."],
+             ["*Análise de Sobrevivência",
+              "Modela o tempo até o evento e o risco instantâneo (função de perigo) ao longo do tempo.",
+              "Tempo até a infecção associada a dispositivo (por dia de cateter, sonda ou ventilador)."],
+             ["*Modelo de Perigos Proporcionais de Cox",
+              "Mede quanto cada fator multiplica o risco (ex.: fumar aumenta o risco em 9%).",
+              "Quanto cada fator (dias de dispositivo, UTI, idade) multiplica o risco — alvo dos pacotes de prevenção."],
+             ["*Índice de Concordância (C-Index)",
+              "Avalia se o escore de risco discrimina bem (0,5 = acaso; 1,0 = perfeito).",
+              "Validar se o escore de risco de infecção realmente separa quem vai infectar de quem não vai."]],
+            x=0.6, y=2.62, w=D.SW-1.2, fsize=12, header_fs=12.5)
     D.footer(s, 1, 5, TOTAL)
-    reg(5, 1, "Onde a IA já está na área de vocês", 0.5, 6.5,
-        "<b>Aterrisse no domínio da plateia — rápido, 30 s.</b> A IA já estava no hospital: escores de risco, "
-        "preditivos de sepse, redes convolucionais lendo raio-X, alertas por regra. O que mudou de qualidade "
-        "não foi 'ter IA' — foi passar a <b>ler o texto livre do prontuário</b>, que sempre foi a maior fonte de "
-        "informação clínica e a mais inacessível para a máquina. Diga a frase de fecho: 'o que mudou foi o "
-        "acesso ao texto livre' — e é isso que abre a porta para tudo que vem depois na palestra. <i>(~30 s)</i>")
+    reg(5, 1, "IA na saúde (1/3): Prognóstico e risco", 1.0, 7.0,
+        "<b>Primeira das três frentes — aterrisse no domínio da plateia.</b> Prognóstico é prever o risco de um "
+        "evento futuro. Apresente cada algoritmo pelo nome por extenso: o <b>Escore de Risco</b> soma fatores num "
+        "número; a <b>Regressão Logística</b> separa quem vai/não vai ter o evento; a <b>Análise de Sobrevivência</b> "
+        "olha o tempo até o evento; o <b>Modelo de Perigos Proporcionais de Cox</b> diz quanto cada fator multiplica "
+        "o risco; e o <b>Índice de Concordância</b> mede se o escore discrimina bem. Para eles: escore de risco de "
+        "IRAS por paciente, densidade de incidência por dia de dispositivo, e o alvo dos bundles. <i>(~1 min)</i>")
+
+
+def s5b(prs):
+    s = D._blank(prs); D.header(s, 1, "Bloco 1 · IA na área de vocês",
+                                "IA na saúde (2/3) — Diagnóstico de doenças")
+    D._txt(s, 0.6, 1.95, D.SW-1.2, 0.55,
+           [[("Diagnóstico = ", {"size": 14.5, "color": D.INK}),
+             ("dizer se a doença está presente agora", {"size": 14.5, "bold": True, "color": D.FAM['violet'][0]}),
+             (" — um problema de classificação, sobre imagens ou sobre exames.", {"size": 14.5, "color": D.INK})]])
+    D.table(s, 1, ["Algoritmo (nome por extenso)", "O que faz — para que serve", "Onde entra na infectologia (IRAS)"],
+            [["*Rede Neural Convolucional",
+              "Aprende padrões em imagens e classifica (ex.: COVID-19 em tomografia; achados em raio-X).",
+              "Ler raio-X / tomografia de pneumonia associada à ventilação; triagem automática de imagem."],
+             ["*Rede U-Net",
+              "Segmenta a imagem — delimita e mede a lesão ou a estrutura de interesse.",
+              "Localizar e medir consolidações pulmonares; segmentar o achado radiológico para acompanhar."],
+             ["*Florestas Aleatórias",
+              "Combina muitas árvores de decisão para classificar a partir de exames em tabela.",
+              "Prever multirresistência a partir do perfil do paciente e da microbiologia."],
+             ["*Máquinas de Vetores de Suporte",
+              "Separa as classes pela melhor fronteira possível entre os dados.",
+              "Classificar culturas (positiva/negativa, resistente/sensível) a partir dos exames."],
+             ["*K-Vizinhos Mais Próximos",
+              "Classifica um caso pelo que é mais parecido entre os casos vizinhos conhecidos.",
+              "Sugerir o patógeno provável por semelhança com casos anteriores da própria base."],
+             ["*Árvore de Decisão",
+              "Encadeia perguntas sobre os exames até chegar a uma conclusão — regras legíveis.",
+              "Materializar as definições de caso (encadeamento de critérios) de forma auditável."]],
+            x=0.6, y=2.52, w=D.SW-1.2, fsize=11.5, header_fs=12.5)
+    D.footer(s, 1, 6, TOTAL)
+    reg(6, 1, "IA na saúde (2/3): Diagnóstico", 1.0, 8.0,
+        "<b>Segunda frente — diagnóstico é decidir 'tem ou não tem' agora.</b> Sobre imagem, a estrela é a "
+        "<b>Rede Neural Convolucional</b> (o caso do PDF: COVID-19 em tomografia) e a <b>Rede U-Net</b>, que "
+        "segmenta e mede a lesão. Sobre exames em tabela: <b>Florestas Aleatórias</b>, <b>Máquinas de Vetores de "
+        "Suporte</b> e <b>K-Vizinhos Mais Próximos</b> classificam; a <b>Árvore de Decisão</b> dá regras legíveis. "
+        "Para eles: imagem de pneumonia associada à ventilação, previsão de multirresistência e leitura de "
+        "culturas — sempre com definição de caso auditável. <i>(~1 min)</i>")
+
+
+def s5c(prs):
+    s = D._blank(prs); D.header(s, 1, "Bloco 1 · IA na área de vocês",
+                                "IA na saúde (3/3) — Tratamento de doenças")
+    D._txt(s, 0.6, 1.95, D.SW-1.2, 0.55,
+           [[("Tratamento = ", {"size": 14.5, "color": D.INK}),
+             ("medir o efeito real de uma intervenção", {"size": 14.5, "bold": True, "color": D.FAM['violet'][0]}),
+             (" — o terreno da inferência causal, e não só da correlação.", {"size": 14.5, "color": D.INK})]])
+    D.table(s, 1, ["Algoritmo / método (nome por extenso)", "O que faz — para que serve", "Onde entra na infectologia (IRAS)"],
+            [["*Ensaio Clínico Randomizado",
+              "Aloca pacientes por sorteio em tratamento e controle e compara os desfechos.",
+              "Provar, sem viés, se um pacote de prevenção ou um protocolo reduz a taxa de infecção."],
+             ["*Redução de Risco Absoluta",
+              "Diferença entre o risco de quem recebeu o tratamento e o de quem não recebeu.",
+              "Quanto um bundle ou uma precaução reduz, em pontos, a taxa de infecção."],
+             ["*Inferência Causal (Modelo Causal de Neyman-Rubin)",
+              "Estima o efeito real de tratar comparando o resultado com e sem o tratamento.",
+              "Efeito real do controle de antimicrobianos (stewardship) sobre a resistência, controlando confundidores."],
+             ["*Efeito Médio do Tratamento",
+              "A média, na população, da diferença entre tratar e não tratar (ex.: vacina reduziu o risco em 0,2).",
+              "Efeito médio de uma política de higienização ou isolamento sobre a incidência de IRAS."]],
+            x=0.6, y=2.62, w=D.SW-1.2, fsize=12, header_fs=12.5)
+    D.callout(s, 1, [("Estes algoritmos já existem; o que muda no ", {"size": 15.5, "color": D.INK}),
+                     ("software de vocês", {"size": 15.5, "bold": True, "color": D.FAM['violet'][0]}),
+                     (" é rodá-los sobre o texto livre e mantê-los ", {"size": 15.5, "color": D.INK}),
+                     ("auditáveis e rastreáveis", {"size": 15.5, "bold": True, "color": D.FAM['violet'][0]}),
+                     (" — o diferencial em saúde.", {"size": 15.5, "color": D.INK})],
+              y=5.65, h=0.95)
+    D.footer(s, 1, 7, TOTAL)
+    reg(7, 1, "IA na saúde (3/3): Tratamento", 1.0, 9.0,
+        "<b>Terceira frente — tratamento é medir o efeito real de intervir.</b> O <b>Ensaio Clínico Randomizado</b> "
+        "sorteia tratamento e controle; a <b>Redução de Risco Absoluta</b> é a diferença de risco entre os grupos; "
+        "a <b>Inferência Causal (Modelo de Neyman-Rubin)</b> e o <b>Efeito Médio do Tratamento</b> estimam o efeito "
+        "real mesmo quando não dá para tratar e não-tratar a mesma pessoa. Para eles: provar que um bundle reduz "
+        "IRAS, e medir o efeito do stewardship de antimicrobianos na resistência. Feche com a frase: 'esses "
+        "algoritmos já existem — o que muda no nosso software é rodá-los sobre o texto livre e mantê-los "
+        "auditáveis'. <i>(~1 min)</i>")
 
 
 # ===================== BLOCO 2 — LLMs =====================
@@ -156,8 +233,8 @@ def s6(prs):
         ("O ponto de engenharia: a atenção é O(n²).",
          "Custo por token, tamanho da janela e toda a economia de contexto nascem dessa quadrática.", "warn"),
     ], x=6.9, y=2.05, w=D.SW-7.5, size=15.5)
-    D.footer(s, 2, 6, TOTAL)
-    reg(6, 2, "Anatomia do Transformer", 3.0, 9.5,
+    D.footer(s, 2, 8, TOTAL)
+    reg(8, 2, "Anatomia do Transformer", 3.0, 12,
         "<b>Único slide de arquitetura em que vale gastar 3 minutos — tudo depois é engenharia em cima desta "
         "caixa.</b> Suba o diagrama de baixo para cima: o texto vira <b>tokens</b> (pedaços de palavra), os "
         "tokens viram <b>embeddings</b> (vetores) com a posição codificada (RoPE, codificação posicional "
@@ -184,8 +261,8 @@ def s7(prs):
         ("A arquitetura de hoje: decoder-only, autorregressiva, objetivo único.",
          "Um só alvo de treino: prever o próximo token."),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 2, 7, TOTAL)
-    reg(7, 2, "Por que o Transformer venceu", 1.0, 10.5,
+    D.footer(s, 2, 9, TOTAL)
+    reg(9, 2, "Por que o Transformer venceu", 1.0, 13,
         "<b>Um minuto, uma ideia contraintuitiva.</b> A LSTM — a rede recorrente que dominava sequências — "
         "processa palavra por palavra, em ordem, então o treino é sequencial e não aproveita a placa de vídeo. "
         "A atenção olha todos os tokens ao mesmo tempo, então <b>paraleliza</b>. O Transformer não ganhou por "
@@ -210,8 +287,8 @@ def s8(prs):
         ("Deslocamento recente: do processamento no TREINO para o processamento na RESPOSTA.",
          "O modelo “pensa mais” na hora — volta idêntico no AI Co-Scientist (S62)."),
     ], x=0.6, y=2.05, size=16)
-    D.footer(s, 2, 8, TOTAL)
-    reg(8, 2, "Escala e o que emerge dela", 1.5, 12.0,
+    D.footer(s, 2, 10, TOTAL)
+    reg(10, 2, "Escala e o que emerge dela", 1.5, 14.5,
         "<b>90 segundos sobre o que a escala trouxe de graça.</b> As <b>leis de escala</b> são a descoberta de "
         "que o erro cai de forma previsível conforme você aumenta dados, parâmetros e capacidade de "
         "processamento — foi isso que justificou o investimento bilionário. Mas o salto conceitual de 2020 foi o "
@@ -231,8 +308,8 @@ def s9(prs):
                      ("Mixture of Experts", {"size": 15, "italic": True, "color": D.MUTED}),
                      (" (mistura de especialistas). Ex.: DeepSeek-V4-Pro tem 1,6 trilhão de parâmetros totais, mas só 49 bilhões ativos por token.",
                       {"size": 15, "color": D.INK})], y=5.9, h=0.85)
-    D.footer(s, 2, 9, TOTAL)
-    reg(9, 2, "MoE e arquiteturas esparsas", 1.5, 13.5,
+    D.footer(s, 2, 11, TOTAL)
+    reg(11, 2, "MoE e arquiteturas esparsas", 1.5, 16,
         "<b>90 segundos, e o ponto é prático, não teórico.</b> MoE — mistura de especialistas — é uma "
         "arquitetura onde um <b>roteador</b> escolhe, para cada token, apenas <b>k</b> especialistas de um total "
         "de <b>N</b>. Então o modelo tem duas contagens de parâmetros bem diferentes: os <b>totais</b> e os "
@@ -258,8 +335,8 @@ def s10(prs):
     D.callout(s, 2, [("Regra prática: ", {"size": 16, "bold": True, "color": D.FAM['sky'][0]}),
                      ("código e extração estruturada pedem temperatura baixa; exploração de hipóteses pede o contrário — gancho para o S62.",
                       {"size": 16, "color": D.INK})], y=5.85, h=0.9)
-    D.footer(s, 2, 10, TOTAL)
-    reg(10, 2, "Inferência: os parâmetros que importam", 1.5, 15.0,
+    D.footer(s, 2, 12, TOTAL)
+    reg(12, 2, "Inferência: os parâmetros que importam", 1.5, 17.5,
         "<b>90 segundos sobre os botões que vocês realmente vão girar.</b> A <b>temperatura</b> (e o top-p) "
         "controla se a amostragem é mais criativa ou mais determinística. Mostre o trecho de código: a mesma "
         "chamada com temperatura 0 e com temperatura 1 dá resultados diferentes — e a <b>regra prática</b> é o "
@@ -286,8 +363,8 @@ def s11(prs):
     D._txt(s, 0.6, 6.25, D.SW-1.2, 0.5,
            [[("SWE-bench Verified = teste de correção de bugs reais de software (%% de tarefas resolvidas).   ", {"size": 12.5, "italic": True, "color": D.MUTED}),
              ("Última verificação: __ / __ / ____", {"size": 12.5, "bold": True, "color": D.MUTED})]])
-    D.footer(s, 2, 11, TOTAL)
-    reg(11, 2, "Panorama: modelos proprietários", 1.0, 16.0,
+    D.footer(s, 2, 13, TOTAL)
+    reg(13, 2, "Panorama: modelos proprietários", 1.0, 18.5,
         "<b>Um minuto, e cuidado: este slide envelhece em semanas.</b> Mostre a fronteira dos modelos fechados "
         "em <b>SWE-bench Verified</b> — um teste que mede resolução de bugs reais de software, então é o mais "
         "relevante para dev. Os números de meados de 2026 põem GPT-5.6, Claude Fable 5 e Gemini 3.1 no topo. Mas "
@@ -320,8 +397,8 @@ def s12(prs):
          ("“pesos abertos” ≠ “código aberto”. MIT e Apache-2.0 são livres; a licença do MiniMax é não comercial por padrão.   ·   Última verificação: __/__/____",
           {"size": 13, "color": D.INK})],
     ], anchor=MSO_ANCHOR.MIDDLE, space_after=7)
-    D.footer(s, 2, 12, TOTAL)
-    reg(12, 2, "Panorama: modelos abertos para código", 2.5, 18.5,
+    D.footer(s, 2, 14, TOTAL)
+    reg(14, 2, "Panorama: modelos abertos para código", 2.5, 21,
         "<b>É o slide que a plateia mais vai fotografar — dê tempo (2,5 min) e estrutura.</b> Primeiro leia a "
         "tabela em diagonal: modelos gigantes de nuvem no topo (Kimi K3, DeepSeek-V4-Pro), e desça até a linha "
         "que interessa a quem hospeda: <b>Qwen3.8-27B</b>. Agora o 'slide dentro do slide': este modelo, denso "
@@ -352,8 +429,8 @@ def s13(prs):
     D.callout(s, 2, [("Contexto menor e curado supera contexto grande e velho. ", {"size": 15.5, "bold": True, "color": D.FAM['sky'][0]}),
                      ("Pior em domínio regulado: quando a janela estoura, o modelo corta em silêncio — sem registro do que se perdeu.",
                       {"size": 15, "color": D.INK})], y=6.55, h=0.7, kind="warn")
-    D.footer(s, 2, 13, TOTAL)
-    reg(13, 2, "Contexto longo: o número anunciado é o menos útil", 2.0, 20.5,
+    D.footer(s, 2, 15, TOTAL)
+    reg(15, 2, "Contexto longo: o número anunciado é o menos útil", 2.0, 23,
         "<b>Dois minutos que fecham o bloco de LLMs e derrubam um mito de marketing.</b> Todo fabricante anuncia "
         "janelas gigantes — 1 milhão, 10 milhões de tokens. Diga a verdade incômoda: esse número é o <b>menos "
         "útil</b> da ficha técnica. Existe um fenômeno medido, a <b>degradação do contexto</b> (context rot): a "
@@ -377,8 +454,8 @@ def s14(prs):
         ("Frameworks → especificação + verificação.", "É o degrau de agora. A mesma objeção — “não dá para confiar” — e a mesma resposta: uma verificação nova."),
         ("O padrão nunca muda.", "Cada degrau sobe o nível do que você escreve — e só se firma quando ganha a sua camada de verificação automática.", "good"),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 3, 14, TOTAL)
-    reg(14, 3, "A escada de abstração", 1.0, 21.5,
+    D.footer(s, 3, 16, TOTAL)
+    reg(16, 3, "A escada de abstração", 1.0, 24,
         "<b>Um minuto para desarmar o ceticismo com história.</b> Toda subida de abstração enfrentou a mesma "
         "objeção e venceu do mesmo jeito. Do assembly para a linguagem de alto nível, diziam 'vai gerar código "
         "ruim' — e o <b>compilador</b> resolveu. Da linguagem para os frameworks, diziam 'esconde o que importa' "
@@ -414,8 +491,8 @@ def s15(prs):
                      ("falta de especificação", {"size": 17, "bold": True, "color": D.FAM['rose'][0]}),
                      (".   Custo típico: 50 mil a 500 mil tokens por tarefa; o português gasta ~1,5× mais tokens que o inglês.",
                       {"size": 15, "color": D.INK})], y=5.65, h=1.0)
-    D.footer(s, 3, 15, TOTAL)
-    reg(15, 3, "O que a IA faz bem e mal, e quanto custa", 1.0, 22.5,
+    D.footer(s, 3, 17, TOTAL)
+    reg(17, 3, "O que a IA faz bem e mal, e quanto custa", 1.0, 25,
         "<b>Um minuto, e o fecho é o gancho da palestra inteira.</b> A IA é ótima no que está <b>bem "
         "especificado</b>: gerar código de um problema bem descrito, traduzir entre representações, escrever "
         "testes a partir de critérios explícitos, refatorar. E é ruim exatamente onde <b>falta especificação</b>: "
@@ -446,8 +523,8 @@ def s16(prs):
         x += ww
     D._txt(s, 0.6, 5.35, W, 0.4, [[("A “janela de contexto”: um orçamento fixo a ser gasto com disciplina.",
            {"size": 14, "italic": True, "color": D.MUTED})]], align=PP_ALIGN.CENTER)
-    D.footer(s, 4, 16, TOTAL)
-    reg(16, 4, "De prompt para contexto", 0.5, 23.0,
+    D.footer(s, 4, 18, TOTAL)
+    reg(18, 4, "De prompt para contexto", 0.5, 25.5,
         "<b>30 segundos para reposicionar o trabalho.</b> Com o S13 fresco na cabeça, diga: o ofício deixou de "
         "ser 'achar o prompt mágico' e virou <b>engenharia de contexto</b> — decidir, com disciplina, o que "
         "entra na janela. Mostre a barra: a janela é um <b>orçamento fixo</b> dividido entre instruções, "
@@ -458,8 +535,8 @@ def s16(prs):
 def s17(prs):
     s = D._blank(prs); D.header(s, 4, "Bloco 4 · Contexto e RAG", "RAG: como funciona, e onde quebra")
     D.image_center(s, os.path.join("diagrams", "s17_rag.png"), x=0.5, y=1.95, w=D.SW-1.0, h=D.SH-2.45, block=4)
-    D.footer(s, 4, 17, TOTAL)
-    reg(17, 4, "RAG: o diagrama", 2.5, 25.5,
+    D.footer(s, 4, 19, TOTAL)
+    reg(19, 4, "RAG: o diagrama", 2.5, 28,
         "<b>Dois minutos e meio no diagrama — é o slide técnico central do bloco.</b> RAG significa geração "
         "aumentada por recuperação (Retrieval-Augmented Generation): em vez de o modelo 'saber' tudo, você "
         "<b>busca os trechos certos e os entrega no contexto</b>. São dois trilhos. O de cima, a <b>ingestão</b>, "
@@ -479,8 +556,8 @@ def s18(prs):
         ("Em pedaços de 512 tokens, o laboratorial se separa da janela.", "A recuperação devolve metade da regra; o modelo completa o resto sozinho — e notifica um FALSO POSITIVO.", "warn"),
         ("A correção: fatiar pela unidade lógica, não por tamanho fixo.", "Chunking semântico pela regra inteira + metadados por tipo de infecção + expansão de janela ao redor do trecho.", "good"),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 4, 18, TOTAL)
-    reg(18, 4, "Chunking ingênuo destrói um critério de IRAS", 1.5, 27.0,
+    D.footer(s, 4, 20, TOTAL)
+    reg(20, 4, "Chunking ingênuo destrói um critério de IRAS", 1.5, 29.5,
         "<b>90 segundos com um exemplo do domínio deles — é o que faz o conceito grudar.</b> Pegue um critério "
         "de definição de caso da vigilância — a sigla ICSAC, os critérios que definem quando uma infecção conta "
         "como caso. O enunciado tem três parágrafos: o <b>critério clínico</b>, o <b>critério laboratorial</b> e "
@@ -501,8 +578,8 @@ def s19(prs):
         ("Todo booleano vem com a evidência citada.", "Sem o trecho literal não há revisão humana viável nem trilha de auditoria.", "good"),
         ("Não peça parecer. Peça formulário preenchido.", "“Formulário com evidência citada”, não “texto livre opinando”.", "warn"),
     ], x=6.95, y=2.1, w=D.SW-7.55, size=15.5)
-    D.footer(s, 4, 19, TOTAL)
-    reg(19, 4, "Saída estruturada como contrato", 2.0, 29.0,
+    D.footer(s, 4, 21, TOTAL)
+    reg(21, 4, "Saída estruturada como contrato", 2.0, 31.5,
         "<b>Dois minutos — e é uma das ideias mais acionáveis da palestra.</b> Mostre o esquema (schema) na "
         "esquerda: para cada critério de IRAS extraído do texto livre, o modelo devolve quatro campos — se o "
         "critério foi <b>atendido</b> (booleano), o <b>trecho literal</b> do prontuário que justifica, a "
@@ -525,8 +602,8 @@ def s20(prs):
     D.callout(s, 4, [("Acurácia agregada é inútil aqui: ", {"size": 15.5, "bold": True, "color": D.FAM['emerald'][0]}),
                      ("falso negativo e falso positivo têm custos assimétricos e diferentes por infecção. Guardrails: menor privilégio, anonimizar antes de sair, e cuidado com injeção vinda do próprio prontuário (LGPD).",
                       {"size": 14.5, "color": D.INK})], y=5.2, h=1.15)
-    D.footer(s, 4, 20, TOTAL)
-    reg(20, 4, "Avaliação e guardrails", 1.5, 30.5,
+    D.footer(s, 4, 22, TOTAL)
+    reg(22, 4, "Avaliação e guardrails", 1.5, 33,
         "<b>90 segundos — e este slide é a recomendação nº 1 do fechamento, então dê peso.</b> A primeira coisa: "
         "acurácia agregada é <b>inútil</b> em IRAS, porque um falso negativo (deixar passar uma infecção) e um "
         "falso positivo (notificar à toa) têm custos <b>assimétricos</b> e diferentes por tipo de infecção. "
@@ -562,8 +639,8 @@ def s21(prs):
     D.callout(s, 5, [("Eixo da autonomia: ", {"size": 15.5, "bold": True, "color": D.FAM['amber'][0]}),
                      ("da esquerda para a direita, mais poder e mais risco. Autonomia é custo, não virtude — escolha o mínimo que resolve.",
                       {"size": 15, "color": D.INK})], y=5.85, h=0.85)
-    D.footer(s, 5, 21, TOTAL)
-    reg(21, 5, "Definição operacional", 1.5, 32.0,
+    D.footer(s, 5, 23, TOTAL)
+    reg(23, 5, "Definição operacional", 1.5, 34.5,
         "<b>90 segundos para tirar o misticismo da palavra 'agente'.</b> Leia a definição operacional, devagar: "
         "<b>um modelo em laço, com ferramentas, sobre um ambiente, com critério de parada</b>. Só isso. E diga o "
         "que <b>não</b> é agente: um fluxo de caminho fixo com o modelo em alguns nós — isso é um <i>workflow</i>, "
@@ -576,8 +653,8 @@ def s21(prs):
 def s22b(prs):
     s = D._blank(prs); D.header(s, 5, "Bloco 5 · Agentes", "O laço agêntico")
     D.image_center(s, os.path.join("diagrams", "s22_loop.png"), x=0.6, y=1.95, w=D.SW-1.2, h=D.SH-2.45, block=5)
-    D.footer(s, 5, 22, TOTAL)
-    reg(22, 5, "O laço agêntico", 2.0, 34.0,
+    D.footer(s, 5, 24, TOTAL)
+    reg(24, 5, "O laço agêntico", 2.0, 36.5,
         "<b>Dois minutos no ciclo — é o coração do bloco.</b> Percorra o laço: parte de um <b>objetivo</b>, o "
         "modelo <b>raciocina</b> sobre o que fazer, executa uma <b>ação</b> (chama uma ferramenta), recebe uma "
         "<b>observação</b> do ambiente, e <b>repete</b> até bater o critério de parada — aí devolve a resposta. É "
@@ -596,8 +673,8 @@ def s23(prs):
         ("O laço agêntico tem trinta linhas.", "Tudo que vem depois — os frameworks do Bloco 7 — é conveniência, não mágica."),
         ("A descrição da ferramenta É prompt.", "Descrição ruim de ferramenta causa mais falha do que prompt de sistema ruim.", "warn"),
     ], x=7.45, y=2.1, w=D.SW-8.05, size=16)
-    D.footer(s, 5, 23, TOTAL)
-    reg(23, 5, "Tool use sem framework", 3.0, 37.0,
+    D.footer(s, 5, 25, TOTAL)
+    reg(25, 5, "Tool use sem framework", 3.0, 39.5,
         "<b>Três minutos, e é o slide que dá confiança técnica à plateia sênior.</b> Mostre que 'usar "
         "ferramentas' (tool use) não tem mágica nenhuma. Quatro passos: (1) você <b>descreve</b> a ferramenta "
         "num esquema — nome e parâmetros — por exemplo <i>consultar_microbiologia(paciente_id, janela_dias)</i>; "
@@ -617,8 +694,8 @@ def s24(prs):
         ("Reflexão.", "Criticar o próprio resultado e tentar de novo."),
         ("Memória longa em arquivo versionado costuma superar a vetorial em regras estáveis.", "É auditável e comparável em diff — gancho direto para o formato OKF do S31.", "good"),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 5, 24, TOTAL)
-    reg(24, 5, "Componentes", 0.5, 37.5,
+    D.footer(s, 5, 26, TOTAL)
+    reg(26, 5, "Componentes", 0.5, 40,
         "<b>30 segundos, rápido.</b> Um agente combina: <b>memória curta</b> (a conversa atual) e <b>longa</b> "
         "(o que persiste entre execuções), <b>planejamento</b> (quebrar em passos) e <b>reflexão</b> (criticar o "
         "próprio trabalho). Deixe um gancho para depois: para <b>regras estáveis</b> — como os critérios de IRAS "
@@ -629,8 +706,8 @@ def s24(prs):
 def s25(prs):
     s = D._blank(prs); D.header(s, 5, "Bloco 5 · Agentes", "Os seis padrões de composição")
     D.image_center(s, os.path.join("diagrams", "s25_patterns.png"), x=0.5, y=1.95, w=D.SW-1.0, h=D.SH-2.45, block=5)
-    D.footer(s, 5, 25, TOTAL)
-    reg(25, 5, "Os seis padrões de composição", 3.0, 40.5,
+    D.footer(s, 5, 27, TOTAL)
+    reg(27, 5, "Os seis padrões de composição", 3.0, 43,
         "<b>Três minutos — é o catálogo que a plateia vai querer fotografar.</b> São seis maneiras de compor "
         "agentes, da mais simples à mais arriscada: <b>encadeamento</b> (a saída de um vira a entrada do "
         "próximo), <b>roteamento</b> (classifica e manda ao especialista certo), <b>paralelização</b> (secciona "
@@ -658,8 +735,8 @@ def s26(prs):
                align=PP_ALIGN.CENTER, anchor=MSO_ANCHOR.MIDDLE)
         D._txt(s, x+0.25, 3.95, cw-0.5, 2.2, [[(desc, {"size": 14.5, "color": D.INK})]], line_spacing=1.15)
         x += cw + 0.3
-    D.footer(s, 5, 26, TOTAL)
-    reg(26, 5, "O mesmo caso de três formas", 2.0, 42.5,
+    D.footer(s, 5, 28, TOTAL)
+    reg(28, 5, "O mesmo caso de três formas", 2.0, 45,
         "<b>Dois minutos, e é onde a teoria vira decisão de arquitetura.</b> Fixe um caso concreto: um "
         "<b>agente de vigilância de IRAS</b> que varre microbiologia, prescrição e evolução clínica, aplica os "
         "critérios de caso, propõe a notificação e <b>para em revisão humana</b> (nunca notifica sozinho). Agora "
@@ -677,8 +754,8 @@ def s27(prs):
         ("Em fluxo linear: 4 a 15× mais tokens para reimplementar um “if”.", "Vários agentes conversando para decidir o que um condicional resolveria.", "warn"),
         ("A passagem de contexto entre agentes é “lossy”.", "Cada repasse perde informação — como fotocópia de fotocópia."),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 5, 27, TOTAL)
-    reg(27, 5, "Multiagente: quando compensa", 0.5, 43.0,
+    D.footer(s, 5, 29, TOTAL)
+    reg(29, 5, "Multiagente: quando compensa", 0.5, 45.5,
         "<b>30 segundos de contrapeso, importante.</b> Depois de mostrar o poder do multiagente, segure o "
         "entusiasmo: ele <b>só compensa</b> quando há subtarefas de fato paralelizáveis <b>e</b> contextos que "
         "podem ficar isolados. Num fluxo linear, montar vários agentes custa de 4 a 15 vezes mais tokens para "
@@ -695,8 +772,8 @@ def s28(prs):
         ("Modos de falha:", "laço infinito, ferramenta alucinada, contexto contaminado, custo imprevisto — e o pior, a FALHA SILENCIOSA.", "warn"),
         ("A saída não é “prompt melhor”.", "É reduzir o número de passos NÃO verificados. Guardem esta frase para o Bloco 9.", "good"),
     ], x=8.0, y=2.05, w=D.SW-8.6, size=15)
-    D.footer(s, 5, 28, TOTAL)
-    reg(28, 5, "Por que agentes falham em produção", 1.5, 44.5,
+    D.footer(s, 5, 30, TOTAL)
+    reg(30, 5, "Por que agentes falham em produção", 1.5, 47,
         "<b>90 segundos, e este é o slide que arma o núcleo da palestra (o Bloco 9).</b> A causa raiz é "
         "matemática: o <b>erro composto</b>. Mostre a curva — se cada passo acerta 95% das vezes, vinte passos "
         "em sequência dão só <b>36% de sucesso</b> fim a fim, porque as probabilidades se multiplicam. Aponte as "
@@ -712,8 +789,8 @@ def s28(prs):
 def s29(prs):
     s = D._blank(prs); D.header(s, 6, "Bloco 6 · Protocolos", "O mapa: vertical (MCP) × horizontal (A2A)")
     D.image_center(s, os.path.join("diagrams", "s29_protocols.png"), x=0.5, y=1.95, w=D.SW-1.0, h=D.SH-2.45, block=6)
-    D.footer(s, 6, 29, TOTAL)
-    reg(29, 6, "O mapa: vertical × horizontal", 2.0, 46.5,
+    D.footer(s, 6, 31, TOTAL)
+    reg(31, 6, "O mapa: vertical × horizontal", 2.0, 49,
         "<b>Dois minutos, e a analogia final é o que fica.</b> Dois protocolos abertos organizam o ecossistema. "
         "O <b>MCP</b> (Protocolo de Contexto de Modelo, da Anthropic) é o eixo <b>vertical</b>: liga o agente às "
         "suas <b>ferramentas</b> — servidores que expõem Tools, Resources e Prompts. O limite dele: é "
@@ -732,8 +809,8 @@ def s30(prs):
         ("Alternativas: ACP (IBM) e ANP.", "ACP herda a tradição FIPA-ACL com performativas tipadas; ANP aposta em identidade descentralizada."),
         ("A crítica que dá valor ao slide: nenhum protocolo expressa GOVERNANÇA.", "Registram quem chamou quem — não sob qual política nem com que base legal. Em saúde, essa camada sobra para VOCÊS.", "warn"),
     ], x=0.6, y=2.05, size=16)
-    D.footer(s, 6, 30, TOTAL)
-    reg(30, 6, "A2Family e alternativas", 1.5, 48.0,
+    D.footer(s, 6, 32, TOTAL)
+    reg(32, 6, "A2Family e alternativas", 1.5, 50.5,
         "<b>90 segundos, e o remate é o gancho comercial.</b> Em volta do A2A cresceu uma família: extensões "
         "oficiais (passaporte seguro, carimbo de tempo, rastreabilidade, portão de agentes) e protocolos "
         "irmãos — AP2 para pagamentos iniciados por agente, UCP para comércio com consentimento criptográfico, "
@@ -764,8 +841,8 @@ def s31(prs):
         [("metade do que uma auditoria já pede.", {"size": 14, "bold": True, "color": D.FAM['rose'][0]})],
         [("Ressalva: é v0.1 — padroniza o contêiner, não a semântica clínica.", {"size": 12.5, "italic": True, "color": D.WARN})],
     ], anchor=MSO_ANCHOR.TOP, space_after=8, line_spacing=1.12)
-    D.footer(s, 6, 31, TOTAL)
-    reg(31, 6, "OKF: Open Knowledge Format", 2.0, 50.0,
+    D.footer(s, 6, 33, TOTAL)
+    reg(33, 6, "OKF: Open Knowledge Format", 2.0, 52.5,
         "<b>Dois minutos num formato simples que resolve um problema real de vocês.</b> Enquanto os protocolos "
         "definem <b>comunicação</b>, o OKF (Formato Aberto de Conhecimento, do Google Cloud) define "
         "<b>conhecimento</b> — e a especificação inteira cabe em cinco regras. Leia as cinco na tela: um pacote é "
@@ -789,8 +866,8 @@ def s32(prs):
         ("Agent Skills.", "Capacidade empacotada como uma pasta com um arquivo markdown, com registros públicos."),
         ("O padrão por trás dos três: markdown versionado no repositório.", "A única coisa que humano e máquina leem, que o git versiona e que o revisor audita num diff.", "good"),
     ], x=0.6, y=2.05, size=16)
-    D.footer(s, 6, 32, TOTAL)
-    reg(32, 6, "Os outros formatos em markdown", 1.0, 51.0,
+    D.footer(s, 6, 34, TOTAL)
+    reg(34, 6, "Os outros formatos em markdown", 1.0, 53.5,
         "<b>Um minuto para revelar um padrão maior.</b> Além do OKF, três formatos viraram convenção: o "
         "<b>AGENTS.md</b>, que dá ao agente o contexto do projeto (como buildar, como testar, as convenções); o "
         "<b>DESIGN.md</b>, para identidade visual; e as <b>Agent Skills</b>, capacidades empacotadas como pasta "
@@ -817,8 +894,8 @@ def s33(prs):
     D.callout(s, 6, [("São a MESMA ideia em escopos diferentes: ", {"size": 17, "bold": True, "color": D.FAM['rose'][0]}),
                      ("conhecimento formalizado em markdown versionado, consumido por agente e revisável por humano. Os três convivem no mesmo repositório — e é isso que constrói a rastreabilidade (guardem para o S49).",
                       {"size": 15, "color": D.INK})], y=5.0, h=1.3)
-    D.footer(s, 6, 33, TOTAL)
-    reg(33, 6, "A ponte para o SDD", 1.0, 52.0,
+    D.footer(s, 6, 35, TOTAL)
+    reg(35, 6, "A ponte para o SDD", 1.0, 54.5,
         "<b>Um minuto que costura o bloco todo e abre o núcleo da palestra.</b> Mostre os três lado a lado e diga "
         "que são a <b>mesma ideia</b> em escopos diferentes: a <b>especificação</b> do SDD descreve <i>o que</i> "
         "o sistema deve fazer; o <b>AGENTS.md</b> descreve <i>como</i> se trabalha no repositório; o <b>pacote "
@@ -857,8 +934,8 @@ def s34(prs):
         ("O mesmo agente do S26 aparece nos cinco.", "Para comparar o custo da abstração — não a sintaxe."),
         ("Frameworks não são mágica; são conveniência sobre o laço de 30 linhas do S23.", "A pergunta certa não é “qual é mais bonito”, é “o que ele assume por você e o que ele esconde”.", "good"),
     ], x=0.6, y=4.0, size=16.5)
-    D.footer(s, 7, 34, TOTAL)
-    reg(34, 7, "Critério de leitura", 0.5, 57.5,
+    D.footer(s, 7, 36, TOTAL)
+    reg(36, 7, "Critério de leitura", 0.5, 60,
         "<b>30 segundos para dar à plateia uma lente única.</b> Em vez de decorar a interface de programação (a "
         "API) de cada framework, façam a mesma pergunta a todos: <b>o que este framework controla por mim — o "
         "laço, o estado, ou nenhum dos dois?</b> Avise que você vai usar o <b>mesmo agente do S26</b> nos cinco, "
@@ -876,8 +953,8 @@ def s35(prs):
     ], x=0.6, y=2.05, w=6.5, size=16)
     D.code_block(s, "# triagem -> especialista por infecção\ntriagem = Agent(\n  name=\"triagem\",\n  handoffs=[uti_agent,\n           cirurgia_agent])\n# o SDK cuida do laço e do repasse",
                  x=7.25, y=2.05, w=D.SW-7.85, size=13)
-    D.footer(s, 7, 35, TOTAL)
-    reg(35, 7, "OpenAI Agents SDK", 2.0, 59.5,
+    D.footer(s, 7, 37, TOTAL)
+    reg(37, 7, "OpenAI Agents SDK", 2.0, 62,
         "<b>Dois minutos.</b> O SDK de Agentes da OpenAI dá quatro peças: <b>Agent</b>, <b>handoffs</b> (o "
         "repasse de uma conversa para um agente especialista), <b>guardrails</b> (proteções) e <b>sessions</b> "
         "(sessões), com rastreamento embutido. Mostre o trecho: uma triagem que faz <i>handoff</i> para o "
@@ -893,8 +970,8 @@ def s36(prs):
         ("Sistema de permissões + MCP nativo + modo headless.", "Controle fino do que o agente pode fazer, e execução sem interface para rodar em CI."),
         ("Diferencial: projetado em torno de CÓDIGO e ARQUIVOS, não de conversa.", "É o mais relevante para o Bloco 9 (o SDD roda sobre arquivos versionados).", "good"),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 7, 36, TOTAL)
-    reg(36, 7, "Anthropic Claude Agent SDK", 2.0, 61.5,
+    D.footer(s, 7, 38, TOTAL)
+    reg(38, 7, "Anthropic Claude Agent SDK", 2.0, 64,
         "<b>Dois minutos.</b> O SDK de Agente da Anthropic é o próprio laço do Claude Code exposto como "
         "biblioteca: <b>busca agêntica no sistema de arquivos sem indexação prévia</b> (ele explora o "
         "repositório na hora), <b>subagentes</b> com contexto isolado, <b>hooks</b> (ganchos para rodar "
@@ -912,8 +989,8 @@ def s37(prs):
         ("Estado durável (checkpointer) + parada para aprovação (interrupt).", "Nativos — e decisivos aqui."),
         ("Para IRAS: a notificação NÃO sai sem aprovação, e o processo sobrevive a reinício.", "", "good"),
     ], x=8.15, y=2.05, w=D.SW-8.75, size=15)
-    D.footer(s, 7, 37, TOTAL)
-    reg(37, 7, "LangChain e LangGraph", 2.0, 63.5,
+    D.footer(s, 7, 39, TOTAL)
+    reg(39, 7, "LangChain e LangGraph", 2.0, 66,
         "<b>Dois minutos, e é o framework que mais importa para software regulado.</b> Separe as duas coisas: o "
         "<b>LangChain</b> é uma biblioteca para compor componentes; o <b>LangGraph</b> é uma <b>máquina de "
         "estados</b>. Mostre o grafo: nós (coletar evidência, avaliar critério), <b>arestas condicionais</b> "
@@ -932,8 +1009,8 @@ def s38(prs):
         ("Onde dói: a metáfora de papéis ESCONDE o laço.", "Quando falha, você depura uma abstração, não uma sequência de chamadas. Estado e durabilidade fracos vs. LangGraph.", "warn"),
         ("Veredito: ótimo para levantar um piloto numa tarde.", "Pense duas vezes antes de pôr em produção regulada. (É o framework do nosso LangNet — Bloco 11.)", "good"),
     ], x=0.6, y=2.05, size=15.5)
-    D.footer(s, 7, 38, TOTAL)
-    reg(38, 7, "CrewAI", 2.0, 65.5,
+    D.footer(s, 7, 40, TOTAL)
+    reg(40, 7, "CrewAI", 2.0, 68,
         "<b>Dois minutos, com honestidade — é o framework que o nosso LangNet usa.</b> O modelo mental do CrewAI "
         "é uma <b>organização</b>, não um grafo: cada <i>Agent</i> tem papel, objetivo e história; cada "
         "<i>Task</i> tem uma saída esperada; a <i>Crew</i> reúne os agentes; o <i>Process</i> é sequencial ou "
@@ -954,8 +1031,8 @@ def s39(prs):
         ("Onde brilha: exploração e pesquisa, caminho não conhecido de antemão.", "É o parente mais próximo do AI Co-Scientist (S62)."),
         ("Onde dói: comportamento emergente — a conversa pode divergir e gastar tokens sem convergir.", "E cuidado com a linhagem: Microsoft × fork comunitário AG2, exemplos incompatíveis.", "warn"),
     ], x=0.6, y=2.05, size=15.5)
-    D.footer(s, 7, 39, TOTAL)
-    reg(39, 7, "AutoGen / AG2", 2.0, 67.5,
+    D.footer(s, 7, 41, TOTAL)
+    reg(41, 7, "AutoGen / AG2", 2.0, 70,
         "<b>Dois minutos — o mais interessante e o mais arriscado.</b> O modelo mental do AutoGen é uma "
         "<b>conversa entre agentes</b>: a unidade é o <i>ConversableAgent</i>, um <i>GroupChat</i> tem um gerente "
         "que decide quem fala em seguida, há um ponto de entrada humano e um <b>executor de código</b> embutido "
@@ -983,8 +1060,8 @@ def s40(prs):
     D.callout(s, 7, [("A opinião contrária: ", {"size": 16, "bold": True, "color": D.WARN}),
                      ("para uns 70% dos casos, o laço direto é mais simples de depurar. Framework se justifica por durabilidade, observabilidade e humano-no-laço — não por elegância. “Não adotem framework antes de ter o eval do S20.”",
                       {"size": 15, "color": D.INK})], y=5.6, h=1.1, kind="warn")
-    D.footer(s, 7, 40, TOTAL)
-    reg(40, 7, "Tabela comparativa e a opinião contrária", 1.5, 69.0,
+    D.footer(s, 7, 42, TOTAL)
+    reg(42, 7, "Tabela comparativa e a opinião contrária", 1.5, 71.5,
         "<b>90 segundos — leia em voz alta só a última coluna da tabela.</b> Passe o olho pelas linhas, mas "
         "leia mesmo só o <b>caso ideal</b> de cada um: OpenAI SDK para quem vive no ecossistema deles; Claude "
         "Agent SDK para código e arquivos; <b>LangGraph para produção regulada</b> (durável, humano-no-laço "
@@ -1004,8 +1081,8 @@ def s41(prs):
     D.cards(s, 8, [
         ("A revisão passa a ser de um diff inteiro, não de uma sugestão de linha.", "Isso muda o code review do time — e é uma mudança de processo, não de ferramenta.", "warn"),
     ], x=0.6, y=4.1, size=17, ch=1.1)
-    D.footer(s, 8, 41, TOTAL)
-    reg(41, 8, "Mudança de unidade de trabalho", 1.0, 70.0,
+    D.footer(s, 8, 43, TOTAL)
+    reg(43, 8, "Mudança de unidade de trabalho", 1.0, 72.5,
         "<b>Um minuto de enquadramento.</b> Os ambientes agênticos de código mudaram a <b>unidade de "
         "trabalho</b>: saímos do autocompletar de uma linha para a <b>tarefa sobre o repositório inteiro</b> — "
         "'implemente este requisito', não 'complete esta linha'. A consequência prática, e é de processo: a "
@@ -1020,8 +1097,8 @@ def s42(prs):
         ("CLAUDE.md, subagentes, skills, MCP, modo headless para CI.", "O contexto do projeto e as capacidades ficam versionados no repositório."),
         ("Hooks são o mecanismo de PORTÃO.", "Lint, teste e política rodam DENTRO do laço — não depois. É o gate do Bloco 9 acontecendo na prática.", "good"),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 8, 42, TOTAL)
-    reg(42, 8, "Claude Code", 2.0, 72.0,
+    D.footer(s, 8, 44, TOTAL)
+    reg(44, 8, "Claude Code", 2.0, 74.5,
         "<b>Dois minutos.</b> O Claude Code é uma ferramenta de linha de comando com <b>busca agêntica sem "
         "indexação prévia</b> — ele explora o repositório na hora, então nunca trabalha com um índice "
         "desatualizado. Traz o <b>CLAUDE.md</b> (o contexto do projeto versionado), subagentes, skills, MCP e um "
@@ -1038,8 +1115,8 @@ def s43(prs):
         ("O trade-off de fundo:", "indexação prévia (rápida, risco de índice velho) × exploração sob demanda (lenta, sempre atual)."),
         ("O resto do panorama, numa linha:", "Copilot, Windsurf, Aider, Codex, Devin — variações do mesmo tema."),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 8, 43, TOTAL)
-    reg(43, 8, "Cursor e o panorama", 1.0, 73.0,
+    D.footer(s, 8, 45, TOTAL)
+    reg(45, 8, "Cursor e o panorama", 1.0, 75.5,
         "<b>Um minuto para fechar o bloco.</b> O <b>Cursor</b> é um ambiente de desenvolvimento (IDE) com "
         "<b>indexação prévia</b>: ele monta um índice do código antes, o que deixa a busca rápida — ao risco de "
         "o índice ficar defasado. Esse é o trade-off de fundo do bloco: <b>indexar antes</b> (rápido, mas pode "
@@ -1056,8 +1133,8 @@ def s44(prs):
         ("O sintoma:", "o código existe, funciona — e ninguém sabe qual requisito ele atende, nem se ainda atende."),
         ("Em domínio regulado, isso tem outro nome: NÃO CONFORMIDADE.", "Não é dívida técnica; é risco regulatório.", "warn"),
     ], x=0.6, y=2.05, size=17)
-    D.footer(s, 9, 44, TOTAL)
-    reg(44, 9, "O problema (vibe coding)", 1.5, 74.5,
+    D.footer(s, 9, 46, TOTAL)
+    reg(46, 9, "O problema (vibe coding)", 1.5, 77,
         "<b>90 segundos para nomear a dor.</b> O 'vibe coding' — programar no feeling, pedindo pedaços à IA e "
         "colando — funciona lindamente no protótipo e <b>colapsa no sistema</b>. O sintoma é traiçoeiro: o "
         "código <b>existe e funciona</b>, mas ninguém sabe <b>qual requisito ele atende</b> nem se ainda atende. "
@@ -1084,8 +1161,8 @@ def s45(prs):
                     {"size": 18, "bold": True, "color": D.FAM['indigo'][0]}),
                    ("“É a relação entre código-fonte e binário — ninguém revisa o binário.”",
                     {"size": 18, "italic": True, "color": D.INK})], y=5.2, h=1.35)
-    D.footer(s, 9, 45, TOTAL)
-    reg(45, 9, "A inversão", 2.0, 76.5,
+    D.footer(s, 9, 47, TOTAL)
+    reg(47, 9, "A inversão", 2.0, 79,
         "<b>Dois minutos para a ideia mais importante do bloco.</b> Contraste os dois fluxos. Hoje (a): um "
         "requisito informal vira código, e a documentação nasce atrás, desatualizada. No SDD (b): a "
         "<b>especificação é primária</b> — dela derivam o plano, as tarefas e o <b>código</b>. A inversão é essa: "
@@ -1098,8 +1175,8 @@ def s45(prs):
 def s46(prs):
     s = D._blank(prs); D.header(s, 9, "Bloco 9 · SDD", "O ciclo SDD")
     D.image_center(s, os.path.join("diagrams", "s46_sdd.png"), x=0.5, y=1.95, w=D.SW-1.0, h=D.SH-2.45, block=9)
-    D.footer(s, 9, 46, TOTAL)
-    reg(46, 9, "O ciclo SDD", 2.5, 79.0,
+    D.footer(s, 9, 48, TOTAL)
+    reg(48, 9, "O ciclo SDD", 2.5, 81.5,
         "<b>Dois minutos e meio no diagrama central da palestra.</b> O ciclo é: <b>Intenção → Especificação → "
         "Plano → Tarefas → Implementação → Verificação</b>. O que muda tudo são os <b>portões (gates)</b> entre "
         "cada etapa: nada avança sem passar num portão, e em caso de falha, <b>volta</b>. Os portões podem ser "
@@ -1124,8 +1201,8 @@ def s47(prs):
         [("Requisito ruim (não verificável):", {"size": 14.5, "bold": True, "color": D.WARN})],
         [("“O sistema deve detectar infecções corretamente.”", {"size": 14, "italic": True, "color": D.INK})],
     ], anchor=MSO_ANCHOR.TOP, space_after=10, line_spacing=1.15)
-    D.footer(s, 9, 47, TOTAL)
-    reg(47, 9, "Anatomia de uma spec útil", 2.0, 81.0,
+    D.footer(s, 9, 49, TOTAL)
+    reg(49, 9, "Anatomia de uma spec útil", 2.0, 83.5,
         "<b>Dois minutos, e o exemplo faz o serviço.</b> Uma spec útil tem: contexto e escopo, os "
         "<b>não-objetivos</b> (o que está fora — tão importante quanto o que está dentro), requisitos escritos em "
         "<b>EARS</b> (uma sintaxe padronizada de requisito), critérios de aceitação <b>verificáveis</b>, "
@@ -1154,8 +1231,8 @@ def s48(prs):
     D.callout(s, 9, [("Rastreabilidade: ", {"size": 16, "bold": True, "color": D.FAM['indigo'][0]}),
                      ("R-014 → test_r014_janela_48h → avaliar_icsac().  O teste nasceu do CRITÉRIO, não do código — por isso não herda os bugs da implementação.",
                       {"size": 15, "color": D.INK})], y=5.35, h=1.1, kind="good")
-    D.footer(s, 9, 48, TOTAL)
-    reg(48, 9, "Exemplo ponta a ponta", 3.0, 84.0,
+    D.footer(s, 9, 50, TOTAL)
+    reg(50, 9, "Exemplo ponta a ponta", 3.0, 86.5,
         "<b>Três minutos — é a prova concreta do SDD, então vá devagar.</b> Três painéis. No primeiro, um trecho "
         "da <b>spec</b>: o critério de ICSAC com a janela de 48 horas, identificado como requisito R-014. No "
         "segundo, o <b>teste gerado a partir do critério</b> — repare, ele confere exatamente as bordas da "
@@ -1175,8 +1252,8 @@ def s49(prs):
         ("Tessl.", "Outra aposta no mesmo princípio: a spec como artefato primário."),
         ("Feche a promessa do S33: specs/ + AGENTS.md + pacote OKF no MESMO repositório.", "O que o sistema faz, como se trabalha nele e o domínio que ele modela — tudo markdown versionado.", "good"),
     ], x=0.6, y=2.05, size=16)
-    D.footer(s, 9, 49, TOTAL)
-    reg(49, 9, "Ferramental", 2.0, 86.0,
+    D.footer(s, 9, 51, TOTAL)
+    reg(51, 9, "Ferramental", 2.0, 88.5,
         "<b>Dois minutos, e aqui você fecha um arco que abriu antes do intervalo.</b> O ferramental já existe: o "
         "<b>GitHub Spec Kit</b>, com comandos que são o próprio ciclo do S46 — /specify, /plan, /tasks, "
         "/implement; o <b>Kiro</b>, que organiza requirements, design e tasks em markdown; e o <b>Tessl</b>. Mas "
@@ -1208,8 +1285,8 @@ def s50(prs):
         ("Feche o S28: o monólito de 20 passos tem 36% de sucesso; a cadeia com gate se comporta de forma inteiramente diferente — o erro não se propaga.", "", "good"),
         ("É isto que vou mostrar rodando no Bloco 11: um gerador cujo portão determinístico pega o erro do agente ANTES do deploy.", "", "warn"),
     ], x=0.6, y=4.1, size=15)
-    D.footer(s, 9, 50, TOTAL)
-    reg(50, 9, "Onde SDD encontra agentes", 2.5, 88.5,
+    D.footer(s, 9, 52, TOTAL)
+    reg(52, 9, "Onde SDD encontra agentes", 2.5, 91,
         "<b>Dois minutos e meio — é onde os dois grandes temas da palestra se encontram.</b> Em vez de um agente "
         "monolítico fazendo 20 passos, você monta uma <b>cadeia</b>: especificador, arquiteto, implementador, "
         "verificador — com <b>contexto isolado</b> em cada etapa e um <b>portão entre cada um</b>. E o detalhe "
@@ -1228,8 +1305,8 @@ def s51(prs):
         ("Quem faz SDD JÁ TEM a matriz de rastreabilidade — como subproduto, versionada, com autoria e histórico.", "", "good"),
         ("A inversão da objeção: o SDD é o que torna código gerado por IA AUDITÁVEL.", "O que NÃO é auditável é código escrito à mão sem especificação.", "warn"),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 9, 51, TOTAL)
-    reg(51, 9, "SDD produz o artefato regulatório de graça", 3.0, 91.5,
+    D.footer(s, 9, 53, TOTAL)
+    reg(53, 9, "SDD produz o artefato regulatório de graça", 3.0, 94,
         "<b>Três minutos — é o pico comercial da palestra. Depois da última frase, PAUSE.</b> Software para saúde "
         "exige, por norma, rastreabilidade de requisito até projeto, teste e código, gestão de risco documentada "
         "e ciclo de vida controlado — as normas IEC 62304, ISO 14971 e a regulamentação da ANVISA para software "
@@ -1251,8 +1328,8 @@ def s52(prs):
         ("Gate humano virado carimbo.", "Aprova sem ler. Antídoto: o revisor assina o diff, não o PDF."),
         ("Spec gerada por IA e aprovada sem leitura — a PIOR.", "Produz aparência de rastreabilidade sem substância. Se ninguém leu, não há SDD, há teatro.", "warn"),
     ], x=0.6, y=2.05, size=16)
-    D.footer(s, 9, 52, TOTAL)
-    reg(52, 9, "Antipadrões", 0.5, 92.0,
+    D.footer(s, 9, 54, TOTAL)
+    reg(54, 9, "Antipadrões", 0.5, 94.5,
         "<b>30 segundos, rápido mas afiado — é onde o sênior vai te testar.</b> Cinco maneiras de o SDD morrer na "
         "prática: <b>spec inflada</b> (escreve o que não vai verificar; antídoto: só entra o que tem critério de "
         "aceitação); <b>spec envelhecida</b> (o código andou e a spec não; antídoto: integração contínua que "
@@ -1270,8 +1347,8 @@ def s53(prs):
         ("Só suba um degrau quando o anterior falhar COM EVIDÊNCIA MEDIDA.", "E a evidência é o conjunto de avaliação do S20 — não o “achismo”.", "warn"),
         ("Retome a seta do S4:", "é aqui que se faz “o transplante em cima do modelo pronto” que prometi no começo."),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 10, 53, TOTAL)
-    reg(53, 10, "A escada de adaptação", 1.5, 93.5,
+    D.footer(s, 10, 55, TOTAL)
+    reg(55, 10, "A escada de adaptação", 1.5, 96,
         "<b>90 segundos para organizar as opções de personalização.</b> Existe uma escada, do mais barato ao "
         "mais caro: <b>prompt</b>, depois <b>poucos exemplos</b> no prompt (few-shot), depois <b>RAG</b>, depois "
         "<b>ajuste fino</b> ou LoRA, depois <b>aprendizado por reforço</b>, e no topo <b>pré-treino contínuo</b>. "
@@ -1290,8 +1367,8 @@ def s54(prs):
         ("500 a 5.000 exemplos BEM curados superam 100 mil sujos.", "Qualidade vence quantidade — de longe.", "good"),
         ("O custo real de um dataset clínico é tempo de infectologista, não GPU.", "", "warn"),
     ], x=7.35, y=2.1, w=D.SW-7.95, size=14.5)
-    D.footer(s, 10, 54, TOTAL)
-    reg(54, 10, "SFT e os dados", 1.0, 94.5,
+    D.footer(s, 10, 56, TOTAL)
+    reg(56, 10, "SFT e os dados", 1.0, 97,
         "<b>Um minuto, e a mensagem é contraintuitiva.</b> Ajuste fino supervisionado (SFT) é ensinar o modelo "
         "por <b>exemplos rotulados</b> — o formato é JSONL, cada linha uma conversa completa. O que a plateia "
         "precisa ouvir: <b>500 a 5.000 exemplos bem curados superam 100 mil exemplos sujos</b>. Qualidade vence "
@@ -1308,8 +1385,8 @@ def s55(prs):
         ("QLoRA: base em 4 bits + adaptadores em precisão maior.", "É o que permite ajustar um modelo grande em 24 GB."),
         ("Vantagem operacional: adaptadores são arquivos de dezenas de MB — versionáveis e trocáveis em runtime.", "Um adaptador por especialidade, a MESMA base (pode ser o Qwen3.8-27B do S12).", "good"),
     ], x=7.45, y=2.1, w=D.SW-8.05, size=14),
-    D.footer(s, 10, 55, TOTAL)
-    reg(55, 10, "LoRA e QLoRA", 2.5, 97.0,
+    D.footer(s, 10, 57, TOTAL)
+    reg(57, 10, "LoRA e QLoRA", 2.5, 99.5,
         "<b>Dois minutos e meio — o degrau técnico do bloco.</b> LoRA (adaptação de baixo posto) resolve o "
         "problema de custo do ajuste fino: em vez de retreinar o modelo inteiro, você <b>congela os pesos "
         "originais</b> e treina só um <b>remendo pequeno</b> — matematicamente, uma matriz de baixo posto que se "
@@ -1329,8 +1406,8 @@ def s56(prs):
         ("Sucessores: DPO (sem modelo de recompensa), GRPO (raciocínio), RLAIF / IA Constitucional.", ""),
         ("Por que importa mesmo sem treinar: explica o comportamento do modelo que vocês CONSOMEM.", "Bajulação, recusa e excesso de ressalvas são artefatos do alinhamento — não do pré-treino.", "good"),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 10, 56, TOTAL)
-    reg(56, 10, "RLHF e sucessores", 1.0, 98.0,
+    D.footer(s, 10, 58, TOTAL)
+    reg(58, 10, "RLHF e sucessores", 1.0, 100.5,
         "<b>Um minuto, e o valor é explicar o modelo que eles já usam.</b> RLHF — aprendizado por reforço com "
         "feedback humano — é como se alinha um modelo: humanos comparam respostas, isso treina um <b>modelo de "
         "recompensa</b>, e o modelo é otimizado para agradá-lo. Os sucessores simplificam: DPO dispensa o modelo "
@@ -1347,8 +1424,8 @@ def s57(prs):
         ("O modelo LOCAL (retomando o S12): quantização (GGUF, AWQ) + runtimes (LM Studio, vLLM, Ollama).", ""),
         ("Três argumentos que fecham a palestra técnica:", "o dado do paciente não sai da rede · custo marginal previsível · independência de fornecedor.", "good"),
     ], x=0.6, y=2.05, size=16)
-    D.footer(s, 10, 57, TOTAL)
-    reg(57, 10, "Quando NÃO treinar, e o modelo local", 1.0, 99.0,
+    D.footer(s, 10, 59, TOTAL)
+    reg(59, 10, "Quando NÃO treinar, e o modelo local", 1.0, 101.5,
         "<b>Um minuto para fechar a adaptação com equilíbrio.</b> Diga quando <b>não</b> treinar: se o "
         "conhecimento é volátil (um protocolo que muda — use RAG, não ajuste fino), se a tarefa muda toda "
         "semana, ou se você não tem avaliação para medir o ganho. E avise dos custos ocultos: o <b>esquecimento "
@@ -1368,8 +1445,8 @@ def s58(prs):
         ("O caso de RAM, nas palavras deles:", "com pouca informação de fundo, o sistema propôs — sozinho — que os cf-PICIs carregam genes de resistência entre espécies, incluindo E. coli e K. pneumoniae."),
         ("Isso recapitulou um achado experimental AINDA NÃO PUBLICADO — uma década de bancada.", "O segundo sistema que vou mostrar foi validado, na origem, exatamente no problema de vocês.", "good"),
     ], x=0.6, y=2.05, size=15.5)
-    D.footer(s, 11, 58, TOTAL)
-    reg(58, 11, "Ponte com o domínio deles", 1.0, 100.0,
+    D.footer(s, 11, 60, TOTAL)
+    reg(60, 11, "Ponte com o domínio deles", 1.0, 102.5,
         "<b>Um minuto para conectar o segundo sistema ao coração do trabalho deles.</b> O AI Co-Scientist da "
         "Google foi validado em laboratório e publicado na Nature em 2026, em três cenários biomédicos: "
         "repurposing de fármaco para leucemia, alvos novos para fibrose hepática, e — o que importa aqui — um "
@@ -1401,8 +1478,8 @@ def s59(prs):
         ("Modelo local no centro: Qwen2.5-Coder-32B via LM Studio, contexto de 64 mil tokens; framework CrewAI.", "Com avaliação em curso do Qwen3.8-27B — por visão, uso de ferramentas e raciocínio, sem perder geração de código."),
         ("Amarre com o S12: o modelo em avaliação roda em 24 GB e é o melhor denso multimodal da faixa.", "O argumento inteiro do LangNet só existe porque essa faixa chegou a esse patamar em 2026.", "good"),
     ], x=0.6, y=3.7, size=16)
-    D.footer(s, 11, 59, TOTAL)
-    reg(59, 11, "LangNet: arquitetura", 3.0, 103.0,
+    D.footer(s, 11, 61, TOTAL)
+    reg(61, 11, "LangNet: arquitetura", 3.0, 105.5,
         "<b>Três minutos apresentando o primeiro sistema.</b> O LangNet implementa o ciclo do S46: da intenção à "
         "especificação, ao plano, à <b>geração de código</b> e à <b>verificação</b> — com um <b>modelo local no "
         "centro</b>. A pilha real, e diga que confere com o repositório: <b>Qwen2.5-Coder-32B rodando no LM "
@@ -1425,8 +1502,8 @@ def s60(prs):
                       ("pega o erro antes de virar produção", {"size": 15.5, "bold": True, "color": D.FAM['violet'][0]}),
                       (". É o S50 acontecendo. (Remeça no exemplo clínico do vídeo.)", {"size": 15.5, "color": D.INK})],
               y=6.5, h=0.75)
-    D.footer(s, 11, 60, TOTAL)
-    reg(60, 11, "LangNet: evidência medida", 1.5, 104.5,
+    D.footer(s, 11, 62, TOTAL)
+    reg(62, 11, "LangNet: evidência medida", 1.5, 107,
         "<b>90 segundos — e é o número que separa a apresentação de um pitch, então diga com firmeza.</b> São "
         "medições reais da validação do LangNet, não estimativa. <b>Cobertura de rastreabilidade: 100%</b> — "
         "todos os requisitos funcionais atravessam da especificação ao modelo de dados e à implementação, e isso "
@@ -1459,8 +1536,8 @@ def s61(prs):
         (0, [("6. a aplicação rodando com a interface", "n")]),
         (0, [("7. volta à spec, com o ", "n"), ("portão de rastreabilidade VERDE", "g")]),
     ], x=6.55, y=2.15, w=D.SW-7.15, size=15, block=11)
-    D.footer(s, 11, 61, TOTAL)
-    reg(61, 11, "DEMO gravada: da especificação à aplicação", 3.0, 107.5,
+    D.footer(s, 11, 63, TOTAL)
+    reg(63, 11, "DEMO gravada: da especificação à aplicação", 3.0, 110,
         "<b>Três minutos — é o ponto mais alto de prova da palestra. Deixe o vídeo falar.</b> Toque a gravação "
         "(até 3 minutos, sem áudio, legendas grandes; acelere as esperas de 2 a 4 vezes com o tempo real na "
         "legenda). O roteiro do vídeo, que mapeia um-para-um o que o LangNet faz: (1) você escreve uma spec "
@@ -1475,8 +1552,8 @@ def s61(prs):
 def s62(prs):
     s = D._blank(prs); D.header(s, 11, "Bloco 11 · Sistemas", "Como funciona o AI Co-Scientist (Nature, 2026)")
     D.image_center(s, os.path.join("diagrams", "s62_coscientist.png"), x=0.5, y=1.9, w=D.SW-1.0, h=D.SH-2.4, block=11)
-    D.footer(s, 11, 62, TOTAL)
-    reg(62, 11, "Como funciona o AI Co-Scientist", 2.5, 110.0,
+    D.footer(s, 11, 64, TOTAL)
+    reg(64, 11, "Como funciona o AI Co-Scientist", 2.5, 112.5,
         "<b>Dois minutos e meio no sistema multiagente mais elegante que existe hoje.</b> É da Google DeepMind, "
         "sobre o Gemini 2.0, publicado na Nature em 2026. O objetivo não é 'pesquisa profunda' — é <b>gerar "
         "hipóteses novas e testáveis</b> a partir de um objetivo em linguagem natural. Percorra o diagrama: um "
@@ -1501,8 +1578,8 @@ def s63(prs):
         ("Resultado exercitado (run UC-10).", "Rodou ponta a ponta: revisão de literatura + 4 hipóteses + 1º torneio + 1ª meta-revisão, em ~2,8 h com DeepSeek.", "good"),
         ("Honestidade: réplica funcional PRONTA PARA PILOTO, não produção.", "A sincronização com o banco ainda tem um bug conhecido (alfa).", "warn"),
     ], x=0.6, y=2.05, size=14.5)
-    D.footer(s, 11, 63, TOTAL)
-    reg(63, 11, "AI Co-Scientist: a sua replicação", 2.0, 112.0,
+    D.footer(s, 11, 65, TOTAL)
+    reg(65, 11, "AI Co-Scientist: a sua replicação", 2.0, 114.5,
         "<b>Dois minutos mostrando que isto não é slide de PowerPoint — é sistema que roda.</b> O "
         "QuanticaResearch é uma plataforma full-stack (React, FastAPI, MariaDB) sobre um motor multiagente em "
         "LangGraph. Estruture a fala em três partes — o que você <b>manteve</b>, o que <b>mudou</b>, e o "
@@ -1525,8 +1602,8 @@ def s64(prs):
         ("Feche o arco inteiro da palestra:", "o S28 mostrou que agentes degradam de forma previsível; o S50, que gates cortam a cadeia; o S30, que nenhum protocolo expressa governança; o S62, um sistema que se autoavalia por Elo."),
         ("Mas o Elo mede qualidade de HIPÓTESE, não corretude de EXECUÇÃO.", "As Redes de Petri mostram que a estrutura da orquestração pode ser VERIFICADA FORMALMENTE — não apenas testada ou pontuada.", "good"),
     ], x=0.6, y=2.05, size=15.5)
-    D.footer(s, 11, 64, TOTAL)
-    reg(64, 11, "Validação por Redes de Petri", 2.5, 114.5,
+    D.footer(s, 11, 66, TOTAL)
+    reg(66, 11, "Validação por Redes de Petri", 2.5, 117,
         "<b>Dois minutos e meio para fechar o arco técnico da palestra inteira — deixe o argumento falar, não "
         "vire pitch.</b> As Redes de Petri são um formalismo matemático para modelar processos concorrentes. O "
         "VisualTasksExec usa isso para sincronizar agentes com <b>propriedades verificáveis</b>: ausência de "
@@ -1548,8 +1625,8 @@ def s65(prs):
         ("③ A especificação executável é o que torna código de IA auditável.", "E, em software de saúde, entrega o artefato regulatório de graça (S51)."),
         ("Recomendação acionável, uma só: construam PRIMEIRO o conjunto de avaliação (S20).", "Antes de framework, antes de agente, antes de trocar de modelo.", "good"),
     ], x=0.6, y=2.05, size=16)
-    D.footer(s, 12, 65, TOTAL)
-    reg(65, 12, "As três conclusões", 1.5, 116.0,
+    D.footer(s, 12, 67, TOTAL)
+    reg(67, 12, "As três conclusões", 1.5, 118.5,
         "<b>90 segundos de fechamento — retome a tese do S3 e amarre tudo.</b> Três conclusões: (1) a capacidade "
         "de gerar código virou <b>mercadoria comum</b>; o que diferencia um time é o <b>método</b>. (2) Um agente "
         "sem portão de verificação <b>degrada de forma previsível</b> — e confiabilidade vem de reduzir os "
@@ -1567,8 +1644,8 @@ def s66(prs):
         ("Modelos.", "A tabela do S12, com os links — reconferida na semana da palestra."),
         ("Repositórios e contato.", "QR do repositório do LangNet e do QuanticaResearch; seu e-mail e perfil.", "good"),
     ], x=0.6, y=2.05, size=16.5)
-    D.footer(s, 12, 66, TOTAL)
-    reg(66, 12, "Referências e contato", 0.5, 116.5,
+    D.footer(s, 12, 68, TOTAL)
+    reg(68, 12, "Referências e contato", 0.5, 119,
         "<b>30 segundos.</b> Deixe o slide de referências no ar enquanto respira: um QR para o repositório, os "
         "papers (o Co-Scientist na Nature), as especificações (MCP, A2A, OKF, Spec Kit), a tabela de modelos do "
         "S12 com os links, e o seu contato. Avise que os slides e o roteiro ficam disponíveis. <i>(~30 s)</i>")
@@ -1586,7 +1663,7 @@ def s67(prs):
               {"size": 19, "italic": True, "color": D.WHITE})]], align=PP_ALIGN.CENTER)
     D._txt(s, 1.0, 6.4, D.SW-2, 0.5, [[("Obrigado.", {"size": 16, "color": D.WHITE})]], align=PP_ALIGN.CENTER)
     D.notes(s, "Perguntas — 3,5 min.")
-    reg(67, 12, "Perguntas", 3.5, 120.0,
+    reg(69, 12, "Perguntas", 3.5, 122.5,
         "<b>Três minutos e meio de perguntas — e você tem o Anexo A do planejamento com as respostas curtas "
         "prováveis.</b> Deixe a tese no rodapé do slide como âncora. Se a plateia travar, provoque com uma das "
         "perguntas frequentes (qual modelo aberto usar, CrewAI ou LangGraph, contexto de 1 milhão resolve o "
@@ -1595,7 +1672,7 @@ def s67(prs):
 
 def build():
     prs = D.new_prs()
-    for fn in [s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11, s12, s13,
+    for fn in [s1, s2, s3, s4, s5, s5b, s5c, s6, s7, s8, s9, s10, s11, s12, s13,
                s14, s15, s16, s17, s18, s19, s20,
                s21, s22b, s23, s24, s25, s26, s27, s28,
                s29, s30, s31, s32, s33, s_intervalo,
