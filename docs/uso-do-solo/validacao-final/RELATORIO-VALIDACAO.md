@@ -136,6 +136,40 @@ Task `execution: agent` cujo LLM aponta para **OpenAI** (`AuthenticationError`) 
 
 ---
 
+## 4-ter. App FUNCIONAL de ponta a ponta — 15/15 tasks E2E
+
+Segunda rodada de fechamento: rodei **todas as 15 tasks** do app via WebSocket (o mesmo canal do frontend) contra PostGIS `uso_solo_green` + qwen local (LM Studio). **Todas retornam `sucesso`.**
+
+| # | Task | Tipo | Resultado E2E |
+|---|------|------|---------------|
+| 1 | `import_zoneamento_geodata` | det | ✅ insere zoneamento (WKT→ST_GeomFromText 4674) |
+| 2 | `import_imoveis_geodata` | det | ✅ insere imóvel |
+| 3 | `edit_zoneamento_geometry` | det | ✅ versiona geometria anterior (is_valid) |
+| 4 | `update_parametros_urbanisticos` | det | ✅ upsert + auditoria |
+| 5 | `calculate_urban_compliance` | det | ✅ CA/TO + conforme/nao-conforme |
+| 6 | `calculate_app_overlap` | det | ✅ flag de sobreposição (SUM espacial) |
+| 7 | `calculate_reserva_legal` | det | ✅ área RL por bioma (cerrado 20% / amazônia 80%) |
+| 8 | `aggregate_compliance_kpis` | det | ✅ KPIs do dashboard |
+| 9 | `log_audit_event` | det | ✅ evento de auditoria |
+| 10 | `simulate_urban_scenario` | det | ✅ simulação sem persistir |
+| 11 | `save_simulation_scenario` | det | ✅ extrai de `scenario_data` e persiste |
+| 12 | `consulta_mapa_regramento_ambiental` | det | ✅ zona + APPs por ponto (GeoJSON) |
+| 13 | `generate_conflict_notification` | agente | ✅ notificação (qwen local) |
+| 14 | `generate_compliance_report` | agente | ✅ laudo PDF (reportlab) + persiste em `consultas` |
+| 15 | `extract_legislacao_rules` | agente | ✅ lê PDF de legislação e persiste em `legislacoes` |
+
+### Correções desta rodada (todas no GERADOR — produto)
+- **Extrair-de-objeto** (`scenario_data`) + normalização `{{var}}` de template → fim de NameError.
+- **Flag espacial condicional** (`app_overlap`): colapsa "somar interseções → flag 0/1" numa query agregada.
+- **Params ciente de brackets/aspas** + dict JSON→`json.dumps` + expressão condicional → fim de "not all arguments converted" (laudo).
+- **Literal SQL de data** (`CURRENT_DATE`/`NOW()`) como param bound → `_hoje()` (fim de NOT NULL em `valido_de`).
+- **`PdfReaderTool` real** (pypdf/python-docx) + **merge de `STD_TOOLS`** no ws-server → `pdf_generator`/`pdf_reader` reais para os agentes.
+- **qwen3 `enable_thinking=false`** + `max_tokens` 24k/32k → estabiliza os tasks-agente (o modelo de raciocínio devolvia resposta vazia de forma intermitente).
+
+O portão reforçado (hop **Task→código**) foi o instrumento que apontou parte desses NameError **antes** do deploy; o resto o E2E multi-task revelou e foi fechado no gerador.
+
+---
+
 ## 5. Veredito
 
 **Coerente e rodando**, com escopo honesto:
@@ -145,6 +179,6 @@ Task `execution: agent` cujo LLM aponta para **OpenAI** (`AuthenticationError`) 
 - ✅ **CRUD lê dados reais** do PostGIS; o **resultado do calculador aparece na UI**.
 - ✅ Calculador urbanístico + KPIs + reserva legal (2 biomas) + consulta de mapa **executam determinístico e correto** pelo mesmo WebSocket do frontend.
 - ✅ **Loop de convergência provado**: o portão reforçado **achou um bug latente** que o E2E nem exercia (`consulta_mapa`), levando a fixes no gerador — a camada de garantia trabalhando de fato.
-- ⚠️ **2 residuais** honestos e localizados: `calculate_app_overlap` (precisa de soma-espacial-no-SQL) e `generate_compliance_report` (LLM do agente aponta p/ OpenAI).
+- ✅ **App FUNCIONAL de ponta a ponta: 15/15 tasks executam com `sucesso`** — todo o núcleo determinístico (cálculos, CRUD, ingestão geoespacial, simulação, auditoria, mapa) **e** os 3 tasks-agente (notificação, laudo PDF, extração de legislação de PDF).
 
-De **6 tasks com problema na 1ª passagem, 4 fechadas** nesta rodada, todas por **fix no gerador** (produto) + regeneração — zero edição manual de artefato. O pipeline canônico foi seguido sem bypass: Requisitos → Especificação → Modelo de Dados → UI Spec & Protótipo → Agent-Task Spec → YAML → Código → Deploy → execução E2E.
+De **todas as tasks com problema no E2E, TODAS fechadas** por **fix no gerador** (produto) + regeneração — zero edição manual de artefato. O pipeline canônico foi seguido sem bypass: Requisitos → Especificação → Modelo de Dados → UI Spec & Protótipo → Agent-Task Spec → YAML → Código → Deploy → execução E2E.
