@@ -23,6 +23,7 @@ export interface ProjectFormData {
   template?: string;
   defaultLLM: string;
   framework: string;
+  protocol: string;
   memorySystem: string;
   status?: string;
 }
@@ -33,9 +34,40 @@ const defaultFormData: ProjectFormData = {
   domain: '',
   startFrom: 'blank',
   defaultLLM: 'OpenAI GPT-4',
-  framework: 'CrewAI',
+  framework: 'crewai',
+  protocol: 'okf',
   memorySystem: 'LangChain'
 };
+
+// Frameworks agênticos suportados (CrewAI é o nosso padrão). Os demais são opções;
+// OpenAI/Anthropic referem-se aos SDKs oficiais.
+const FRAMEWORK_OPTIONS = [
+  { label: 'CrewAI (padrão)', value: 'crewai' },
+  { label: 'LangChain', value: 'langchain' },
+  { label: 'LangGraph', value: 'langgraph' },
+  { label: 'AutoGen', value: 'autogen' },
+  { label: 'OpenAI SDK', value: 'openai' },
+  { label: 'Anthropic SDK', value: 'anthropic' },
+];
+
+// Protocolos de interoperabilidade agêntica. OKF é o nosso (default); os demais são mock por ora.
+const PROTOCOL_OPTIONS = [
+  { label: 'OKF — padrão (nosso)', value: 'okf' },
+  { label: 'MCP — em breve', value: 'mcp' },
+  { label: 'A2A — em breve', value: 'a2a' },
+  { label: 'ACP — em breve', value: 'acp' },
+  { label: 'ANP — em breve', value: 'anp' },
+];
+
+// Normaliza framework vindo de dados antigos (labels) para o valor canônico do backend.
+const FRAMEWORK_VALUE_MAP: Record<string, string> = {
+  crewai: 'crewai', langchain: 'langchain', langgraph: 'langgraph',
+  autogen: 'autogen', openai: 'openai', anthropic: 'anthropic', custom: 'custom',
+  'crew ai': 'crewai', llamaindex: 'custom',
+  'openai sdk': 'openai', 'anthropic sdk': 'anthropic',
+};
+const normalizeFramework = (f?: string): string =>
+  (f && FRAMEWORK_VALUE_MAP[f.toLowerCase().trim()]) || 'crewai';
 
 const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
   isOpen,
@@ -51,7 +83,11 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
   // Update form when initialData changes
   useEffect(() => {
     if (editMode && initialData) {
-      setFormData(initialData);
+      setFormData({
+        ...initialData,
+        framework: normalizeFramework(initialData.framework),
+        protocol: initialData.protocol || 'okf',
+      });
     } else {
       setFormData(defaultFormData);
     }
@@ -64,7 +100,6 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
   const domains = ['Atendimento', 'Jurídico', 'Educação', 'Saúde', 'Finanças', 'Outro'];
   const templates = ['Assistente de Atendimento', 'Análise de Documentos', 'Pesquisa Acadêmica', 'Personalizado'];
   const llmOptions = ['OpenAI GPT-4', 'OpenAI GPT-3.5', 'Claude 3 Opus', 'Claude 3 Sonnet', 'Llama 3'];
-  const frameworkOptions = ['CrewAI', 'LangChain', 'AutoGen', 'LlamaIndex'];
   const memoryOptions = ['LangChain', 'Redis', 'Pinecone', 'ChromaDB', 'Nenhum'];
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -101,7 +136,8 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
           name: formData.name,
           description: formData.description || null,
           domain: formData.domain || null,
-          framework: formData.framework.toLowerCase().replace(' ', '') as any,
+          framework: formData.framework as any,
+          protocol: formData.protocol || 'okf',
           default_llm: formData.defaultLLM || null,
           memory_system: formData.memorySystem || null,
           start_from: formData.startFrom,
@@ -121,7 +157,8 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
           name: formData.name,
           description: formData.description || null,
           domain: formData.domain || null,
-          framework: formData.framework.toLowerCase().replace(' ', '') as any,
+          framework: formData.framework as any,
+          protocol: formData.protocol || 'okf',
           default_llm: formData.defaultLLM || null,
           memory_system: formData.memorySystem || null,
           start_from: formData.startFrom,
@@ -273,12 +310,26 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
                   value={formData.framework}
                   onChange={handleInputChange}
                 >
-                  {frameworkOptions.map(option => (
-                    <option key={option} value={option}>{option}</option>
+                  {FRAMEWORK_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
                 </select>
               </div>
-              
+
+              <div className="advanced-option">
+                <label htmlFor="protocol">Protocolo:</label>
+                <select
+                  id="protocol"
+                  name="protocol"
+                  value={formData.protocol}
+                  onChange={handleInputChange}
+                >
+                  {PROTOCOL_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+
               <div className="advanced-option">
                 <label htmlFor="memorySystem">Sistema de Memória:</label>
                 <select

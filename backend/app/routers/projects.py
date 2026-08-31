@@ -18,11 +18,11 @@ def create_project(project: ProjectCreate):
 
     query = """
         INSERT INTO projects (
-            id, user_id, name, description, domain, framework,
+            id, user_id, name, description, domain, framework, protocol,
             default_llm, memory_system, start_from, template, status,
             project_data, created_at, updated_at
         ) VALUES (
-            %s, %s, %s, %s, %s, %s,
+            %s, %s, %s, %s, %s, %s, %s,
             %s, %s, %s, %s, %s,
             %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
         )
@@ -35,6 +35,7 @@ def create_project(project: ProjectCreate):
         project.description,
         project.domain,
         project.framework,
+        project.protocol or "okf",
         project.default_llm,
         project.memory_system,
         project.start_from,
@@ -147,6 +148,10 @@ def update_project(project_id: str, project_update: ProjectUpdate):
     if project_update.framework is not None:
         update_fields.append("framework = %s")
         params.append(project_update.framework)
+
+    if project_update.protocol is not None:
+        update_fields.append("protocol = %s")
+        params.append(project_update.protocol)
 
     if project_update.default_llm is not None:
         update_fields.append("default_llm = %s")

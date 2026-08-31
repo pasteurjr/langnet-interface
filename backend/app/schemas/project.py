@@ -11,7 +11,8 @@ class ProjectBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     domain: Optional[str] = Field(None, max_length=100)
-    framework: Optional[str] = Field(None, pattern="^(crewai|langchain|autogen|custom)$")
+    framework: Optional[str] = Field(None, pattern="^(crewai|langchain|langgraph|autogen|openai|anthropic|custom)$")
+    protocol: Optional[str] = Field("okf", pattern="^(okf|mcp|a2a|acp|anp)$")
     default_llm: Optional[str] = Field(None, max_length=100)
     memory_system: Optional[str] = Field(None, max_length=100)
     start_from: Optional[str] = Field("blank", pattern="^(blank|template)$")
@@ -29,7 +30,8 @@ class ProjectUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     domain: Optional[str] = Field(None, max_length=100)
-    framework: Optional[str] = Field(None, pattern="^(crewai|langchain|autogen|custom)$")
+    framework: Optional[str] = Field(None, pattern="^(crewai|langchain|langgraph|autogen|openai|anthropic|custom)$")
+    protocol: Optional[str] = Field(None, pattern="^(okf|mcp|a2a|acp|anp)$")
     default_llm: Optional[str] = Field(None, max_length=100)
     memory_system: Optional[str] = Field(None, max_length=100)
     start_from: Optional[str] = Field(None, pattern="^(blank|template)$")

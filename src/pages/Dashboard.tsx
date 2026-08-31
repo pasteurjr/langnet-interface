@@ -208,7 +208,8 @@ const Dashboard: React.FC = () => {
           domain: editingProject.domain,
           startFrom: 'blank',
           defaultLLM: 'OpenAI GPT-4',
-          framework: 'CrewAI',
+          framework: (editingProject as any).framework || 'crewai',
+          protocol: (editingProject as any).protocol || 'okf',
           memorySystem: 'LangChain',
           status: editingProject.status
         } : undefined}

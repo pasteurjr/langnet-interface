@@ -9,6 +9,7 @@ export interface ProjectCreate {
   description?: string | null;
   domain?: string | null;
   framework?: string | null;
+  protocol?: string | null;
   default_llm?: string | null;
   memory_system?: string | null;
   start_from?: string;
@@ -23,6 +24,7 @@ export interface Project {
   description?: string | null;
   domain?: string | null;
   framework?: string | null;
+  protocol?: string | null;
   default_llm?: string | null;
   memory_system?: string | null;
   start_from?: string;
