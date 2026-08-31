@@ -204,6 +204,79 @@ def _query_join_violations(tasks_yaml: str) -> List:
     return [x for x in viol if not (x in seen or seen.add(x))]
 
 
+def _deterministic_name_violations(tasks_yaml: str, schema_sql: str = "") -> List:
+    """CAMADA DE GARANTIA: gera o Python determinístico de CADA task (mesmo emissor do
+    code-gen) e detecta NOME carregado sem NUNCA ser atribuído — o `NameError` de runtime
+    que o E2E pegava tarde (ex.: `percentual` vindo de tabela de regras que o parser não
+    capturava, usado depois no INSERT/aritmética). Estático e conservador: um nome só é
+    violação se não é argumento/atribuição em lugar NENHUM da função, nem helper/builtin.
+    Degrada para [] se não puder gerar (mantém o portão utilizável sem o gerador em ctx)."""
+    try:
+        import ast as _ast, re as _re
+        try:
+            from agents import langnetagents as _L  # rodando de dentro de backend/
+        except Exception:
+            from backend.agents import langnetagents as _L
+        _L._DM_TABLES_CTX = set(m.group(1).lower() for m in _re.finditer(
+            r'(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([a-z_]\w*)', schema_sql or ""))
+        try:
+            _L._DM_COLS_CTX = _L._dm_cols_from_ddl(schema_sql or "")
+        except Exception:
+            _L._DM_COLS_CTX = {}
+        src = _L._generate_deterministic_adapters(tasks_yaml or "")
+    except Exception:
+        return []
+    if not src:
+        return []
+    import ast as _ast, builtins as _b
+    safe = {"input_data", "cur", "conn", "os", "psycopg2", "mysql", "_num", "_safe_div",
+            "_flt", "_e", "_result", "True", "False", "None",
+            "Decimal", "InvalidOperation", "datetime", "json", "re", "math", "uuid", "Any"}
+    safe |= set(dir(_b))
+    try:
+        tree = _ast.parse(src)
+    except Exception:
+        return []
+    # nomes de MÓDULO (helpers, imports, defs top-level) são visíveis dentro das funções —
+    # senão `Decimal`/`_safe_div` (definidos no cabeçalho do adapters) viram falso-positivo.
+    for node in tree.body:
+        if isinstance(node, _ast.FunctionDef):
+            safe.add(node.name)
+        elif isinstance(node, (_ast.Import, _ast.ImportFrom)):
+            for al in node.names:
+                safe.add((al.asname or al.name).split('.')[0])
+        elif isinstance(node, _ast.Assign):
+            for t in node.targets:
+                for nm in _ast.walk(t):
+                    if isinstance(nm, _ast.Name):
+                        safe.add(nm.id)
+    viol = []
+    for node in tree.body:
+        # só as funções de TASK (não os helpers _num/_safe_div/_flt do cabeçalho)
+        if not isinstance(node, _ast.FunctionDef) or not node.name.endswith("_deterministic"):
+            continue
+        assigned = set(a.arg for a in node.args.args)
+        for n in _ast.walk(node):
+            if isinstance(n, _ast.Assign):
+                for t in n.targets:
+                    for nm in _ast.walk(t):
+                        if isinstance(nm, _ast.Name):
+                            assigned.add(nm.id)
+            elif isinstance(n, _ast.AugAssign) and isinstance(n.target, _ast.Name):
+                assigned.add(n.target.id)
+            elif isinstance(n, (_ast.For, _ast.comprehension)):
+                tgt = n.target if isinstance(n, _ast.For) else n.target
+                for nm in _ast.walk(tgt):
+                    if isinstance(nm, _ast.Name):
+                        assigned.add(nm.id)
+        for n in _ast.walk(node):
+            if isinstance(n, _ast.Name) and isinstance(n.ctx, _ast.Load):
+                if n.id not in assigned and n.id not in safe:
+                    viol.append((node.name.replace("_deterministic", ""), n.id))
+    seen = set()
+    return [x for x in viol if not (x in seen or seen.add(x))]
+
+
 def complete_matrix(spec_md: str, requirements_md: str):
     """GARANTE deterministicamente que TODO FR tenha linha na matriz FR→UC. Para cada
     FR órfão (sem UC na matriz), mapeia ao UC de MAIOR sobreposição de palavras (grounded
@@ -309,8 +382,11 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
     col_violations = _query_column_violations(tasks_yaml, _dm_columns(schema_sql))
     # Salto 4c: query referencia alias.col com o alias fora do FROM/JOIN (JOIN espacial faltante).
     join_violations = _query_join_violations(tasks_yaml)
+    # Salto 5: código determinístico emitido não pode ter NOME usado sem definição (NameError).
+    name_violations = _deterministic_name_violations(tasks_yaml, schema_sql)
 
-    gate_pass = not (gap_spec or gap_nfr or gap_br or gap_impl or tbl_violations or stuffing or col_violations or join_violations)
+    gate_pass = not (gap_spec or gap_nfr or gap_br or gap_impl or tbl_violations or stuffing
+                     or col_violations or join_violations or name_violations)
     return {
         "inventory": {"FR": fr, "NFR": nfr, "BR": br, "UC_spec": _ids(spec_md, _UC)},
         "hops": {
@@ -323,6 +399,7 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
             "task_to_DM": {"violations": tbl_violations},
             "task_to_DM_columns": {"violations": col_violations},
             "task_query_joins": {"violations": join_violations},
+            "task_code_names": {"violations": name_violations},
             "task_stuffing": {"tasks": stuffing},
         },
         "gate_pass": gate_pass,
@@ -363,6 +440,10 @@ def format_report(res: Dict[str, Any]) -> str:
     jv = h.get("task_query_joins", {}).get("violations") or []
     L.append("  %-26s %s" % ("Task→DM (JOIN/FROM)",
                              "OK" if not jv else "ALIAS FORA DO FROM: " + ", ".join(a for a, _ in jv[:8])))
+    nv = h.get("task_code_names", {}).get("violations") or []
+    L.append("  %-26s %s" % ("Task→código (nomes)",
+                             "OK" if not nv else "VAR INDEFINIDA (NameError): "
+                             + ", ".join("%s:%s" % (t, c) for t, c in nv[:8])))
     st = h.get("task_stuffing", {}).get("tasks") or []
     L.append("  %-26s %s" % ("Qualidade (FR por task)",
                              "OK" if not st else "STUFFING (task catch-all): "

@@ -5485,8 +5485,15 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
     #     o placeholder em ST_GeomFromText(%s) para que a string WKT vire geometria no runtime.
     if "st_geomfromtext" not in query.lower():
         # SRID 4674 (SIRGAS 2000) no wrap — senão o WKT vira geometria SRID 0 e ST_Intersects
-        # falha com "mixed SRID geometries" contra colunas 4674.
-        query = _re.sub(r'(?i)(\bST_\w+\s*\([^,()]+,\s*)%s', r'\1ST_GeomFromText(%s, 4674)', query)
+        # falha com "mixed SRID geometries" contra colunas 4674. NÃO envolver construtores de
+        # COORDENADA NUMÉRICA (ST_MakePoint/ST_Point recebem lon,lat como número — envolver o
+        # 2º %s em ST_GeomFromText geraria SQL inválido, como achado em consulta_mapa).
+        def _wrap_geom(m):
+            fn = _re.search(r'ST_(\w+)', m.group(1), _re.I)
+            if fn and fn.group(1).lower() in ('makepoint', 'point', 'setsrid', 'makeenvelope'):
+                return m.group(0)
+            return m.group(1) + 'ST_GeomFromText(%s, 4674)'
+        query = _re.sub(r'(?i)(\bST_\w+\s*\([^,()]+,\s*)%s', _wrap_geom, query)
 
     q_repr = repr(query)
     if py_params is not None:
@@ -5589,6 +5596,14 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
         m = _re.match(r'^\{(\w+)\}$', p)
         if m:
             py_parts.append(_emit_get(m.group(1)))
+            continue
+        # {coordenadas.lon} → acesso PONTUADO num campo de ENTRADA aninhado (dict):
+        # (input_data.get('coordenadas') or {}).get('lon'). Sem isto o param saía LITERAL
+        # como set `{coordenadas.lon}` com `coordenadas` indefinido → NameError no runtime
+        # (achado pelo portão reforçado em consulta_mapa_regramento_ambiental).
+        m_indot = _re.match(r'^\{([A-Za-z_]\w*)\.([A-Za-z_]\w*)\}$', p)
+        if m_indot:
+            py_parts.append("(input_data.get(%r) or {}).get(%r)" % (m_indot.group(1), m_indot.group(2)))
             continue
         # Captura de LINHA acessada por campo: "zoneamento_info.id" → zoneamento_info.get('id')
         # (a var foi capturada como dict _row porque é usada com .campo depois).
