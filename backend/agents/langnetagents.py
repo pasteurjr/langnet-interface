@@ -3948,20 +3948,24 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
     Anything not matching is skipped — the task falls through to the CrewAI path.
     """
     import re as _re
-    # TOLERANTE a YAML inválido (nomes de task malformados): extrai blocos por texto.
-    blocks = _extract_task_blocks(tasks_yaml)
-    if not blocks:  # compat: se não achou nada, tenta o yaml estrito
-        try:
-            import yaml as _yaml
-            parsed = _yaml.safe_load(tasks_yaml) or {}
-            if isinstance(parsed, dict):
-                blocks = [{'name': k,
-                           'description': (v.get('description') or '') if isinstance(v, dict) else '',
-                           'expected_output': (v.get('expected_output') or '') if isinstance(v, dict) else '',
-                           'traceability': (v.get('traceability') or {}) if isinstance(v, dict) else {}}
-                          for k, v in parsed.items()]
-        except Exception:
-            blocks = []
+    # YAML ESTRITO primeiro: descrições multi-linha em aspas-duplas (com continuação `\`)
+    # eram TRUNCADAS pelo extrator tolerante (só a 1ª linha física) → parser recebia ~70
+    # chars e não emitia nada. safe_load devolve o texto completo. Só caímos no tolerante
+    # se o YAML for inválido de fato (nome de task malformado com ':' etc.).
+    blocks = []
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml) or {}
+        if isinstance(parsed, dict) and parsed:
+            blocks = [{'name': k,
+                       'description': (v.get('description') or '') if isinstance(v, dict) else '',
+                       'expected_output': (v.get('expected_output') or '') if isinstance(v, dict) else '',
+                       'traceability': (v.get('traceability') or {}) if isinstance(v, dict) else {}}
+                      for k, v in parsed.items()]
+    except Exception:
+        blocks = []
+    if not blocks:  # YAML inválido: extrai blocos por texto, tolerante a nomes malformados.
+        blocks = _extract_task_blocks(tasks_yaml)
 
     generated: List[str] = []
     generated_names: List[str] = []
@@ -4840,7 +4844,7 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
         line = raw[i]
         qm = query_re.search(line)
         if qm:
-            q = _canon_table_names(qm.group(1).strip()); ps = ""
+            q = _canon_query_columns(_canon_table_names(qm.group(1).strip())); ps = ""
             pm = params_re.search(line)
             if pm:
                 ps = pm.group(1)
@@ -4872,6 +4876,44 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
                     seq.append("%s = %s.get('%s')" % (col, rowvar, col)); scalars.add(col)
             else:
                 seq.append("cur.execute(%r, %s)" % (q, _tparams(ps)))
+            i += 1; continue
+        # REGRAS FIXAS: mapa chave->número + captura (ex.: bioma → percentual de reserva legal).
+        # Sem isto, `percentual` (usado depois na aritmética e no INSERT) nunca era definido →
+        # NameError no runtime ("name 'percentual' is not defined"). O parser só capturava
+        # variável vinda de SELECT; esta vem de uma tabela de regras textual.
+        if _re.search(r'(?i)regras?\s+fixas', line) or _re.match(r"\s*-?\s*['\"]?[\w-]+['\"]?\s*:\s*-?\d", line):
+            _pairs = {}
+            j = i + 1 if _re.search(r'(?i)regras?\s+fixas', line) else i
+            while j < n:
+                _pm = _re.match(r"\s*-?\s*['\"]?([A-Za-z_][\w-]*)['\"]?\s*:\s*(-?\d+(?:\.\d+)?)\s*\.?\s*$", raw[j])
+                if _pm:
+                    _pairs[_pm.group(1).lower()] = _pm.group(2); j += 1; continue
+                break
+            if len(_pairs) >= 2:
+                _keyvar = None
+                for k in range(max(0, i - 3), i + 1):
+                    _km = _re.search(r'\{(\w+)\}', raw[k])
+                    if _km:
+                        _keyvar = _km.group(1)
+                # captura/default entre as regras e o PRÓXIMO passo numerado (senão pega o
+                # "Guarde ... em area_rl" do passo seguinte e mapeia a var errada).
+                _default = '0'; _cap = None
+                for k in range(j, n):
+                    if k > j and _re.match(r'\s*\d+\.\s', raw[k]):
+                        break
+                    _dm2 = _re.search(r'(?i)utiliz\w*\s+(-?\d+(?:\.\d+)?)\s+como\s+padr', raw[k])
+                    if _dm2:
+                        _default = _dm2.group(1)
+                    _cm2 = capture_re.search(raw[k])
+                    if _cm2 and _cap is None:
+                        _cap = _cm2.group(1)
+                if _keyvar and _cap:
+                    _mn = "_rulemap_%s" % _cap
+                    seq.append("%s = {%s}" % (_mn, ", ".join("%r: %s" % (kk, vv) for kk, vv in _pairs.items())))
+                    seq.append("%s = %s.get(str(input_data.get(%r) or '').strip().lower(), %s)"
+                               % (_cap, _mn, _keyvar, _default))
+                    scalars.add(_cap); computed.append(_cap)
+                    i = j; continue
             i += 1; continue
         am = _is_arith(line)
         if am:
@@ -5210,6 +5252,90 @@ def _canon_table_names(query: str) -> str:
     return _re.sub(r'(?i)\b(FROM|JOIN|INTO|UPDATE)\s+([a-z_][a-z0-9_]*)', _rep, query)
 
 
+_DM_COLS_CTX: Dict[str, set] = {}
+
+
+def _dm_cols_from_ddl(schema_sql: str) -> Dict[str, set]:
+    """{tabela -> {colunas}} a partir do DDL (mesma lógica do portão de rastreabilidade)."""
+    import re as _re
+    cols: Dict[str, set] = {}
+    for blk in _re.split(r'(?i)\bCREATE\s+TABLE\s+', schema_sql or "")[1:]:
+        m = _re.match(r'(?:IF\s+NOT\s+EXISTS\s+)?["`]?([a-z_]\w*)', blk, _re.I)
+        if not m:
+            continue
+        cset: set = set()
+        body = blk[blk.find('('):] if '(' in blk else ''
+        for line in body.split('\n'):
+            cm = _re.match(r'\s*["`]?([a-z_]\w*)["`]?\s+[A-Za-z]', line.strip())
+            if cm and cm.group(1).upper() not in ('FOREIGN', 'PRIMARY', 'UNIQUE', 'CHECK', 'CONSTRAINT'):
+                cset.add(cm.group(1).lower())
+        cols[m.group(1).lower()] = cset
+    return cols
+
+
+# Palavras que NUNCA são coluna (keywords/funções SQL) — evita que o canon de coluna
+# tente "corrigir" um token legítimo. Conservador de propósito.
+_SQL_STOP = {
+    "select", "from", "join", "inner", "left", "right", "outer", "cross", "full", "natural",
+    "on", "where", "group", "by", "order", "having", "limit", "offset", "as", "and", "or",
+    "not", "in", "is", "null", "like", "ilike", "between", "case", "when", "then", "else",
+    "end", "asc", "desc", "distinct", "all", "union", "insert", "into", "values", "update",
+    "set", "delete", "count", "sum", "avg", "min", "max", "coalesce", "now", "interval",
+    "current_timestamp", "current_date", "extract", "cast", "true", "false", "using",
+    "st_area", "st_intersects", "st_intersection", "st_contains", "st_within", "st_geomfromtext",
+    "st_transform", "st_setsrid", "st_buffer", "st_distance", "day", "days", "month", "year",
+}
+
+
+def _canon_query_columns(query: str) -> str:
+    """Canoniza COLUNAS nuas na SQL contra o Modelo de Dados. Para cada identificador que
+    NÃO é keyword/função, não é tabela/alias, não está seguido de '(' e NÃO existe em nenhuma
+    coluna das tabelas do FROM/JOIN — se for um near-miss (difflib>=0.85) de uma coluna REAL,
+    troca. Pega o clássico typo `SUM(conflicto_app)` → `conflito_app` que só quebrava no runtime
+    (o portão de coluna antes só olhava a lista do SELECT, nunca dentro de função). Determinístico."""
+    if not _DM_COLS_CTX:
+        return query
+    import re as _re, difflib as _dl
+    real_tabs = set(_DM_COLS_CTX.keys())
+
+    def _resolve_tab(t: str) -> str:
+        t = t.lower()
+        if t in real_tabs:
+            return t
+        cand = [d for d in real_tabs if t in d or d in t] or _dl.get_close_matches(t, list(real_tabs), n=1, cutoff=0.6)
+        return cand[0] if cand else ''
+
+    tabs = [_resolve_tab(m.group(2)) for m in _re.finditer(r'(?i)\b(FROM|JOIN|INTO|UPDATE)\s+([a-z_]\w*)', query)]
+    valid = set()
+    for t in tabs:
+        valid |= _DM_COLS_CTX.get(t, set())
+    if not valid:
+        return query
+    aliases = set(m.group(1).lower() for m in
+                  _re.finditer(r'(?i)\b(?:FROM|JOIN)\s+[a-z_]\w*\s+(?:AS\s+)?([a-z_]\w*)', query)
+                  if m.group(1) and m.group(1).lower() not in _SQL_STOP)
+    tabnames = set(t for t in tabs if t)
+
+    def _rep(m):
+        tok = m.group(0)
+        low = tok.lower()
+        # descarta: keyword, alias/tabela, qualificado (alias.col já validado no join-check),
+        # função (seguido de '('), token curto, e o que já é coluna válida.
+        if low in _SQL_STOP or low in aliases or low in tabnames or low in valid or len(low) < 5:
+            return tok
+        nxt = query[m.end():m.end() + 1]
+        if nxt == '(':
+            return tok
+        prev = query[max(0, m.start() - 1):m.start()]
+        if prev == '.':
+            return tok
+        cand = _dl.get_close_matches(low, list(valid), n=1, cutoff=0.85)
+        return cand[0] if cand else tok
+
+    # só troca identificadores nus (não qualificados por alias., não string literal)
+    return _re.sub(r'(?<![\'".\w])[a-z_]\w{4,}', _rep, query)
+
+
 def _build_schema_fk_map(schema_sql: str) -> Dict[str, Dict[str, str]]:
     """{tabela -> {tabela_referenciada: coluna_fk}} a partir dos FOREIGN KEY do DDL.
     Dialect-agnostic: aceita identificadores com crase (MySQL) ou aspas duplas (PostgreSQL)."""
@@ -5289,8 +5415,9 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
     list_captured = list_captured if list_captured is not None else set()
     dot_accessed = dot_accessed or set()
     row_captured = row_captured if row_captured is not None else set()
-    # Task→DM: canoniza nomes de tabela contra o Modelo de Dados (ex.: zonas→zoneamentos).
-    query = _canon_table_names(query)
+    # Task→DM: canoniza nomes de tabela contra o Modelo de Dados (ex.: zonas→zoneamentos)
+    # e typos de coluna (ex.: SUM(conflicto_app) → conflito_app).
+    query = _canon_query_columns(_canon_table_names(query))
     query_lower = query.strip().lower()
     is_select = query_lower.startswith("select")
 
@@ -6741,11 +6868,17 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
                              __import__('re').finditer(r'(?i)CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?([a-z_][a-z0-9_]*)', _sch_enum or ""))
         if _DM_TABLES_CTX:
             print(f"[CODE-GEN] DM tables: {len(_DM_TABLES_CTX)} (canon de nome de tabela ligado)")
+        # Colunas REAIS por tabela p/ canonizar typos de coluna nas queries (bug SUM(conflicto_app)).
+        global _DM_COLS_CTX
+        _DM_COLS_CTX = _dm_cols_from_ddl(_sch_enum or "")
+        if _DM_COLS_CTX:
+            print(f"[CODE-GEN] DM cols: {sum(len(v) for v in _DM_COLS_CTX.values())} colunas (canon de coluna ligado)")
     except Exception as _ee:
         print(f"[CODE-GEN] enum canon falhou: {_ee}")
         _ENUM_CANON_CTX = {}
         _SCHEMA_FK_CTX = {}
         _DM_TABLES_CTX = set()
+        _DM_COLS_CTX = {}
     _cg_dbms = (_cg_dbms or "mysql")
     _cg_is_pg = _cg_dbms in ("postgres", "postgresql", "postgis", "postgresql+postgis")
     # SRID das colunas geométricas do schema PostGIS (geometry(Geometry,4674)) — usado para
