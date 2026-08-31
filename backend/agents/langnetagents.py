@@ -4785,7 +4785,7 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
     if not (has_arith or has_status):
         return ""
 
-    seq = []; scalars = set(); computed = []; status_vars = []; compare_pairs = []
+    seq = []; scalars = set(); computed = []; status_vars = []; compare_pairs = []; status_specs = {}
 
     def _cols_from_select(q):
         m = _re.search(r'(?is)\bSELECT\b(.+?)\bFROM\b', q)
@@ -4883,15 +4883,26 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
             for a, b in _re.findall(r'([A-Za-z_]\w*)\s+com\s+([A-Za-z_]\w*)', line):
                 compare_pairs.append((a, b))
         if _re.search(r'status_\w+', line, _re.I) and _re.search(r'(?i)conforme', line):
+            # condição INLINE ("status_ca: 'conforme' se ca_calc <= ca_maximo") — captura
+            # os operandos E o operador direto, além do padrão "Comparar A com B".
+            _cond = _re.search(r'([A-Za-z_]\w*)\s*(<=|>=|<|>|==)\s*([A-Za-z_]\w*)', line)
             for sv in _re.findall(r'(status_\w+)', line):
                 if sv not in status_vars:
                     status_vars.append(sv)
+                if _cond and sv not in status_specs:
+                    status_specs[sv] = (_cond.group(1), _cond.group(2), _cond.group(3))
         i += 1
 
     if not seq and not status_vars:
         return ""
 
     for sv in status_vars:
+        if sv in status_specs:  # condição inline com operador real
+            a, op, b = status_specs[sv]
+            seq.append("%s = 'conforme' if (_num(%s) is not None and _num(%s) is not None and "
+                       "_num(%s) %s _num(%s)) else 'nao_conforme'" % (sv, a, b, a, op, b))
+            scalars.add(sv)
+            continue
         seg = sv[len('status_'):]
         pair = next((p for p in compare_pairs
                      if p[0].startswith(seg) or seg in p[0] or p[1].startswith(seg)), None)
@@ -4900,7 +4911,7 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
             seq.append("%s = 'conforme' if (_num(%s) is not None and _num(%s) is not None and "
                        "_num(%s) <= _num(%s)) else 'nao_conforme'" % (sv, a, b, a, b))
         else:
-            seq.append("%s = None" % sv)
+            seq.append("%s = 'nao_conforme'" % sv)  # sem regra → default seguro (não NULL)
         scalars.add(sv)
 
     fields = _re.findall(r'([A-Za-z_]\w*)\s*\(', expected_output) if expected_output else []
