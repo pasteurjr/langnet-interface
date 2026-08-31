@@ -250,7 +250,7 @@ def get_llm(use_deepseek: bool = False):
                 api_key=os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
                 base_url=lm_base,
                 temperature=0.3,
-                max_tokens=int(os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
+                max_tokens=int(os.getenv("LMSTUDIO_MAX_TOKENS", "24000")),
                 timeout=int(os.getenv("LMSTUDIO_TIMEOUT", "3600")),  # 60 min padrão
             )
 
@@ -2631,7 +2631,11 @@ def _build_llm_flash() -> LLM:
             api_key=os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
             base_url=os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1"),
             temperature=0.7,
-            max_tokens=int(os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
+            max_tokens=int(os.getenv("LMSTUDIO_MAX_TOKENS", "24000")),
+            # qwen3 é modelo de RACIOCÍNIO: sem isto consome max_tokens em <think> e devolve
+            # resposta vazia ('Invalid response from LLM call - None or empty'). enable_thinking
+            # =false desliga o reasoning (fix definitivo; /no_think não basta em prompts grandes).
+            extra_body={{"chat_template_kwargs": {{"enable_thinking": False}}}},
         )
     if prov == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
         return LLM(
@@ -2658,7 +2662,8 @@ def _build_llm_pro() -> LLM:
             api_key=os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
             base_url=os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1"),
             temperature=0.3,
-            max_tokens=int(os.getenv("LMSTUDIO_MAX_TOKENS_PRO", "24000")),
+            max_tokens=int(os.getenv("LMSTUDIO_MAX_TOKENS_PRO", "32000")),
+            extra_body={{"chat_template_kwargs": {{"enable_thinking": False}}}},
         )
     if prov == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
         return LLM(
@@ -3224,8 +3229,8 @@ def _template_env_example(detected_tools: List[str]) -> str:
         f"LMSTUDIO_API_BASE={lm_base}",
         f"LMSTUDIO_MODEL_NAME={lm_model}",
         "LMSTUDIO_API_KEY=lm-studio",
-        "LMSTUDIO_MAX_TOKENS=8000",
-        "LMSTUDIO_MAX_TOKENS_PRO=12000",
+        "LMSTUDIO_MAX_TOKENS=24000",
+        "LMSTUDIO_MAX_TOKENS_PRO=32000",
         "",
         "# Alternativa DeepSeek (nuvem): troque LLM_PROVIDER=deepseek e informe SUA chave",
         "# LLM_PROVIDER=deepseek",
@@ -6288,12 +6293,42 @@ def make_unconfigured_tool(tool_name: str) -> BaseTool:
 
 # Registro das tools locais reais (o ws-server mescla isto no TOOL_REGISTRY, sobrepondo
 # qualquer versão mock que o LLM tenha gerado no tools.py).
+# ---------- Leitor de documentos (real: pypdf / python-docx / txt) ----------
+class DocReaderToolSchema(BaseModel):
+    file_path: str = Field(..., description="Caminho do arquivo PDF/DOCX/TXT a ler")
+
+
+class PdfReaderTool(BaseTool):
+    name: str = "PdfReaderTool"
+    description: str = "Le e devolve o TEXTO de um arquivo PDF/DOCX/TXT (extracao real)."
+    args_schema: type[BaseModel] = DocReaderToolSchema
+
+    def _run(self, file_path: str) -> str:
+        import os
+        ext = os.path.splitext(file_path or "")[1].lower()
+        try:
+            if ext == ".pdf":
+                from pypdf import PdfReader
+                return "\n".join((p.extract_text() or "") for p in PdfReader(file_path).pages)
+            if ext in (".docx", ".doc"):
+                import docx
+                return "\n".join(p.text for p in docx.Document(file_path).paragraphs)
+            with open(file_path, encoding="utf-8", errors="ignore") as _f:
+                return _f.read()
+        except Exception as _e:
+            return f"[erro ao ler {file_path}: {_e}]"
+
+
 STD_TOOLS = {
     "pdf_generator_tool": PdfGeneratorTool(),
     "csv_exporter_tool": CsvExporterTool(),
     "embedding_tool": EmbeddingTool(),
     "vector_search_tool": VectorSearchTool(),
     "email_sender_tool": EmailSenderTool(),
+    "pdf_reader": PdfReaderTool(),
+    "docx_reader": PdfReaderTool(),
+    "document_parser_tool": PdfReaderTool(),
+    "file_reader_tool": PdfReaderTool(),
 }
 '''
 
