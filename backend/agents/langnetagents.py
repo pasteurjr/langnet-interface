@@ -4883,14 +4883,19 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
             for a, b in _re.findall(r'([A-Za-z_]\w*)\s+com\s+([A-Za-z_]\w*)', line):
                 compare_pairs.append((a, b))
         if _re.search(r'status_\w+', line, _re.I) and _re.search(r'(?i)conforme', line):
-            # condição INLINE ("status_ca: 'conforme' se ca_calc <= ca_maximo") — captura
-            # os operandos E o operador direto, além do padrão "Comparar A com B".
+            # condição INLINE ("status_ca: 'conforme' se ca_calc <= ca_maximo"). EMITE AQUI,
+            # em ordem — senão o status sai depois do INSERT que o usa (o INSERT pegava
+            # input_data.get('status_ca')=None → NULL no NOT NULL). Com condição inline,
+            # emite direto; sem ela, adia p/ o laço final (fallback via "Comparar A com B").
             _cond = _re.search(r'([A-Za-z_]\w*)\s*(<=|>=|<|>|==)\s*([A-Za-z_]\w*)', line)
             for sv in _re.findall(r'(status_\w+)', line):
-                if sv not in status_vars:
+                if _cond and sv not in scalars:
+                    a, op, b = _cond.group(1), _cond.group(2), _cond.group(3)
+                    seq.append("%s = 'conforme' if (_num(%s) is not None and _num(%s) is not None "
+                               "and _num(%s) %s _num(%s)) else 'nao_conforme'" % (sv, a, b, a, op, b))
+                    scalars.add(sv)
+                elif sv not in status_vars and sv not in scalars:
                     status_vars.append(sv)
-                if _cond and sv not in status_specs:
-                    status_specs[sv] = (_cond.group(1), _cond.group(2), _cond.group(3))
         i += 1
 
     if not seq and not status_vars:
