@@ -25,6 +25,7 @@ Inventário: 37 FR · 14 NFR · 7 BR · 10 UC(spec)
   Task→DM (tabela)           OK
   Task→DM (coluna)           OK
   Task→DM (JOIN/FROM)        OK
+  Task→código (nomes)        OK       ← NOVO hop (camada de garantia)
   Qualidade (FR por task)    OK
 ══════════════════════════════════════════════════════════════════
 ```
@@ -34,9 +35,10 @@ Inventário: 37 FR · 14 NFR · 7 BR · 10 UC(spec)
 - **Matriz FR→UC**: cada um dos 37 FR está mapeado a ≥1 caso de uso (FR órfão = rejeitado).
 - **FR→Implementação**: cada FR tem ao menos uma task que o implementa.
 - **Task→DM (tabela/coluna/JOIN)**: toda query de task referencia **tabelas e colunas que existem** no schema, e **todo alias usado está no FROM/JOIN** (pega o clássico `i.geometria` sem `imoveis` no FROM).
+- **Task→código (nomes)** — *hop novo desta rodada*: o portão **gera o Python determinístico de cada task** (o mesmo emissor do code-gen) e faz análise estática AST — se algum **nome é usado sem nunca ser definido** (o `NameError` de runtime), reprova. É a garantia contra **variável-fantasma** — a classe de bug que antes só aparecia no E2E, tarde.
 - **Qualidade**: nenhuma task "catch-all" cobrindo sozinha >6 FR (anti-*stuffing*).
 
-Duas camadas de garantia, como discutido: o **prompt reduz** a incidência do erro; o **portão determinístico garante** que o que escapou seja pego antes do deploy.
+Duas camadas de garantia, como discutido: o **prompt/gerador reduz** a incidência do erro; o **portão determinístico garante** que o que escapou seja pego antes do deploy.
 
 ---
 
@@ -108,16 +110,29 @@ A função **lê a edificação/imóvel do banco**, calcula CA/TO e grava o stat
 ### ✅ Leituras / CRUD
 `Imóveis` e `Cálculos Conformidade` renderizam linhas reais do PostGIS (seções 3.1 e 3.2).
 
-### ❌ Bugs residuais que o E2E revela (documentados com honestidade)
+---
 
-| Task | Sintoma | Natureza |
-|------|---------|----------|
-| `aggregate_compliance_kpis` | `column "conflicto_app" does not exist` | **Coluna inexistente** — typo (`conflicto` vs `conflito`). Classe que o portão de coluna deveria pegar; a KPI usa nome de coluna que não casa com o DM. |
-| `generate_compliance_report` | `litellm.AuthenticationError: api_key must be set` | Task **agente** aponta para OpenAI em vez do **qwen local** (LM Studio). Config de LLM, não de schema. |
-| `calculate_app_overlap` | resultado `NULL` | Query de interseção espacial retorna vazio para o imóvel de teste (falta geometria APP semeada / JOIN). |
-| `calculate_reserva_legal` | `name 'percentual' is not defined` | Bug de **descrição da task**: usa a variável `percentual` numa fórmula sem antes capturá-la de um SELECT. Classe que o parser determinístico deveria detectar (variável usada em aritmética, nunca definida). |
+## 4-bis. Loop de convergência: 4 dos 6 residuais fechados nesta rodada
 
-Esses 4 são residuais **conhecidos e localizados** — não mascarados. Dois deles (`aggregate_compliance_kpis` coluna, `calculate_reserva_legal` variável-fantasma) são exatamente o tipo de erro que o **próximo reforço do portão** deve capturar determinísticamente antes do deploy.
+A primeira passagem do E2E revelou 4 bugs residuais. Em vez de só documentá-los, apliquei o **loop de convergência** (portão aponta → conserta no gerador → reprova/aprova), corrigindo **no gerador** (produto), regenerando os adapters determinísticos e re-provando E2E.
+
+### ✅ `aggregate_compliance_kpis` — CORRIGIDO
+Era `column "conflicto_app" does not exist` (typo `conflicto`→`conflito`, coluna **nua dentro de `SUM(...)`** que o check de coluna não olhava). Fix no gerador: **canon determinístico de coluna** (`_canon_query_columns`) que mapeia typo → coluna real por near-miss contra o DM.
+**E2E agora:** `{total_lotes: 9, conformes: 8, nao_conformes: 1}`.
+
+### ✅ `calculate_reserva_legal` — CORRIGIDO
+Era `name 'percentual' is not defined` — variável vinda de **tabela de regras** (`bioma → %`), que o parser não capturava. Fix: **handler de "Regras fixas"** no parser, que emite `dict` + lookup com default.
+**E2E agora:** cerrado → `{area_rl: 200, percentual: 20}`; amazônia → `{area_rl: 800, percentual: 80}`.
+
+### ✅ `consulta_mapa_regramento_ambiental` — CORRIGIDO (achado pelo hop NOVO do portão)
+O E2E **nem tinha exercido** esta task. O **hop novo `Task→código (nomes)`** a reprovou por `coordenadas` indefinido: (a) o param `{coordenadas.lon}` saía literal como `set` com nome indefinido; (b) rule espacial envolvia mal o 2º arg de `ST_MakePoint` em `ST_GeomFromText`. Dois fixes no gerador (acesso pontuado a campo de entrada; exclusão de construtores de coordenada do wrap).
+**E2E agora:** roda limpo via `ST_SetSRID(ST_MakePoint(lon,lat),4674)` — `{status: sucesso}`.
+
+### ⚠️ `calculate_app_overlap` — residual (gap de feature)
+`conflito_app` (NOT NULL) fica NULL porque a flag vem de **somar as áreas de interseção de um laço espacial** (`SUM(ST_Area(ST_Intersection(...))) > 0 → 1/0`) que o parser determinístico ainda não empurra para dentro do SQL. Precisa da agregação-espacial-no-SQL — trabalho de parser maior, honestamente pendente.
+
+### ⚠️ `generate_compliance_report` — residual (config de LLM)
+Task `execution: agent` cujo LLM aponta para **OpenAI** (`AuthenticationError`) em vez do **qwen local** (LM Studio). Config do app gerado, não schema/rastreabilidade.
 
 ---
 
@@ -125,10 +140,11 @@ Esses 4 são residuais **conhecidos e localizados** — não mascarados. Dois de
 
 **Coerente e rodando**, com escopo honesto:
 
-- ✅ Rastreabilidade **VERDE** ponta-a-ponta (37 FR / 14 NFR / 7 BR), com guardrail determinístico que **garante** — não confia.
+- ✅ Rastreabilidade **VERDE** ponta-a-ponta (37 FR / 14 NFR / 7 BR) — agora com **6 hops**, incluindo o novo **Task→código (nomes)** que gera e analisa o Python de cada task antes do deploy.
 - ✅ App gerado **sobe limpo do gerador** (sem edição manual) e renderiza **telas ricas** (mapa Leaflet+desenho, dashboard, upload de geodados) — não formulário genérico.
 - ✅ **CRUD lê dados reais** do PostGIS; o **resultado do calculador aparece na UI**.
-- ✅ Calculador urbanístico **executa determinístico e correto** (CA/TO + conforme/nao-conforme) pelo mesmo WebSocket do frontend.
-- ⚠️ **4 tasks residuais com bug** localizado (2 de coluna/variável — alvo do próximo reforço do portão; 1 de config LLM; 1 de geometria semeada).
+- ✅ Calculador urbanístico + KPIs + reserva legal (2 biomas) + consulta de mapa **executam determinístico e correto** pelo mesmo WebSocket do frontend.
+- ✅ **Loop de convergência provado**: o portão reforçado **achou um bug latente** que o E2E nem exercia (`consulta_mapa`), levando a fixes no gerador — a camada de garantia trabalhando de fato.
+- ⚠️ **2 residuais** honestos e localizados: `calculate_app_overlap` (precisa de soma-espacial-no-SQL) e `generate_compliance_report` (LLM do agente aponta p/ OpenAI).
 
-O pipeline canônico foi seguido sem bypass: Requisitos → Especificação → Modelo de Dados → UI Spec & Protótipo → Agent-Task Spec → YAML → Código → Deploy → execução E2E. As correções ficaram no **gerador/prompts** (produto) e as ações de pipeline pela **UI**.
+De **6 tasks com problema na 1ª passagem, 4 fechadas** nesta rodada, todas por **fix no gerador** (produto) + regeneração — zero edição manual de artefato. O pipeline canônico foi seguido sem bypass: Requisitos → Especificação → Modelo de Dados → UI Spec & Protótipo → Agent-Task Spec → YAML → Código → Deploy → execução E2E.

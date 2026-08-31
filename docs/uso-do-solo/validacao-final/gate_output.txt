@@ -10,5 +10,6 @@ Inventário: 37 FR · 14 NFR · 7 BR · 10 UC(spec)
   Task→DM (tabela)           OK
   Task→DM (coluna)           OK
   Task→DM (JOIN/FROM)        OK
+  Task→código (nomes)        OK
   Qualidade (FR por task)    OK
 ══════════════════════════════════════════════════════════════════
