@@ -4980,11 +4980,44 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
     return "\n".join("        " + l for l in seq) + "\n"
 
 
+def _rewrite_spatial_overlap_flag(desc: str) -> str:
+    """Colapsa o padrão 'somar áreas de interseção espacial → flag 0/1 → UPDATE' numa
+    ÚNICA query agregada que já devolve a flag. O parser determinístico não fazia o laço
+    (SELECT por-APP + soma + condicional), então a flag (`conflito_app`, NOT NULL) saía
+    None → viola NOT NULL. Aqui: SELECT (COALESCE(SUM(ST_Area(ST_Intersection(...))),0)>0)::int
+    AS flag, captura escalar, e o UPDATE usa a flag. Determinístico; genérico p/ tasks de
+    sobreposição espacial (achado no E2E: calculate_app_overlap)."""
+    import re as _re
+    m_upd = _re.search(r'(?is)query="(UPDATE\s+\w+\s+SET\s+(\w+)\s*=\s*%s[^"]*)"', desc)
+    m_per = _re.search(r'(?is)query="(SELECT\s+ST_Area\(\s*(ST_Intersection\([^)]*\))\s*\)[^"]*)"', desc)
+    if not (m_upd and m_per and 'somar' in desc.lower()):
+        return desc
+    flag = m_upd.group(2)
+    upd_q = m_upd.group(1)
+    per_q = m_per.group(1)
+    inter = m_per.group(2)  # ST_Intersection(i.geometria, a.geometria)
+    # do SELECT per-item, mantém FROM/JOIN/WHERE mas remove o filtro per-APP (a.id = %s) e agrega.
+    tail = per_q[per_q.lower().find('from'):]
+    tail = _re.sub(r'(?i)\s+AND\s+\w+\.id\s*=\s*%s', '', tail)
+    agg_q = "SELECT (COALESCE(SUM(ST_Area(%s)), 0) > 0)::int AS %s %s" % (inter, flag, tail)
+    return (
+        "Calcular a flag de sobreposicao espacial e atualizar o registro.\n"
+        "1. Somar a sobreposicao e determinar a flag:\n"
+        '   query="%s"\n'
+        "   params=[{imovel_id}]\n"
+        "   Guarde o resultado em %s.\n"
+        "2. Atualizar o registro:\n"
+        '   query="%s"\n'
+        "   params=[{%s}, {imovel_id}]\n"
+    ) % (agg_q, flag, upd_q, flag)
+
+
 def _parse_task_description_to_python(desc: str, expected_output: str = "") -> str:
     """Parses a task description's steps and returns the Python body (indented
     with 8 spaces to fit inside ``try:`` of the wrapper). Returns "" if nothing
     parseable. Tenta COMPUTAÇÃO (aritmética/conformidade) primeiro; senão CRUD/SQL."""
     import re as _re
+    desc = _rewrite_spatial_overlap_flag(desc)
     _comp = _parse_computation_task(desc, expected_output)
     if _comp:
         return _comp
@@ -5028,6 +5061,25 @@ def _parse_task_description_to_python(desc: str, expected_output: str = "") -> s
         return "\n".join(_out)
 
     raw_lines = _coalesce_quoted(desc).split("\n")
+
+    # "Extraia os valores do objeto `X`:" — os {{campo}}/{campo} nos params são CHAVES do
+    # input X (dict/JSON aninhado), NÃO inputs diretos. Sem tratar, o param saía como
+    # set-literal `{{campo}}` com `campo` indefinido → NameError (achado no E2E em
+    # save_simulation_scenario). Captura cada campo de input_data['X'] no topo do corpo e
+    # registra em captured_vars (assim `{{campo}}`/`{campo}`/`campo` resolvem à var local).
+    _obj_capture_lines: List[str] = []
+    _ms_src = _re.search(r"(?i)extra[ií]\w*.{0,40}?objeto\s+[`'\"]?(\w+)[`'\"]?", desc)
+    if _ms_src:
+        _src = _ms_src.group(1)
+        _fields = []
+        for fm in _re.finditer(r'\{\{(\w+)\}\}', desc):
+            if fm.group(1) not in _fields:
+                _fields.append(fm.group(1))
+        for _f in _fields:
+            _obj_capture_lines.append("%s = (input_data.get(%r) or {}).get(%r)" % (_f, _src, _f))
+            if _f not in captured_vars:
+                captured_vars.append(_f)
+
     # PRÉ-SCAN: nomes usados como FONTE de loop ("Para CADA x em NOME"). Se um SELECT
     # captura em NOME ("Guarde o resultado em NOME"), guardamos as LINHAS (lista) e o
     # loop itera os dicts — fecha o padrão SELECT→lista→loop de INSERT por linha.
@@ -5144,8 +5196,11 @@ def _parse_task_description_to_python(desc: str, expected_output: str = "") -> s
     for _k, _p in _steps:
         if _k == 'update':
             lines_out.extend(_p)
-    if not lines_out:
+    if not lines_out and not _obj_capture_lines:
         return ""
+    # capturas de campos do objeto de entrada vêm ANTES de qualquer passo que as use.
+    if _obj_capture_lines:
+        lines_out = _obj_capture_lines + lines_out
 
     # Result envelope: if there's a captured id, expose it in _result along with status.
     result_parts = ["'status': 'sucesso'"]
@@ -5593,9 +5648,17 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
     parts = [p.strip() for p in params_str.split(",") if p.strip()]
     py_parts: List[str] = []
     for p in parts:
+        # {{var}} (chave dupla, estilo template) → var local se capturada (ex.: campo extraído
+        # de scenario_data), senão input direto. Sem isto saía como set-literal → NameError.
+        m2 = _re.match(r'^\{\{(\w+)\}\}$', p)
+        if m2:
+            v = m2.group(1)
+            py_parts.append(v if v in captured_vars else _emit_get(v))
+            continue
         m = _re.match(r'^\{(\w+)\}$', p)
         if m:
-            py_parts.append(_emit_get(m.group(1)))
+            v = m.group(1)
+            py_parts.append(v if v in captured_vars else _emit_get(v))
             continue
         # {coordenadas.lon} → acesso PONTUADO num campo de ENTRADA aninhado (dict):
         # (input_data.get('coordenadas') or {}).get('lon'). Sem isto o param saía LITERAL
