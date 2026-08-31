@@ -6670,6 +6670,24 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     tools_py = _fix_pydantic_type_hint_typos(tools_py)
     # Robustez: garante args_schema válido em toda tool (senão CrewAI quebra o startup).
     tools_py = _ensure_tools_have_args_schema(tools_py)
+    # GARANTIA de que o app SOBE: o tools.py é LLM-heavy e às vezes sai com erro de sintaxe
+    # (import `crewai.tools.tool import Tool` inexistente, aspa dupla em description,
+    # string multi-linha quebrada). Se NÃO parsear após os saneadores, cai no template seguro
+    # `_empty_tools_py` — que sempre compila. Mesmo princípio dos guardrails: não confiar no
+    # LLM acertar; validar e ter fallback determinístico. (O calculador é determinístico e
+    # não depende do corpo destas tools.)
+    import ast as _ast
+    import re as _re_tp
+    # `from crewai.tools.tool import Tool` = submódulo inexistente (ImportError, que o
+    # ast.parse NÃO pega) -> `from crewai.tools import BaseTool as Tool` (preserva o nome
+    # importado). Não toca em crewai.tools.tool_calling (esse existe).
+    tools_py = _re_tp.sub(r'(?m)^from\s+crewai\.tools\.tool\s+import\s+(\w+)\s*$',
+                          r'from crewai.tools import BaseTool as \1', tools_py)
+    try:
+        _ast.parse(tools_py)
+    except SyntaxError as _se:
+        print(f"[CODE-GEN] ⚠️ tools.py LLM com SyntaxError (linha {_se.lineno}); usando template seguro _empty_tools_py")
+        tools_py = _empty_tools_py(detected_tools)
 
     # Injeta TOOL_REGISTRY no tools.py (se LLM não incluiu) e AGENT_TOOLS/TASK_TOOLS no adapters.py
     tools_py = _inject_tool_registry_stub(tools_py, all_tool_names)
