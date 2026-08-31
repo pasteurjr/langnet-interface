@@ -231,7 +231,10 @@ def _deterministic_name_violations(tasks_yaml: str, schema_sql: str = "") -> Lis
     import ast as _ast, builtins as _b
     safe = {"input_data", "cur", "conn", "os", "psycopg2", "mysql", "_num", "_safe_div",
             "_flt", "_e", "_result", "True", "False", "None",
-            "Decimal", "InvalidOperation", "datetime", "json", "re", "math", "uuid", "Any"}
+            "Decimal", "InvalidOperation", "datetime", "json", "re", "math", "uuid", "Any",
+            # helpers do CABEÇALHO do adapters.py (não vêm no snippet por-task, mas existem
+            # no módulo em runtime): senão viram falso-positivo de NameError.
+            "_hoje", "_as_list", "_cv", "_coerce_value", "_coerce", "_num_or_none"}
     safe |= set(dir(_b))
     try:
         tree = _ast.parse(src)
