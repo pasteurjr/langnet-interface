@@ -1,0 +1,14 @@
+══════════════════════════════════════════════════════════════════
+  PORTÃO DE RASTREABILIDADE — ✅ PASSOU
+══════════════════════════════════════════════════════════════════
+Inventário: 37 FR · 14 NFR · 7 BR · 10 UC(spec)
+  Req→Spec (FR)              37/37   OK
+  Req→Spec (NFR)             14/14   OK
+  Req→Spec (BR)              7/7   OK
+  Matriz FR→UC (spec)        37/37   OK
+  FR→Implementação (task)    37/37   OK
+  Task→DM (tabela)           OK
+  Task→DM (coluna)           OK
+  Task→DM (JOIN/FROM)        OK
+  Qualidade (FR por task)    OK
+══════════════════════════════════════════════════════════════════
