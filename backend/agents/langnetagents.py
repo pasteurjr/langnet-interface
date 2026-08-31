@@ -2689,6 +2689,18 @@ TASKS_CONFIG = _load_yaml("tasks.yaml")
 
 
 TOOL_REGISTRY = getattr(tools_module, "TOOL_REGISTRY", {{}})
+# Mescla as tools LOCAIS REAIS (tools_std.STD_TOOLS: pdf_generator, csv_exporter, embedding,
+# vector_search, email_sender) SOBRE o registry — substituindo qualquer None/mock que o
+# tools.py tenha deixado (o registry emite None p/ classe não detectada no tools.py). Sem
+# isto o laudo (pdf_generator_tool) caía em 'não configurada' e o agente falhava.
+try:
+    import tools_std as _std_mod
+    _std = getattr(_std_mod, "STD_TOOLS", {{}}) or {{}}
+    TOOL_REGISTRY.update({{k: v for k, v in _std.items() if v is not None}})
+    if _std:
+        print(f"[ws] {{len(_std)}} tool(s) local(is) STD carregada(s)")
+except Exception as _std_e:
+    print(f"[ws] STD_TOOLS indisponivel: {{_std_e}}")
 # F2 Fase 3: mescla as tools MCP (mcp_tools.py) no registry — agentes com tools MCP
 # atribuídas as resolvem por nome, igual às tools embutidas.
 try:
@@ -4818,18 +4830,80 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
                 names.append(c)
         return names
 
+    def _split_top_p(s):
+        """Split de params por vírgula de TOPO (respeita (), [], {}, aspas) — senão um dict
+        JSON `{"a": x, "b": y}` ou expressão condicional era quebrado em pedaços inválidos."""
+        out, depth, cur, q = [], 0, '', None
+        for ch in s:
+            if q:
+                cur += ch
+                if ch == q:
+                    q = None
+                continue
+            if ch in ('"', "'"):
+                q = ch; cur += ch; continue
+            if ch in '([{':
+                depth += 1
+            elif ch in ')]}':
+                depth -= 1
+            if ch == ',' and depth == 0:
+                out.append(cur); cur = ''
+            else:
+                cur += ch
+        out.append(cur)
+        return [x.strip() for x in out if x.strip()]
+
+    def _resolve_p_idents(expr):
+        """Resolve identificadores nus a scalars (var local capturada) ou input_data.get,
+        pulando strings/chaves de dict/chamadas e convertendo {x}. Para expressões condicionais
+        e dicts JSON em params (ex.: `1 if veredito=='X' else 0`, `{"v": veredito}`)."""
+        import keyword as _kw
+        _safe = {'None', 'True', 'False', 'input_data', 'json', 'dumps', 'str', 'int', 'float', 'len'}
+        out = []; i = 0; n = len(expr)
+        while i < n:
+            ch = expr[i]
+            if ch in ('"', "'"):
+                q = ch; j = i + 1
+                while j < n and expr[j] != q:
+                    j += 1
+                out.append(expr[i:j + 1]); i = j + 1; continue
+            mm = _re.match(r'\{([A-Za-z_]\w*)\}', expr[i:])
+            if mm:
+                v = mm.group(1)
+                out.append(v if v in scalars else "input_data.get(%r)" % v)
+                i += mm.end(); continue
+            mi = _re.match(r'[A-Za-z_]\w*', expr[i:])
+            if mi:
+                name = mi.group(0); end = i + mi.end()
+                prev = expr[i - 1] if i > 0 else ''
+                nxt = expr[end] if end < n else ''
+                if (prev == '.' or nxt == '(' or nxt == ':' or _kw.iskeyword(name)
+                        or name in _safe or name in scalars):
+                    out.append(name)
+                else:
+                    out.append("input_data.get(%r)" % name)
+                i = end; continue
+            out.append(ch); i += 1
+        return "".join(out)
+
     def _tparams(ps):
         out = []
-        for tok in [t.strip() for t in ps.split(',') if t.strip()]:
+        for tok in _split_top_p(ps):
             mm = _re.match(r'^\{?([A-Za-z_][\w.]*)\}?$', tok)
-            if mm:
+            if mm and '{' not in tok[1:]:  # token simples {x}/x/x.y (não dict)
                 nm = mm.group(1); base = nm.split('.')[0]
                 if base in scalars:
                     out.append(nm if '.' not in nm else "%s.get('%s')" % (base, nm.split('.', 1)[1]))
                 else:
                     out.append("input_data.get('%s')" % base)
+            elif tok.startswith('{') and ':' in tok:  # dict JSON → json.dumps
+                out.append("__import__('json').dumps(%s)" % _resolve_p_idents(tok))
+            elif _re.search(r'\bif\b|\belse\b|[<>=!]=|[-*/%]|\{', tok) and _re.search(r'[A-Za-z_]', tok):
+                out.append(_resolve_p_idents(tok))  # expressão condicional/composta
+            elif _re.match(r"^('[^']*'|\"[^\"]*\"|-?\d+(?:\.\d+)?)$", tok):
+                out.append(tok)  # literal string/número
             else:
-                out.append("input_data.get(%r)" % tok)
+                out.append(_resolve_p_idents(tok))
         return "[" + ", ".join(out) + "]"
 
     def _texpr(e):
@@ -5645,7 +5719,68 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
         return f"({base} or _hoje())" if _date_col(col) else base
 
     row_captured = row_captured or set()
-    parts = [p.strip() for p in params_str.split(",") if p.strip()]
+
+    def _split_top(s: str) -> List[str]:
+        """Split de params por vírgula de TOPO — respeita (), [], {} e aspas. Sem isto um
+        param que é dict JSON `{"a": x, "b": y}` ou expressão com vírgula era quebrado em
+        pedaços inválidos → INSERT com nº de params != nº de %s ('not all arguments
+        converted'). Achado em generate_compliance_report."""
+        out, depth, cur, q = [], 0, '', None
+        for ch in s:
+            if q:
+                cur += ch
+                if ch == q:
+                    q = None
+                continue
+            if ch in ('"', "'"):
+                q = ch; cur += ch; continue
+            if ch in '([{':
+                depth += 1
+            elif ch in ')]}':
+                depth -= 1
+            if ch == ',' and depth == 0:
+                out.append(cur); cur = ''
+            else:
+                cur += ch
+        out.append(cur)
+        return [x.strip() for x in out if x.strip()]
+
+    def _resolve_expr_idents(expr: str) -> str:
+        """Resolve identificadores NUS de uma expressão/dict a input_data.get('x') (ou à var
+        capturada), pulando strings entre aspas, chaves de dict e chamadas. Converte {x} → get.
+        Ex.: `1 if veredito == 'CONFORME' else 0` e `{"v": veredito, "p": pdf_path}`."""
+        import keyword as _kw
+        _safe = {'None', 'True', 'False', 'input_data', 'json', 'dumps', 'str', 'int',
+                 'float', 'len', 'get'}
+        out = []
+        i, n = 0, len(expr)
+        while i < n:
+            ch = expr[i]
+            if ch in ('"', "'"):
+                q = ch; j = i + 1
+                while j < n and expr[j] != q:
+                    j += 1
+                out.append(expr[i:j + 1]); i = j + 1; continue
+            mm = _re.match(r'\{([A-Za-z_]\w*)\}', expr[i:])
+            if mm:
+                v = mm.group(1)
+                out.append(v if v in captured_vars else "input_data.get(%r)" % v)
+                i += mm.end(); continue
+            mi = _re.match(r'[A-Za-z_]\w*', expr[i:])
+            if mi:
+                name = mi.group(0); end = i + mi.end()
+                prev = expr[i - 1] if i > 0 else ''
+                nxt = expr[end] if end < n else ''
+                if (prev == '.' or nxt == '(' or nxt == ':' or _kw.iskeyword(name)
+                        or name in _safe or name in captured_vars or name == loop_item):
+                    out.append(name)
+                else:
+                    out.append("input_data.get(%r)" % name)
+                i = end; continue
+            out.append(ch); i += 1
+        return "".join(out)
+
+    parts = _split_top(params_str)
     py_parts: List[str] = []
     for p in parts:
         # {{var}} (chave dupla, estilo template) → var local se capturada (ex.: campo extraído
@@ -5726,6 +5861,16 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
         _dot = _re.match(r'^([A-Za-z_]\w*)\.([A-Za-z_]\w*)$', p)
         if _dot and _dot.group(1) not in captured_vars and _dot.group(1) != loop_item:
             py_parts.append(_emit_get(_dot.group(2)))
+            continue
+        # DICT literal (coluna JSON/JSONB): `{"veredito": veredito, "pdf_path": pdf_path}` →
+        # json.dumps({...}) com identificadores resolvidos. psycopg2 grava a string na jsonb.
+        if p.startswith('{') and ':' in p and not _re.match(r'^\{[A-Za-z_]\w*\}$', p):
+            py_parts.append("__import__('json').dumps(%s)" % _resolve_expr_idents(p))
+            continue
+        # Expressão condicional/composta com identificadores (ex.: `1 if veredito=='X' else 0`,
+        # comparações, aritmética) → resolve identificadores nus a input_data.get/var.
+        if (_re.search(r'\bif\b|\belse\b|[<>=!]=|[-*/%]', p) or '{' in p) and _re.search(r'[A-Za-z_]\w*', p):
+            py_parts.append(_resolve_expr_idents(p))
             continue
         # Literais / expressões simples (números, 'strings', a.b(...)) — mantém.
         py_parts.append(p)
