@@ -259,7 +259,14 @@ async def generate_agents_and_tasks(
                 if agents_json_str.endswith("```"):
                     agents_json_str = agents_json_str[:-3]
 
-                agents_data_list = json.loads(agents_json_str)
+                try:
+                    agents_data_list = json.loads(agents_json_str)
+                except json.JSONDecodeError:
+                    # qwen às vezes emite JSON malformado (aspas/quebras de linha não
+                    # escapadas em descrições longas). json_repair conserta sem perder dados.
+                    import json_repair
+                    agents_data_list = json_repair.loads(agents_json_str)
+                    print(f"[AGENT_TASK] agents JSON reparado via json_repair ({len(agents_data_list)} agentes)")
                 agents = [AgentData(**agent_dict) for agent_dict in agents_data_list]
             except Exception as e:
                 raise HTTPException(
@@ -294,7 +301,14 @@ async def generate_agents_and_tasks(
                 if tasks_json_str.endswith("```"):
                     tasks_json_str = tasks_json_str[:-3]
 
-                tasks_data_list = json.loads(tasks_json_str)
+                try:
+                    tasks_data_list = json.loads(tasks_json_str)
+                except json.JSONDecodeError:
+                    # Tasks têm descrições longas → maior chance de JSON malformado do qwen
+                    # (vírgula/aspas/quebra de linha). json_repair recupera sem truncar.
+                    import json_repair
+                    tasks_data_list = json_repair.loads(tasks_json_str)
+                    print(f"[AGENT_TASK] tasks JSON reparado via json_repair ({len(tasks_data_list)} tasks)")
                 tasks = [TaskData(**task_dict) for task_dict in tasks_data_list]
             except Exception as e:
                 raise HTTPException(

@@ -328,7 +328,11 @@ async def generate_code(
     )
 
     try:
-        result_state = execute_task_with_context("generate_python_code", state)
+        # execute_task_with_context é SÍNCRONO e roda crew.kickoff() internamente; o CrewAI 1.x
+        # proíbe kickoff() sincrono dentro de um event loop em execução (este endpoint é async).
+        # Rodar em worker thread (sem loop rodando lá) permite o kickoff sem RuntimeError.
+        import asyncio as _asyncio
+        result_state = await _asyncio.to_thread(execute_task_with_context, "generate_python_code", state)
     except Exception as exc:  # noqa: BLE001
         update_code_generation_session(
             session_id,

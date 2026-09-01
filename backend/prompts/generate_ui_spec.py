@@ -31,9 +31,13 @@ _AGENTIC_HINTS = (
 # ─────────────────────────────────────────────────────────────────────
 
 # Cada UC começa em **UC-NNN: título** e vai até o próximo **UC- ou fim.
+# Aceita o UC tanto em NEGRITO inline (**UC-001: Nome**) quanto como CABEÇALHO
+# markdown (#### UC-001: Nome / ### UC-001: Nome). O gerador de spec atual emite o UC
+# como heading `#### UC-001:`; a forma antiga em negrito continua suportada. O nome
+# termina no `**` (forma negrito) ou no fim da linha (forma heading, re.M).
 _UC_BLOCK_RE = re.compile(
-    r'\*\*(UC-\d+):\s*(.+?)\*\*(.*?)(?=\*\*UC-\d+:|\Z)',
-    re.S,
+    r'(?:\*\*|#{2,4}\s*)(UC-\d+):\s*(.+?)(?:\*\*|$)(.*?)(?=(?:\*\*|#{2,4}\s*)UC-\d+:|\Z)',
+    re.S | re.M,
 )
 
 

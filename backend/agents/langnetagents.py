@@ -2026,6 +2026,81 @@ def _repair_json(s: str) -> Dict[str, Any]:
         return {}
 
 
+def _enforce_bipartite(net: Dict[str, Any]) -> Dict[str, Any]:
+    """Garante que a Rede de Petri seja um GRAFO BIPARTIDO (regra fundamental de Petri):
+    arco só liga lugar↔transição. NUNCA transição→transição nem lugar→lugar.
+
+    O LLM às vezes gera arcos do mesmo tipo (ex.: transições de "fim" ligadas por outras
+    transições). Reparo DETERMINÍSTICO em 2 passos:
+      1) Transição SUMIDOURO (0 saídas) cujas entradas vêm TODAS de transições vira LUGAR
+         (é um lugar final de marcação — resolve os T_fim_* ligados por transições).
+      2) Para qualquer arco remanescente do MESMO tipo, insere um nó intermediário do tipo
+         oposto e divide o arco (a→m→b), preservando a intenção sem violar a bipartição.
+    """
+    if not isinstance(net, dict):
+        return net
+    lugares = net.get("lugares") or []
+    transicoes = net.get("transicoes") or []
+    arcos = net.get("arcos") or []
+    pid = {p.get("id") for p in lugares if isinstance(p, dict)}
+    tid = {t.get("id") for t in transicoes if isinstance(t, dict)}
+
+    def _typ(x):
+        return "P" if x in pid else ("T" if x in tid else "?")
+
+    # Passo 1 — sumidouros T (sem saída) com entradas só de transições viram LUGAR.
+    changed = True
+    while changed:
+        changed = False
+        for t in list(transicoes):
+            i = t.get("id")
+            outs = [a for a in arcos if a.get("origem") == i]
+            if outs:
+                continue  # tem saída → transição legítima
+            ins = [a for a in arcos if a.get("destino") == i]
+            if ins and all(_typ(a.get("origem")) == "T" for a in ins):
+                transicoes.remove(t)
+                tid.discard(i)
+                lugares.append({"id": i, "nome": t.get("nome") or i, "tokens": 0,
+                                "input_data": {}, "agentId": None, "logica": ""})
+                pid.add(i)
+                changed = True
+
+    # Passo 2 — insere nó intermediário p/ qualquer arco do mesmo tipo remanescente.
+    new_arcos: List[Dict[str, Any]] = []
+    counter = 0
+    fixed = 0
+    for a in arcos:
+        s, d = a.get("origem"), a.get("destino")
+        ts, td = _typ(s), _typ(d)
+        if ts == "?" or td == "?" or ts != td:
+            new_arcos.append(a)
+            continue
+        counter += 1
+        fixed += 1
+        w = a.get("peso", 1)
+        if ts == "T":  # T→T: insere um LUGAR entre as duas transições
+            mid = f"P_sync_{counter}"
+            lugares.append({"id": mid, "nome": "Sincronização", "tokens": 0,
+                            "input_data": {}, "agentId": None, "logica": ""})
+            pid.add(mid)
+        else:          # P→P: insere uma TRANSIÇÃO entre os dois lugares
+            mid = f"T_pass_{counter}"
+            transicoes.append({"id": mid, "nome": "Passagem", "guard": "",
+                               "prioridade": 1, "agente_id": None, "task_id": None})
+            tid.add(mid)
+        new_arcos.append({"origem": s, "destino": mid, "peso": w})
+        new_arcos.append({"origem": mid, "destino": d, "peso": w})
+
+    net["lugares"] = lugares
+    net["transicoes"] = transicoes
+    net["arcos"] = new_arcos
+    if fixed:
+        print(f"[PETRI FIX] bipartição: {fixed} arco(s) do mesmo tipo corrigido(s) "
+              f"(inserção de nó intermediário / reclassificação de sumidouro)")
+    return net
+
+
 def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
     """Update state with design_petri_net results, adapted to petri-net-editor schema."""
     import re as _re
@@ -2083,6 +2158,8 @@ def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNe
                 break
 
     adapted = _adapt_petri_net(parsed if isinstance(parsed, dict) else {})
+    # Reparo determinístico de BIPARTIÇÃO (regra topológica de Petri) antes de validar/salvar.
+    adapted = _enforce_bipartite(adapted)
     print(
         f"[PETRI OUT] adapted: lugares={len(adapted.get('lugares', []))} "
         f"transicoes={len(adapted.get('transicoes', []))} "
@@ -2135,6 +2212,15 @@ def _validate_petri_net_topology(net: Dict[str, Any]) -> List[str]:
 
     place_ids = {p.get("id") for p in places if isinstance(p, dict)}
     trans_ids = {t.get("id") for t in transitions if isinstance(t, dict)}
+
+    # 0) BIPARTIÇÃO (regra fundamental de Petri): arco só liga lugar↔transição.
+    for a in arcs:
+        s = a.get("origem"); d = a.get("destino")
+        st = "P" if s in place_ids else ("T" if s in trans_ids else "?")
+        dt = "P" if d in place_ids else ("T" if d in trans_ids else "?")
+        if st != "?" and st == dt:
+            warnings.append(f"bipartite_violation: arco {s}({st})→{d}({dt}) liga nós do MESMO tipo "
+                            f"(Petri é bipartido: só lugar↔transição)")
 
     # 1) Dead transitions (sem entrada OU sem saída)
     for t in transitions:
@@ -9801,7 +9887,13 @@ TASK_REGISTRY = {
         "requires": ["agents_yaml", "tasks_yaml", "petri_net_data"],
         "produces": ["generated_code", "generated_files"],
         "agent": AGENTS["code_generator"],
-        "tools": [LANGNET_TOOLS["python_code_writer"]],
+        # SEM tools: a task pede um JSON de resposta ({tools_py, adapters_py, ...}) que o
+        # output_func parseia; os arquivos são escritos deterministicamente no backend.
+        # Com o tool `python_code_writer`, o qwen entra em LOOP de tool-call (escreve
+        # generate_output.py N vezes) em vez de responder o JSON → "Gerador não retornou
+        # arquivos" + estouro de contexto no LM Studio. Sem tools, roteia p/ o caminho
+        # DIRETO (streaming, 1 chamada) — confiável, igual à spec/requisitos.
+        "tools": [],
         "phase": "code_generation"
     },
 

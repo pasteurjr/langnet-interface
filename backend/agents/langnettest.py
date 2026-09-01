@@ -90,7 +90,13 @@ def _extract_json(text: str) -> Optional[str]:
 def parse_use_cases(spec_document: str) -> List[dict]:
     """Extrai UCs com fluxo principal, alternativos e exceção (texto bruto por seção)."""
     ucs = []
-    pattern = re.compile(r'\*\*(UC-\d+):\s*(.+?)\*\*(.*?)(?=\*\*UC-\d+:|\Z)', re.S)
+    # Aceita UC em NEGRITO (**UC-001: Nome**) OU como CABEÇALHO markdown (#### UC-001: Nome).
+    # O gerador de spec atual emite `#### UC-001:`; sem isto o parser devolve 0 UCs e a geração
+    # de casos de teste fica presa em 'generating' (loop vazio). Mesmo fix do parser do UI-spec.
+    pattern = re.compile(
+        r'(?:\*\*|#{2,4}\s*)(UC-\d+):\s*(.+?)(?:\*\*|$)(.*?)(?=(?:\*\*|#{2,4}\s*)UC-\d+:|\Z)',
+        re.S | re.M,
+    )
     for m in pattern.finditer(spec_document):
         uc_id, name, body = m.group(1).strip(), m.group(2).strip(), m.group(3)
         uc = {"id": uc_id, "name": name}

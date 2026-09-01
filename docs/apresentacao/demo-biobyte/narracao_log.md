@@ -1,0 +1,146 @@
+# BioByte Sentinela — Registro de narração + produção (fonte do vídeo)
+
+Projeto: **BioByte Sentinela** (ICSAC) · id `bab9d113-eff1-474f-8acc-0abfa516cd7d` · domínio Saúde · framework crewai · protocolo okf.
+Ambiente: frontend :3005 → backend :8003 → banco local 127.0.0.1:3308 + qwen3.8-27b local. Telas em `shots/`.
+
+Formato por cena: **NARRAÇÃO** (fala exata p/ locução) · **PRODUÇÃO** (o que mostrar/destacar) · **TELA(s)**.
+
+---
+
+## Cena 1 — Abertura: o que é a ferramenta
+**NARRAÇÃO:** Esta é a LangNet — a ferramenta que implementa o Desenvolvimento Orientado a Especificação, o S D D que apresentamos. A ideia é simples e poderosa: em vez de escrever código direto, você constrói uma cadeia de artefatos — requisitos, especificação, modelo de dados, protótipo, agentes, testes — e o código nasce dessa cadeia, rastreável de ponta a ponta. Vamos ver isso na prática construindo um sistema real de vigilância de infecção hospitalar.
+**PRODUÇÃO:** cartão de título "LangNet · SDD"; ao fundo, a tela de Projetos. Segurar 4s.
+**TELA:** 00_projetos.png
+
+## Cena 2 — Criando o projeto
+**NARRAÇÃO:** Tudo começa criando o projeto. Chamamos de BioByte Sentinela, domínio Saúde. Repare nas opções: o framework de agentes — o nosso padrão é o CrewAI —, e o protocolo de interoperabilidade — o nosso é o O K F. Ficamos com os padrões, que são os que rodam no nosso pipeline.
+**PRODUÇÃO:** modal "Criar Novo Projeto"; destacar em zoom o Nome, o Domínio "Saúde", e em Opções Avançadas os seletores **Framework: CrewAI (padrão)** e **Protocolo: OKF — padrão (nosso)**. Mostrar as listas de opções (LangChain/LangGraph/AutoGen/OpenAI SDK/Anthropic SDK; MCP/A2A/ACP/ANP).
+**TELA:** 01_criar_modal.png, 01b_criar_preenchido.png
+**TRECHO (opções, exibir):**
+```
+Framework: CrewAI (padrão) · LangChain · LangGraph · AutoGen · OpenAI SDK · Anthropic SDK
+Protocolo: OKF — padrão (nosso) · MCP · A2A · ACP · ANP  (mock por ora)
+```
+
+## Cena 3 — Projeto criado, o menu do pipeline
+**NARRAÇÃO:** Criado o projeto, o menu lateral revela o pipeline inteiro do S D D: Documentos, Especificação, Modelo de Dados, Interface e Protótipo, Agentes e Tarefas, o YAML, a Sequência de Tarefas, a Rede de Petri, a Geração de Código e os Casos de Teste. Vamos passar por cada etapa, e mostrar como cada uma se liga à anterior.
+**PRODUÇÃO:** clicar "Abrir Projeto"; mostrar a barra lateral com as etapas. (captura a seguir)
+**TELA:** 02_pos_criacao.png (+ sidebar a capturar)
+
+---
+<!-- as próximas cenas (Documentos/Requisitos, Especificação, ...) serão anexadas conforme cada etapa for gerada e validada -->
+
+## Cena 4 — Etapa 1: Documentos (a origem)
+**NARRAÇÃO:** A primeira etapa do pipeline é Documentos. Aqui trazemos os arquivos de origem — no nosso caso, o resumo do problema de vigilância de infecção por cateter. À esquerda ficam os documentos e o painel de configuração; escrevemos as instruções de análise, e clicamos em Iniciar Análise. É neste ponto que a ferramenta lê a fonte e gera, sozinha, o documento de Requisitos estruturado.
+**PRODUÇÃO:** tela Documentos com o arquivo `brief_icsac.md` na lista (status Pendente), o campo "Instruções para Análise" preenchido, e o botão "🚀 Iniciar Análise". Destaque o clique em Iniciar Análise e a barra/mensagem "Iniciando análise…".
+**TELA:** 10_doc_landing.png, 11_doc_upload_modal.png, 12_doc_uploaded.png, 13_doc_pronto_analise.png, 14_analise_iniciada.png
+**NOTA PRODUÇÃO:** o processamento leva alguns minutos (qwen local); no vídeo, cortar para o resultado (não mostrar a espera).
+
+## Cena 5 — O documento de Requisitos gerado (mostrar as partes)
+**NARRAÇÃO:** E este é o documento de Requisitos que a ferramenta gerou, sozinha, a partir do brief. Ele tem três camadas, e vale entender cada uma. Primeiro, os **requisitos funcionais** — o que o sistema deve fazer: calcular o escore de risco pelo modelo de Cox, importar a microbiologia, classificar o caso pelo critério N H S N, detectar multirresistência e recomendar o bundle. Depois, os **requisitos não-funcionais** — as metas de qualidade: o cálculo do escore em menos de dois segundos, criptografia dos dados de saúde, conformidade com o N H S N e alta disponibilidade. E, por fim, as **regras de negócio** — as políticas que governam as decisões: por exemplo, se um microrganismo multirresistente é detectado, gerar um alerta; e reter os logs de auditoria por cinco anos. Repare que cada requisito já traz suas dependências — a rastreabilidade começa aqui.
+**PRODUÇÃO:** abrir o documento de Requisitos (👁 Visualizar) e rolar mostrando, em sequência e com um rótulo em zoom em cada uma:
+  1) tabela **Requisitos Funcionais** (destacar FR-001 Escore de Risco/Cox, FR-003 Classificação NHSN, FR-005 Bundle) — rótulo "REQUISITOS FUNCIONAIS = o que o sistema faz";
+  2) tabela **Requisitos Não-Funcionais** (NFR-001 Cox <2s, NFR-003 AES-256/TLS 1.3) — rótulo "NÃO-FUNCIONAIS = metas de qualidade";
+  3) tabela **Regras de Negócio** (BR-002 multirresistência→alerta, BR-005 logs 5 anos) — rótulo "REGRAS DE NEGÓCIO = políticas de decisão".
+  Mostrar no canto o "Document Stats" (972 linhas, 22 seções) como prova de que é um documento completo.
+**TELA:** 15_req_topo.png, 16_req_fr.png, 17_req_nfr.png, 18_req_br.png
+**NOTA PRODUÇÃO:** manter curto (~25-30s de narração); não ler as tabelas inteiras, só apontar 2-3 itens de cada e o rótulo do tipo.
+
+## Cena 6 — Etapa 2: Especificação (deriva dos Requisitos)
+**NARRAÇÃO:** A segunda etapa é a Especificação Funcional. E repare num detalhe que é o coração do S D D: para gerar a especificação, a ferramenta pede que você escolha, explicitamente, qual documento de Requisitos — e qual versão — vai alimentá-la. Ou seja, a especificação nasce amarrada a uma versão exata dos requisitos. Selecionamos a versão 1 dos nossos Requisitos, escrevemos as instruções pedindo casos de uso com fluxos completos e a matriz de rastreabilidade, e mandamos gerar.
+**PRODUÇÃO:** mostrar o clique em "📋 Requisitos" → o modal "Selecionar Documento de Requisitos" → a sessão "Document Analysis" → "Versão 1" → o preview → botão verde "✅ Selecionar este Documento". Depois o botão "🚀 Gerar Especificação" ficando habilitado. Enfatizar a frase: "a spec fica presa à versão dos requisitos".
+**TELA:** 20_spec_landing.png, 20c_spec_versoes.png, 20d_spec_req_ok.png, 21_spec_pronto.png, 22_spec_gerando.png
+**NOTA PRODUÇÃO:** a geração leva minutos (qwen local) — cortar para o resultado. O croqui dos casos de uso está em modo ASCII (opção "Wireframe dos Casos de Uso").
+
+## Cena 7 — A Especificação gerada (mostrar as partes)
+**NARRAÇÃO:** E aqui está a Especificação Funcional que a ferramenta derivou dos Requisitos — um documento de catorze seções. Vale abrir e entender do que ele é feito. Logo no início, a seção 3 lista os **requisitos cobertos**: cada requisito funcional, não-funcional e cada regra de negócio que esta especificação promete realizar — é a primeira amarração com a etapa anterior. No coração do documento estão os **Casos de Uso**: doze deles, e cada caso de uso traz o **fluxo principal**, os **fluxos alternativos** e os **fluxos de exceção**. Veja o caso de uso seis, Calcular Escore de Risco pelo modelo de Cox: no fluxo principal, o médico clica em "Calcular Escore de Risco" e o sistema chama o serviço externo de Cox; no alternativo, faltam parâmetros clínicos; na exceção, o serviço de Cox dá timeout. E cada caso de uso termina com o seu **croqui de tela** — o wireframe da interface.
+**PRODUÇÃO:** abrir 👁️ Visualizar Documento e rolar mostrando, com rótulo em zoom:
+  1) topo do documento — "Especificação Funcional… Baseado em: Requisitos v1" (rótulo "DERIVA DOS REQUISITOS v1");
+  2) seção **3.1 Requisitos Funcionais Cobertos** e **3.3 Regras de Negócio Cobertas** (rótulo "O QUE ESTA SPEC REALIZA");
+  3) **UC-006** com as três tabelas de fluxo — Principal / Alternativos / Exceção (rótulo "TODO CASO DE USO: principal + alternativo + exceção");
+  4) o **Wireframe da Interface** do UC-006 (croqui ASCII).
+**TELA:** 23_spec_doc_topo.png, 24_spec_sec3_fr.png, 24b_spec_sec3_br.png, 25_spec_uc006_topo.png, 25b_spec_uc006_fluxos.png, 26_spec_uc006_wireframe.png
+**NOTA PRODUÇÃO:** curto (~30s). Não ler as tabelas; apontar 2-3 itens e o rótulo do tipo.
+
+## Cena 8 — Rastreabilidade: a matriz que liga tudo
+**NARRAÇÃO:** Mas o ponto que a nossa palestra mais enfatiza é a **rastreabilidade** — e a ferramenta a torna explícita numa **matriz**, na seção treze. Cada linha pega um requisito original e mostra em qual seção da especificação ele foi tratado, qual caso de uso o realiza e qual regra de negócio o governa. O requisito funcional um — o escore de Cox — é realizado pelo caso de uso seis e regido pela regra de negócio três. O requisito quatro — multirresistência — pelo caso de uso cinco. Os catorze requisitos funcionais, os sete não-funcionais e as cinco regras de negócio: todos rastreados, do requisito ao caso de uso. É essa cadeia que sobrevive por todo o pipeline.
+**PRODUÇÃO:** rolar até **13.1 Matriz de Rastreabilidade**; destacar as linhas FR-001→UC-006→RN-003 e FR-004→UC-005→RN-002; rótulo "RASTREABILIDADE = requisito → seção → caso de uso → regra".
+**TELA:** 27_spec_matriz.png
+
+## Cena 9 — Validação crítica: achamos um problema no croqui
+**NARRAÇÃO:** Documento gerado não é documento aprovado. A gente valida. E ao conferir o caso de uso seis, aparece uma inconsistência real entre o **fluxo** e o **croqui**. No fluxo principal, o médico age na tela "Detalhe do Caso" e clica no botão "Calcular Escore de Risco", e o sistema usa os parâmetros idade, APACHE Dois e tipo de cateter. Mas o croqui desenhou outra tela — "Painel de Prognóstico" —, com um botão diferente, "Recalcular", e esqueceu o APACHE Dois na lista de fatores. Fluxo e wireframe têm que casar: mesma tela, mesmo botão, mesmos campos. Achamos o problema — agora vamos corrigir do jeito certo: pedindo ao próprio agente.
+**PRODUÇÃO:** tela dividida — à esquerda 25b (fluxo do UC-006, destacar "Detalhe do Caso" / "Calcular Escore de Risco" / "APACHE II"), à direita 26 (wireframe, destacar "Painel de Prognóstico" / "Recalcular"). Marcar em vermelho os três pontos divergentes.
+**TELA:** 25b_spec_uc006_fluxos.png, 26_spec_uc006_wireframe.png
+
+## Cena 10 — Correção pelo agente + as duas versões lado a lado
+**NARRAÇÃO:** A correção não é na mão — é conversando com o agente da especificação. Escrevemos a instrução: no caso de uso seis, alinhe o croqui ao fluxo — tela "Detalhe do Caso", botão "Calcular Escore de Risco", e inclua o APACHE Dois nos fatores de risco. Clicamos em Refinar. O agente gera uma **versão dois** do documento. E aqui está o recurso que fecha o ciclo de qualidade: "Ver Diferenças" — as duas versões lado a lado, em verde o que entrou, em vermelho o que saiu. Dá pra ver, linha a linha, exatamente o que mudou no croqui do caso de uso seis — e mais nada. Rastreável até na correção.
+**PRODUÇÃO:** mostrar a instrução digitada no chat (28), o estado "Gerando Refinamento" (29), e então o **DiffViewerModal** lado a lado (30) rolado até a mudança do wireframe do UC-006 — verde "Detalhe do Caso"/"Calcular Escore de Risco"/"APACHE II", vermelho "Painel de Prognóstico"/"Recalcular".
+**TELA:** 28_refine_instrucao.png, 29_refine_processando.png, 30_diff_uc006.png, 30b_diff_uc006_botao.png
+**NOTA PRODUÇÃO:** o refino leva minutos (qwen local) — cortar para o diff. 30b mostra as TRÊS mudanças num quadro só: linha 505 `Painel de Prognóstico`→`Detalhe do Caso` (vermelho→verde), linha 517 `+ APACHE II: 18` (adicionada, só verde), linha 519→520 `[ Recalcular ]`→`[ Calcular Escore de Risco ]` — e todo o resto idêntico dos dois lados (correção cirúrgica). O agente aplicou exatamente as 3 instruções, gerou a **Versão 2**; correção veio do próprio gerador (não editada à mão).
+
+## Cena 11 — Etapa 3: Modelo de Dados (deriva da Especificação) + validação que corrige
+**NARRAÇÃO:** Da Especificação nasce o Modelo de Dados. Repare no topo: "Origem: Especificação zero-oito-cê" — de novo a amarração explícita à etapa anterior. A ferramenta leu a seção seis da spec e extraiu, sozinha, oito entidades: paciente, caso, microbiologia, escore de risco, tratamento, alerta, usuário e log de auditoria. E gerou três artefatos ao mesmo tempo: o schema SQL, os modelos em SQLAlchemy e Pydantic, e a migração Alembic. Veja a rastreabilidade viva: a tabela paciente tem a coluna "apache dois", exatamente o parâmetro que o fluxo de Cox exigia lá na especificação. Mas o mais interessante é o painel de validação: a ferramenta não só gera, ela CONFERE — e apontou um problema grave, nota vinte e cinco de cem: "o schema não aplica no MySQL", porque os campos booleanos vieram com valor padrão inválido. Pedimos a correção ao agente, e ele reescreveu só os defaults. A nota saltou para noventa e dois, o schema passou a aplicar, e sobraram apenas três observações menores. Validou, achou, corrigiu.
+**PRODUÇÃO:** mostrar (antes) shot 41 com "Validação (score 25/100) — 4 problemas" e o [high] "O SCHEMA NÃO APLICA no MySQL"; destacar em Entidades a coluna **apache_ii** em paciente (rastreabilidade ao UC-006). Depois "Refinar com o agente" com a instrução dos booleanos → (depois) shot 44 "score 92/100 — 3 problemas" e `classificacao_nhsn BOOLEAN NN 0`. Abas Entidades / Schema SQL / models.py / Alembic / YAML.
+**TELA:** 40_dm_landing.png, 41_dm_entidades.png (antes, 25/100), 42_dm_schema.png, 43_dm_models.png, 44_dm_validado_92.png (depois), 45_dm_schema_fixed.png
+**NOTA PRODUÇÃO:** ótimo 2º exemplo do laço validar→refinar (agora no schema, não na tela). Origem: Especificação 08c001bb; 8 tabelas; DBMS MySQL (banco local).
+
+## Cena 12 — Etapa 4: Interface & Protótipo (a rastreabilidade que se paga)
+**NARRAÇÃO:** A quarta etapa transforma cada caso de uso numa tela de verdade. De novo "Origem: Especificação zero-oito-cê": a ferramenta leu os doze casos de uso e o modelo de dados, e gerou doze telas — cada uma com o seu tipo (formulário, detalhe, tabela, dashboard) e amarrada à sua tabela no banco. E aqui está a recompensa da rastreabilidade que corrigimos lá atrás: abra a tela do caso de uso seis. Ela se chama "Detalhe do Caso" — o nome certo. O botão é "Calcular Escore de Risco" — o texto certo. E nos fatores de risco aparece o "APACHE dois". Exatamente a correção que pedimos no croqui da especificação, propagada sozinha até o protótipo renderizado. Foi uma mudança numa etapa, que desceu coerente por todas as seguintes. Isso é desenvolvimento orientado a especificação.
+**PRODUÇÃO:** mostrar a landing (12 telas listadas com UC + tipo + tabela) — rótulo "12 CASOS DE USO → 12 TELAS, cada uma ligada a uma tabela". Depois clicar em **UC-006 Detalhe do Caso** e destacar no mockup renderizado: título "Detalhe do Caso", botão "Calcular Escore de Risco", "APACHE II: 18" (verde/seta ligando ao diff da Cena 10). Depois UC-009 Dashboard (tabela CRUD sobre `casos`) e UC-005 Alerta MDR. Botão "Verificar coerência".
+**TELA:** 50_uispec_landing.png, 53_uispec_uc006_cox.png, 54_uispec_uc009_dash.png, 55_uispec_uc005_mdr.png
+**NOTA PRODUÇÃO:** ESTE é o momento-chave da palestra: a correção do croqui (Cena 10) reaparece fiel no protótipo. Ligar visualmente 30b (diff) → 53 (mockup). Geração de 12 telas leva ~12min (qwen local) — cortar para o resultado.
+
+## Cena 13 — Etapa 5: Agentes & Tarefas (quem faz o quê, e com quais ferramentas)
+**NARRAÇÃO:** Chegamos ao coração agêntico. A partir da Especificação — de novo "Base: Especificação versão dois" —, a ferramenta projeta a equipe de agentes e as tarefas. Ela gerou um documento com onze agentes e treze tarefas. Abra e veja o nível de detalhe de cada agente: papel, objetivo, história de fundo, o modelo de linguagem, as **ferramentas**, a delegação, e — importante — a **justificativa rastreável**: para qual requisito aquele agente existe. Veja o agente de prognóstico, o Calculador de Cox: o objetivo é obter o escore de risco; a história diz explicitamente que ele "chama a API externa escore de risco de Cox"; e a justificativa aponta para os requisitos funcionais um e oito. Repare que dois agentes precisam de serviços que vivem FORA do sistema: o de microbiologia, que consulta o laboratório, e o de Cox, que chama o motor estatístico. É aqui que entram as ferramentas MCP.
+**PRODUÇÃO:** mostrar o painel (Base: Especificação v2, Frameworks: CrewAI, "Gerar Agentes & Tarefas") e o chat "✅ Documento gerado: 11 agentes e 13 tarefas". Abrir 👁️ Visualizar e destacar o agente de **Cox** (Goal, Backstory citando `escore_risco_cox`, Tools, Rationale "FR-001 e FR-008") e o agente de **microbiologia** citando `consultar_microbiologia`. Rótulo "CADA AGENTE RASTREÁVEL A UM REQUISITO".
+**TELA:** 60_ats_doc_landing.png, 63_atsdoc_topo.png, 65_atsdoc_cox.png, 66_atsdoc_micro.png, 67_atsdoc_tarefas.png
+**NOTA PRODUÇÃO:** gancho para a Cena 14 (MCP): os dois agentes que chamam serviços externos = as duas tools MCP. Documento `especificacao_agentes_tarefas.md` (34KB), sessão bd39f85e.
+
+## Cena 14 — As ferramentas MCP (integrações externas reais)
+**NARRAÇÃO:** Os agentes de microbiologia e de Cox precisam falar com sistemas de fora — o laboratório e o motor estatístico. É exatamente para isso que serve o M C P, o Model Context Protocol. Na Configuração Global de M C P, registramos um servidor: o "BioByte Sentinela — Integrações", que expõe duas ferramentas. Ao clicar em Testar, a ferramenta faz o handshake real com o servidor e DESCOBRE, sozinha, as duas tools: "consultar microbiologia" e "escore de risco de Cox". O servidor fica ativo. Depois, no projeto, ligamos cada tool ao agente certo: a consulta de microbiologia ao agente de ingestão de dados, e o escore de Cox ao agente de prognóstico. Guarde este ponto: quando chegarmos à geração de código, essas duas atribuições viram um arquivo de ferramentas M C P de verdade, que chama o servidor externo.
+**PRODUÇÃO:** MCP → Configuração Global. Mostrar o texto de topo ("Testar conexão faz o handshake e descobre as ferramentas"). Rolar até "Servidores registrados" e destacar o card **BioByte Sentinela - Integrações (LIS + Cox) · ativo · sse · 2 tool(s)** com os chips **consultar_microbiologia** e **escore_risco_cox**. Mostrar o banner "Ativo — 2 ferramenta(s) descoberta(s)". Depois a atribuição por agente (projeto → MCP).
+**TELA:** 70_mcp_global.png, 71b_mcp_biobyte_tools.png, 73_mcp_biobyte_2tools.png, 72_mcp_registrados.png
+**NOTA PRODUÇÃO:** servidor real em `docs/apresentacao/demo-biobyte/mcp/biobyte_mcp_server.py` (FastMCP SSE :9120). Atribuições: cox_risk_calculation_agent→escore_risco_cox; microbiology_ingestion_agent→consultar_microbiologia. GANCHO: Cena de Geração de Código mostra o `mcp_tools.py` emitido a partir daqui.
+
+## Cena 15 — Etapa 6: YAML de Agentes e Tarefas (o que o CrewAI executa)
+**NARRAÇÃO:** Do documento de agentes e tarefas, a ferramenta gera os dois arquivos que o CrewAI realmente executa: o agents.yaml e o tasks.yaml. No agents.yaml, cada agente vira uma definição concreta — papel, objetivo, história, se pode delegar. Veja o integrador de microbiologia, que busca as culturas no laboratório externo. E no tasks.yaml está o ouro: cada tarefa traz, no topo, a sua rastreabilidade — a qual caso de uso e a qual requisito ela atende. Veja a tarefa de autenticação: caso de uso um, requisito funcional dez. Traz também se a execução é determinística ou agêntica, qual agente a executa, os passos, e a saída esperada. É um artefato pronto para virar código.
+**PRODUÇÃO:** página "YAML de Agentes e Tarefas", card agents.yaml (10KB) → 👁️ Visualizar mostrando `auth_manager_agent` e `microbiology_integrator_agent` (role/goal/backstory). Aba Tasks YAML → Visualizar mostrando `authenticate_user_mfa` com **traceability: uc: UC-001, fr: FR-010**, `execution: deterministic`, `agent: auth_manager_agent`. Rótulo "RASTREABILIDADE ATÉ NA TAREFA (uc + fr)".
+**TELA:** 80_yaml_card.png, 80b_yaml_agents_content.png, 81_yaml_tasks.png
+**NOTA PRODUÇÃO:** agents.yaml 11 agentes; tasks.yaml 13 tarefas (inclui `fetch_and_persist_microbiology`, `calculate_cox_risk_score` que usam as tools MCP, e `orquestrar_fluxo_clinico_integrado`). Campo `execution` = roteamento híbrido determinístico/agente.
+
+## Cena 16 — Etapa 7: Sequência de Tarefas (como o fluxo roda)
+**NARRAÇÃO:** Antes de virar código, a ferramenta desenha a sequência de execução: como as treze tarefas e os onze agentes se encadeiam. Ela identificou um fluxo misto — um pipeline principal linear (autenticar, importar, classificar, calcular risco, recomendar) mais fluxos paralelos de administração e monitoramento — e define o estado compartilhado que passa de tarefa em tarefa, no estilo LangGraph. É o roteiro de execução que o motor agêntico vai seguir.
+**PRODUÇÃO:** página "Sequência de Tarefas", card task_flow (39KB) → 👁️ Visualizar. Destacar "1. Visão Geral" (Total de Tasks 13, Total de Agentes 11, Tipo de Fluxo Misto, Modelo de State Acumulativo LangGraph-style) e a tabela do State (email/senha/codigo_mfa...).
+**TELA:** 82_flow_landing.png, 83_flow_doc.png
+**NOTA PRODUÇÃO:** documento task_flow_20260901_024105 (39KB), 39802 chars. Deriva de tasks.yaml (8fa9cbcc) + spec + ATS doc.
+
+## Cena 17 — Etapa 8: Rede de Petri (o modelo formal executável)
+**NARRAÇÃO:** A ferramenta então converte esse fluxo numa Rede de Petri — o modelo matemático clássico para processos concorrentes. Repare no cabeçalho: "gerada a partir de agents.yaml mais tasks.yaml mais a Sequência de Tarefas" — mais uma amarração. Cada lugar é um estado, cada transição é uma tarefa que dispara, e a ficha, o token, marca onde o fluxo está. Aqui: quinze lugares, dezessete transições, trinta e cinco arcos. Começa no "Início do Fluxo", passa por Autenticar, Importar Microbiologia, Classificar, Calcular Risco… e é isso que a ferramenta usa para orquestrar e, inclusive, simular a execução — tem até o botão "Simular" e "Execução Real".
+**PRODUÇÃO:** página "Rede de Petri" com o editor visual (JointJS). Mostrar o token no "Início do Fluxo", os lugares (círculos) e transições (barras) rotulados em português (Autenticar Usuário MFA, Buscar e Persistir Microbiologia, etc.), e a barra de ferramentas (Gerar Rede, Simular, ▶ Execução Real, Visualizar JSON). Rótulo "15 lugares · 17 transições · 35 arcos".
+**TELA:** 84_petri_landing.png, 85_petri_net.png
+**NOTA PRODUÇÃO:** Petri derivada de agents.yaml (01b04782) + tasks.yaml (8fa9cbcc) + Sequência (38e454fb). É editável e simulável na própria tela.
+
+
+## Cena 17b — Validação da Petri: bipartição (achado + correção no gerador)
+**NARRAÇÃO:** E vale mostrar mais uma validação. Rede de Petri é um grafo BIPARTIDO: arco só liga lugar a transição, nunca transição a transição. Na primeira geração, o modelo cometeu esse erro nos nós de término. A ferramenta agora tem uma guarda determinística que detecta e corrige: reclassifica o nó de término errado como lugar e reamarra o fluxo, garantindo a topologia. Regeramos, e a rede fica correta — lugar e transição sempre alternando.
+**PRODUÇÃO:** contrastar (antes) arco transição→transição nos nós de "fim" com (depois) a rede corrigida, lugar→transição→lugar. Rótulo "PETRI É BIPARTIDO: só lugar↔transição".
+**TELA:** 85_petri_net.png (rede corrigida)
+**NOTA PRODUÇÃO:** fix no gerador `_enforce_bipartite` + checagem `bipartite_violation` no validador. Rede final: 15 lugares, 17 transições, 34 arcos, 0 violações.
+
+## Cena 18 — Etapa 9: Geração de Código (o sistema nasce da cadeia)
+**NARRAÇÃO:** E aqui o código nasce da cadeia inteira. A partir do agents.yaml, do tasks.yaml e da Rede de Petri, a ferramenta gerou oitenta e cinco arquivos: o servidor WebSocket que orquestra os agentes, o adapters.py com as funções de entrada e saída de cada tarefa, o tools.py, o schema do banco, as telas React, o motor de Petri no frontend, Docker, tudo. E lembra das duas ferramentas MCP que ligamos? Elas viraram código real: o arquivo mcp_tools.py, auto-gerado, com uma classe BaseTool do CrewAI para cada tool — consultar microbiologia e escore de risco de Cox — que chama o servidor MCP externo via o cliente do protocolo. As atribuições que fizemos na tela viraram código executável. E tem o botão Executar, que sobe o sistema.
+**PRODUÇÃO:** página "Geração de Código" — cabeçalho, "Sessão: 85 arquivos completed", a árvore de ARQUIVOS (85) com destaque em ws-server/main.py, adapters.py, e **ws-server/mcp_tools.py**. Abrir o mcp_tools.py e mostrar `class _MCPArgs`, `_mcp_call(...)` via `sse_client`, `class MCPTool_0 name="consultar_microbiologia"`, `MCPTool_1 name="escore_risco_cox"`, `MCP_TOOLS = {...}`. Rótulo "AS 2 TOOLS MCP VIRARAM CÓDIGO". Botão ▶ Executar.
+**TELA:** 86_codegen_landing.png, 87_codegen_mcp_tools.png, 87b_codegen_mcp_tools_bottom.png, 88_codegen_adapters.png
+**NOTA PRODUÇÃO:** 85 arquivos, sessão code_gen_20260901_064051. mcp_tools.py chama http://127.0.0.1:9120/sse (o servidor MCP real). Ver arquivo entregue em mcp/mcp_tools_GERADO_pelo_codegen.py.
+
+## Cena 19 — Etapa 10: Casos de Teste & Validação (Grafo de Causa-Efeito)
+**NARRAÇÃO:** Documento gerado, sistema gerado — falta validar. E aqui a ferramenta aplica uma técnica clássica de teste: o Grafo de Causa-Efeito. De novo "Origem: Especificação zero-oito-cê": para cada caso de uso, ela extrai as causas — as ações do ator — e os efeitos — as respostas do sistema —, monta o grafo lógico e deriva a tabela de decisão. Cada coluna da tabela vira um caso de teste. Foram onze casos de uso cobertos e quarenta e três casos de teste. Veja o caso de uso um, autenticação: as causas são credenciais válidas, código correto, código expirado, pedido de reenvio; os efeitos, o sistema respondendo a cada combinação. Cada caso de teste traz suas entradas e a saída esperada. Repare que o caso de uso dez está marcado como "falhou" — a ferramenta é honesta sobre onde a geração não fechou, em vez de inventar.
+**PRODUÇÃO:** página "Casos de Teste & Validação". Cabeçalho explicando a técnica (causas = ações do ator, efeitos = respostas). "11 casos de uso · 43 casos de teste". Lista de UCs com contagem (UC-006 Cox = 3 casos). Selecionar UC-001 e mostrar o **Grafo de Causa-Efeito** (CAUSAS c1..c4 ligadas aos efeitos, com negações). Botão 📄 Documento (documento de validação, 90KB) e ✓ Aprovar. Destacar UC-010 = "falhou" (transparência).
+**TELA:** 90_testcases_landing.png, 91_testcases_uc006.png, 92_testcases_validacao.png
+**NOTA PRODUÇÃO:** sessão c99867c4; 11/12 UCs, 43 casos, doc de validação 90.491 chars. UC-010 CEG falhou (1 UC) — mostrado como falhou. Técnica CEG = causas→efeitos→tabela de decisão→casos.
+
+## Cena 20 — E2E: o sistema rodando (app + MCP)
+**NARRAÇÃO:** E o sistema roda. Extraímos os oitenta e cinco arquivos, criamos o banco, e subimos o servidor do aplicativo. Repare na inicialização: "duas ferramentas MCP carregadas". E elas funcionam de verdade: quando o agente de prognóstico executa, ele chama o serviço externo de Cox pelo MCP — o log mostra as chamadas ao servidor na porta nove mil cento e vinte — e recebe o escore de risco calculado; e a consulta de microbiologia devolve o Staphylococcus aureus multirresistente, com o antibiograma. O aplicativo gerado, do requisito ao código, conversa com os sistemas externos via o protocolo que configuramos na tela.
+**PRODUÇÃO:** terminal com o boot do ws-server ("[ws] 2 tool(s) MCP carregada(s)", "BioByte Sentinela em ws://localhost:5030"); a chamada `escore_risco_cox(...)` retornando `{escore_cox, nivel_risco, modelo: "Cox proportional hazards"}`; `consultar_microbiologia("CAS-2023-001")` retornando o patógeno + perfil; e o log do agente chamando `escore_risco_cox` (:9120) durante a task.
+**TELA:** (capturas de terminal — boot do app, retorno das tools MCP, log do agente)
+**NOTA PRODUÇÃO — honestidade técnica:** app roda (ws-server :5030, banco biobyte_app 8 tabelas, 2 tools MCP), tools MCP provadas E2E, agente chama a MCP. ARESTA: task combinada (SQL + tool) não persiste limpo — qwen gera SQL inválido no passo de banco (fragilidade de SQL agêntico com modelo local; padrão do gerador é determinístico-first). 2 gaps de gerador achados: (1) task com tool externa marcada `deterministic`; (2) code-gen não liga a tool MCP no AGENT_TOOLS do agente.

@@ -25,6 +25,29 @@ router = APIRouter(prefix="/specifications", tags=["specifications"])
 
 
 # ============================================================
+# LIMITE DE CONTEXTO DO LLM LOCAL
+# ============================================================
+# O LLM local (qwen via LM Studio) tem n_ctx=65536. O servidor (llama.cpp) reserva KV
+# para prompt_tokens + max_tokens; se a soma passar de n_ctx, ele ABORTA o stream no meio
+# e o cliente openai levanta `openai.APIError: terminated` depois de minutos gerando.
+# Portanto max_tokens NÃO pode ser fixo: precisa caber no que sobra do contexto depois do
+# prompt. A spec (prompt ~63K chars) e o refino (prompt ~85K chars, spec+requisitos) têm
+# tamanhos MUITO diferentes — por isso calculamos dinamicamente.
+LLM_CTX_TOKENS = int(os.getenv("LLM_CTX_TOKENS", "65536"))
+LLM_CTX_MARGIN = int(os.getenv("LLM_CTX_MARGIN", "4096"))  # folga p/ tokens especiais/estimativa
+
+def _safe_max_tokens(prompt: str, desired: int = 40000) -> int:
+    """max_tokens que cabe no contexto do LLM local junto do prompt.
+
+    Estima tokens do prompt de forma CONSERVADORA (~3 chars/token p/ pt-BR + markdown/código,
+    denso) e devolve min(desired, n_ctx - prompt_est - margem). Nunca abaixo de 4096.
+    """
+    prompt_tokens_est = int(len(prompt or "") / 3.0)  # conservador (superestima)
+    budget = LLM_CTX_TOKENS - prompt_tokens_est - LLM_CTX_MARGIN
+    return max(4096, min(desired, budget))
+
+
+# ============================================================
 # VALIDATION FUNCTIONS
 # ============================================================
 
@@ -493,7 +516,7 @@ async def execute_specification_generation(
         sys.stdout.flush()
 
         # 4. Call LLM (aumentado para 24000 tokens para geração completa das 14 seções)
-        print(f"\n[SPEC GENERATION] 🤖 STEP 4: CHAMANDO LLM AGORA... (max_tokens=24000)")
+        print(f"\n[SPEC GENERATION] 🤖 STEP 4: CHAMANDO LLM AGORA... (max_tokens=40000)")
         print(f"[SPEC GENERATION] ⏳ Aguarde... isso pode levar 1-3 minutos...")
         import sys
         sys.stdout.flush()
@@ -502,9 +525,13 @@ async def execute_specification_generation(
         print(f"[SPEC GENERATION] 🔌 LLM client obtido, iniciando chamada...")
         sys.stdout.flush()
 
+        # max_tokens DINÂMICO: precisa caber no n_ctx do LLM local junto do prompt, senão o
+        # servidor aborta o stream ("openai.APIError: terminated"). Ver _safe_max_tokens.
+        _mt = _safe_max_tokens(prompt, desired=40000)
+        print(f"[SPEC GENERATION] max_tokens dinâmico = {_mt} (prompt {len(prompt)} chars)")
         specification_document = await llm.complete_async(
             prompt=prompt,
-            max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
+            max_tokens=_mt
         )
 
         print(f"[SPEC GENERATION] ✅ STEP 4 OK - LLM RETORNOU! Tamanho: {len(specification_document)} chars")
@@ -577,8 +604,10 @@ async def execute_specification_generation(
         sys.stdout.flush()
 
     except Exception as e:
+        import traceback
         print(f"\n{'='*80}")
-        print(f"[SPEC GENERATION] ❌ ERRO DURANTE GERAÇÃO: {e}")
+        print(f"[SPEC GENERATION] ❌ ERRO DURANTE GERAÇÃO: {type(e).__module__}.{type(e).__name__}: {e}")
+        traceback.print_exc()
         print(f"{'='*80}\n")
         sys.stdout.flush()
 
@@ -816,10 +845,15 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
                 llm_client=llm_client,
             )
         else:
+            # max_tokens DINÂMICO: o prompt de refino é GRANDE (spec atual + requisitos +
+            # instruções, ~85K chars ≈ 24-28K tokens). Fixar 40000 estoura o n_ctx=65536 e o
+            # servidor aborta ("terminated"). _safe_max_tokens calcula o que sobra do contexto.
+            _mt_ref = _safe_max_tokens(refinement_prompt, desired=40000)
+            print(f"[SPEC REFINEMENT] max_tokens dinâmico = {_mt_ref} (prompt {len(refinement_prompt)} chars)")
             refined_specification = await llm_client.complete_async(
                 prompt=refinement_prompt,
                 temperature=0.7,
-                max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
+                max_tokens=_mt_ref
             )
 
         print(f"[SPEC REFINEMENT] LLM completed. Refined document length: {len(refined_specification)} chars")
