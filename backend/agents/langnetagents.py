@@ -5718,6 +5718,45 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
             return m.group(1) + 'ST_GeomFromText(%s, 4674)'
         query = _re.sub(r'(?i)(\bST_\w+\s*\([^,()]+,\s*)%s', _wrap_geom, query)
 
+    # (6) PLACEHOLDERS `{name}` escalares NÃO parametrizados (ex.: `INTERVAL {periodo_dias} DAY`).
+    #     O LLM escreve o SQL com template `{name}`; se ficar literal, o MySQL dá 1064. Aqui cada
+    #     `{name}` vira bound param `%s` + `input_data.get('name', default)`, INTERLEAVADO na ordem
+    #     posicional com os `%s` que já existiam (cujos valores estão em py_params). `{{...}}`
+    #     (campos de objeto) são tratados antes e ignorados aqui. Fix do E2E (BioByte: dashboard).
+    if _re.search(r'(?<!\{)\{(\w+)\}(?!\})', query):
+        def _split_top_level(_s):
+            _parts, _depth, _buf, _q = [], 0, [], None
+            for _ch in _s:
+                if _q:
+                    _buf.append(_ch)
+                    if _ch == _q: _q = None
+                    continue
+                if _ch in "'\"": _q = _ch; _buf.append(_ch); continue
+                if _ch in "([{": _depth += 1
+                elif _ch in ")]}": _depth -= 1
+                if _ch == "," and _depth == 0:
+                    _parts.append("".join(_buf).strip()); _buf = []
+                else:
+                    _buf.append(_ch)
+            if "".join(_buf).strip(): _parts.append("".join(_buf).strip())
+            return _parts
+        _inner = (py_params or "").strip()
+        _existing = _split_top_level(_inner[1:-1]) if _inner.startswith("[") else []
+        _final, _ei, _pos, _newq = [], 0, 0, []
+        for _m in _re.finditer(r'%s|(?<!\{)\{(\w+)\}(?!\})', query):
+            _newq.append(query[_pos:_m.start()]); _newq.append("%s"); _pos = _m.end()
+            if _m.group(0) == "%s":
+                if _ei < len(_existing): _final.append(_existing[_ei]); _ei += 1
+            else:
+                _nm = _m.group(1)
+                _dflt = "30" if _re.search(r'(?i)periodo|dias|days|window', _nm) else "None"
+                _final.append(f"input_data.get({_nm!r}, {_dflt})")
+        _newq.append(query[_pos:])
+        query = "".join(_newq)
+        while _ei < len(_existing):
+            _final.append(_existing[_ei]); _ei += 1
+        py_params = "[" + ", ".join(_final) + "]"
+
     q_repr = repr(query)
     if py_params is not None:
         lines.append(f"{indent}cur.execute({q_repr}, {py_params})")
