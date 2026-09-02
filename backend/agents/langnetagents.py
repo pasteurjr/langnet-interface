@@ -7210,6 +7210,21 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     if all_tool_names:
         detected_tools = sorted(set(detected_tools) | set(all_tool_names))
 
+    # F2 Fase 3: tools MCP atribuídas aos agentes (etapa MCP do Projeto) entram no
+    # agents_map AQUI, ANTES de montar o AGENT_TOOLS do adapters.py (senão o binding MCP
+    # só chegava no agents.yaml e o AGENT_TOOLS de runtime ficava sem a tool → agente não
+    # a enxergava). Guarda _mcp_assign p/ reuso (mcp_tools.py) e o set de agentes MCP p/
+    # forçar execution:agent nas suas tasks.
+    _mcp_assign = _fetch_mcp_assignments(str(state.get("project_id") or ""))
+    _mcp_agent_ids = set()
+    if _mcp_assign:
+        for _a in _mcp_assign:
+            agents_map.setdefault(_a["agent_id"], [])
+            if _a["tool_name"] not in agents_map[_a["agent_id"]]:
+                agents_map[_a["agent_id"]].append(_a["tool_name"])
+            _mcp_agent_ids.add(_a["agent_id"])
+        print(f"[CODE-GEN] {len(_mcp_assign)} tool(s) MCP atribuída(s) a agentes (agents_map + AGENT_TOOLS)")
+
     tools_py = (llm_files.get("tools_py") or "").strip() or _empty_tools_py(detected_tools)
     adapters_py = (llm_files.get("adapters_py") or "").strip() or _empty_adapters_py()
 
@@ -7413,15 +7428,7 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         if tasks_yaml != _before:
             print("[CODE-GEN][VERIFICAÇÃO] verification injetada nas tasks de persistência do tasks.yaml")
 
-    # F2 Fase 3: tools MCP atribuídas aos agentes (etapa MCP do Projeto) entram no
-    # agents_map ANTES da injeção — assim os agentes ganham as tools MCP no agents.yaml.
-    _mcp_assign = _fetch_mcp_assignments(str(state.get("project_id") or ""))
-    if _mcp_assign:
-        for _a in _mcp_assign:
-            agents_map.setdefault(_a["agent_id"], [])
-            if _a["tool_name"] not in agents_map[_a["agent_id"]]:
-                agents_map[_a["agent_id"]].append(_a["tool_name"])
-        print(f"[CODE-GEN] {len(_mcp_assign)} tool(s) MCP atribuída(s) a agentes")
+    # (tools MCP já entraram no agents_map lá em cima, antes do AGENT_TOOLS do adapters.)
 
     # Injeta a lista de tools no agents.yaml — o LLM comumente deixa `tools: []`,
     # matando qualquer capacidade real do agente. Bindings vêm do agent_task_spec.
