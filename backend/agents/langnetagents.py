@@ -6838,6 +6838,57 @@ def _extract_sql_input_keys(adapters_py: str) -> Dict[str, List[str]]:
     return out
 
 
+def _align_update_set_params(adapters_py: str) -> str:
+    """Coerência da CAMADA DE EXECUÇÃO — passo 2/N.
+
+    Alinha, em cada `UPDATE ... SET col=%s`, a CHAVE lida do input_data com a COLUNA que
+    ela preenche. Origem do bug: o placeholder da spec (ex.: `{is_icsac}`) virou
+    `input_data.get('is_icsac')`, mas a coluna é `classificacao_nhsn` — e é esse o nome que o
+    resto do sistema (saída do agente, modelo de dados, carry-forward) usa → `get('is_icsac')`
+    volta None → `SET classificacao_nhsn=NULL` → falha NOT NULL (foi o bloqueio do P4).
+
+    NÃO-DESTRUTIVO: reescreve para PREFERIR o nome da coluna com FALLBACK ao nome original —
+    `input_data.get('classificacao_nhsn', input_data.get('is_icsac'))`. Se o pareamento estiver
+    errado, a coluna simplesmente não está no input_data e mantém-se o comportamento anterior.
+    """
+    import re as _re
+    if not adapters_py:
+        return adapters_py
+
+    def _fix_call(mm):
+        sql = mm.group('sql'); params = mm.group('params')
+        if not _re.match(r"""['"]?\s*UPDATE\b""", sql, _re.I):
+            return mm.group(0)
+        set_seg = _re.split(r'\bWHERE\b', sql, flags=_re.I)[0]
+        parts = _re.split(r'\bSET\b', set_seg, maxsplit=1, flags=_re.I)
+        if len(parts) < 2:
+            return mm.group(0)
+        # colunas do SET, na ordem, que recebem um %s (ignora NOW()/literais/VALUES()).
+        cols = _re.findall(r'`?(\w+)`?\s*=\s*%s', parts[1])
+        if not cols:
+            return mm.group(0)
+        getters = list(_re.finditer(r"input_data\.get\(\s*['\"](\w+)['\"]\s*\)", params))
+        new_params = params
+        # os primeiros len(cols) getters correspondem aos %s do SET (WHERE vem depois).
+        # aplica da direita p/ esquerda pra preservar offsets.
+        for idx in range(min(len(cols), len(getters)) - 1, -1, -1):
+            col = cols[idx]; g = getters[idx]; key = g.group(1)
+            if key == col:
+                continue
+            repl = "input_data.get('%s', input_data.get('%s'))" % (col, key)
+            new_params = new_params[:g.start()] + repl + new_params[g.end():]
+        if new_params == params:
+            return mm.group(0)
+        full = mm.group(0); ms = mm.start()
+        ps, pe = mm.span('params')
+        return full[:ps - ms] + new_params + full[pe - ms:]
+
+    pat = _re.compile(
+        r"""cur\.execute\(\s*(?P<sql>'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*,\s*\[(?P<params>[^\]]*)\]""",
+        _re.S)
+    return pat.sub(_fix_call, adapters_py)
+
+
 def _generate_mcp_tools_py(assignments: list) -> str:
     """Emite ws-server/mcp_tools.py: um BaseTool CrewAI por tool MCP atribuída, que chama
     a ferramenta no servidor MCP via cliente `mcp` (SSE/HTTP). Registra em MCP_TOOLS."""
