@@ -111,8 +111,19 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     import os as _os
     import httpx as _httpx
     from openai import OpenAI as _OpenAI
-    base = _os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1")
-    model = _os.getenv("LMSTUDIO_MODEL_NAME", "qwen2.5-coder-32b-instruct")
+    # Provider-aware: o caminho direto (streaming) precisa seguir LLM_PROVIDER, senão
+    # o code-gen/spec batem SEMPRE no LM Studio local (e travam se a GPU cair).
+    _provider = (_os.getenv("LLM_PROVIDER", "lmstudio") or "lmstudio").lower()
+    if _provider == "deepseek":
+        base = _os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
+        model = _os.getenv("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
+        _api_key = _os.getenv("DEEPSEEK_API_KEY", "")
+        _max_tokens = int(_os.getenv("DEEPSEEK_MAX_TOKENS", "32768"))
+    else:
+        base = _os.getenv("LMSTUDIO_API_BASE", "http://192.168.1.115:1234/v1")
+        model = _os.getenv("LMSTUDIO_MODEL_NAME", "qwen2.5-coder-32b-instruct")
+        _api_key = _os.getenv("LMSTUDIO_API_KEY", "lm-studio")
+        _max_tokens = int(_os.getenv("LMSTUDIO_MAX_TOKENS", "16000"))
     _timeout = float(_os.getenv("LMSTUDIO_TIMEOUT", "1800"))
     # READ timeout (tempo entre bytes) SEPARADO do total: o link externo (DDNS) às vezes
     # estola no MEIO do stream — conexão fica ESTABLISHED mas SEM bytes por dezenas de min,
@@ -121,7 +132,7 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     # estol silencioso e falha ~12x mais rápido → o retry abaixo refaz a chamada.
     _read = float(_os.getenv("LMSTUDIO_READ_TIMEOUT", "300"))
     _to = _httpx.Timeout(_timeout, read=_read, connect=30.0)
-    client = _OpenAI(api_key=_os.getenv("LMSTUDIO_API_KEY", "lm-studio"),
+    client = _OpenAI(api_key=_api_key,
                      base_url=base, timeout=_to, max_retries=1)
     prompt = description
     if expected_output:
@@ -133,7 +144,17 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     # reasoning oculto). A chave que DESLIGA de verdade é `chat_template_kwargs.enable_thinking
     # =false` (extra_body abaixo). Mantém-se /no_think como reforço redundante e inócuo.
     _is_qwen3 = "qwen3" in (model or "").lower()
-    _extra = {"chat_template_kwargs": {"enable_thinking": False}} if _is_qwen3 else {}
+    # DeepSeek v4-flash é modelo de raciocínio: por padrão queima TODO o max_tokens em
+    # reasoning e devolve conteúdo vazio. Medido: só `thinking.type=disabled` zera o
+    # reasoning (reasoning.enabled=False ainda vaza ~550 tokens; chat_template_kwargs não
+    # tem efeito). Liga o reasoning só se DEEPSEEK_REASONING=true.
+    if _provider == "deepseek":
+        _reasoning_on = (_os.getenv("DEEPSEEK_REASONING", "false").lower() == "true")
+        _extra = {} if _reasoning_on else {"thinking": {"type": "disabled"}}
+    elif _is_qwen3:
+        _extra = {"chat_template_kwargs": {"enable_thinking": False}}
+    else:
+        _extra = {}
     _sys = (system or "").strip()
     if _is_qwen3:
         _sys = ("/no_think\n" + _sys).strip() if _sys else "/no_think"
@@ -155,7 +176,7 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
             stream = client.chat.completions.create(
                 model=model,
                 messages=_messages,
-                max_tokens=int(_os.getenv("LMSTUDIO_MAX_TOKENS", "16000")),
+                max_tokens=_max_tokens,
                 temperature=0.2,
                 stream=True,
                 extra_body=_extra,
@@ -272,6 +293,9 @@ def get_llm(use_deepseek: bool = False):
 
             max_tokens_value = int(os.getenv("DEEPSEEK_MAX_TOKENS", "32768"))
             reasoning_enabled = (os.getenv("DEEPSEEK_REASONING", "false").lower() == "true")
+            # v4-flash: só `thinking.type=disabled` zera o raciocínio (medido contra a API;
+            # `reasoning.enabled=False` ainda vaza ~550 tokens de reasoning). Liga só se pedido.
+            _ds_extra = {} if reasoning_enabled else {"thinking": {"type": "disabled"}}
 
             _llm_cache[cache_key] = CrewLLM(
                 model=deepseek_model,
@@ -279,7 +303,7 @@ def get_llm(use_deepseek: bool = False):
                 base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1"),
                 temperature=0.3,
                 max_tokens=max_tokens_value,
-                extra_body={"reasoning": {"enabled": reasoning_enabled}},
+                extra_body=_ds_extra,
             )
         else:
             # Default OpenAI
@@ -2730,7 +2754,9 @@ def _build_llm_flash() -> LLM:
             base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
             temperature=0.7,
             max_tokens=int(os.getenv("DEEPSEEK_MAX_TOKENS", "32768")),
-            extra_body={{"reasoning": {{"enabled": False}}}},
+            # v4-flash: só thinking.type=disabled zera o raciocínio (reasoning.enabled=False
+            # ainda vaza ~550 tokens; medido contra a API).
+            extra_body={{"thinking": {{"type": "disabled"}}}},
         )
     return LLM(model=os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"),
                api_key=os.getenv("OPENAI_API_KEY"), temperature=0.7)
@@ -2753,12 +2779,13 @@ def _build_llm_pro() -> LLM:
         )
     if prov == "deepseek" and os.getenv("DEEPSEEK_API_KEY"):
         return LLM(
-            model=os.getenv("DEEPSEEK_MODEL_NAME_PRO", "deepseek/deepseek-v4-pro"),
+            # User pediu FLASH sem raciocínio em tudo — pro também usa flash + thinking off.
+            model=os.getenv("DEEPSEEK_MODEL_NAME_PRO", os.getenv("DEEPSEEK_MODEL_NAME", "deepseek/deepseek-v4-flash")),
             api_key=os.getenv("DEEPSEEK_API_KEY"),
             base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
             temperature=0.3,
             max_tokens=int(os.getenv("DEEPSEEK_MAX_TOKENS_PRO", "32768")),
-            extra_body={{"reasoning": {{"enabled": True}}}},
+            extra_body={{"thinking": {{"type": "disabled"}}}},
         )
     return LLM(model=os.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini"),
                api_key=os.getenv("OPENAI_API_KEY"), temperature=0.3)
