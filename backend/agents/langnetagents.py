@@ -2992,7 +2992,39 @@ def _build_task(task_id: str, agent: Agent, description: str) -> Task:
     )
 
 
+_TASK_T0: Dict[str, float] = {{}}   # task_name -> instante de início (p/ medir a duração)
+
+
+def _observe(msg_type: str, data: Any) -> None:
+    """OBSERVABILIDADE: registra os eventos de tarefa na SAÍDA PADRÃO, em uma linha estável.
+
+    Os eventos já iam para o cliente pela conexão, mas nada ficava no log do processo — então
+    quem opera (a tela de Monitoramento do LangNet, que lê o log da implantação) não tinha como
+    saber o que os agentes fizeram. Formato: `[task] INICIO <tarefa> agente=<x>` /
+    `[task] OK <tarefa> em <s>s` / `[task] ERRO <tarefa>: <motivo>`.
+    """
+    try:
+        import time as _t
+        d = data if isinstance(data, dict) else {{}}
+        name = d.get("task_name") or "?"
+        if msg_type == "task_start":
+            _TASK_T0[name] = _t.time()
+            cfg = TASKS_CONFIG.get(name) or {{}}
+            print(f"[task] INICIO {{name}} agente={{cfg.get('agent') or cfg.get('agent_id') or '-'}} "
+                  f"modo={{cfg.get('execution') or 'deterministic'}}", flush=True)
+        elif msg_type == "task_completed":
+            dt = _t.time() - _TASK_T0.pop(name, _t.time())
+            print(f"[task] OK {{name}} em {{dt:.1f}}s", flush=True)
+        elif msg_type == "error":
+            dt = _t.time() - _TASK_T0.pop(name, _t.time())
+            err = " ".join(str(d.get("error") or "")[:200].split())   # normaliza quebras de linha
+            print(f"[task] ERRO {{name}} em {{dt:.1f}}s: {{err}}", flush=True)
+    except Exception:
+        pass
+
+
 async def _send(ws, msg_type: str, data: Any) -> None:
+    _observe(msg_type, data)
     # default=str serializa datetime/date/Decimal/UUID vindos do banco (SELECT *).
     await ws.send(json.dumps({{
         "type": msg_type,
