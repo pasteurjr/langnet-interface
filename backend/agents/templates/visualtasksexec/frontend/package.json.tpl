@@ -14,7 +14,7 @@
     "ajv": "^8.12.0"
   },
   "scripts": {
-    "start": "PORT={{FRONTEND_PORT}} BROWSER=none react-scripts start",
+    "start": "PORT=${PORT:-{{FRONTEND_PORT}}} BROWSER=none react-scripts start",
     "build": "react-scripts build"
   },
   "eslintConfig": {
