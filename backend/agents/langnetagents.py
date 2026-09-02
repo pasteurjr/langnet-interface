@@ -8831,7 +8831,11 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
     # Imports: só puxa Leaflet/hooks de mapa quando a tela TEM mapa (senão 'L is not defined' quebra o build).
     react_hooks = ["useEffect", "useRef", "useState"] if has_map else ["useState"]
     imports = ['import React, { ' + ", ".join(react_hooks) + ' } from "react";',
-               'import { runTask } from "./wsClient";']
+               'import { runTask } from "./wsClient";',
+               # Contexto compartilhado entre telas (atendimento/caso corrente): a tela rica HERDA
+               # (usuario_id do login, caso_id/paciente_id do caso aberto) e GRAVA DE VOLTA o que
+               # produz — espelho, na interface, do carry-forward da cadeia Petri.
+               'import { getCarry, setCarry } from "./currentAttendance";']
     if has_map:
         imports += ['import L from "leaflet";', 'import "leaflet/dist/leaflet.css";',
                     'import "leaflet-draw";', 'import "leaflet-draw/dist/leaflet.draw.css";']
@@ -8876,7 +8880,7 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
 
 // Traceability: UC __UC__ | FR __FR__  (tela rica auto-gerada por LangNet)
 export default function __COMP__() {
-__STATE__  const [form, setForm] = useState({});
+__STATE__  const [form, setForm] = useState(() => getCarry());   // pré-preenche com o contexto (caso/paciente corrente)
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -8884,10 +8888,11 @@ __STATE__  const [form, setForm] = useState({});
 __EFFECT__  async function submit() {
     setBusy(true); setErr(""); setResult(null);
     try {
-      const input = { ...form };
+      const input = { ...getCarry(), ...form };   // contexto herdado + campos da tela
 __GEOMSUBMIT__      if (!"__TARGET__") { setErr("Ação não vinculada a uma tarefa do sistema."); setBusy(false); return; }
       const r = await runTask("__TARGET__", input);
       setResult(r);
+      try { const _p = {}; for (const [k, v] of Object.entries(r || {})) { if (v != null && typeof v !== "object") _p[k] = v; } setCarry(_p); } catch (e) {}
     } catch (e) { setErr(String((e && e.message) || e)); }
     setBusy(false);
   }
