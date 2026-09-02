@@ -1,0 +1,10 @@
+{
+ "portas": [
+  "5002",
+  "8001",
+  "3002",
+  "8001",
+  "3002"
+ ],
+ "resumo": "IMPLANTAÇÃO ATUAL\nNO AR\niniciada 02/09/2026, 23:35:51 · 0s\n⏹ Parar\nOnde o sistema ficou disponível\nservidor de agentes (WebSocket)\tporta 5002\tws://localhost:5002\nAPI do sistema (FastAPI)\tporta 8001\thttp://localhost:8001\ninterface do sistema (React)\tporta 3002\thttp://localhost:3002\nRegistro da implantação (99 linhas)\n[runner] writing 85 file(s) to /tmp/langnet-runs/3e81772f-c7f8-466e-bed1-4b53d8243864/46ce5f01-2e3e-47f0-800e-7ae9653072b6\n[runner] interpreter: /tmp/langnet-runs/3e81772f-c7f8-466e-bed1-4b53d8243864/.venv-run/bin/python\n[runner] layout visualtasksexec detectado — cwd = ws-server/\n[runner] configuração da implantação aplicada em .env (41 chaves; informadas na tela: CMS_API_KEY, CMS_API_URL, CREWAI_TESTING, DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER, DEEPSEEK_API_BASE, DEEPSEEK_API_KEY, DEEPSEEK_MAX_TOKENS, DEEPSEEK_MODEL_NAME, DEEPSEEK_REASONING, EMBEDDINGS_API_BASE, EMB"
+}
