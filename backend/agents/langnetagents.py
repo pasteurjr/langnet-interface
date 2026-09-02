@@ -3920,6 +3920,21 @@ _LIST_HELPER = (
     "        return _json.dumps(v, ensure_ascii=False)\n"
     "    return v\n"
     "\n\n"
+    "def _pw(input_data, col):\n"
+    "    \"\"\"Valor de coluna de HASH de senha (`<base>_hash`). A interface NUNCA envia hash:\n"
+    "    ela coleta a senha em TEXTO (campo `<base>`, ex.: `senha`). Se o input já trouxer o\n"
+    "    hash, usa; senão DERIVA de `<base>` com SHA-256. Sem nenhum dos dois devolve None —\n"
+    "    o NOT NULL acusa, e em hipótese alguma se grava senha em claro.\"\"\"\n"
+    "    v = input_data.get(col)\n"
+    "    if v:\n"
+    "        return v\n"
+    "    base = col[:-5] if col.endswith('_hash') else col\n"
+    "    raw = input_data.get(base) or input_data.get('senha') or input_data.get('password')\n"
+    "    if not raw:\n"
+    "        return None\n"
+    "    import hashlib as _hl\n"
+    "    return _hl.sha256(str(raw).encode('utf-8')).hexdigest()\n"
+    "\n\n"
     "def _coerce_to_schema(raw, schema):\n"
     "    \"\"\"CONTRATO DE SAÍDA (Inserção A): normaliza/coage/valida a saída do agente contra o\n"
     "    output_schema. Desembrulha {raw}/string -> objeto, coage por tipo (via _cv) e valida os\n"
@@ -4874,7 +4889,12 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str,
         ins_ph = ", ".join(["%s"] * len(editable))
         # _cv coage o valor ao tipo da coluna (robusto a resultado do agente: enum→float, dict→JSON).
         _coltype = {c: t for c, t in m["cols"]}
-        ins_params = ", ".join(f"_cv(input_data.get('{c}'), {_coltype.get(c, 'VARCHAR')!r})" for c in editable)
+        # Coluna de hash de senha (`<base>_hash`) é DERIVADA do campo em texto — a tela envia
+        # `senha`, nunca o hash. Demais colunas seguem a coerção por tipo.
+        ins_params = ", ".join(
+            (f"_pw(input_data, '{c}')" if c.endswith("_hash")
+             else f"_cv(input_data.get('{c}'), {_coltype.get(c, 'VARCHAR')!r})")
+            for c in editable)
         child_ins = ""
         for ch, fk, val in children:
             if not val: continue
@@ -4954,7 +4974,7 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str,
             "        _cols = [c for c in _editable if input_data.get(c) is not None]\n"
             "        if _cols:\n"
             "            _set = ', '.join(c + '=%s' for c in _cols)\n"
-            f"            cur.execute('UPDATE {ent} SET ' + _set + ' WHERE {pk}=%s', [_cv(input_data.get(c), dict({json.dumps([[c,t] for c,t in m['cols']])}).get(c,'VARCHAR')) for c in _cols] + [_id])\n"
+            f"            cur.execute('UPDATE {ent} SET ' + _set + ' WHERE {pk}=%s', [(_pw(input_data, c) if c.endswith('_hash') else _cv(input_data.get(c), dict({json.dumps([[c,t] for c,t in m['cols']])}).get(c,'VARCHAR'))) for c in _cols] + [_id])\n"
             + child_upd +
             "        conn.commit()\n"
             f"        return {{'status':'sucesso','{pk}':_id}}\n"
