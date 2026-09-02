@@ -73,6 +73,45 @@ def env_exists() -> bool:
     return _conda_bin("python").exists()
 
 
+def _free_port(preferred: int) -> int:
+    """Devolve `preferred` se estiver livre; senão a próxima porta livre acima dela.
+    Sem isso a implantação colidia com serviços já rodando (a interface do sistema tentava
+    a 3001, ocupada pela interface do próprio LangNet, e morria)."""
+    import socket
+    for port in range(int(preferred), int(preferred) + 60):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sk:
+            sk.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                sk.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    return int(preferred)
+
+
+def _run_python(run: "CodeRun") -> Path:
+    """Interpretador da implantação: um ambiente virtual PRÓPRIO, criado com
+    --system-site-packages (herda as bibliotecas pesadas já instaladas, sem baixar de novo).
+
+    Antes as dependências do app eram instaladas no ambiente COMPARTILHADO — uma implantação
+    subiu o starlette e quebrou o FastAPI do próprio LangNet. Instalar aqui não afeta mais nada
+    fora desta implantação. Se a criação falhar, cai no interpretador compartilhado (com aviso).
+    """
+    venv = run.work_dir.parent / ".venv-run"
+    py = venv / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
+    if py.exists():
+        return py
+    base = _conda_bin("python")
+    try:
+        run.append_line(f"[runner] criando ambiente isolado da implantação em {venv}")
+        subprocess.run([str(base), "-m", "venv", "--system-site-packages", str(venv)],
+                       check=True, capture_output=True, timeout=180)
+        return py if py.exists() else base
+    except Exception as exc:
+        run.append_line(f"[runner] WARN: ambiente isolado indisponível ({exc}); usando o compartilhado")
+        return base
+
+
 @dataclass
 class CodeRun:
     """Estado de uma execução subprocess do código gerado."""
@@ -199,11 +238,11 @@ def _check_missing_deps(req_file: Path, run: CodeRun) -> List[str]:
     retorna a lista de pacotes que SERIAM instalados (vazio = todos OK)."""
     if not req_file.exists():
         return []
-    pip = _conda_bin("pip")
+    pip_py = _run_python(run)
     try:
         # --dry-run + --quiet imprime "Would install pkg-x.y.z" para cada faltante
         proc = subprocess.run(
-            [str(pip), "install", "--dry-run", "--no-deps", "-r", str(req_file)],
+            [str(pip_py), "-m", "pip", "install", "--dry-run", "--no-deps", "-r", str(req_file)],
             cwd=str(run.work_dir),
             capture_output=True,
             text=True,
@@ -224,12 +263,12 @@ def _check_missing_deps(req_file: Path, run: CodeRun) -> List[str]:
 
 
 def _install_missing(req_file: Path, run: CodeRun) -> bool:
-    """Instala deps faltantes NO env langnet (não cria venv local)."""
-    pip = _conda_bin("pip")
-    run.append_line(f"[runner] pip install --upgrade -r requirements.txt (env=langnet)")
+    """Instala as dependências do app NO AMBIENTE DA IMPLANTAÇÃO (isolado)."""
+    py = _run_python(run)
+    run.append_line("[runner] pip install -r requirements.txt (ambiente isolado da implantação)")
     try:
         proc = subprocess.Popen(
-            [str(pip), "install", "--no-cache-dir", "-r", str(req_file)],
+            [str(py), "-m", "pip", "install", "--no-cache-dir", "-r", str(req_file)],
             cwd=str(run.work_dir),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -275,13 +314,14 @@ def _run_backend_service(run: "CodeRun", backend_dir: Path, parent_env: dict, si
     """
     try:
         env = parent_env.copy()
-        env_python = _conda_bin("python")
+        env_python = _run_python(run)
         if not env_python.exists():
             run.append_line("[backend] env conda 'langnet' indisponível — pulando")
             return
         # FastAPI/uvicorn já existem no env langnet (usados pelo próprio LangNet)
-        run.append_line(f"[backend] starting: {env_python} main.py (cwd={backend_dir})")
-        run.add_service("API do sistema (FastAPI)", env.get("PORT", "8001"))
+        _api_port = env.get("APP_API_PORT", "8001")
+        env = {**env, "PORT": str(_api_port)}
+        run.append_line(f"[backend] starting: {env_python} main.py (cwd={backend_dir}, porta {_api_port})")
         proc = subprocess.Popen(
             [str(env_python), "main.py"],
             cwd=str(backend_dir),
@@ -469,8 +509,10 @@ def _run_frontend_service(run: "CodeRun", frontend_dir: Path, parent_env: dict, 
                     pass
 
         # 2) npm start
-        run.append_line(f"[frontend] starting: {npm_bin} start (cwd={frontend_dir})")
-        run.add_service("interface do sistema (React)", env.get("PORT", "3001"))
+        # Porta e endereços já vêm resolvidos do worker (REACT_APP_WS_URL / REACT_APP_BACKEND_URL).
+        _fe_port = env.get("APP_FRONTEND_PORT", "3001")
+        env = {**env, "PORT": str(_fe_port), "CI": "true"}
+        run.append_line(f"[frontend] starting: {npm_bin} start (cwd={frontend_dir}, porta {_fe_port})")
         proc = subprocess.Popen(
             [str(npm_bin), "start"],
             cwd=str(frontend_dir),
@@ -513,7 +555,7 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
         run.append_line(f"[runner] writing {len(files)} file(s) to {run.work_dir}")
         _safe_write_files(run.work_dir, files)
 
-        env_python = _conda_bin("python")
+        env_python = _run_python(run)
         run.append_line(f"[runner] interpreter: {env_python}")
 
         # Layout visualtasksexec: ws-server, frontend, backend em subdirs.
@@ -560,8 +602,20 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
         # Também pega .env do BACKEND principal (LangNet) — DEEPSEEK_API_KEY normalmente vive aí
         _load_env_file_into(env, Path("/home/pasteurjr/progreact/langnet-interface/backend/.env"))
 
-        run.add_service("servidor de agentes (WebSocket)", env.get("WEBSOCKET_PORT", "5002"),
-                        f"ws://localhost:{env.get('WEBSOCKET_PORT', '5002')}")
+        # Portas LIVRES para os 3 serviços, alocadas AQUI (antes de qualquer thread) — implantar
+        # não pode colidir com o que já roda, e a interface precisa das portas reais do servidor
+        # de agentes e da API no momento em que sobe.
+        _ws_port = _free_port(env.get("WEBSOCKET_PORT", "5002"))
+        _api_port = _free_port(8001)
+        _fe_port = _free_port(3001)
+        env["WEBSOCKET_PORT"] = str(_ws_port)
+        env["APP_API_PORT"] = str(_api_port)
+        env["APP_FRONTEND_PORT"] = str(_fe_port)
+        env["REACT_APP_WS_URL"] = f"ws://localhost:{_ws_port}"
+        env["REACT_APP_BACKEND_URL"] = f"http://localhost:{_api_port}"
+        run.add_service("servidor de agentes (WebSocket)", _ws_port, f"ws://localhost:{_ws_port}")
+        run.add_service("API do sistema (FastAPI)", _api_port)
+        run.add_service("interface do sistema (React)", _fe_port)
         run.process = subprocess.Popen(
             [str(env_python), "main.py"],
             cwd=str(run.work_dir),
