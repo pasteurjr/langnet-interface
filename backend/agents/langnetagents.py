@@ -3044,8 +3044,9 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             # valores já produzidos) precisa fluir por TODA a cadeia — cada task devolvia só
             # seu resultado. Ecoa todo escalar da entrada que a task não sobrescreveu.
             if isinstance(det_result, dict) and det_result.get("status") != "erro":
+                _META = ("status", "timestamp", "error", "raw", "from_transition", "received_at", "tokens_received")
                 for _ck, _cv in payload.items():
-                    if _cv is None or isinstance(_cv, (dict, list)):
+                    if _ck in _META or _cv is None or isinstance(_cv, (dict, list)):
                         continue
                     if det_result.get(_ck) is None:
                         det_result[_ck] = _cv
@@ -3254,8 +3255,9 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
         # cadeia igual à via determinística — ecoa no output todo escalar da entrada que o
         # raciocínio/persistência não sobrescreveu (senão o próximo place perde usuario_id etc.).
         if isinstance(parsed, dict) and isinstance(input_data, dict):
+            _META = ("status", "timestamp", "error", "raw", "from_transition", "received_at", "tokens_received")
             for _ck, _cv in input_data.items():
-                if _cv is None or isinstance(_cv, (dict, list)):
+                if _ck in _META or _cv is None or isinstance(_cv, (dict, list)):
                     continue
                 if parsed.get(_ck) is None:
                     parsed[_ck] = _cv
@@ -8987,7 +8989,11 @@ __EFFECT__  async function submit() {
 __GEOMSUBMIT__      if (!"__TARGET__") { setErr("Ação não vinculada a uma tarefa do sistema."); setBusy(false); return; }
       const r = await runTask("__TARGET__", input);
       setResult(r);
-      try { const _p = {}; for (const [k, v] of Object.entries(r || {})) { if (v != null && typeof v !== "object") _p[k] = v; } setCarry(_p); } catch (e) {}
+      // METADADO da resposta (status/timestamp/error…) NÃO é dado de domínio: gravá-lo no
+      // contexto colide com colunas homônimas (ex.: usuarios.status ENUM recebia "sucesso").
+      try { const _meta = new Set(["status","timestamp","error","raw","from_transition","received_at","tokens_received","persistido_em"]); const _p = {};
+        for (const [k, v] of Object.entries(r || {})) { if (v != null && typeof v !== "object" && !_meta.has(k)) _p[k] = v; }
+        if (Object.keys(_p).length) setCarry(_p); } catch (e) {}
     } catch (e) { setErr(String((e && e.message) || e)); }
     setBusy(false);
   }
@@ -9191,7 +9197,10 @@ export default function %COMP%() {
       }
       // write-back GENÉRICO: escalares da resposta do agente (usuario_id do login, ids, escores)
       // entram no contexto compartilhado p/ as telas seguintes herdarem (mesma regra da tela rica).
-      try { const _p = {}; for (const [k, v] of Object.entries(out || {})) { if (v != null && typeof v !== "object") _p[k] = v; } if (Object.keys(_p).length) setCarryState(setCarry(_p)); } catch (_) {}
+      // Metadado da resposta não vira contexto (ver tela rica).
+      try { const _meta = new Set(["status","timestamp","error","raw","from_transition","received_at","tokens_received","persistido_em"]); const _p = {};
+        for (const [k, v] of Object.entries(out || {})) { if (v != null && typeof v !== "object" && !_meta.has(k)) _p[k] = v; }
+        if (Object.keys(_p).length) setCarryState(setCarry(_p)); } catch (_) {}
       setResult(out);
     }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
