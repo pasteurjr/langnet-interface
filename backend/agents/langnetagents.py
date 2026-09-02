@@ -6796,6 +6796,52 @@ def _generate_tools_ext_py() -> str:
     return _TOOLS_EXT_PY
 
 
+def _drop_undefined_registry_entries(tools_py: str) -> str:
+    """Guarda GERAL de startup do tools.py: remove do TOOL_REGISTRY toda entrada cujo valor
+    instancia um nome que NÃO está definido nem importado no arquivo (NameError na importação
+    → o ws-server nem sobe). Caso típico: o LLM registra `"pdf_generator": PdfGeneratorTool()`
+    depois que a classe mock foi removida (a real vem de tools_std) mas com uma CHAVE fora do
+    padrão (`pdf_generator` em vez de `pdf_generator_tool`), escapando da limpeza por chave.
+    As tools reais são mescladas em seguida (STD_TOOLS/EXT_TOOLS/MCP_TOOLS) → remover é seguro."""
+    import ast as _ast, re as _re, builtins as _bi
+    if not tools_py or "TOOL_REGISTRY" not in tools_py:
+        return tools_py
+    try:
+        tree = _ast.parse(tools_py)
+    except SyntaxError:
+        return tools_py
+    defined = set(dir(_bi))
+    for node in _ast.walk(tree):
+        if isinstance(node, (_ast.ClassDef, _ast.FunctionDef, _ast.AsyncFunctionDef)):
+            defined.add(node.name)
+        elif isinstance(node, _ast.Import):
+            for a in node.names:
+                defined.add((a.asname or a.name).split(".")[0])
+        elif isinstance(node, _ast.ImportFrom):
+            for a in node.names:
+                defined.add(a.asname or a.name)
+        elif isinstance(node, _ast.Assign):
+            for t in node.targets:
+                if isinstance(t, _ast.Name):
+                    defined.add(t.id)
+    orphans = set()
+    for node in _ast.walk(tree):
+        if isinstance(node, _ast.Assign) and any(isinstance(t, _ast.Name) and t.id == "TOOL_REGISTRY" for t in node.targets) \
+                and isinstance(node.value, _ast.Dict):
+            for v in node.value.values:
+                fn = v.func if isinstance(v, _ast.Call) else None
+                if isinstance(fn, _ast.Name) and fn.id not in defined:
+                    orphans.add(fn.id)
+    if not orphans:
+        return tools_py
+    out = tools_py
+    for name in sorted(orphans):
+        pat = r'(?m)^\s*["\'][^"\'\n]+["\']\s*:\s*' + _re.escape(name) + r'\([^)\n]*\)\s*,?[ \t]*(#[^\n]*)?\n'
+        out = _re.sub(pat, '', out)
+    print(f"[CODE-GEN] tools.py: entradas órfãs removidas do TOOL_REGISTRY (classe inexistente): {sorted(orphans)}")
+    return out
+
+
 def _strip_std_mock_tools(tools_py: str) -> str:
     """Remove do tools.py do LLM as classes MOCK das tools padrão (embedding, vector,
     pdf, csv, email) e suas entradas no TOOL_REGISTRY. As versões REAIS passam a vir de
@@ -8004,6 +8050,8 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # P1: remove QUALQUER mock das tools padrão (embedding/vector/pdf/csv/email) —
     # as versões REAIS vêm de tools_std.py. Zero mock no código gerado.
     tools_py = _strip_std_mock_tools(tools_py)
+    # Guarda geral: entrada do registry que instancia classe inexistente → NameError no import.
+    tools_py = _drop_undefined_registry_entries(tools_py)
     # Embarca a GeoprocessamentoTool REAL quando o domínio precisa (uso do solo/geoespacial):
     # substitui o stub None por uma tool completa (shapely/pyproj/PostGIS/QGIS/WFS).
     _needed_tools = set(detected_tools) | set(all_tool_names)
