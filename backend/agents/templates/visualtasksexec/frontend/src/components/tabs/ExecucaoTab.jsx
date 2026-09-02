@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+import { getCarry } from "../../screens/currentAttendance";
 
 const styles = {
   controls: { display: "flex", gap: 8, marginBottom: 16 },
@@ -25,6 +26,14 @@ const styles = {
 };
 
 const ExecucaoTab = ({ project, exec }) => {
+  // Entrada do fluxo: o que o token inicial carrega (login, caso, variáveis clínicas…).
+  // Pré-preenchida com o contexto corrente (quem entrou / caso aberto); editável em JSON.
+  const [flowInput, setFlowInputText] = useState(() => JSON.stringify(getCarry() || {}, null, 2));
+  const [flowErr, setFlowErr] = useState("");
+  const applyFlowInput = () => {
+    try { const obj = flowInput.trim() ? JSON.parse(flowInput) : {}; exec.setFlowInput && exec.setFlowInput(obj); setFlowErr(""); return true; }
+    catch (e) { setFlowErr("JSON inválido: " + e.message); return false; }
+  };
   const places = project.petriNet?.lugares || [];
   const transitions = project.petriNet?.transicoes || [];
   const enabledIds = new Set(exec.enabledTransitions.map((t) => t.id));
@@ -32,11 +41,17 @@ const ExecucaoTab = ({ project, exec }) => {
   return (
     <div>
       <div style={styles.controls}>
-        <button style={styles.btn()} onClick={exec.runOneStep} disabled={exec.running}>▶ Próximo passo</button>
-        <button style={styles.btn("#43a047")} onClick={() => exec.runAll(50)} disabled={exec.running}>⏩ Executar tudo</button>
+        <button style={styles.btn()} onClick={() => { if (applyFlowInput()) exec.runOneStep(); }} disabled={exec.running}>▶ Próximo passo</button>
+        <button style={styles.btn("#43a047")} onClick={() => { if (applyFlowInput()) exec.runAll(50); }} disabled={exec.running}>⏩ Executar tudo</button>
         <button style={styles.btnSec} onClick={exec.reset}>↺ Reset</button>
       </div>
 
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>📥 Entrada do fluxo (JSON) — pré-preenchida com o contexto corrente</div>
+        <textarea data-testid="flow-input" value={flowInput} onChange={(e) => setFlowInputText(e.target.value)} rows={5}
+          style={{ width: "100%", fontFamily: "monospace", fontSize: 12, padding: 8, border: "1px solid #cbd5e1", borderRadius: 6 }} />
+        {flowErr && <div style={{ color: "#c62828", fontSize: 12 }}>{flowErr}</div>}
+      </div>
       <div style={styles.stats}>
         <span><strong>Step:</strong> {exec.step}</span>
         <span><strong>Eventos:</strong> {exec.events.length}</span>

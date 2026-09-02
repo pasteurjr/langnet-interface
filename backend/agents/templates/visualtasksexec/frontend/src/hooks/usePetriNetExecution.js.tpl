@@ -104,11 +104,22 @@ const usePetriNetExecution = (project) => {
     setRunning(false);
   }, [runOneStep, pushEvent]);
 
+  // ENTRADA DO FLUXO: o PlaceProcessor lê `input` de place.input_data — sem isto a cadeia roda
+  // vazia (usuario_id/caso_id nulos). Grava a entrada em TODOS os lugares (cada place copia o
+  // input e mescla os outputs dos predecessores por cima). Mantém a entrada p/ reaplicar no reset.
+  const flowInputRef = useRef({});
+  const setFlowInput = useCallback((obj) => {
+    const sim = simulatorRef.current; if (!sim) return;
+    flowInputRef.current = (obj && typeof obj === "object") ? obj : {};
+    (sim.petriNet?.lugares || []).forEach((p) => { p.input_data = { ...flowInputRef.current }; });
+  }, []);
+
   const reset = useCallback(() => {
     const sim = simulatorRef.current;
     if (sim) {
       sim.cancelAllProcessing();
       sim.resetSimulation();
+      (sim.petriNet?.lugares || []).forEach((p) => { p.input_data = { ...flowInputRef.current }; });
     }
     setEvents([]);
     setTick((t) => t + 1);
@@ -170,6 +181,7 @@ const usePetriNetExecution = (project) => {
     runOneStep,
     runAll,
     reset,
+    setFlowInput,
     runTask,
     // expostos pra debug / abas
     _tick: tick,
