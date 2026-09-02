@@ -2865,6 +2865,7 @@ def _mcp_prefetch(task_name, input_data):
     MCP_TOOL_ARGS = getattr(_mod, "MCP_TOOL_ARGS", {{}}) or {{}}
     MCP_ARG_ALIASES = getattr(_mod, "MCP_ARG_ALIASES", {{}}) or {{}}
     MCP_OUT_ALIASES = getattr(_mod, "MCP_OUT_ALIASES", {{}}) or {{}}
+    MCP_TARGET_KEYS = getattr(_mod, "MCP_TARGET_KEYS", {{}}) or {{}}
     _tc = TASKS_CONFIG.get(task_name) or {{}}
     agent = _tc.get("agent") or _tc.get("agent_id")
     names = [t for t in (AGENT_TOOLS.get(agent, []) or []) if t in MCP_TOOLS]
@@ -2880,12 +2881,33 @@ def _mcp_prefetch(task_name, input_data):
             key = aliases.get(p, p)  # alias de coerência tem precedência
             if key in input_data and input_data[key] is not None:
                 args[p] = input_data[key]
-        try:
-            raw = MCP_TOOLS[nm]._run(**args)
-        except Exception as _e:
-            print(f"[ws][MCP prefetch] {{nm}} falhou: {{_e}}")
-            continue
-        data = _parse_json_lenient(raw)
+        # Chama a tool; se a resposta não trouxer NENHUM campo útil (nem alvo, nem alias) — ex.: a
+        # tool declara `paciente_id` mas indexa pelo caso e o alias de argumento não foi derivado —
+        # tenta de novo com os OUTROS identificadores do contexto (caso_id, paciente_id, id...).
+        # Fallback determinístico: não depende do LLM ter acertado o alias.
+        _targets = set(MCP_TARGET_KEYS.get(nm, [])) | set((MCP_OUT_ALIASES.get(nm, {{}}) or {{}}).keys())
+        def _useful(d):
+            return isinstance(d, dict) and any(k in _targets for k in d.keys()) and not (
+                len(d) <= 3 and str(d.get("status", "")).lower() in ("pendente", "not_found", "nao_encontrado", "erro", "error"))
+        data = None
+        _tries = [args] if args else [{{}}]
+        if params:
+            for _p in params:
+                for _alt in [k for k in input_data.keys() if k != aliases.get(_p, _p) and (k.endswith("_id") or k == "id")]:
+                    _a2 = dict(args); _a2[_p] = input_data[_alt]
+                    if _a2 not in _tries:
+                        _tries.append(_a2)
+        for _a in _tries[:6]:
+            try:
+                raw = MCP_TOOLS[nm]._run(**_a)
+            except Exception as _e:
+                print(f"[ws][MCP prefetch] {{nm}}({{_a}}) falhou: {{_e}}")
+                continue
+            _d = _parse_json_lenient(raw)
+            if _useful(_d):
+                data = _d; args = _a; break
+            if data is None and isinstance(_d, dict):
+                data = _d  # guarda a 1ª resposta (mesmo pobre) caso nenhuma seja útil
         if not isinstance(data, dict):
             continue
         out_alias = MCP_OUT_ALIASES.get(nm, {{}})
