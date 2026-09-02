@@ -7737,6 +7737,16 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     _mcp_py = _generate_mcp_tools_py(_mcp_assign)
     if _mcp_py:
         add("ws-server/mcp_tools.py", _mcp_py)
+    # Coerência da CAMADA DE EXECUÇÃO (passos 2/3): alinha a CHAVE lida do input_data com a
+    # COLUNA que ela preenche em cada UPDATE/INSERT determinístico (NÃO-destrutivo: fallback ao
+    # nome original). Corrige o mismatch nome-do-placeholder × coluna (ex.: is_icsac×classificacao_
+    # nhsn, admin_id×usuario_id) que fazia SET/INSERT gravar NULL e quebrar a cadeia clínica.
+    # Roda ANTES do postgresify (ambos usam %s; postgresify só troca dialeto/geo).
+    _before_align = adapters_py
+    adapters_py = _align_update_set_params(adapters_py)
+    adapters_py = _align_insert_params(adapters_py)
+    if adapters_py != _before_align:
+        print("[CODE-GEN][COERÊNCIA] params determinísticos alinhados às colunas (UPDATE/INSERT)")
     # P3: converte a camada de dados para PostgreSQL/PostGIS quando o DBMS-alvo é postgres.
     if _cg_is_pg:
         adapters_py = _postgresify_sql_py(adapters_py, _cg_srid)
