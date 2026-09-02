@@ -6963,7 +6963,128 @@ def _align_insert_params(adapters_py: str) -> str:
     return pat.sub(_fix_call, adapters_py)
 
 
-def _generate_mcp_tools_py(assignments: list) -> str:
+def _derive_mcp_aliases(assignments: list, tasks_yaml: str, adapters_py: str):
+    """Coerência da CAMADA DE EXECUÇÃO — passo 5: coerência CROSS-contrato MCP↔modelo de dados.
+
+    Os passos 2/3 alinharam nomes DENTRO do SQL (a coluna está no próprio comando). Aqui o
+    casamento é entre contratos distintos e SEMÂNTICO: a tool externa devolve `perfil_resistencia`
+    e a coluna é `sensibilidades`; pede `paciente_id` mas o valor certo é o `caso_id`. Nada no
+    código diz isso — por isso deriva-se via LLM, UMA vez, na geração.
+
+    Sinais fortes dados ao modelo (não é chute cego): descrição + parâmetros exatos da tool
+    (inputSchema descoberto) e o VOCABULÁRIO-ALVO exato = chaves que o SQL determinístico das
+    tasks do agente realmente lê (_extract_sql_input_keys). Ele só mapeia origem→alvo; qualquer
+    alvo fora desse vocabulário é DESCARTADO (mata alucinação). Falha do LLM → mapas vazios (o
+    app segue com o merge por nome exato, como hoje). Aplicação no prefetch é não-destrutiva.
+    Retorna (arg_aliases, out_aliases, target_keys); aliases = {tool: {origem: chave_alvo}},
+    target_keys = {tool: [vocabulário-alvo]} (emitido como MCP_TARGET_KEYS p/ fallback fuzzy em runtime).
+    """
+    arg_aliases: Dict[str, Dict[str, str]] = {}
+    out_aliases: Dict[str, Dict[str, str]] = {}
+    target_keys: Dict[str, List[str]] = {}  # tool -> vocabulário-alvo (p/ fuzzy em runtime)
+    if not assignments:
+        return arg_aliases, out_aliases, target_keys
+    tasks: Dict[str, Any] = {}
+    try:
+        import yaml as _yaml
+        _t = _yaml.safe_load(tasks_yaml) if tasks_yaml else {}
+        tasks = _t if isinstance(_t, dict) else {}
+    except Exception:
+        tasks = {}
+    sql_keys = _extract_sql_input_keys(adapters_py)
+    tools: Dict[str, Dict[str, Any]] = {}
+    for a in assignments:
+        t = tools.setdefault(a["tool_name"], {"desc": a.get("description", "") or "",
+                                              "params": list(a.get("input_args") or []),
+                                              "agents": set()})
+        t["agents"].add(a["agent_id"])
+    for tname, info in tools.items():
+        targets: set = set()
+        for task_name, cfg in tasks.items():
+            if isinstance(cfg, dict) and (cfg.get("agent") or cfg.get("agent_id")) in info["agents"]:
+                targets.update(sql_keys.get(task_name, []))
+        if not targets:
+            continue
+        prompt = (
+            "Você alinha o CONTRATO de uma ferramenta externa (MCP) com o VOCABULÁRIO de um banco de dados.\n\n"
+            f"FERRAMENTA: {tname}\n"
+            f"DESCRIÇÃO: {info['desc']}\n"
+            f"PARÂMETROS DE ENTRADA (nomes exatos): {json.dumps(info['params'], ensure_ascii=False)}\n"
+            f"VOCABULÁRIO-ALVO (chaves EXATAS que o SQL da aplicação lê; use SOMENTE estas como alvo): "
+            f"{json.dumps(sorted(targets), ensure_ascii=False)}\n\n"
+            "Produza dois mapas, APENAS onde os nomes DIFEREM e há correspondência semântica clara:\n"
+            "1) \"arg_aliases\": SOMENTE para parâmetros cujo NOME É ENGANOSO — a DESCRIÇÃO diz que o parâmetro espera "
+            "um conceito/identificador DIFERENTE do que o nome sugere, e o vocabulário-alvo tem esse conceito. "
+            "Mapeie parâmetro -> chave do alvo (ex. genérico: a ferramenta pede \"cliente\" mas a descrição diz \"use o número do "
+            "CONTRATO\" e o alvo tem \"contrato_id\" => {\"cliente\": \"contrato_id\"}). Parâmetros cujo nome já descreve "
+            "corretamente o valor (ex.: idade, quantidade, flags) NÃO devem entrar — deixe-os de fora.\n"
+            "2) \"out_aliases\": para CADA chave do VOCABULÁRIO-ALVO que a ferramenta PRODUZ (segundo a descrição), "
+            "liste os NOMES PROVÁVEIS com que ela retorna esse campo (snake_case, sem acentos, 2 a 5 variantes: "
+            "a forma literal da descrição, abreviações e sinônimos). Formato: {\"chave_alvo\": [\"nome1\", \"nome2\"]} "
+            "(ex. genérico: alvo \"documento\" <- [\"cpf_cliente\", \"cpf\", \"documento_cliente\"]).\n"
+            "Regras: use SOMENTE chaves do vocabulário-alvo como alvo; não invente alvos.\n"
+            "Responda SOMENTE com JSON no formato "
+            "{\"arg_aliases\": {\"param\": \"chave_alvo\"}, \"out_aliases\": {\"chave_alvo\": [\"nome1\", \"nome2\"]}}."
+        )
+        try:
+            raw = _direct_llm_complete(prompt, expected_output="JSON puro com as chaves arg_aliases e out_aliases preenchidas conforme as regras",
+                                       system="Você é um engenheiro de integração de dados. Responda só JSON.")
+        except Exception as _e:
+            print(f"[CODE-GEN][COERÊNCIA MCP] LLM falhou p/ {tname}: {_e}")
+            continue
+        data = None
+        try:
+            import re as _re
+            m = _re.search(r"\{.*\}", raw or "", _re.S)
+            data = json.loads(m.group(0)) if m else None
+        except Exception:
+            try:
+                import json_repair as _jr
+                data = _jr.loads(raw)
+            except Exception:
+                data = None
+        if not isinstance(data, dict):
+            continue
+        aa = {str(p): str(k) for p, k in (data.get("arg_aliases") or {}).items()
+              if str(p) in info["params"] and str(k) in targets and str(k) != str(p)}
+        # UNICIDADE: um alvo só pode alimentar UM parâmetro. Se >=2 params apontam pro mesmo alvo
+        # (ex.: dias_cateter, uti, idade -> caso_id), é alucinação induzida — descarta todos eles.
+        _cnt: Dict[str, int] = {}
+        for _k in aa.values():
+            _cnt[_k] = _cnt.get(_k, 0) + 1
+        aa = {p: k for p, k in aa.items() if _cnt.get(k, 0) == 1}
+        oa: Dict[str, str] = {}
+        for tgt, cands in (data.get("out_aliases") or {}).items():
+            tgt = str(tgt)
+            if tgt not in targets:
+                continue
+            if isinstance(cands, str):
+                cands = [cands]
+            base = [str(c).strip() for c in (cands or []) if str(c).strip()]
+            # EXPANSÃO determinística: tools costumam prefixar/sufixar o campo com tokens do PRÓPRIO
+            # nome (escore_risco_cox devolve `escore_cox`). Gera candidato+token e token+candidato.
+            _toks = [t for t in tname.lower().split("_") if len(t) >= 3]
+            expanded = list(base)
+            for c in base:
+                for t in _toks:
+                    if t not in c:
+                        expanded.append(f"{c}_{t}"); expanded.append(f"{t}_{c}")
+            for c in expanded:
+                # NUNCA remapeia um campo que JÁ é um alvo exato (match exato vence) — evita
+                # remap destrutivo como microrganismo->micro_id sugerido pelo LLM.
+                if not c or c == tgt or c in targets or c in oa:
+                    continue
+                oa[c] = tgt
+        target_keys[tname] = sorted(targets)
+        if aa:
+            arg_aliases[tname] = aa
+        if oa:
+            out_aliases[tname] = oa
+        print(f"[CODE-GEN][COERÊNCIA MCP] {tname}: args={aa} out={oa}")
+    return arg_aliases, out_aliases, target_keys
+
+
+def _generate_mcp_tools_py(assignments: list, arg_aliases: dict = None, out_aliases: dict = None, target_keys: dict = None) -> str:
     """Emite ws-server/mcp_tools.py: um BaseTool CrewAI por tool MCP atribuída, que chama
     a ferramenta no servidor MCP via cliente `mcp` (SSE/HTTP). Registra em MCP_TOOLS."""
     tools = {}  # tool_name -> (url, transport, description, server_id, input_args)
@@ -7029,10 +7150,13 @@ def _generate_mcp_tools_py(assignments: list) -> str:
         + "MCP_TOOL_ARGS = " + json.dumps(tool_args_map, ensure_ascii=False, indent=4) + "\n"
         + "# MCP_ARG_ALIASES: param da tool -> chave disponível no input_data, quando os nomes\n"
         + "# diferem (ex.: a tool declara 'paciente_id' mas o dado que circula é 'caso_id').\n"
-        + "MCP_ARG_ALIASES = {}\n"
+        + "MCP_ARG_ALIASES = " + json.dumps(arg_aliases or {}, ensure_ascii=False, indent=4) + "\n"
         + "# MCP_OUT_ALIASES: campo retornado pela tool -> coluna do modelo de dados, quando\n"
         + "# diferem (ex.: 'perfil_resistencia' -> 'sensibilidades'; 'escore_cox' -> 'valor_escore').\n"
-        + "MCP_OUT_ALIASES = {}\n"
+        + "MCP_OUT_ALIASES = " + json.dumps(out_aliases or {}, ensure_ascii=False, indent=4) + "\n"
+        + "# MCP_TARGET_KEYS: vocabulário-alvo por tool (chaves que o SQL determinístico lê) — usado pelo\n"
+        + "# prefetch como fallback FUZZY (sobreposição de tokens) p/ campos retornados sem alias exato.\n"
+        + "MCP_TARGET_KEYS = " + json.dumps(target_keys or {}, ensure_ascii=False, indent=4) + "\n"
     )
 
 
@@ -7734,7 +7858,9 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     add("ws-server/tools_std.py", _generate_tools_std_py())
     add("ws-server/tools_ext.py", _generate_tools_ext_py())
     # F2 Fase 3: emite mcp_tools.py (wrappers CrewAI das tools MCP atribuídas)
-    _mcp_py = _generate_mcp_tools_py(_mcp_assign)
+    # Coerência CROSS-contrato MCP↔DM (passo 5): deriva aliases via LLM antes de emitir mcp_tools.py.
+    _mcp_arg_al, _mcp_out_al, _mcp_tgt = _derive_mcp_aliases(_mcp_assign, tasks_yaml, adapters_py)
+    _mcp_py = _generate_mcp_tools_py(_mcp_assign, _mcp_arg_al, _mcp_out_al, _mcp_tgt)
     if _mcp_py:
         add("ws-server/mcp_tools.py", _mcp_py)
     # Coerência da CAMADA DE EXECUÇÃO (passos 2/3): alinha a CHAVE lida do input_data com a
