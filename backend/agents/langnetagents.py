@@ -8266,12 +8266,21 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
 
     # Mapa task_name → {campo: is_list} a partir das descriptions do tasks.yaml
     task_fields: Dict[str, Dict[str, bool]] = {}
+    _TASK_UCS.clear()
     try:
         parsed = yaml.safe_load(tasks_yaml) if tasks_yaml else {}
         if isinstance(parsed, dict):
+            import re as _re_uc
             for tname, cfg in parsed.items():
                 if isinstance(cfg, dict):
                     task_fields[tname] = _parse_task_input_fields(cfg.get("description", "") or "")
+                    # Coerência tela↔tarefa: guarda os UCs que a task implementa (traceability) —
+                    # ponte independente de idioma entre a tela (uc) e a tarefa (nomes PT vs EN).
+                    _tr = cfg.get("traceability") or {}
+                    _ucs = _tr.get("uc") or _tr.get("use_cases") or _tr.get("UC") or []
+                    if isinstance(_ucs, str):
+                        _ucs = _re_uc.findall(r"UC-\d+", _ucs)
+                    _TASK_UCS[tname] = [str(u) for u in _ucs]
     except Exception:
         pass
 
@@ -8484,8 +8493,23 @@ def _template_ws_client(ws_port: int) -> str:
     )
 
 
-def _resolve_task_target(target, task_fields, screen_name=None):
-    """Casa o alvo da ação com a task real (chave em task_fields) por similaridade de tokens.
+_TASK_UCS: Dict[str, List[str]] = {}  # task_name -> UCs (traceability), p/ junção tela↔tarefa
+_CRUD_VERBS = {"novo": "criar", "cadastrar": "criar", "criar": "criar", "adicionar": "criar", "registrar": "criar",
+               "editar": "atualizar", "atualizar": "atualizar", "salvar": "atualizar", "alterar": "atualizar",
+               "excluir": "excluir", "remover": "excluir", "deletar": "excluir", "apagar": "excluir",
+               "listar": "listar", "consultar": "listar", "buscar": "listar", "visualizar": "listar", "ver": "listar"}
+
+
+def _resolve_task_target(target, task_fields, screen_name=None, screen_ucs=None, entity=None, kind=None):
+    """Casa o alvo da ação com a task real (chave em task_fields).
+    ORDEM: (1) nome exato; (2) ação CRUD → `<verbo>_<tabela da tela>` (as funções CRUD são por
+    tabela: criar_usuarios, listar_casos...); (3) JUNÇÃO POR CASO DE USO — a tela sabe seu uc e a
+    task carrega traceability.uc: ponte independente de idioma (o UI Spec escreve alvos em PT,
+    o tasks.yaml em EN; similaridade de tokens dá zero). Entre várias tasks do mesmo UC, prefere
+    a MAIS ESPECÍFICA (menos UCs — evita cair no orquestrador); (4) similaridade de tokens.
+    Sem casamento → None: o chamador NÃO emite runTask() p/ nome inventado.
+
+    (legado) Casa o alvo da ação com a task real (chave em task_fields) por similaridade de tokens.
     Considera TAMBÉM o nome da tela: o UI Spec às vezes inventa um alvo (ex.:
     'classificar_urgencia_paciente') que não casa com o tasks.yaml ('triagem_agentiva'), enquanto
     o NOME da tela ('Triagem Agentiva') casa exatamente. Testa ambos e devolve o melhor casamento."""
@@ -8498,6 +8522,21 @@ def _resolve_task_target(target, task_fields, screen_name=None):
     for c in candidates:
         if c in task_fields:
             return c
+    # (2) CRUD pela TABELA da tela: o alvo inventado vem no singular/PT (criar_usuario) mas as
+    # funções CRUD existem por tabela (criar_usuarios). Usa o verbo do alvo + entity da tela.
+    if kind == "crud" and entity:
+        verb = _CRUD_VERBS.get(str(target or "").split("_")[0].lower(), "criar")
+        return f"{verb}_{entity}"
+    # (3) JUNÇÃO POR CASO DE USO (independente de idioma), preferindo a task mais específica.
+    if screen_ucs and _TASK_UCS:
+        _sucs = set(str(u) for u in (screen_ucs if isinstance(screen_ucs, (list, tuple, set)) else [screen_ucs]))
+        cands_uc = [(len(ucs), t) for t, ucs in _TASK_UCS.items() if t in task_fields and _sucs & set(ucs)]
+        if cands_uc:
+            cands_uc.sort()
+            best_n = cands_uc[0][0]
+            top = [t for n, t in cands_uc if n == best_n]
+            if len(top) == 1:
+                return top[0]
     # Verbos genéricos de CRUD/ação: compartilhar "cadastrar" entre alvo e task NÃO deve
     # decidir o casamento — o SUBSTANTIVO (encaminhamento, prontuário, paciente) é que importa.
     # Sem isso, 'cadastrar_encaminhamento' empatava com 'cadastrar_paciente' e 'criar_encaminhamento'
@@ -8745,11 +8784,14 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
     fr = ",".join(screen.get("fr") or screen.get("frs") or [])
     name = screen.get("name") or comp_name
     # task alvo
-    target = None
+    target = None; _akind = None
     for a in (screen.get("actions") or []):
         if a.get("kind") in ("task", "crud") and a.get("target"):
-            target = a["target"]; break
-    target = _resolve_task_target(target, task_fields, name) or (target or "")
+            target = a["target"]; _akind = a.get("kind"); break
+    # NÃO re-injetar o alvo inventado quando o resolvedor devolve None (era o vazamento que
+    # emitia runTask("iniciar_sessao_importacao_microbiologia") p/ tarefa inexistente).
+    target = _resolve_task_target(target, task_fields, name, screen_ucs=screen.get("uc"),
+                                  entity=entity, kind=_akind) or ""
     action_label = next((a.get("label") for a in (screen.get("actions") or [])
                          if a.get("kind") in ("task", "crud")), "Consultar")
     # campo de geometria (destino do WKT desenhado)
@@ -8843,7 +8885,8 @@ __EFFECT__  async function submit() {
     setBusy(true); setErr(""); setResult(null);
     try {
       const input = { ...form };
-__GEOMSUBMIT__      const r = await runTask("__TARGET__", input);
+__GEOMSUBMIT__      if (!"__TARGET__") { setErr("Ação não vinculada a uma tarefa do sistema."); setBusy(false); return; }
+      const r = await runTask("__TARGET__", input);
       setResult(r);
     } catch (e) { setErr(String((e && e.message) || e)); }
     setBusy(false);
@@ -9188,9 +9231,10 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
     for a in actions:
         if a.get("kind") in ("task", "crud") and a.get("target"):
             if target is None:
-                target = a["target"]
+                target = a["target"]; _akind = a.get("kind")
             has_task_action = True
-    target = _resolve_task_target(target, task_fields, screen.get("name"))
+    target = _resolve_task_target(target, task_fields, screen.get("name"), screen_ucs=screen.get("uc"),
+                                  entity=screen.get("entity"), kind=locals().get("_akind"))
     # inputs = componentes de ENTRADA. P3: campo FK (select+refEntity) vira dropdown da entidade.
     inp = []
     kpis = []
@@ -9447,11 +9491,12 @@ export default function %COMP%() {
 
 def _report_screen(screen: dict, comp_name: str, task_fields: dict) -> str:
     actions = screen.get("actions") or []
-    target = None
+    target = None; _akind = None
     for a in actions:
         if a.get("kind") in ("task", "crud") and a.get("target"):
-            target = a["target"]; break
-    target = _resolve_task_target(target, task_fields)
+            target = a["target"]; _akind = a.get("kind"); break
+    target = _resolve_task_target(target, task_fields, screen.get("name"), screen_ucs=screen.get("uc"),
+                                  entity=screen.get("entity"), kind=_akind)
     filt = []
     for c in (screen.get("components") or []):
         if c.get("type") in ("date", "select", "text", "number") and c.get("field"):
