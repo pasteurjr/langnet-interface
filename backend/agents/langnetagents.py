@@ -9094,6 +9094,9 @@ export default function %COMP%() {
           } catch (_) { /* best-effort */ }
         }
       }
+      // write-back GENÉRICO: escalares da resposta do agente (usuario_id do login, ids, escores)
+      // entram no contexto compartilhado p/ as telas seguintes herdarem (mesma regra da tela rica).
+      try { const _p = {}; for (const [k, v] of Object.entries(out || {})) { if (v != null && typeof v !== "object") _p[k] = v; } if (Object.keys(_p).length) setCarryState(setCarry(_p)); } catch (_) {}
       setResult(out);
     }
     catch (e) { setErr(e.message); } finally { setBusy(false); }
