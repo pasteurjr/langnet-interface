@@ -127,6 +127,9 @@ class CodeRun:
     # Serviços que esta implantação subiu: {"name","port","url"} — o operador precisa saber
     # ONDE o sistema ficou disponível (a tela de Implantação mostra os links).
     services: List[Dict[str, Any]] = field(default_factory=list)
+    # Configuração informada pelo operador ao implantar (banco, provedor de LLM, chaves).
+    # O pacote gerado traz só `.env.example` — segredo não se versiona nem se gera.
+    env_config: Dict[str, str] = field(default_factory=dict)
     _subscribers: List[asyncio.Queue] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -537,6 +540,32 @@ def _run_frontend_service(run: "CodeRun", frontend_dir: Path, parent_env: dict, 
         run.append_line(f"[frontend] ERROR: {exc}")
 
 
+def _write_deploy_env(run: "CodeRun") -> None:
+    """Monta o `.env` da implantação: parte do `.env.example` do pacote e aplica o que o
+    operador informou na tela (banco, provedor de LLM, chaves). Sem isto o sistema sobe sem
+    saber onde é o banco — foi o que aconteceu na primeira implantação real
+    ("Access denied for user ''"), porque o pacote gerado (corretamente) não traz segredo."""
+    try:
+        base: Dict[str, str] = {}
+        exemplo = run.work_dir / ".env.example"
+        if exemplo.exists():
+            for ln in exemplo.read_text(encoding="utf-8", errors="replace").splitlines():
+                ln = ln.strip()
+                if ln and not ln.startswith("#") and "=" in ln:
+                    k, v = ln.split("=", 1)
+                    base[k.strip()] = v.strip()
+        base.update({k: str(v) for k, v in (run.env_config or {}).items() if k})
+        if not base:
+            return
+        destino = run.work_dir / ".env"
+        destino.write_text("".join(f"{k}={v}\n" for k, v in base.items()), encoding="utf-8")
+        informados = sorted(run.env_config or {})
+        run.append_line(f"[runner] configuração da implantação aplicada em .env "
+                        f"({len(base)} chaves; informadas na tela: {', '.join(informados) or 'nenhuma'})")
+    except Exception as exc:
+        run.append_line(f"[runner] WARN: não consegui escrever o .env da implantação ({exc})")
+
+
 def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
     """Thread worker: usa env conda langnet, instala apenas o que falta, sobe main.py."""
     try:
@@ -564,6 +593,7 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
         if ws_dir.exists() and (ws_dir / "main.py").exists():
             run.append_line("[runner] layout visualtasksexec detectado — cwd = ws-server/")
             run.work_dir = ws_dir
+        _write_deploy_env(run)
 
         # 2) Checa deps faltantes (sem instalar nada ainda)
         req_file = run.work_dir / "requirements.txt"
@@ -680,8 +710,10 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
         run.broadcast_status()
 
 
-def start_run(session_id: str, files: List[Dict[str, Any]]) -> CodeRun:
-    """Cria um novo CodeRun e dispara o worker em thread."""
+def start_run(session_id: str, files: List[Dict[str, Any]],
+              env_config: Optional[Dict[str, str]] = None) -> CodeRun:
+    """Cria um novo CodeRun e dispara o worker em thread.
+    `env_config`: configuração informada na tela de Implantação (banco, LLM, chaves)."""
     run_id = str(uuid.uuid4())
     work_dir = RUNS_ROOT / session_id / run_id
     run = CodeRun(
@@ -689,6 +721,7 @@ def start_run(session_id: str, files: List[Dict[str, Any]]) -> CodeRun:
         session_id=session_id,
         work_dir=work_dir,
         started_at=datetime.utcnow().isoformat(),
+        env_config=dict(env_config or {}),
     )
     try:
         run._main_loop = asyncio.get_event_loop()

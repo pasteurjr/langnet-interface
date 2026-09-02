@@ -616,8 +616,35 @@ def chat_history(session_id: str, current_user: dict = Depends(get_current_user)
 # EXECUÇÃO LOCAL DO CÓDIGO GERADO (subprocess + venv)
 # ════════════════════════════════════════════════════════════
 
+class DeployConfig(BaseModel):
+    """Configuração informada na tela de Implantação (banco, provedor de LLM, chaves)."""
+    env: Dict[str, str] = {}
+
+
+@router.get("/{session_id}/env-template")
+def env_template(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Modelo de configuração do pacote gerado (`.env.example`) — a tela de Implantação
+    pré-preenche o formulário com ele. O pacote não traz segredo; quem informa é o operador."""
+    session = get_code_generation_session(session_id)
+    if not session:
+        raise HTTPException(404, "Sessão não encontrada")
+    conteudo = ""
+    for f in (session.get("generated_files") or []):
+        if str(f.get("path", "")).endswith(".env.example"):
+            conteudo = f.get("content", "") or ""
+            break
+    itens = []
+    for ln in conteudo.splitlines():
+        t = ln.strip()
+        if t and not t.startswith("#") and "=" in t:
+            k, v = t.split("=", 1)
+            itens.append({"key": k.strip(), "value": v.strip()})
+    return {"session_id": session_id, "items": itens, "raw": conteudo}
+
+
 @router.post("/{session_id}/run")
-def start_run_endpoint(session_id: str, current_user: dict = Depends(get_current_user)):
+def start_run_endpoint(session_id: str, config: Optional[DeployConfig] = None,
+                       current_user: dict = Depends(get_current_user)):
     """Cria /tmp/langnet-runs/<session_id>/<run_id>/, instala deps em venv
     isolado e sobe `python main.py`. Retorna run_id imediatamente — o status
     e o stdout devem ser consumidos por GET /run/{run_id}/status ou
@@ -628,7 +655,7 @@ def start_run_endpoint(session_id: str, current_user: dict = Depends(get_current
     files = session.get("generated_files") or []
     if not files:
         raise HTTPException(400, "Sessão sem arquivos")
-    run = code_runner.start_run(session_id, files)
+    run = code_runner.start_run(session_id, files, (config.env if config else None))
     return run.to_public()
 
 
