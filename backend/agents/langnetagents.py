@@ -2832,6 +2832,72 @@ TASK_TOOLS = getattr(adapters_module, "TASK_TOOLS", {{}})
 AGENT_TOOLS = getattr(adapters_module, "AGENT_TOOLS", {{}})
 
 
+def _parse_json_lenient(raw):
+    """Parseia JSON de string (com reparo se disponível). Aceita já-dict."""
+    if isinstance(raw, dict):
+        return raw
+    if not isinstance(raw, str):
+        return None
+    import json as _j
+    try:
+        return _j.loads(raw)
+    except Exception:
+        try:
+            import json_repair as _jr
+            return _jr.loads(raw)
+        except Exception:
+            return None
+
+
+def _mcp_prefetch(task_name, input_data):
+    """Path B — coerência MCP↔Modelo de Dados. Task DETERMINÍSTICA com tool(s) MCP ligada(s)
+    ao seu agente: chama a(s) tool(s) (args do input_data, com alias de coerência de entrada) e
+    devolve os campos retornados MAPEADOS para as colunas do modelo de dados (alias de saída).
+    Assim o determinístico persiste dados vindos do sistema externo sem depender do agente."""
+    if not isinstance(input_data, dict):
+        return {{}}
+    _mod = globals().get("_mcp_mod")
+    if _mod is None:
+        return {{}}
+    MCP_TOOLS = getattr(_mod, "MCP_TOOLS", {{}}) or {{}}
+    if not MCP_TOOLS:
+        return {{}}
+    MCP_TOOL_ARGS = getattr(_mod, "MCP_TOOL_ARGS", {{}}) or {{}}
+    MCP_ARG_ALIASES = getattr(_mod, "MCP_ARG_ALIASES", {{}}) or {{}}
+    MCP_OUT_ALIASES = getattr(_mod, "MCP_OUT_ALIASES", {{}}) or {{}}
+    _tc = TASKS_CONFIG.get(task_name) or {{}}
+    agent = _tc.get("agent") or _tc.get("agent_id")
+    names = [t for t in (AGENT_TOOLS.get(agent, []) or []) if t in MCP_TOOLS]
+    if not names:
+        return {{}}
+    import json as _j
+    merged = {{}}
+    for nm in names:
+        params = MCP_TOOL_ARGS.get(nm, [])
+        aliases = MCP_ARG_ALIASES.get(nm, {{}})
+        args = {{}}
+        for p in params:
+            key = aliases.get(p, p)  # alias de coerência tem precedência
+            if key in input_data and input_data[key] is not None:
+                args[p] = input_data[key]
+        try:
+            raw = MCP_TOOLS[nm]._run(**args)
+        except Exception as _e:
+            print(f"[ws][MCP prefetch] {{nm}} falhou: {{_e}}")
+            continue
+        data = _parse_json_lenient(raw)
+        if not isinstance(data, dict):
+            continue
+        out_alias = MCP_OUT_ALIASES.get(nm, {{}})
+        for k, v in data.items():
+            target = out_alias.get(k, k)
+            if isinstance(v, (dict, list)):
+                v = _j.dumps(v, ensure_ascii=False)
+            merged[target] = v
+        print(f"[ws][MCP prefetch] {{nm}}({{args}}) -> +{{list(merged.keys())}}")
+    return merged
+
+
 def _resolve_tools(names):
     """Converte lista de nomes em instâncias de tool via TOOL_REGISTRY.
 
@@ -2940,7 +3006,22 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
         try:
             payload = input_data if isinstance(input_data, dict) else {{}}
             loop = asyncio.get_running_loop()
+            # Path B: task determinística com tool MCP ligada ao seu agente → busca do sistema
+            # externo e mergeia no payload ANTES do SQL (coerência MCP↔modelo de dados). Roda
+            # em THREAD (o cliente MCP faz asyncio.run(), proibido no event loop corrente).
+            _pref = await loop.run_in_executor(None, _mcp_prefetch, task_name, payload)
+            if _pref:
+                payload = {{**payload, **_pref}}
             det_result = await loop.run_in_executor(None, det_fn, payload)
+            # Carry-forward de CONTEXTO: o contexto acumulado do caso (IDs de sessão/caso +
+            # valores já produzidos) precisa fluir por TODA a cadeia — cada task devolvia só
+            # seu resultado. Ecoa todo escalar da entrada que a task não sobrescreveu.
+            if isinstance(det_result, dict) and det_result.get("status") != "erro":
+                for _ck, _cv in payload.items():
+                    if _cv is None or isinstance(_cv, (dict, list)):
+                        continue
+                    if det_result.get(_ck) is None:
+                        det_result[_ck] = _cv
             # VERIFICAÇÃO (Inserção B): PÓS-condição — a linha criada liga ao contexto CERTO.
             _vf = getattr(adapters_module, "_run_verifications", None)
             _fails = _vf(det_result, input_data, _verif) if (callable(_vf) and _verif) else []
@@ -6185,16 +6266,20 @@ def _fetch_mcp_assignments(project_id: str):
             rows = cur.fetchall(); cur.close()
         out = []
         for r in rows:
-            desc = ""
+            desc = ""; input_args = []
             try:
                 for t in (json.loads(r["capabilities_json"]) or []):
                     if t.get("name") == r["tool_name"]:
-                        desc = t.get("description", ""); break
+                        desc = t.get("description", "")
+                        _sch = t.get("inputSchema") or t.get("input_schema") or {}
+                        input_args = list((_sch.get("properties") or {}).keys())
+                        break
             except Exception:
                 pass
             out.append({"agent_id": r["agent_id"], "tool_name": r["tool_name"], "description": desc,
                         "url": r["url"], "transport": r["transport"] or "sse",
-                        "server_id": r["server_id"], "server_name": r["server_name"]})
+                        "server_id": r["server_id"], "server_name": r["server_name"],
+                        "input_args": input_args})
         return out
     except Exception as exc:  # noqa: BLE001
         print(f"[CODE-GEN] falha ao ler atribuições MCP: {exc}")
@@ -6722,13 +6807,16 @@ def _strip_std_mock_tools(tools_py: str) -> str:
 def _generate_mcp_tools_py(assignments: list) -> str:
     """Emite ws-server/mcp_tools.py: um BaseTool CrewAI por tool MCP atribuída, que chama
     a ferramenta no servidor MCP via cliente `mcp` (SSE/HTTP). Registra em MCP_TOOLS."""
-    tools = {}  # tool_name -> (url, transport, description, server_id)
+    tools = {}  # tool_name -> (url, transport, description, server_id, input_args)
     for a in assignments:
-        tools.setdefault(a["tool_name"], (a["url"], a["transport"], a.get("description", ""), a["server_id"]))
+        tools.setdefault(a["tool_name"], (a["url"], a["transport"], a.get("description", ""),
+                                          a["server_id"], a.get("input_args") or []))
     if not tools:
         return ""
     classes, registry = [], []
-    for i, (tname, (url, transport, desc, sid)) in enumerate(tools.items()):
+    tool_args_map = {}  # Path B: params de entrada de cada tool (do inputSchema descoberto)
+    for i, (tname, (url, transport, desc, sid, iargs)) in enumerate(tools.items()):
+        tool_args_map[tname] = iargs
         cls = f"MCPTool_{i}"
         classes.append(
             f'class {cls}(BaseTool):\n'
@@ -6776,7 +6864,16 @@ def _generate_mcp_tools_py(assignments: list) -> str:
         '        res = await s.call_tool(tool, args or {})\n'
         '        return "\\n".join(getattr(c, "text", None) or str(c) for c in res.content)\n\n'
         + "\n".join(classes) + "\n\n"
-        + "MCP_TOOLS = {\n" + "\n".join(registry) + "\n}\n"
+        + "MCP_TOOLS = {\n" + "\n".join(registry) + "\n}\n\n"
+        + "# ── Path B — coerência MCP↔Modelo de Dados ──────────────────────────────────\n"
+        + "# MCP_TOOL_ARGS: params de entrada de cada tool (do inputSchema descoberto na etapa MCP).\n"
+        + "MCP_TOOL_ARGS = " + json.dumps(tool_args_map, ensure_ascii=False, indent=4) + "\n"
+        + "# MCP_ARG_ALIASES: param da tool -> chave disponível no input_data, quando os nomes\n"
+        + "# diferem (ex.: a tool declara 'paciente_id' mas o dado que circula é 'caso_id').\n"
+        + "MCP_ARG_ALIASES = {}\n"
+        + "# MCP_OUT_ALIASES: campo retornado pela tool -> coluna do modelo de dados, quando\n"
+        + "# diferem (ex.: 'perfil_resistencia' -> 'sensibilidades'; 'escore_cox' -> 'valor_escore').\n"
+        + "MCP_OUT_ALIASES = {}\n"
     )
 
 
