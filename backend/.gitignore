@@ -1,0 +1,12 @@
+# Scratch de app GERADO que vaza pra backend/ durante geração/teste.
+# Estes arquivos são PER-APP (o app gerado tem os seus em <app>/ws-server/).
+# O backend do LangNet NÃO os importa; a base canônica vive em
+# langnetagents.py (_empty_adapters_py / _empty_tools_py). Não versionar.
+/adapters.py
+/tools.py
+/websocket_server.py
+/mcp_tools.py
+/database_tool.py
+/generate_output.py
+/agents.yaml
+/tasks.yaml
