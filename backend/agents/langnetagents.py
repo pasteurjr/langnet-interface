@@ -6889,6 +6889,80 @@ def _align_update_set_params(adapters_py: str) -> str:
     return pat.sub(_fix_call, adapters_py)
 
 
+def _split_top_level_commas(s: str) -> List[str]:
+    """Divide por vírgulas de NÍVEL 0, respeitando () [] {} e aspas."""
+    out, buf, depth, quote = [], [], 0, None
+    for ch in s:
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "'\"":
+            quote = ch; buf.append(ch); continue
+        if ch in "([{":
+            depth += 1; buf.append(ch); continue
+        if ch in ")]}":
+            depth -= 1; buf.append(ch); continue
+        if ch == "," and depth == 0:
+            out.append("".join(buf)); buf = []; continue
+        buf.append(ch)
+    if buf:
+        out.append("".join(buf))
+    return out
+
+
+def _align_insert_params(adapters_py: str) -> str:
+    """Coerência da CAMADA DE EXECUÇÃO — passo 3/N.
+
+    Como o passo 2 (UPDATE), mas para `INSERT INTO t(cols) VALUES(...)`: pareia cada `%s` do
+    VALUES com a sua COLUNA (pulando literais como 'TEXTO'/NOW()/1) e, se a chave lida no param
+    correspondente diferir da coluna, reescreve para preferir o nome da coluna com FALLBACK ao
+    original — `input_data.get('usuario_id', input_data.get('admin_id'))`. Corrige INSERTs cujo
+    placeholder da spec não bate com a coluna (ex.: logs_auditoria.usuario_id lido de 'admin_id').
+    NÃO-DESTRUTIVO (fallback preserva o comportamento anterior se o pareamento estiver errado).
+    """
+    import re as _re
+    if not adapters_py:
+        return adapters_py
+
+    def _fix_call(mm):
+        sql = mm.group('sql'); params = mm.group('params')
+        m2 = _re.search(r'INSERT\s+INTO\s+`?\w+`?\s*\((?P<cols>[^)]*)\)\s*VALUES\s*\((?P<vals>.*?)\)',
+                        sql, _re.I | _re.S)
+        if not m2:
+            return mm.group(0)
+        cols = [c.strip().strip('`').strip() for c in _split_top_level_commas(m2.group('cols'))]
+        vals = [v.strip() for v in _split_top_level_commas(m2.group('vals'))]
+        # coluna de cada %s do VALUES, na ordem (posições não-%s são literais → sem param).
+        ph_cols = [cols[i] for i, v in enumerate(vals) if v == '%s' and i < len(cols)]
+        if not ph_cols:
+            return mm.group(0)
+        items = _split_top_level_commas(params)
+        changed = False
+        for i, col in enumerate(ph_cols):
+            if i >= len(items):
+                break
+            g = _re.match(r"\s*input_data\.get\(\s*['\"](\w+)['\"]\s*\)\s*$", items[i])
+            if not g:
+                continue  # literal ('127.0.0.1') ou expressão — não mexe
+            key = g.group(1)
+            if key == col:
+                continue
+            items[i] = " input_data.get('%s', input_data.get('%s'))" % (col, key)
+            changed = True
+        if not changed:
+            return mm.group(0)
+        new_params = ",".join(items)
+        full = mm.group(0); ms = mm.start(); ps, pe = mm.span('params')
+        return full[:ps - ms] + new_params + full[pe - ms:]
+
+    pat = _re.compile(
+        r"""cur\.execute\(\s*(?P<sql>'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*,\s*\[(?P<params>[^\]]*)\]""",
+        _re.S)
+    return pat.sub(_fix_call, adapters_py)
+
+
 def _generate_mcp_tools_py(assignments: list) -> str:
     """Emite ws-server/mcp_tools.py: um BaseTool CrewAI por tool MCP atribuída, que chama
     a ferramenta no servidor MCP via cliente `mcp` (SSE/HTTP). Registra em MCP_TOOLS."""
