@@ -3223,6 +3223,16 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                 "error": "verificação (pós) falhou: " + ", ".join(_fails), "verif_falha": _fails}})
             return
 
+        # Carry-forward de CONTEXTO (via agente): o contexto acumulado do caso flui pela
+        # cadeia igual à via determinística — ecoa no output todo escalar da entrada que o
+        # raciocínio/persistência não sobrescreveu (senão o próximo place perde usuario_id etc.).
+        if isinstance(parsed, dict) and isinstance(input_data, dict):
+            for _ck, _cv in input_data.items():
+                if _cv is None or isinstance(_cv, (dict, list)):
+                    continue
+                if parsed.get(_ck) is None:
+                    parsed[_ck] = _cv
+
         await _send(ws, "task_completed", {{"task_name": task_name, "result": parsed}})
     except Exception as exc:
         await _send(ws, "error", {{"task_name": task_name, "error": str(exc), "traceback": traceback.format_exc()}})
