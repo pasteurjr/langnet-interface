@@ -1,0 +1,139 @@
+{
+ "login-mfa": {
+  "label": "Login e MFA",
+  "filled": [
+   [
+    "E-mail",
+    "ana@hospital.br"
+   ],
+   [
+    "Senha",
+    "x"
+   ],
+   [
+    "Código MFA",
+    "123456"
+   ]
+  ],
+  "button": "▷ Executar com IA",
+  "secs": 3,
+  "result": "Resultado\nSTATUS\nsucesso\nUSUARIO_ID\nU-001\nEMAIL\nana@hospital.br\nSENHA\nx\nCODIGO_MFA\n123456"
+ },
+ "importacao-microbiologia": {
+  "label": "Importação de Microbiologia",
+  "filled": [
+   [
+    "ID da Amostra",
+    "HMC-88213"
+   ]
+  ],
+  "button": "Consultar Externo",
+  "secs": 3,
+  "result": "{\n  \"status\": \"erro\",\n  \"error\": \"1048 (23000): Column 'usuario_id' cannot be null\"\n}"
+ },
+ "previa-resultados-microbiologia": {
+  "label": "Prévia de Resultados de Microbiologia",
+  "filled": [],
+  "button": "Consultar Externo",
+  "secs": 3,
+  "result": "verificação (pós) falhou: output_has:microrganismo"
+ },
+ "detalhe-caso-clinico-classificacao": {
+  "label": "Detalhe do Caso Clínico (Visão de Classificação)",
+  "filled": [],
+  "button": "Confirmar Importação",
+  "secs": 13,
+  "result": "persistência (Attested Computation) falhou: 1048 (23000): Column 'usuario_id' cannot be null"
+ },
+ "alerta-mdr": {
+  "label": "Alerta MDR",
+  "filled": [
+   [
+    "Tipo de Alerta",
+    "Cateter Central"
+   ],
+   [
+    "Descrição",
+    "Qual é a classificação NHSN do caso CAS-2023-001 e por quê?"
+   ],
+   [
+    "Data de Criação",
+    "2026-08-01"
+   ],
+   [
+    "Status de Notificação",
+    "CREATE_USER"
+   ],
+   [
+    "Microrganismo",
+    "Staphylococcus aureus"
+   ],
+   [
+    "Classes de Resistência",
+    "teste"
+   ]
+  ],
+  "button": "▷ Executar com IA",
+  "secs": 3,
+  "result": "Resultado\nSTATUS\nerro\nERROR\n1048 (23000): Column 'microbiologia_id' cannot be null"
+ },
+ "detalhe-caso": {
+  "label": "Detalhe do Caso",
+  "filled": [
+   [
+    "Paciente",
+    "P-001"
+   ],
+   [
+    "Idade",
+    "72"
+   ],
+   [
+    "APACHE II",
+    "18"
+   ],
+   [
+    "Tipo de Cateter",
+    "12"
+   ],
+   [
+    "Data de Início",
+    "2026-08-01"
+   ],
+   [
+    "Fatores de Risco",
+    "teste"
+   ]
+  ],
+  "button": "▷ Executar com IA",
+  "secs": 3,
+  "result": "Resultado\nSTATUS\nerro\nERROR\n1048 (23000): Column 'caso_id' cannot be null"
+ },
+ "recomendacao-bundle": {
+  "label": "Recomendação de Bundle",
+  "filled": [],
+  "button": "Aprovar Bundle",
+  "secs": 23,
+  "result": "persistência (Attested Computation) falhou: 1048 (23000): Column 'caso_id' cannot be null"
+ },
+ "resultado-estimativa-risco": {
+  "label": "Resultado da Estimativa de Risco",
+  "error": "locator.click: Target page, context or browser has been closed"
+ },
+ "dashboard-vigilancia": {
+  "label": "Dashboard de Vigilância",
+  "error": "locator.click: Target page, context or browser has been closed"
+ },
+ "gestao-de-usuarios": {
+  "label": "Gestão de Usuários",
+  "error": "locator.click: Target page, context or browser has been closed"
+ },
+ "logs-auditoria": {
+  "label": "Logs de Auditoria",
+  "error": "locator.click: Target page, context or browser has been closed"
+ },
+ "geracao-relatorios": {
+  "label": "Geração de Relatórios",
+  "error": "locator.click: Target page, context or browser has been closed"
+ }
+}
