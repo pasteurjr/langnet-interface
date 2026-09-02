@@ -4893,9 +4893,9 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str,
         _coltype = {c: t for c, t in m["cols"]}
         # Coluna de hash de senha (`<base>_hash`) é DERIVADA do campo em texto — a tela envia
         # `senha`, nunca o hash. Demais colunas seguem a coerção por tipo.
-        ins_params = ", ".join(
-            (f"_pw(input_data, '{c}')" if c.endswith("_hash")
-             else f"_cv(input_data.get('{c}'), {_coltype.get(c, 'VARCHAR')!r})")
+        ins_pairs = ", ".join(
+            "'%s': %s" % (c, (f"_pw(input_data, '{c}')" if c.endswith("_hash")
+                              else f"_cv(input_data.get('{c}'), {_coltype.get(c, 'VARCHAR')!r})"))
             for c in editable)
         child_ins = ""
         for ch, fk, val in children:
@@ -4910,7 +4910,11 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str,
             + conn_block +
             "    try:\n"
             "        cur = conn.cursor(dictionary=True)\n"
-            f"        cur.execute(\"INSERT INTO {ent}({ins_cols}) VALUES({ins_ph})\", [{ins_params}])\n"
+            # INSERT só com as colunas QUE TÊM VALOR: listar uma coluna com NULL anula o DEFAULT
+            # do schema (ex.: usuarios.status DEFAULT 'Ativo' virava NULL → NOT NULL violado).
+            f"        _vals = {{{ins_pairs}}}\n"
+            "        _ins = {k: v for k, v in _vals.items() if v is not None}\n"
+            f"        cur.execute(\"INSERT INTO {ent}(\" + \", \".join(_ins) + \") VALUES(\" + \", \".join([\"%s\"] * len(_ins)) + \")\", list(_ins.values()))\n"
             f"        cur.execute(\"SELECT {pk} AS id FROM {ent} WHERE {uniq}=%s ORDER BY created_at DESC LIMIT 1\", [input_data.get('{uniq}')])\n"
             "        _row = cur.fetchone(); _new_id = _row['id'] if _row else None\n"
             + child_ins +
