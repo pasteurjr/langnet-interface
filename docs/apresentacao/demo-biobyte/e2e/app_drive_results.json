@@ -17,7 +17,7 @@
   ],
   "button": "▷ Executar com IA",
   "secs": 3,
-  "result": "Resultado\nSTATUS\nsucesso\nUSUARIO_ID\nU-001\nEMAIL\nana@hospital.br\nSENHA\nx\nCODIGO_MFA\n123456"
+  "result": "Login e MFA\n\nUC-001 · executado por agente de IA\n\n▷ Executar com IA\nATENDIMENTO CORRENTEpaciente_id: P-001…caso_id: CAS-2023…idade: 72…dias_cateter: 12…uti: true…nutricao_parenteral: true…neutropenia: false…tipo_cateter: Cateter …apache_ii: 18…status: sucesso…usuario_id: U-001…email: ana@hosp…senha: x…codigo_mfa: 123456…\nEncerrar / novo atendimento\nE-mail\nSenha\nCódigo MFA\nDispara o agente authenticate_user_mfa\nResultado\nSTATUS\nsucesso\nUSUARIO_ID\nU-001\nPACIENTE_ID\nP-001\nCASO_ID\nCAS-2023-001\nIDADE\n72\nDIAS_CATETER\n12\nUTI\ntrue\nNUTRICAO_PARENTERAL\ntrue\nNEUTROPENIA\nfalse\nTIPO_CATETER\nCateter Central"
  },
  "importacao-microbiologia": {
   "label": "Importação de Microbiologia",
@@ -29,21 +29,21 @@
   ],
   "button": "Consultar Externo",
   "secs": 3,
-  "result": "{\n  \"status\": \"erro\",\n  \"error\": \"1048 (23000): Column 'usuario_id' cannot be null\"\n}"
+  "result": "{\n  \"status\": \"sucesso\",\n  \"caso_id\": \"CAS-2023-001\",\n  \"paciente_id\": \"CAS-2023-001\",\n  \"idade\": 72,\n  \"dias_cateter\": 12,\n  \"uti\": true,\n  \"nutricao_parenteral\": true,\n  \"neutropenia\": false,\n  \"tipo_cateter\": \"Cateter Central\",\n  \"apache_ii\": 18,\n  \"usuario_id\": \"U-001\",\n  \"email\": \"ana@hospital.br\",\n  \"senha\": \"x\",\n  \"codigo_mfa\": \"123456\",\n  \"id_amostra\": \"HMC-88213\",\n  \"fonte\": \"hemocultura\",\n  \"microrganismo\": \"Staphylococcus aureus\",\n  \"multirresistente\": true,\n  \"sensibilidades\": \"{\\\"oxacilina\\\": \\\"R\\\", \\\"vancomicina\\\": \\\"S\\\", \\\"gentamicina\\\": \\\"R\\\"}\"\n}"
  },
  "previa-resultados-microbiologia": {
   "label": "Prévia de Resultados de Microbiologia",
   "filled": [],
   "button": "Consultar Externo",
   "secs": 3,
-  "result": "verificação (pós) falhou: output_has:microrganismo"
+  "result": "{\n  \"status\": \"sucesso\",\n  \"micro_id\": \"ad2651a3-a6fd-11f1-acbb-a0ad9f2fcdf4\",\n  \"paciente_id\": \"CAS-2023-001\",\n  \"caso_id\": \"CAS-2023-001\",\n  \"idade\": 72,\n  \"dias_cateter\": 12,\n  \"uti\": true,\n  \"nutricao_parenteral\": true,\n  \"neutropenia\": false,\n  \"tipo_cateter\": \"Cateter Central\",\n  \"apache_ii\": 18,\n  \"usuario_id\": \"U-001\",\n  \"email\": \"ana@hospital.br\",\n  \"senha\": \"x\",\n  \"codigo_mfa\": \"123456\",\n  \"id_amostra\": \"HMC-88213\",\n  \"fonte\": \"hemocultura\",\n  \"microrganismo\": \"Staphylococcus aureus\",\n  \"multirresistente\": true,\n  \"sensibilidades\": \"{\\\"oxacilina\\\": \\\"R\\\", \\\"vancomicina\\\": \\\"S\\\", \\\"ge"
  },
  "detalhe-caso-clinico-classificacao": {
   "label": "Detalhe do Caso Clínico (Visão de Classificação)",
   "filled": [],
   "button": "Confirmar Importação",
-  "secs": 13,
-  "result": "persistência (Attested Computation) falhou: 1048 (23000): Column 'usuario_id' cannot be null"
+  "secs": 8,
+  "result": "{\n  \"classificacao_nhsn\": false,\n  \"justificativa\": \"Aplicação da regra BR-001 para o caso CAS-2023-001: cateter_presente=1, hemocultura_positiva=0, correlacao_clinica=0. A regra BR-001 exige que os três critérios sejam verdadeiros (cateter_presente=1 E hemocultura_positiva=1 E correlacao_clinica=1) para classificar o caso como ICSAC. Como hemocultura_positiva=0 e correlacao_clinica=0, o caso NÃO atende aos critérios NHSN para ICSAC, portanto classificacao_nhsn=false.\",\n  \"status\": \"sucesso\",\n  \"caso_data\": {\n    \"cateter_presente\": 1,\n    \"hemocultura_positiva\": 0,\n    \"correlacao_clinica\": 0"
  },
  "alerta-mdr": {
   "label": "Alerta MDR",
@@ -58,7 +58,7 @@
    ],
    [
     "Data de Criação",
-    "2026-08-01"
+    "CREATE_USER"
    ],
    [
     "Status de Notificação",
@@ -70,12 +70,12 @@
    ],
    [
     "Classes de Resistência",
-    "teste"
+    "{\"oxacilina\":\"R\",\"vancomicina\":\"S\",\"gentamicina\":\"R\"}"
    ]
   ],
   "button": "▷ Executar com IA",
   "secs": 3,
-  "result": "Resultado\nSTATUS\nerro\nERROR\n1048 (23000): Column 'microbiologia_id' cannot be null"
+  "result": "Alerta MDR\n\nUC-005 · executado por agente de IA\n\n▷ Executar com IA\nATENDIMENTO CORRENTEpaciente_id: CAS-2023…caso_id: CAS-2023…idade: 72…dias_cateter: 12…uti: true…nutricao_parenteral: true…neutropenia: false…tipo_cateter: Cateter …apache_ii: 18…status: sucesso…usuario_id: U-001…email: ana@hosp…senha: x…codigo_mfa: 123456…id_amostra: HMC-8821…fonte: hemocult…microrganismo: Staphylo…multirresistente: true…sensibilidades: {\"oxacil…micro_id: ad2651a3…classificacao_nhsn: false…justificativa: Aplicaçã…micro_data: {\"oxacil…alerta_id: b47ea281…tipo: Cateter …descricao: Qual é a…data_criacao: CREATE_U"
  },
  "detalhe-caso": {
   "label": "Detalhe do Caso",
@@ -94,7 +94,7 @@
    ],
    [
     "Tipo de Cateter",
-    "12"
+    "Cateter Central"
    ],
    [
     "Data de Início",
@@ -102,38 +102,112 @@
    ],
    [
     "Fatores de Risco",
-    "teste"
+    "Idade > 65; UTI; Nutrição parenteral; Cateter central há 12 dias"
    ]
   ],
   "button": "▷ Executar com IA",
   "secs": 3,
-  "result": "Resultado\nSTATUS\nerro\nERROR\n1048 (23000): Column 'caso_id' cannot be null"
+  "result": "Detalhe do Caso\n\nUC-006 · executado por agente de IA\n\n▷ Executar com IA\nATENDIMENTO CORRENTEpaciente_id: CAS-2023…caso_id: CAS-2023…idade: 72…dias_cateter: 12…uti: true…nutricao_parenteral: true…neutropenia: false…tipo_cateter: Cateter …apache_ii: 18…status: sucesso…usuario_id: U-001…email: ana@hosp…senha: x…codigo_mfa: 123456…id_amostra: HMC-8821…fonte: hemocult…microrganismo: Staphylo…multirresistente: true…sensibilidades: {\"oxacil…micro_id: ad2651a3…classificacao_nhsn: false…justificativa: Aplicaçã…micro_data: {\"oxacil…alerta_id: b47ea281…tipo: Cateter …descricao: Qual é a…data_criacao: CRE"
  },
  "recomendacao-bundle": {
   "label": "Recomendação de Bundle",
   "filled": [],
   "button": "Aprovar Bundle",
-  "secs": 23,
-  "result": "persistência (Attested Computation) falhou: 1048 (23000): Column 'caso_id' cannot be null"
+  "secs": 15,
+  "result": "{\n  \"bundle_nome\": \"Bundle MRSA - Vancomicina\",\n  \"justificativa\": \"Paciente CAS-2023-001, 72 anos, em UTI com cateter central há 12 dias e nutrição parenteral, apresenta hemocultura positiva para Staphylococcus aureus multirresistente (MRSA), com perfil de sensibilidade demonstrando resistência à oxacilina e gentamicina, porém sensibilidade à vancomicina. O escore de risco calculado é 0.2437 (risco baixo). Apesar do risco baixo, a presença de microrganismo multirresistente exige cobertura antimicrobiana direcionada. A vancomicina é o agente de escolha para MRSA conforme guidelines ICSAC, dado"
  },
  "resultado-estimativa-risco": {
   "label": "Resultado da Estimativa de Risco",
-  "error": "locator.click: Target page, context or browser has been closed"
+  "filled": [],
+  "button": "Gerar Relatório",
+  "secs": 10,
+  "result": "{\n  \"reducao_risco\": -35,\n  \"intervalo_confianca\": \"[-20, -50]\",\n  \"status\": \"sucesso\",\n  \"paciente_id\": \"CAS-2023-001\",\n  \"caso_id\": \"CAS-2023-001\",\n  \"idade\": 72,\n  \"dias_cateter\": 12,\n  \"uti\": true,\n  \"nutricao_parenteral\": true,\n  \"neutropenia\": false,\n  \"tipo_cateter\": \"Cateter Central\",\n  \"apache_ii\": 18,\n  \"usuario_id\": \"U-001\",\n  \"email\": \"ana@hospital.br\",\n  \"senha\": \"x\",\n  \"codigo_mfa\": \"123456\",\n  \"id_amostra\": \"HMC-88213\",\n  \"fonte\": \"hemocultura\",\n  \"microrganismo\": \"Staphylococcus aureus\",\n  \"multirresistente\": true,\n  \"sensibilidades\": \"{\\\"oxacilina\\\":\\\"R\\\",\\\"vancomicina\\\":\\\"S\\\""
  },
  "dashboard-vigilancia": {
   "label": "Dashboard de Vigilância",
-  "error": "locator.click: Target page, context or browser has been closed"
+  "filled": [],
+  "button": "Exportar Relatório",
+  "secs": 3,
+  "result": "{\n  \"status\": \"sucesso\",\n  \"casos_icsac\": 0,\n  \"taxa_mdr\": \"52.94118\",\n  \"media_escore\": \"0.24370000\",\n  \"distribuicao_microrganismos\": 17,\n  \"paciente_id\": \"CAS-2023-001\",\n  \"caso_id\": \"CAS-2023-001\",\n  \"idade\": 72,\n  \"dias_cateter\": 12,\n  \"uti\": true,\n  \"nutricao_parenteral\": true,\n  \"neutropenia\": false,\n  \"tipo_cateter\": \"Cateter Central\",\n  \"apache_ii\": 18,\n  \"usuario_id\": \"U-001\",\n  \"email\": \"ana@hospital.br\",\n  \"senha\": \"x\",\n  \"codigo_mfa\": \"123456\",\n  \"id_amostra\": \"HMC-88213\",\n  \"fonte\": \"hemocultura\",\n  \"microrganismo\": \"Staphylococcus aureus\",\n  \"multirresistente\": true,\n  \"sensibil"
  },
  "gestao-de-usuarios": {
   "label": "Gestão de Usuários",
-  "error": "locator.click: Target page, context or browser has been closed"
+  "filled": [
+   [
+    "Buscar Usuário",
+    "U-001"
+   ],
+   [
+    "Nome",
+    "Dr. Carlos Silva"
+   ],
+   [
+    "E-mail",
+    "ana@hospital.br"
+   ],
+   [
+    "Papel",
+    "Enfermeiro"
+   ],
+   [
+    "Senha",
+    "x"
+   ]
+  ],
+  "button": "Novo Usuário",
+  "secs": 3,
+  "result": "{\n  \"status\": \"erro\",\n  \"error\": \"1048 (23000): Column 'senha_hash' cannot be null\"\n}"
  },
  "logs-auditoria": {
   "label": "Logs de Auditoria",
-  "error": "locator.click: Target page, context or browser has been closed"
+  "filled": [
+   [
+    "Data Início",
+    "2026-08-01"
+   ],
+   [
+    "Data Fim",
+    "2026-09-02"
+   ],
+   [
+    "Usuário",
+    "U-001"
+   ],
+   [
+    "Tipo de Ação",
+    "Cateter Central"
+   ]
+  ],
+  "button": "▷ Executar com IA",
+  "secs": 3,
+  "result": "Logs de Auditoria\n\nUC-011 · executado por agente de IA\n\n▷ Executar com IA\nATENDIMENTO CORRENTEpaciente_id: CAS-2023…caso_id: CAS-2023…idade: 72…dias_cateter: 12…uti: true…nutricao_parenteral: true…neutropenia: false…tipo_cateter: Cateter …apache_ii: 18…status: sucesso…usuario_id: U-001…email: ana@hosp…senha: x…codigo_mfa: 123456…id_amostra: HMC-8821…fonte: hemocult…microrganismo: Staphylo…multirresistente: true…sensibilidades: {\"oxacil…micro_id: ad2651a3…classificacao_nhsn: false…justificativa: Paciente…micro_data: {\"oxacil…alerta_id: b47ea281…tipo: Cateter …descricao: Qual é a…data_criacao: C"
  },
  "geracao-relatorios": {
   "label": "Geração de Relatórios",
-  "error": "locator.click: Target page, context or browser has been closed"
+  "filled": [
+   [
+    "Formato do Relatório",
+    "não informado"
+   ],
+   [
+    "Período Início",
+    "2026-08-01"
+   ],
+   [
+    "Período Fim",
+    "2026-09-02"
+   ],
+   [
+    "Filtro de Paciente",
+    "P-001"
+   ]
+  ],
+  "button": "Gerar Relatório",
+  "secs": 3,
+  "result": "{\n  \"status\": \"sucesso\",\n  \"dados_vigilancia\": null,\n  \"paciente_id\": \"CAS-2023-001\",\n  \"caso_id\": \"CAS-2023-001\",\n  \"idade\": 72,\n  \"dias_cateter\": 12,\n  \"uti\": true,\n  \"nutricao_parenteral\": true,\n  \"neutropenia\": false,\n  \"tipo_cateter\": \"Cateter Central\",\n  \"apache_ii\": 18,\n  \"usuario_id\": \"U-001\",\n  \"email\": \"ana@hospital.br\",\n  \"senha\": \"x\",\n  \"codigo_mfa\": \"123456\",\n  \"id_amostra\": \"HMC-88213\",\n  \"fonte\": \"hemocultura\",\n  \"microrganismo\": \"Staphylococcus aureus\",\n  \"multirresistente\": true,\n  \"sensibilidades\": \"{\\\"oxacilina\\\":\\\"R\\\",\\\"vancomicina\\\":\\\"S\\\",\\\"gentamicina\\\":\\\"R\\\"}\",\n  \"micro_"
+ },
+ "petri": {
+  "secs": 47,
+  "logs_tail": "← projetos\nBioByte Sentinela\n15 lugares · 17 transições · 11 agentes\n🚀 Execução\n⚙ Operação\n📥 Inputs\n📤 Outputs\n📋 Logs\nDisparar task manualmente\nTask\nInput JSON\n▶ Executar"
  }
 }
