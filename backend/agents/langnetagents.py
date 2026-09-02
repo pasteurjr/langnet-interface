@@ -7020,7 +7020,10 @@ def _derive_mcp_aliases(assignments: list, tasks_yaml: str, adapters_py: str):
             "corretamente o valor (ex.: idade, quantidade, flags) NÃO devem entrar — deixe-os de fora.\n"
             "2) \"out_aliases\": para CADA chave do VOCABULÁRIO-ALVO que a ferramenta PRODUZ (segundo a descrição), "
             "liste os NOMES PROVÁVEIS com que ela retorna esse campo (snake_case, sem acentos, 2 a 5 variantes: "
-            "a forma literal da descrição, abreviações e sinônimos). Formato: {\"chave_alvo\": [\"nome1\", \"nome2\"]} "
+            "a forma literal da descrição, abreviações, sinônimos e — importante — variantes com tokens do PRÓPRIO NOME "
+            "da ferramenta, pois ferramentas costumam prefixar/sufixar seus campos assim, ex.: uma ferramenta "
+            "\"calcula_score_xyz\" tende a retornar \"score_xyz\"). Só liste alvos que a ferramenta de fato RETORNA "
+            "(não liste identificadores de entrada/auditoria). Formato: {\"chave_alvo\": [\"nome1\", \"nome2\"]} "
             "(ex. genérico: alvo \"documento\" <- [\"cpf_cliente\", \"cpf\", \"documento_cliente\"]).\n"
             "Regras: use SOMENTE chaves do vocabulário-alvo como alvo; não invente alvos.\n"
             "Responda SOMENTE com JSON no formato "
@@ -7066,6 +7069,10 @@ def _derive_mcp_aliases(assignments: list, tasks_yaml: str, adapters_py: str):
             _toks = [t for t in tname.lower().split("_") if len(t) >= 3]
             expanded = list(base)
             for c in base:
+                # só expande palavras ÚNICAS (ex.: escore -> escore_cox); compostos (nivel_risco,
+                # caso_id, perfil_resistencia) já são específicos — expandi-los só gera ruído.
+                if "_" in c:
+                    continue
                 for t in _toks:
                     if t not in c:
                         expanded.append(f"{c}_{t}"); expanded.append(f"{t}_{c}")
