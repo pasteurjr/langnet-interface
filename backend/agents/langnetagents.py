@@ -6814,6 +6814,30 @@ def _strip_std_mock_tools(tools_py: str) -> str:
     return out
 
 
+def _extract_sql_input_keys(adapters_py: str) -> Dict[str, List[str]]:
+    """Coerência da CAMADA DE EXECUÇÃO — passo 1/N (fundação).
+
+    Por task, extrai as chaves que a função `<task>_deterministic` LÊ do input_data
+    (padrão `input_data.get('X')`). É a base pra alinhar esses nomes com as colunas do
+    modelo de dados / output_schema / I/O MCP: antes de casar vocabulários é preciso saber
+    QUAIS nomes cada SQL determinístico consome (ex.: P4 lia `is_icsac` mas o valor circula
+    como `classificacao_nhsn` → UPDATE=NULL → falha). Não altera o código gerado (só leitura).
+    """
+    import re as _re
+    if not adapters_py:
+        return {}
+    out: Dict[str, List[str]] = {}
+    # cada bloco: `def <task>_deterministic(input_data):` até o próximo `def ` no nível 0.
+    for m in _re.finditer(r'(?m)^def\s+([A-Za-z_]\w*?)_deterministic\s*\(', adapters_py):
+        name = m.group(1)
+        nxt = _re.search(r'(?m)^def\s', adapters_py[m.end():])
+        end = m.end() + nxt.start() if nxt else len(adapters_py)
+        block = adapters_py[m.start():end]
+        keys = sorted(set(_re.findall(r"input_data\.get\(\s*['\"]([^'\"]+)['\"]", block)))
+        out[name] = keys
+    return out
+
+
 def _generate_mcp_tools_py(assignments: list) -> str:
     """Emite ws-server/mcp_tools.py: um BaseTool CrewAI por tool MCP atribuída, que chama
     a ferramenta no servidor MCP via cliente `mcp` (SSE/HTTP). Registra em MCP_TOOLS."""
