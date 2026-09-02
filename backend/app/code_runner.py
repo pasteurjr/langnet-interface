@@ -38,11 +38,28 @@ RUNS_ROOT = Path(os.environ.get("LANGNET_RUNS_ROOT", "/tmp/langnet-runs"))
 PIP_TIMEOUT_SECONDS = 600  # 10 min para instalar deps faltantes
 MAX_STDOUT_LINES = 5000     # buffer cap (linhas anteriores ficam — só limita memória)
 
-# Localiza o conda env "langnet". Se LANGNET_CONDA_ENV apontar para outro path, respeita.
-CONDA_ENV_PATH = Path(os.environ.get(
-    "LANGNET_CONDA_ENV",
-    "/home/pasteurjr/miniconda3/envs/langnet",
-))
+def _discover_env_path() -> Path:
+    """Descobre o ambiente Python que roda o app gerado, em vez de presumir um caminho.
+
+    Ordem: LANGNET_CONDA_ENV → o ambiente do PRÓPRIO processo (o backend do LangNet já roda
+    com as dependências certas: crewai, fastapi, mysql-connector) → instalações comuns
+    (miniforge3/miniconda3/anaconda3/mambaforge). O caminho fixo anterior apontava para
+    miniconda3 numa máquina com miniforge3 e toda implantação morria com "env não encontrado".
+    """
+    override = os.environ.get("LANGNET_CONDA_ENV")
+    if override:
+        return Path(override)
+    here = Path(sys.executable).resolve()          # .../envs/<nome>/bin/python
+    if here.parent.name in ("bin", "Scripts") and (here.parent / "python").exists():
+        return here.parent.parent
+    for root in ("miniforge3", "miniconda3", "anaconda3", "mambaforge"):
+        cand = Path.home() / root / "envs" / "langnet"
+        if (cand / "bin" / "python").exists() or (cand / "Scripts" / "python.exe").exists():
+            return cand
+    return Path.home() / "miniforge3" / "envs" / "langnet"
+
+
+CONDA_ENV_PATH = _discover_env_path()
 
 
 def _conda_bin(name: str) -> Path:
@@ -68,6 +85,9 @@ class CodeRun:
     exit_code: Optional[int] = None
     process: Optional[subprocess.Popen] = None
     stdout_lines: List[str] = field(default_factory=list)
+    # Serviços que esta implantação subiu: {"name","port","url"} — o operador precisa saber
+    # ONDE o sistema ficou disponível (a tela de Implantação mostra os links).
+    services: List[Dict[str, Any]] = field(default_factory=list)
     _subscribers: List[asyncio.Queue] = field(default_factory=list)
     _lock: threading.Lock = field(default_factory=threading.Lock)
     _main_loop: Optional[asyncio.AbstractEventLoop] = None
@@ -82,7 +102,21 @@ class CodeRun:
             "exit_code": self.exit_code,
             "work_dir": str(self.work_dir),
             "total_lines": len(self.stdout_lines),
+            "services": list(self.services),
         }
+
+    def add_service(self, name: str, port: Any, url: str = "") -> None:
+        """Registra um serviço iniciado por esta implantação (nome, porta, endereço)."""
+        try:
+            port = int(port)
+        except Exception:
+            return
+        with self._lock:
+            if any(sv.get("name") == name for sv in self.services):
+                return
+            self.services.append({"name": name, "port": port,
+                                  "url": url or f"http://localhost:{port}"})
+        self.broadcast_status()
 
     def append_line(self, line: str) -> None:
         """Append + broadcast para subscribers do WS (thread-safe)."""
@@ -247,6 +281,7 @@ def _run_backend_service(run: "CodeRun", backend_dir: Path, parent_env: dict, si
             return
         # FastAPI/uvicorn já existem no env langnet (usados pelo próprio LangNet)
         run.append_line(f"[backend] starting: {env_python} main.py (cwd={backend_dir})")
+        run.add_service("API do sistema (FastAPI)", env.get("PORT", "8001"))
         proc = subprocess.Popen(
             [str(env_python), "main.py"],
             cwd=str(backend_dir),
@@ -435,6 +470,7 @@ def _run_frontend_service(run: "CodeRun", frontend_dir: Path, parent_env: dict, 
 
         # 2) npm start
         run.append_line(f"[frontend] starting: {npm_bin} start (cwd={frontend_dir})")
+        run.add_service("interface do sistema (React)", env.get("PORT", "3001"))
         proc = subprocess.Popen(
             [str(npm_bin), "start"],
             cwd=str(frontend_dir),
@@ -524,6 +560,8 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
         # Também pega .env do BACKEND principal (LangNet) — DEEPSEEK_API_KEY normalmente vive aí
         _load_env_file_into(env, Path("/home/pasteurjr/progreact/langnet-interface/backend/.env"))
 
+        run.add_service("servidor de agentes (WebSocket)", env.get("WEBSOCKET_PORT", "5002"),
+                        f"ws://localhost:{env.get('WEBSOCKET_PORT', '5002')}")
         run.process = subprocess.Popen(
             [str(env_python), "main.py"],
             cwd=str(run.work_dir),

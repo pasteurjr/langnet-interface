@@ -648,6 +648,39 @@ def run_stop(run_id: str, current_user: dict = Depends(get_current_user)):
     return run.to_public()
 
 
+@router.get("/run/{run_id}/logs")
+def run_logs(run_id: str, offset: int = 0, limit: int = 500,
+             current_user: dict = Depends(get_current_user)):
+    """Trecho do log da implantação a partir de `offset` (leitura incremental —
+    a tela de Monitoramento pede só o que ainda não viu)."""
+    run = code_runner.get_run(run_id)
+    if not run:
+        raise HTTPException(404, "Run não encontrado")
+    total = len(run.stdout_lines)
+    off = max(0, min(offset, total))
+    return {"run_id": run_id, "status": run.status, "offset": off, "total": total,
+            "lines": run.stdout_lines[off:off + max(1, min(limit, 2000))],
+            "services": list(run.services)}
+
+
+@router.get("/project/{project_id}/runs")
+def list_project_runs(project_id: str, current_user: dict = Depends(get_current_user)):
+    """Implantações do PROJETO (todas as sessões de geração), mais recentes primeiro —
+    é o histórico que a tela de Implantação mostra."""
+    from app.database import execute_query
+    rows = execute_query(
+        "SELECT id, created_at FROM code_generation_sessions "
+        "WHERE project_id=%s ORDER BY created_at DESC",
+        (project_id,), fetch_all=True) or []
+    by_session = {r["id"]: r.get("created_at") for r in rows}
+    out = []
+    for sid in by_session:
+        for r in code_runner.list_runs_for_session(sid):
+            out.append({**r.to_public(), "session_created_at": str(by_session.get(sid) or "")})
+    out.sort(key=lambda x: x.get("started_at") or "", reverse=True)
+    return {"runs": out, "sessions": [{"id": k, "created_at": str(v)} for k, v in by_session.items()]}
+
+
 @router.get("/{session_id}/runs")
 def list_runs(session_id: str, current_user: dict = Depends(get_current_user)):
     runs = code_runner.list_runs_for_session(session_id)
