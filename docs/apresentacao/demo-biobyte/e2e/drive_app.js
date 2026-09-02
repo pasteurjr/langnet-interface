@@ -26,11 +26,15 @@ const FILL = [ // [regex no rótulo/nome normalizado, valor] — ordem importa (
  [/data.*(inicio|início)|inicio|início/,"2026-08-01"],[/data.*fim|fim/,"2026-09-02"],[/acao|ação/,"CREATE_USER"],
  [/pergunta|mensagem|consulta|texto|descri|observa/,"Qual é a classificação NHSN do caso CAS-2023-001 e por quê?"],
  [/status/,"Ativo"],[/notific/,"Pendente"],[/bundle|protocolo/,"Bundle MRSA Vancomicina"],[/justific/,"Paciente com S. aureus multirresistente em UTI"]];
+const STAMP = String(Date.now()).slice(-6);
+// Overrides por tela: a Gestão de Usuários CADASTRA alguém novo — o e-mail do usuário
+// logado (herdado do contexto) violaria corretamente o índice único.
+const OVERRIDE = { 'gestao-de-usuarios': { 'mail': `carlos.silva.${STAMP}@hospital.br`, 'nome': 'Dr. Carlos Silva', 'senha': 'S3nh@Forte', 'papel': 'Enfermeiro' } };  // chaves = regex sobre o rótulo (E-mail → /mail/)
 const norm = s => (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
 const shot = async (p, tag) => { const f = `${OUT}/${String(N).padStart(2,'0')}-app-${tag}.png`; await p.screenshot({path:f, fullPage:false}); console.log('📸', f.split('/').pop()); N++; return f; };
 async function goScreen(p, label){ const esc = label.replace(/[.*+?^${}()|[\]\\]/g,'\\$&');
   const it = p.locator('aside').getByText(new RegExp('^[^A-Za-z0-9]*'+esc+'\\s*$')).first(); await it.scrollIntoViewIfNeeded().catch(()=>{}); await it.click({timeout:8000}); await sleep(900); }
-async function fillForm(p){
+async function fillForm(p, screenId){
   const filled = [];
   const n = await p.locator('main input:not([type=file]):not([type=checkbox]), main textarea, main select').count();
   for (let i=0;i<n;i++){
@@ -39,7 +43,10 @@ async function fillForm(p){
     const label = await el.evaluate(e=>{ let x=e; for(let k=0;k<4&&x;k++){ const l=x.previousElementSibling; if(l&&/label|div|span/i.test(l.tagName)&&l.textContent.trim()) return l.textContent.trim(); x=x.parentElement; } return e.getAttribute('placeholder')||e.getAttribute('name')||''; }).catch(()=>'');
     const key = norm(label);
     if (tag==='select'){ const v = await el.evaluate(s=>{const o=[...s.options].find(o=>o.value); return o?o.value:'';}).catch(()=>''); if(v){ await el.selectOption(v).catch(()=>{}); filled.push([label,v]); } continue; }
-    const hit = FILL.find(([re])=>re.test(key)); const val = hit ? hit[1] : 'não informado';
+    const ov = (OVERRIDE[screenId]||{});
+    const ovKey = Object.keys(ov).find(k=>new RegExp(k).test(key));
+    const hit = FILL.find(([re])=>re.test(key));
+    const val = ovKey ? ov[ovKey] : (hit ? hit[1] : 'não informado');
     await el.fill(String(val)).catch(()=>{}); filled.push([label,val]);
   }
   const cb = p.locator('main input[type=checkbox]'); const c = await cb.count(); for(let i=0;i<c;i++){ await cb.nth(i).check().catch(()=>{}); }
@@ -72,7 +79,7 @@ async function submitAndWait(p, maxMs=150000){
     await p.reload({waitUntil:'domcontentloaded'}); await p.locator('aside').waitFor({timeout:60000}); await sleep(1200);
     const targets = SCREENS.slice(0,12); // as 12 telas de negócio (as 8 restantes são cadastros)
     for (const [id,label] of targets){
-      try{ await goScreen(p,label); const filled = await fillForm(p); await shot(p,`form-${id}-preenchido`);
+      try{ await goScreen(p,label); const filled = await fillForm(p, id); await shot(p,`form-${id}-preenchido`);
         const r = await submitAndWait(p); await shot(p,`form-${id}-resposta`);
         results[id] = {label, filled, ...r}; console.log(`  ${id}: [${r.button}] ${r.secs}s → ${r.result.slice(0,140).replace(/\n/g,' ')}`);
       }catch(e){ console.log('x',label,e.message.split('\n')[0]); results[id]={label, error:e.message.split('\n')[0]}; }
