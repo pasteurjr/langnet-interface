@@ -2912,6 +2912,11 @@ def _mcp_prefetch(task_name, input_data):
             continue
         out_alias = MCP_OUT_ALIASES.get(nm, {{}})
         for k, v in data.items():
+            # não deixa o ECO do próprio argumento sobrescrever o contexto: a tool devolve
+            # `paciente_id` = o valor que recebeu (que pode ter sido o caso_id pelo fallback) —
+            # gravá-lo de volta trocaria o paciente real. Só entram campos que não são args enviados.
+            if k in args and out_alias.get(k, k) == k:
+                continue
             target = out_alias.get(k, k)
             if isinstance(v, (dict, list)):
                 v = _j.dumps(v, ensure_ascii=False)
