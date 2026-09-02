@@ -7091,6 +7091,131 @@ def _derive_mcp_aliases(assignments: list, tasks_yaml: str, adapters_py: str):
     return arg_aliases, out_aliases, target_keys
 
 
+def _written_from_input_cols(det_block: str) -> set:
+    """Colunas que um bloco `<task>_deterministic` GRAVA (UPDATE SET / INSERT) cujo valor vem da
+    ENTRADA (param `input_data.get(...)`, com ou sem fallback de coerência). Ignora literais/NOW()."""
+    import re as _re
+    cols: set = set()
+    pat = _re.compile(
+        r"""cur\.execute\(\s*(?P<sql>'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")\s*,\s*\[(?P<params>[^\]]*)\]""", _re.S)
+    for mm in pat.finditer(det_block):
+        sql, params = mm.group('sql'), mm.group('params')
+        items = [x.strip() for x in _split_top_level_commas(params)]
+        from_input = [x.startswith("input_data.get(") for x in items]
+        if _re.match(r"""['"]?\s*UPDATE\b""", sql, _re.I):
+            seg = _re.split(r'\bWHERE\b', sql, flags=_re.I)[0]
+            parts = _re.split(r'\bSET\b', seg, maxsplit=1, flags=_re.I)
+            if len(parts) < 2:
+                continue
+            set_cols = _re.findall(r'`?(\w+)`?\s*=\s*%s', parts[1])
+            for i, c in enumerate(set_cols):
+                if i < len(items) and from_input[i]:
+                    cols.add(c)
+            continue
+        m2 = _re.search(r'INSERT\s+INTO\s+`?\w+`?\s*\((?P<cols>[^)]*)\)\s*VALUES\s*\((?P<vals>.*?)\)', sql, _re.I | _re.S)
+        if not m2:
+            continue
+        icols = [c.strip().strip('`') for c in _split_top_level_commas(m2.group('cols'))]
+        vals = [v.strip() for v in _split_top_level_commas(m2.group('vals'))]
+        ph_cols = [icols[i] for i, v in enumerate(vals) if v == '%s' and i < len(icols)]
+        for i, c in enumerate(ph_cols):
+            if i < len(items) and from_input[i]:
+                cols.add(c)
+    return cols
+
+
+def _gate_execution_computed_values(tasks_yaml: str, adapters_py: str, mcp_assign: list, mcp_target_keys: dict) -> str:
+    """PORTÃO de classificação de natureza (prompt reduz, portão garante).
+
+    O erro mais comum do classificador do tasks.yaml é marcar `deterministic` uma task só porque
+    ela GRAVA no banco — quando na verdade o VALOR gravado (ex.: classificacao_nhsn, bundle_nome,
+    reducao_risco) precisa ser PRODUZIDO por julgamento da própria task. O procedimento fixo só
+    copia esse valor da entrada; como ninguém o fornece, grava NULL e a cadeia quebra.
+
+    Filtro MECÂNICO (por task `deterministic`): colunas gravadas a partir da ENTRADA
+      − identificadores (id/_id)
+      − o que a ferramenta MCP ligada ao agente da task fornece (vocabulário-alvo da tool)
+    (NÃO se exclui "coluna que outra task grava": tasks copiam/inicializam colunas — orquestrador
+    copia, importador grava DEFAULT — e isso engolia o sinal. Gravar ≠ produzir.)
+    Se sobrar algo, UMA pergunta seca ao LLM: "o código fixo só COPIA estes valores da entrada; pela
+    descrição a task deveria DETERMINÁ-los (regra/classificação/recomendação/estimativa)?".
+    Se algum → `execution: agent` + `execution_reason` registrado no YAML (não é silencioso).
+    Falha do LLM → não mexe (conservador). Só reclassifica, nunca remove nada."""
+    if not tasks_yaml or not adapters_py:
+        return tasks_yaml
+    import re as _re
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml) or {}
+    except Exception:
+        return tasks_yaml
+    if not isinstance(parsed, dict):
+        return tasks_yaml
+    # blocos <task>_deterministic
+    blocks: Dict[str, str] = {}
+    for m in _re.finditer(r'(?m)^def\s+([A-Za-z_]\w*?)_deterministic\s*\(', adapters_py):
+        nxt = _re.search(r'(?m)^def\s', adapters_py[m.end():])
+        end = m.end() + nxt.start() if nxt else len(adapters_py)
+        blocks[m.group(1)] = adapters_py[m.start():end]
+    written: Dict[str, set] = {t: _written_from_input_cols(b) for t, b in blocks.items()}
+    # o que a tool MCP fornece, por agente
+    mcp_by_agent: Dict[str, set] = {}
+    for a in (mcp_assign or []):
+        mcp_by_agent.setdefault(a["agent_id"], set()).update((mcp_target_keys or {}).get(a["tool_name"], []))
+    changed = False
+    for tname, cfg in parsed.items():
+        if not isinstance(cfg, dict) or cfg.get("execution") == "agent":
+            continue
+        mine = {c for c in written.get(tname, set()) if not (c == "id" or c.endswith("_id"))}
+        if not mine:
+            continue
+        agent = cfg.get("agent") or cfg.get("agent_id")
+        mine -= mcp_by_agent.get(agent, set())
+        # NÃO excluir "colunas que outra task grava": tasks COPIAM/INICIALIZAM colunas (orquestrador
+        # copia da entrada; importador grava DEFAULT 0) e isso engolia o sinal. Gravar ≠ produzir.
+        residual = sorted(mine)
+        if not residual:
+            continue
+        desc = str(cfg.get("description") or "")[:700]
+        prompt = (
+            f"TAREFA: {tname}\nDESCRIÇÃO: {desc}\n\n"
+            "Esta tarefa está marcada como PROCEDIMENTO FIXO (roda em código, sem IA). O código fixo gerado apenas "
+            f"COPIA da ENTRADA para o banco estes campos (não são identificadores nem vêm de ferramenta externa): "
+            f"{json.dumps(residual, ensure_ascii=False)} — ele NÃO os deriva.\n"
+            "Pela DESCRIÇÃO, esta tarefa deveria DETERMINAR/PRODUZIR algum desses valores — seja aplicando uma regra "
+            "(ex.: classificar um caso por critérios), seja por julgamento (recomendar, estimar, decidir, redigir) — "
+            "em vez de recebê-lo já pronto de quem a chamou? Campos que a tarefa apenas repassa/consolida de etapas "
+            "anteriores, ou que um ator digita, NÃO contam.\n"
+            "Responda SOMENTE com JSON no formato {\"computed\": [\"campo_que_a_tarefa_deve_determinar\", ...]} "
+            "(lista vazia se ela só repassa)."
+        )
+        try:
+            raw = _direct_llm_complete(prompt, expected_output="JSON puro com a chave computed",
+                                       system="Você classifica a natureza de tarefas de software. Responda só JSON.")
+            mm = _re.search(r"\{.*\}", raw or "", _re.S)
+            data = json.loads(mm.group(0)) if mm else {}
+        except Exception as _e:
+            print(f"[CODE-GEN][PORTÃO execution] {tname}: LLM indisponível ({_e}); mantém deterministic")
+            continue
+        computed = [c for c in (data.get("computed") or []) if str(c) in residual]
+        print(f"[CODE-GEN][PORTÃO execution] {tname}: copia da entrada {residual} → deve determinar {computed}")
+        if computed:
+            cfg["execution"] = "agent"
+            cfg["execution_reason"] = ("portão: o código fixo só COPIA da entrada " + ", ".join(map(str, computed))
+                                       + ", mas pela descrição esta task deve DETERMINÁ-lo(s) (regra/classificação/"
+                                       "recomendação/estimativa) → roteado p/ agent (o agente produz, a camada "
+                                       "determinística persiste). Se for regra fixa, o ideal futuro é o gerador "
+                                       "emitir a computação e voltar a deterministic.")
+            changed = True
+    if not changed:
+        return tasks_yaml
+    try:
+        import yaml as _yaml
+        return _yaml.safe_dump(parsed, allow_unicode=True, sort_keys=False)
+    except Exception:
+        return tasks_yaml
+
+
 def _generate_mcp_tools_py(assignments: list, arg_aliases: dict = None, out_aliases: dict = None, target_keys: dict = None) -> str:
     """Emite ws-server/mcp_tools.py: um BaseTool CrewAI por tool MCP atribuída, que chama
     a ferramenta no servidor MCP via cliente `mcp` (SSE/HTTP). Registra em MCP_TOOLS."""
@@ -7868,6 +7993,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Coerência CROSS-contrato MCP↔DM (passo 5): deriva aliases via LLM antes de emitir mcp_tools.py.
     _mcp_arg_al, _mcp_out_al, _mcp_tgt = _derive_mcp_aliases(_mcp_assign, tasks_yaml, adapters_py)
     _mcp_py = _generate_mcp_tools_py(_mcp_assign, _mcp_arg_al, _mcp_out_al, _mcp_tgt)
+    # PORTÃO de natureza (passo 6): task 'deterministic' que grava valor COMPUTADO que ninguém
+    # fornece (não é id, não vem da tool MCP, nenhuma outra task produz) → precisa de julgamento →
+    # reclassifica p/ 'agent' e registra o motivo no YAML. Antes de gravar o tasks.yaml no pacote.
+    tasks_yaml = _gate_execution_computed_values(tasks_yaml, adapters_py, _mcp_assign, _mcp_tgt)
     if _mcp_py:
         add("ws-server/mcp_tools.py", _mcp_py)
     # Coerência da CAMADA DE EXECUÇÃO (passos 2/3): alinha a CHAVE lida do input_data com a

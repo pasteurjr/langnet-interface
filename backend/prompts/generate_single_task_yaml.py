@@ -325,6 +325,14 @@ REGRAS ABSOLUTAS:
      decidir, tratar caso ambíguo, resumir.
    Régua: se um algoritmo FIXO produz a resposta → `deterministic`; se precisa
    "pensar"/redigir/interpretar → `agent`. Em documentos LEGAIS (laudos), os
+   🔴 TESTE DECISIVO (o erro mais comum é marcar `deterministic` só porque a task GRAVA no banco):
+   pergunte "quem PRODUZ o valor que esta task grava?". Se o valor NÃO é digitado por um ator, NÃO
+   vem de ferramenta externa e NÃO foi produzido por task anterior — isto é, esta task precisa
+   classificar/recomendar/estimar/decidir para OBTÊ-LO — então é `agent`, MESMO que depois grave o
+   resultado. Gravar é passo acessório; produzir o valor é julgamento. Ex.: "classificar o caso
+   pelos critérios da norma e gravar a classificação" → `agent`; "recomendar o protocolo de
+   tratamento" → `agent`; "estimar a redução de risco" → `agent`; "buscar o resultado no sistema
+   externo e gravar" → `deterministic` (o valor vem da ferramenta).
    CÁLCULOS são SEMPRE `deterministic` (auditáveis); só a COMPOSIÇÃO do texto
    do laudo é `agent`.
 """
