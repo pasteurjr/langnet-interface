@@ -9490,6 +9490,123 @@ def _screen_rich_types(screen: dict) -> set:
     return {c.get("type") for c in (screen.get("components") or []) if c.get("type") in _RICH_TYPES}
 
 
+
+def _componentes_jsx(comps, action_label):
+    """Renderiza TODOS os tipos de componente que a Especificação de Interface declara.
+
+    O emissor antigo desenhava só campos de texto/número/data/seleção. Todo o resto que a
+    especificação declarava — valores de leitura, cartões de indicador, gráficos, tabelas,
+    caixas de marcação, listas de itens — era DESCARTADO. Por isso o Dashboard de Vigilância
+    saía com um título e um botão, quando a especificação pede três indicadores e dois
+    gráficos; a Recomendação de Bundle, sem justificativa e sem os itens do protocolo; a
+    Gestão de Usuários, sem a lista de usuários; a Classificação, sem os critérios da norma.
+
+    Devolve (jsx, precisa_grafico, precisa_upload).
+    """
+    import json as _json
+    partes = []
+    precisa_grafico = False
+    precisa_upload = False
+    leitura, indicadores = [], []
+
+    def _lbl(c):
+        return (c.get("label") or _humanize(c.get("field") or "")).replace('"', "'")
+
+    for c in comps:
+        t = (c.get("type") or "").lower()
+        campo = c.get("field") or ""
+        if not campo and t not in ("chart", "table", "kanban", "list", "file-upload", "file-preview"):
+            continue
+        if t in ("text", "number", "date", "textarea", "password", "email"):
+            tipo_html = "password" if ("senha" in campo.lower() or t == "password") else (
+                "date" if t == "date" else ("number" if t == "number" else "text"))
+            partes.append(
+                '<div style={{marginBottom:12}}><label style={{display:"block",fontSize:13,fontWeight:600,color:"#334155",marginBottom:4}}>'
+                + _lbl(c) + '</label>'
+                + '<input type="' + tipo_html + '" value={form["' + campo + '"]||""} '
+                + 'onChange={(e)=>setForm({...form,["' + campo + '"]:e.target.value})} '
+                + 'style={{width:"100%",padding:"9px 12px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:14}} /></div>')
+        elif t == "select":
+            opcoes = (c.get("props") or {}).get("options") or c.get("options") or []
+            opts = "".join('<option key="' + str(o) + '" value="' + str(o) + '">' + str(o) + '</option>'
+                           for o in opcoes if isinstance(o, (str, int, float)))
+            partes.append(
+                '<div style={{marginBottom:12}}><label style={{display:"block",fontSize:13,fontWeight:600,color:"#334155",marginBottom:4}}>'
+                + _lbl(c) + '</label>'
+                + '<select value={form["' + campo + '"]||""} onChange={(e)=>setForm({...form,["' + campo + '"]:e.target.value})} '
+                + 'style={{width:"100%",padding:"9px 12px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:14}}>'
+                + '<option value="">Selecione…</option>' + opts + '</select></div>')
+        elif t == "checkbox":
+            partes.append(
+                '<label style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:14,color:"#334155"}}>'
+                + '<input type="checkbox" checked={!!form["' + campo + '"]} '
+                + 'onChange={(e)=>setForm({...form,["' + campo + '"]:e.target.checked})} />'
+                + _lbl(c) + '</label>')
+        elif t in ("readonly", "label", "static"):
+            leitura.append((campo, _lbl(c)))
+        elif t in ("metric-card", "kpi", "metric"):
+            indicadores.append((campo, _lbl(c)))
+        elif t == "chart":
+            precisa_grafico = True
+            kind = str((c.get("props") or {}).get("chartType") or c.get("chartType") or "").lower()
+            fonte = ('serie("' + campo + '")') if campo else "serie()"
+            titulo = _lbl(c) if campo else "Evolução"
+            if "pie" in kind or "pizza" in kind or "distrib" in (titulo or "").lower():
+                partes.append(
+                    '<div style={{marginTop:16}}><div style={{fontSize:13,fontWeight:600,color:"#334155",marginBottom:6}}>' + titulo + '</div>'
+                    + '{' + fonte + '.length > 0 ? <ResponsiveContainer width="100%" height={240}><PieChart>'
+                    + '<Pie data={' + fonte + '} dataKey={chaveNumerica(' + fonte + ')} nameKey={chaveTexto(' + fonte + ')} outerRadius={90} label>'
+                    + '{' + fonte + '.map((e,i)=><Cell key={i} fill={["#4f46e5","#0ea5e9","#f59e0b","#16a34a","#dc2626","#7c3aed"][i%6]} />)}'
+                    + '</Pie><Tooltip /><Legend /></PieChart></ResponsiveContainer>'
+                    + ' : <div style={{color:"#94a3b8",fontSize:13,padding:"18px 0"}}>Sem dados para o período — execute a consulta.</div>}</div>')
+            else:
+                partes.append(
+                    '<div style={{marginTop:16}}><div style={{fontSize:13,fontWeight:600,color:"#334155",marginBottom:6}}>' + titulo + '</div>'
+                    + '{' + fonte + '.length > 0 ? <ResponsiveContainer width="100%" height={240}><LineChart data={' + fonte + '}>'
+                    + '<XAxis dataKey={chaveTexto(' + fonte + ')} /><YAxis /><Tooltip /><Legend />'
+                    + '<Line type="monotone" dataKey={chaveNumerica(' + fonte + ')} stroke="#4f46e5" strokeWidth={2} dot={false} />'
+                    + '</LineChart></ResponsiveContainer>'
+                    + ' : <div style={{color:"#94a3b8",fontSize:13,padding:"18px 0"}}>Sem dados para o período — execute a consulta.</div>}</div>')
+        elif t in ("table", "grid", "datagrid"):
+            fonte = ('linhas("' + campo + '")') if campo else "linhas()"
+            partes.append(
+                '<div style={{marginTop:16}}>'
+                + '{' + fonte + '.length > 0 ? (<div style={{overflowX:"auto",border:"1px solid #e2e8f0",borderRadius:10}}>'
+                + '<table style={{width:"100%",fontSize:13,borderCollapse:"collapse"}}>'
+                + '<thead><tr>{Object.keys(' + fonte + '[0]).map((c)=><th key={c} style={{textAlign:"left",padding:"9px 10px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",color:"#475569",fontWeight:600}}>{c.replace(/_/g," ")}</th>)}</tr></thead>'
+                + '<tbody>{' + fonte + '.slice(0,200).map((r,i)=>(<tr key={i}>{Object.keys(' + fonte + '[0]).map((c)=><td key={c} style={{padding:"8px 10px",borderBottom:"1px solid #f1f5f9",color:"#0f172a"}}>{String(r[c]==null?"":r[c])}</td>)}</tr>))}</tbody>'
+                + '</table></div>) : <div style={{color:"#94a3b8",fontSize:13,padding:"14px 0"}}>Nenhum registro para exibir.</div>}</div>')
+        elif t in ("kanban", "list", "checklist"):
+            fonte = ('itens("' + campo + '")') if campo else "itens()"
+            partes.append(
+                '<div style={{marginTop:16}}><div style={{fontSize:13,fontWeight:600,color:"#334155",marginBottom:6}}>' + _lbl(c) + '</div>'
+                + '{' + fonte + '.length > 0 ? <ol style={{margin:0,paddingLeft:20,fontSize:14,color:"#0f172a",lineHeight:1.9}}>'
+                + '{' + fonte + '.map((x,i)=><li key={i}>{typeof x==="object"?(x.nome||x.item||x.descricao||JSON.stringify(x)):String(x)}</li>)}</ol>'
+                + ' : <div style={{color:"#94a3b8",fontSize:13}}>Nenhum item — execute a ação para obter a recomendação.</div>}</div>')
+        elif t in ("file-upload", "file-preview"):
+            precisa_upload = True
+
+    bloco_leitura = ""
+    if leitura:
+        linhas = "".join(
+            '<div style={{display:"flex",gap:12,padding:"8px 0",borderBottom:"1px solid #f1f5f9"}}>'
+            + '<span style={{minWidth:220,fontSize:13,color:"#64748b"}}>' + lbl + '</span>'
+            + '<b style={{fontSize:13,color:"#0f172a"}}>{dado("' + campo + '")}</b></div>'
+            for campo, lbl in leitura)
+        bloco_leitura = ('<div style={{marginTop:8,marginBottom:8,background:"#fff",border:"1px solid #e2e8f0",'
+                         'borderRadius:12,padding:"6px 16px"}}>' + linhas + '</div>')
+    bloco_ind = ""
+    if indicadores:
+        cartoes = "".join(
+            '<div style={{flex:1,minWidth:170,background:"#fff",border:"1px solid #e2e8f0",borderRadius:12,padding:16}}>'
+            + '<div style={{fontSize:12,color:"#64748b",textTransform:"uppercase",letterSpacing:.4}}>' + lbl + '</div>'
+            + '<div style={{fontSize:26,fontWeight:700,color:"#0f172a",marginTop:6}}>{dado("' + campo + '")}</div></div>'
+            for campo, lbl in indicadores)
+        bloco_ind = '<div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:8,marginBottom:6}}>' + cartoes + '</div>'
+
+    return (bloco_ind + bloco_leitura + "".join(partes)), precisa_grafico, precisa_upload
+
+
 def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fields: dict) -> str:
     """Renderiza uma tela RICA (mapa Leaflet com desenho, gráfico Recharts, upload) que dispara a
     task via wsClient. MVP genérico: geoespacial é um tipo entre vários. Carrega data-uc/data-fr."""
@@ -9512,21 +9629,34 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
                                   entity=entity, kind=_akind) or ""
     action_label = next((a.get("label") for a in (screen.get("actions") or [])
                          if a.get("kind") in ("task", "crud")), "Consultar")
+    # AÇÕES SECUNDÁRIAS: a especificação declara mais de um botão por tela (Rejeitar, Descartar,
+    # Confirmar Importação, Reenviar código). O emissor antigo ficava só com o primeiro. Aqui as
+    # demais viram botão SE resolverem para uma tarefa que existe de fato — nunca botão de enfeite.
+    _sec = []
+    for _a in (screen.get("actions") or []):
+        _rot = (_a.get("label") or "").strip()
+        if not _rot or _rot == action_label:
+            continue
+        _alvo = _resolve_task_target(_a.get("target"), task_fields, _rot,
+                                     screen_ucs=screen.get("uc"), entity=entity, kind=_a.get("kind"))
+        if _alvo and _alvo != target and all(_alvo != x[1] for x in _sec):
+            _sec.append((_rot.replace('"', "'"), _alvo))
+    secundarias_jsx = "".join(
+        '<button onClick={()=>executarTarefa("' + _alvo + '")} disabled={busy} '
+        'style={{marginTop:16,marginLeft:10,background:"#fff",color:"#4f46e5",padding:"10px 16px",'
+        'borderRadius:8,border:"1px solid #c7d2fe",fontWeight:600,cursor:"pointer"}}>' + _rot + '</button>'
+        for _rot, _alvo in _sec)
     # campo de geometria (destino do WKT desenhado)
     geom_field = "localizacao"
     for c in comps:
         if c.get("type") == "map":
             geom_field = c.get("field") or (c.get("bindTo") or "").split(".")[-1] or "localizacao"
             break
-    # inputs simples (não-ricos)
-    inputs = [(c.get("field"), c.get("label") or _humanize(c.get("field") or ""))
-              for c in comps if c.get("type") in ("text", "number", "date", "select", "textarea") and c.get("field")]
-    inputs_jsx = "".join(
-        '<div style={{marginBottom:10}}><label style={{display:"block",fontSize:13,fontWeight:600,color:"#334155",marginBottom:4}}>'
-        + (lbl or "") + '</label>'
-        + '<input value={form["' + (k or "") + '"]||""} onChange={(e)=>setForm({...form,["' + (k or "") + '"]:e.target.value})} '
-        + 'style={{width:"100%",padding:"9px 12px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:14}} /></div>'
-        for k, lbl in inputs)
+    # TODOS os componentes declarados na Especificação de Interface viram interface de verdade
+    # (indicadores, valores de leitura, gráficos, tabelas, listas, marcações), não só os campos.
+    inputs_jsx, _quer_grafico, _quer_upload = _componentes_jsx(comps, action_label)
+    has_chart = has_chart or _quer_grafico
+    has_upload = has_upload and _quer_upload
 
     map_jsx = ('<div style={{display:"flex",gap:16,marginTop:8}}>'
                '<div style={{flex:2}}><div style={{fontSize:12,color:"#64748b",marginBottom:6}}>Desenhe a área do empreendimento no mapa:</div>'
@@ -9538,13 +9668,13 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
 
     upload_jsx = ('<div style={{marginTop:12}}><div style={{fontSize:13,fontWeight:600,color:"#334155",marginBottom:6}}>Importar arquivo</div>'
                   '<label style={{display:"block",border:"2px dashed #cbd5e1",borderRadius:12,padding:24,textAlign:"center",color:"#64748b",cursor:"pointer"}}>'
-                  '{file ? ("Arquivo: "+file.name) : "Arraste o Shapefile/GeoJSON/PDF aqui ou clique para escolher"}'
+                  '{file ? ("Arquivo: "+file.name) : "Arraste o arquivo aqui ou clique para escolher"}'
                   '<input type="file" style={{display:"none"}} onChange={(e)=>setFile(e.target.files[0])} /></label></div>') if has_upload else ""
 
     chart_jsx = ('<div style={{marginTop:16}}>{chartData.length>0 && <ResponsiveContainer width="100%" height={260}>'
                  '<BarChart data={chartData}><XAxis dataKey={Object.keys(chartData[0]||{})[0]} /><YAxis />'
                  '<Tooltip /><Bar dataKey={Object.keys(chartData[0]||{}).find(k=>typeof chartData[0][k]==="number")||"total"} fill="#4f46e5" />'
-                 '</BarChart></ResponsiveContainer>}</div>') if has_chart else ""
+                 '</BarChart></ResponsiveContainer>}</div>') if (has_chart and not _quer_grafico) else ""
 
     # Imports: só puxa Leaflet/hooks de mapa quando a tela TEM mapa (senão 'L is not defined' quebra o build).
     react_hooks = ["useEffect", "useRef", "useState"] if has_map else ["useState"]
@@ -9558,7 +9688,8 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
         imports += ['import L from "leaflet";', 'import "leaflet/dist/leaflet.css";',
                     'import "leaflet-draw";', 'import "leaflet-draw/dist/leaflet.draw.css";']
     if has_chart:
-        imports += ['import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";']
+        imports += ['import { BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, Legend, '
+                    'XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";']
 
     # Blocos condicionais (evita referenciar L/mapRef/wkt em telas sem mapa).
     state_block = ""
@@ -9603,12 +9734,14 @@ __STATE__  const [form, setForm] = useState(() => getCarry());   // pré-preench
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-__EFFECT__  async function submit() {
+__EFFECT__  async function submit() { return executarTarefa("__TARGET__"); }
+
+  async function executarTarefa(tarefa) {
     setBusy(true); setErr(""); setResult(null);
     try {
       const input = { ...getCarry(), ...form };   // contexto herdado + campos da tela
-__GEOMSUBMIT__      if (!"__TARGET__") { setErr("Ação não vinculada a uma tarefa do sistema."); setBusy(false); return; }
-      const r = await runTask("__TARGET__", input);
+__GEOMSUBMIT__      if (!tarefa) { setErr("Ação não vinculada a uma tarefa do sistema."); setBusy(false); return; }
+      const r = await runTask(tarefa, input);
       setResult(r);
       // METADADO da resposta (status/timestamp/error…) NÃO é dado de domínio: gravá-lo no
       // contexto colide com colunas homônimas (ex.: usuarios.status ENUM recebia "sucesso").
@@ -9620,6 +9753,33 @@ __GEOMSUBMIT__      if (!"__TARGET__") { setErr("Ação não vinculada a uma tar
   }
 
   const chartData = (result && (result.items || result.dados || result.data)) || [];
+  // Leitura dos dados para os componentes declarados na Especificação de Interface:
+  // valor de leitura / indicador (dado), série de gráfico (serie), linhas de tabela (linhas)
+  // e itens de lista (itens). Cada um busca primeiro na resposta do agente e, se não achar,
+  // no contexto do atendimento corrente — que é o que a tela já sabe sobre o caso aberto.
+  const dado = (k) => {
+    const r = result || {};
+    let v = r[k];
+    if (v == null && r.kpis && typeof r.kpis === "object") v = r.kpis[k];
+    if (v == null) v = form[k];
+    if (v == null || typeof v === "object") return "\u2014";
+    if (typeof v === "boolean") return v ? "Sim" : "N\u00e3o";
+    return String(v);
+  };
+  const _arrays = (k) => {
+    const r = result || {};
+    if (k && Array.isArray(r[k])) return r[k];
+    if (k && r[k] && typeof r[k] === "object" && Array.isArray(r[k].itens)) return r[k].itens;
+    for (const v of Object.values(r)) if (Array.isArray(v) && v.length) return v;
+    return [];
+  };
+  const serie = (k) => _arrays(k).filter((x) => x && typeof x === "object");
+  const linhas = (k) => _arrays(k).filter((x) => x && typeof x === "object");
+  const itens = (k) => _arrays(k);
+  const chaveTexto = (a) => { const o = a && a[0]; if (!o) return "nome";
+    return Object.keys(o).find((c) => typeof o[c] === "string") || Object.keys(o)[0]; };
+  const chaveNumerica = (a) => { const o = a && a[0]; if (!o) return "total";
+    return Object.keys(o).find((c) => typeof o[c] === "number") || Object.keys(o)[1] || "total"; };
 
   return (
     <div data-uc="__UC__" data-fr="__FR__" style={{ padding: 24, maxWidth: 1100 }}>
@@ -9630,7 +9790,7 @@ __GEOMSUBMIT__      if (!"__TARGET__") { setErr("Ação não vinculada a uma tar
       <button onClick={submit} disabled={busy}
         style={{ marginTop: 16, background: busy ? "#94a3b8" : "#4f46e5", color: "#fff", padding: "10px 18px", borderRadius: 8, border: 0, fontWeight: 600, cursor: "pointer" }}>
         {busy ? "Processando..." : "__ACTION__"}
-      </button>
+      </button>__SECUNDARIAS__
       {err && <div style={{ color: "#b91c1c", marginTop: 10 }}>{err}</div>}
       __CHART__
       __RESULTFALLBACK__
@@ -9652,6 +9812,7 @@ __GEOMSUBMIT__      if (!"__TARGET__") { setErr("Ação não vinculada a uma tar
         "__MAP__": map_jsx,
         "__UPLOAD__": upload_jsx,
         "__CHART__": chart_jsx,
+        "__SECUNDARIAS__": secundarias_jsx,
         "__RESULTFALLBACK__": result_fallback,
     }
     for k, v in repl.items():
