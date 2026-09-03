@@ -8765,7 +8765,9 @@ def _inject_outcome_rendering(src: str, comp_name: str, msgs: List[str]) -> str:
     traduzido para a mensagem especificada quando ela existe. O JSON continua acessível.
     """
     import json as _json
-    if not msgs or "JSON.stringify(result" not in src:
+    _anc_json = "JSON.stringify(result" in src
+    _anc_render = "const renderResult = (r) => {" in src
+    if not msgs or not (_anc_json or _anc_render):
         return src
     vocab = _json.dumps(msgs, ensure_ascii=False)
     bloco = (
@@ -8859,6 +8861,12 @@ def _inject_outcome_rendering(src: str, comp_name: str, msgs: List[str]) -> str:
                   '<Desfecho result={result} />', src)
     src = _re.sub(r'\{JSON\.stringify\(result, null, 2\)\}(?!\s*</pre>)',
                   '<Desfecho result={result} />', src, count=0)
+    # 2b) tela de agente: o objeto de resposta passa pelo desfecho (selo/barra/lista/CSV);
+    #     texto e lista simples seguem no renderizador original.
+    src = src.replace(
+        "  const renderResult = (r) => {",
+        "  const renderResult = (r) => {\n"
+        "    if (r && typeof r === \"object\" && !Array.isArray(r)) return <Desfecho result={r} />;", 1)
     # 3) o erro do servidor sai no vocabulário do caso de uso
     src = src.replace("{err}", "{mensagemDeErro(err)}")
     return src
