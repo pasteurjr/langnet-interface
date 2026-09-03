@@ -9786,7 +9786,18 @@ __GEOMSUBMIT__      if (!tarefa) { setErr("Ação não vinculada a uma tarefa do
     // apenas, "alertas_mdr" casava com "taxa_mdr" e a tela mostrava a TAXA como se fosse a
     // contagem de alertas — número errado é pior que campo vazio.
     if (pontos >= 2 || (pontos === 1 && alvo.length === 1)) return melhor;
-    return (form[k] != null && form[k] !== "") ? form[k] : null;
+    // mesma busca no contexto do atendimento corrente: a tela declara "paciente" e o contexto
+    // carrega "paciente_id" — sem isso o campo ficava vazio com o dado em mãos.
+    if (form[k] != null && form[k] !== "") return form[k];
+    let mf = null, pf = 0;
+    for (const [ck, cv] of Object.entries(form || {})) {
+      if (cv == null || cv === "" || typeof cv === "object") continue;
+      const toks = _norm(ck).split("_").filter((t) => t.length > 2);
+      const pp = alvo.filter((t) => toks.includes(t)).length;
+      if (pp > pf) { pf = pp; mf = cv; }
+    }
+    if (pf >= 2 || (pf === 1 && alvo.length === 1)) return mf;
+    return null;
   };
   const dado = (k) => {
     const v = _achaChave(k);
