@@ -8892,8 +8892,7 @@ def _inject_outcome_rendering(src: str, comp_name: str, msgs: List[str],
         "function Desfecho({ result }) {\n"
         "  if (!result || typeof result !== \"object\") return null;\n"
         "  const meta = new Set([\"status\", \"timestamp\", \"raw\", \"from_transition\", \"received_at\", \"tokens_received\"]);\n"
-        "  const campos = Object.entries(result).filter(([k, v]) => !meta.has(k) && !CAMPOS_NA_TELA.has(k)
-    && !_SEGREDO.test(k) && String(_CTXENV[k]) !== String(v) && v !== null && typeof v !== \"object\");\n"
+        "  const campos = Object.entries(result).filter(([k, v]) => !meta.has(k) && !CAMPOS_NA_TELA.has(k) && !_SEGREDO.test(k) && String(_CTXENV[k]) !== String(v) && v !== null && typeof v !== \"object\");\n"
         "  const listas = Object.entries(result).filter(([, v]) => Array.isArray(v) && v.length && typeof v[0] === \"object\");\n"
         "  return (\n"
         "    <div style={{ marginTop: 16 }}>\n"
