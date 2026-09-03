@@ -9782,7 +9782,10 @@ __GEOMSUBMIT__      if (!tarefa) { setErr("Ação não vinculada a uma tarefa do
       const pp = alvo.filter((t) => toks.includes(t)).length;
       if (pp > pontos) { pontos = pp; melhor = cv; }
     }
-    if (pontos > 0) return melhor;
+    // Exige DUAS partes do nome em comum (ou nome de uma parte só, igual). Com uma parte
+    // apenas, "alertas_mdr" casava com "taxa_mdr" e a tela mostrava a TAXA como se fosse a
+    // contagem de alertas — número errado é pior que campo vazio.
+    if (pontos >= 2 || (pontos === 1 && alvo.length === 1)) return melhor;
     return (form[k] != null && form[k] !== "") ? form[k] : null;
   };
   const dado = (k) => {
