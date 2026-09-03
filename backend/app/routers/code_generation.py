@@ -265,6 +265,40 @@ async def generate_code(
             state["agent_task_spec_document"] = ats_session["agent_task_spec_document"]
             print(f"[CODE-GEN] spec_md carregado: {len(ats_session['agent_task_spec_document'])} chars")
 
+    # Carrega a ESPECIFICAÇÃO FUNCIONAL (fluxos dos casos de uso). É dela que saem as
+    # mensagens que o sistema deve exibir ("Credenciais inválidas", "ICSAC Confirmado",
+    # "Exportar CSV"). Sem isso o app respondia jargão interno de verificação na tela.
+    # (o COLLATE explícito é necessário: as tabelas do pipeline têm collations diferentes)
+    _spec_doc = ""
+    _spec_sqls = [
+        ("SELECT h.specification_document AS doc FROM specification_version_history h "
+         "JOIN ui_spec_sessions u ON u.specification_session_id COLLATE utf8mb4_general_ci "
+         "                        = h.specification_session_id COLLATE utf8mb4_general_ci "
+         "WHERE u.project_id=%s ORDER BY h.version DESC LIMIT 1"),
+        ("SELECT h.specification_document AS doc FROM specification_version_history h "
+         "JOIN ui_spec_sessions u ON u.specification_session_id COLLATE utf8mb4_general_ci "
+         "                        = h.specification_session_id COLLATE utf8mb4_general_ci "
+         "WHERE u.project_id=%s ORDER BY h.doc_size DESC LIMIT 1"),
+    ]
+    for _sql in _spec_sqls:
+        if _spec_doc:
+            break
+        try:
+            with get_db_connection() as _conn:
+                _cur = _conn.cursor(dictionary=True)
+                _cur.execute(_sql, (project_id,))
+                _r = _cur.fetchone()
+                _cur.close()
+                if _r and _r.get("doc"):
+                    _spec_doc = _r["doc"]
+        except Exception as _e:
+            print(f"[CODE-GEN] busca da especificação funcional falhou: {_e}")
+    if _spec_doc:
+        state["specification_document"] = _spec_doc
+        print(f"[CODE-GEN] especificação funcional carregada: {len(_spec_doc)} chars")
+    else:
+        print("[CODE-GEN] especificação funcional NÃO encontrada — telas sem vocabulário de mensagens")
+
     # Carrega ui_spec (telas de negócio) mais recente do projeto — permite ao
     # code gen construir a UI real (Cara A) além do executor de Petri (Cara B).
     # Guarda qual sessão de ui_spec entrou no código (rastreabilidade).

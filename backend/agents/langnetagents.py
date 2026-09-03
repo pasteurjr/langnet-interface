@@ -2903,6 +2903,44 @@ def _artifact_poststep(task_name, payload, result):
         print(f"[task] ARTEFATO {{task_name}} FALHOU: {{_e}}", flush=True)
 
 
+def _msg_negocio(task_name, tipo, tecnico):
+    """Traduz uma falha de verificação para a MENSAGEM que a especificação manda exibir.
+    Sem isso o usuário via jargão interno ("verificação (pós) falhou: output_has:usuario_id")
+    onde o caso de uso pede "Credenciais inválidas". Sem mensagem especificada, mantém o texto
+    técnico — nunca inventa mensagem."""
+    try:
+        import uc_messages as _um
+        _msgs = (getattr(_um, "TASK_UC_MESSAGES", {{}}) or {{}}).get(task_name) or []
+    except Exception:
+        _msgs = []
+    if not _msgs:
+        return tecnico
+    import re as _re
+    _padroes = {{
+        "entrada": r"obrigat|preench|inv[áa]lid|incorret|informe",
+        "saida":   r"inv[áa]lid|incorret|n[ãa]o encontrad|n[ãa]o conform|indispon[íi]vel",
+        "erro":    r"^erro |erro ao",
+    }}
+    _pat = _padroes.get(tipo, r"erro")
+    for _m in _msgs:
+        if _re.search(_pat, str(_m), _re.I):
+            return _m
+    return tecnico
+
+
+def _mcp_bound(task_name):
+    """True se o agente desta task tem uma tool MCP ligada — ou seja, os dados da task
+    vêm de um SISTEMA EXTERNO. Usado para dizer 'dados não conformes do sistema externo'
+    em vez da mensagem genérica de verificação."""
+    _mod = globals().get("_mcp_mod")
+    if _mod is None:
+        return False
+    _tools = getattr(_mod, "MCP_TOOLS", {{}}) or {{}}
+    _tc = TASKS_CONFIG.get(task_name) or {{}}
+    _ag = _tc.get("agent") or _tc.get("agent_id")
+    return any(t in _tools for t in (AGENT_TOOLS.get(_ag, []) or []))
+
+
 def _mcp_prefetch(task_name, input_data):
     """Path B — coerência MCP↔Modelo de Dados. Task DETERMINÍSTICA com tool(s) MCP ligada(s)
     ao seu agente: chama a(s) tool(s) (args do input_data, com alias de coerência de entrada) e
@@ -3097,8 +3135,10 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
     _miss_in = [c for c in (_verif.get("require_inputs") or []) if (input_data or {{}}).get(c) in (None, "", [])]
     if _miss_in:
         await _send(ws, "error", {{"task_name": task_name,
-            "error": "verificação: input(s) obrigatório(s) de contexto ausente(s)/nulo(s): " + ", ".join(_miss_in),
-            "verif_falha": _miss_in}})
+            "error": _msg_negocio(task_name, "entrada",
+                "verificação: input(s) obrigatório(s) de contexto ausente(s)/nulo(s): " + ", ".join(_miss_in)),
+            "detalhe_tecnico": "inputs obrigatórios ausentes: " + ", ".join(_miss_in),
+            "campos_faltantes": _miss_in, "verif_falha": _miss_in}})
         return
 
     # Deterministic-first: se adapters.py define <task>_deterministic, roda direto
@@ -3144,8 +3184,21 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             _vf = getattr(adapters_module, "_run_verifications", None)
             _fails = _vf(det_result, input_data, _verif) if (callable(_vf) and _verif) else []
             if _fails:
-                await _send(ws, "error", {{"task_name": task_name,
-                    "error": "verificação (pós) falhou: " + ", ".join(_fails), "verif_falha": _fails}})
+                # Se os campos que faltam vinham de um sistema EXTERNO (tool MCP ligada a esta
+                # task), o que houve foi resposta não conforme do sistema externo — a mensagem
+                # tem de dizer isso, não "verificação falhou".
+                _ext = [f.split(":", 1)[1] for f in _fails if f.startswith("output_has:")]
+                if _ext and _mcp_bound(task_name):
+                    _msg = ("dados não conformes recebidos do sistema externo — importação "
+                            "bloqueada (faltam: " + ", ".join(_ext) + ")")
+                    _pay = {{"task_name": task_name, "error": _msg, "dados_nao_conformes": True,
+                            "campos_faltantes": _ext, "verif_falha": _fails}}
+                else:
+                    _tec = "verificação (pós) falhou: " + ", ".join(_fails)
+                    _pay = {{"task_name": task_name,
+                            "error": _msg_negocio(task_name, "saida", _tec),
+                            "detalhe_tecnico": _tec, "verif_falha": _fails}}
+                await _send(ws, "error", _pay)
                 return
             await _send(ws, "task_completed", {{"task_name": task_name, "result": det_result}})
         except Exception as _exc:
@@ -7181,6 +7234,75 @@ def _align_insert_params(adapters_py: str) -> str:
     return pat.sub(_fix_call, adapters_py)
 
 
+
+def _extract_uc_messages(spec_md: str) -> Dict[str, List[str]]:
+    """Lê da ESPECIFICAÇÃO as mensagens que cada caso de uso manda o sistema exibir.
+
+    Os fluxos alternativos dizem, com todas as letras, o que o usuário deve ver quando algo
+    falha ("o sistema exibe a mensagem 'Credenciais inválidas'"). Sem isso o app devolvia o
+    jargão interno da verificação ("verificação (pós) falhou: output_has:usuario_id") direto
+    na tela. Aqui essas frases são extraídas por UC (determinístico, sem LLM) para virarem a
+    mensagem de erro do sistema e o vocabulário da tela.
+    Retorna {"UC-001": ["Credenciais inválidas", "Código incorreto"], ...}.
+    """
+    import re as _re
+    out: Dict[str, List[str]] = {}
+    if not spec_md:
+        return out
+    # blocos por UC (aceita '#### UC-001' e '**UC-001**')
+    marks = [(m.start(), m.group(1)) for m in _re.finditer(r'(?im)^[#*\s]*\b(UC-\d{2,3})\b', spec_md)]
+    for i, (pos, uc) in enumerate(marks):
+        fim = marks[i + 1][0] if i + 1 < len(marks) else len(spec_md)
+        bloco = spec_md[pos:fim]
+        msgs: List[str] = []
+        # 1) frases entre aspas simples/duplas/curvas logo após "mensagem"/"exibe"/"alerta"
+        for m in _re.finditer(r'(?i)(?:mensagem|exibe|alerta|informa)[^\n\.\:]{0,40}?[\'"“‘]([^\'"”’\n]{3,80})[\'"”’]', bloco):
+            msgs.append(m.group(1).strip())
+        # 2) qualquer texto entre aspas curvas/duplas que pareça mensagem ao usuário
+        for m in _re.finditer(r'[“"]([A-ZÀ-Ú][^"”\n]{4,80})[”"]', bloco):
+            t = m.group(1).strip()
+            if not t.lower().startswith(("select", "insert", "update")):
+                msgs.append(t)
+        vistos, lim = set(), []
+        for t in msgs:
+            k = t.lower()
+            if k in vistos or len(t) > 80:
+                continue
+            vistos.add(k); lim.append(t)
+        if lim:
+            out[uc] = lim[:8]
+    return out
+
+
+def _derive_task_fail_messages(tasks_yaml: str, spec_md: str) -> Dict[str, List[str]]:
+    """Liga as mensagens do caso de uso às tasks daquele UC — assim, quando a verificação de
+    uma task reprova, o sistema responde no vocabulário do negócio em vez do jargão interno."""
+    import re as _re
+    uc_msgs = _extract_uc_messages(spec_md)
+    if not uc_msgs:
+        return {}
+    try:
+        import yaml as _yaml
+        tasks = _yaml.safe_load(tasks_yaml) or {}
+    except Exception:
+        return {}
+    res: Dict[str, List[str]] = {}
+    for tname, cfg in (tasks.items() if isinstance(tasks, dict) else []):
+        if not isinstance(cfg, dict):
+            continue
+        ucs = cfg.get("uc") or cfg.get("ucs") or cfg.get("use_cases") or []
+        if isinstance(ucs, str):
+            ucs = [ucs]
+        blob = " ".join(str(x) for x in [cfg.get("description", ""), cfg.get("traceability", ""), ucs])
+        achados = set(_re.findall(r'UC-\d{2,3}', blob))
+        msgs: List[str] = []
+        for uc in sorted(achados):
+            msgs.extend(uc_msgs.get(uc, []))
+        if msgs:
+            res[tname] = msgs[:8]
+    return res
+
+
 def _derive_mcp_aliases(assignments: list, tasks_yaml: str, adapters_py: str):
     """Coerência da CAMADA DE EXECUÇÃO — passo 5: coerência CROSS-contrato MCP↔modelo de dados.
 
@@ -8366,6 +8488,15 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     tasks_yaml = _inject_insufficient_data_rule(tasks_yaml)
     if _mcp_py:
         add("ws-server/mcp_tools.py", _mcp_py)
+    # MENSAGENS DO CASO DE USO por task: o servidor responde "Credenciais inválidas" em vez de
+    # "verificação (pós) falhou: output_has:usuario_id".
+    _fail_msgs = _derive_task_fail_messages(tasks_yaml, state.get("specification_document", "") or "")
+    if _fail_msgs:
+        import json as _json_msgs
+        add("ws-server/uc_messages.py",
+            '"""Mensagens que a Especificação manda o sistema exibir, por task (auto-gerado)."""\n'
+            "TASK_UC_MESSAGES = " + _json_msgs.dumps(_fail_msgs, ensure_ascii=False, indent=4) + "\n")
+        print(f"[CODE-GEN][MENSAGENS] vocabulário do caso de uso ligado a {len(_fail_msgs)} tasks")
     # Coerência da CAMADA DE EXECUÇÃO (passos 2/3): alinha a CHAVE lida do input_data com a
     # COLUNA que ela preenche em cada UPDATE/INSERT determinístico (NÃO-destrutivo: fallback ao
     # nome original). Corrige o mismatch nome-do-placeholder × coluna (ex.: is_icsac×classificacao_
@@ -8428,8 +8559,13 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         _schema_for_ui = locals().get("_schema_sql_cg") or state.get("data_model_schema_sql") or ""
         # módulos das tasks (pra agrupar o menu lateral)
         _modules = _parse_task_modules(spec_md)
+        _uc_msgs = _extract_uc_messages(state.get("specification_document", "") or "")
+        if _uc_msgs:
+            print(f"[CODE-GEN][DESFECHO] vocabulário do caso de uso em {len(_uc_msgs)} UCs "
+                  f"(ex.: {list(_uc_msgs.values())[0][:3]})")
         screen_files = _generate_business_screens(ui_spec, ws_port, project_name, tasks_yaml,
-                                                  schema_sql=_schema_for_ui, task_modules=_modules)
+                                                  schema_sql=_schema_for_ui, task_modules=_modules,
+                                                  uc_messages=_uc_msgs)
         # Remove o App.jsx do template (vamos sobrescrever)
         files = [f for f in files if f["path"] != "frontend/src/App.jsx"]
         files.extend(screen_files)
@@ -8616,8 +8752,121 @@ def _classify_screen(screen: dict, entity_exists: bool) -> str:
     return "form"
 
 
+
+def _inject_outcome_rendering(src: str, comp_name: str, msgs: List[str]) -> str:
+    """Faz a tela EXIBIR o desfecho no vocabulário do caso de uso.
+
+    O gerador entregava o resultado como JSON cru e o erro como texto técnico. A especificação
+    diz o que o usuário tem de ver: selo 'ICSAC Confirmado'/'Não ICSAC'/'Classificação Pendente',
+    'Credenciais inválidas', 'Código incorreto', barra do escore de risco, 'Exportar CSV'.
+    Aqui esse vocabulário entra na tela e passa a comandar a renderização: valor que casa com um
+    rótulo especificado vira SELO colorido; número de 0 a 1 (ou 0 a 100) em campo de escore/risco
+    vira BARRA DE PROGRESSO; lista de registros ganha exportação CSV; o erro do servidor é
+    traduzido para a mensagem especificada quando ela existe. O JSON continua acessível.
+    """
+    import json as _json
+    if not msgs or "JSON.stringify(result" not in src:
+        return src
+    vocab = _json.dumps(msgs, ensure_ascii=False)
+    bloco = (
+        "\n// Vocabulário de desfecho ESPECIFICADO no caso de uso (Especificação → fluxos).\n"
+        "// A tela usa estes rótulos para o selo de estado e para traduzir o erro do servidor.\n"
+        "const MENSAGENS_UC = " + vocab + ";\n"
+        "const _ESCORE = /(escore|score|risco|risk|probabilidade|percent|reducao|redu\\u00e7\\u00e3o)/i;\n"
+        "function corDoEstado(v) {\n"
+        "  const t = String(v);\n"
+        "  if (/confirmad|sucesso|aprovad|conforme/i.test(t)) return { bg: \"#dcfce7\", fg: \"#166534\", bd: \"#86efac\" };\n"
+        "  if (/pendente|aguard|revis/i.test(t)) return { bg: \"#fef3c7\", fg: \"#92400e\", bd: \"#fcd34d\" };\n"
+        "  if (/n\\u00e3o|nao |inv\\u00e1lid|incorret|erro|falha|negad/i.test(t)) return { bg: \"#f1f5f9\", fg: \"#475569\", bd: \"#cbd5e1\" };\n"
+        "  return { bg: \"#e0e7ff\", fg: \"#3730a3\", bd: \"#c7d2fe\" };\n"
+        "}\n"
+        "export function mensagemDeErro(e) {\n"
+        "  const t = String((e && e.message) || e || \"\");\n"
+        "  const esp = MENSAGENS_UC.find((m) => t.toLowerCase().includes(String(m).toLowerCase()));\n"
+        "  return esp || t;\n"
+        "}\n"
+        "function baixarCsv(linhas, nome) {\n"
+        "  if (!Array.isArray(linhas) || !linhas.length) return;\n"
+        "  const cols = Object.keys(linhas[0]);\n"
+        "  const esc = (v) => '\"' + String(v == null ? \"\" : v).replace(/\"/g, '\"\"') + '\"';\n"
+        "  const csv = [cols.join(\",\")].concat(linhas.map((r) => cols.map((c) => esc(r[c])).join(\",\"))).join(\"\\n\");\n"
+        "  const a = document.createElement(\"a\");\n"
+        "  a.href = URL.createObjectURL(new Blob([\"\\ufeff\" + csv], { type: \"text/csv;charset=utf-8\" }));\n"
+        "  a.download = (nome || \"dados\") + \".csv\"; a.click(); URL.revokeObjectURL(a.href);\n"
+        "}\n"
+        "function Desfecho({ result }) {\n"
+        "  if (!result || typeof result !== \"object\") return null;\n"
+        "  const meta = new Set([\"status\", \"timestamp\", \"raw\", \"from_transition\", \"received_at\", \"tokens_received\"]);\n"
+        "  const campos = Object.entries(result).filter(([k, v]) => !meta.has(k) && v !== null && typeof v !== \"object\");\n"
+        "  const listas = Object.entries(result).filter(([, v]) => Array.isArray(v) && v.length && typeof v[0] === \"object\");\n"
+        "  return (\n"
+        "    <div style={{ marginTop: 16 }}>\n"
+        "      {result.dados_insuficientes && (\n"
+        "        <div style={{ background: \"#fef3c7\", border: \"1px solid #fcd34d\", color: \"#92400e\", padding: \"10px 14px\", borderRadius: 8, marginBottom: 12 }}>\n"
+        "          Dados insuficientes para concluir. {result.motivo || \"\"}\n"
+        "        </div>)}\n"
+        "      {campos.map(([k, v]) => {\n"
+        "        const rotulo = MENSAGENS_UC.find((m) => String(m).toLowerCase() === String(v).toLowerCase());\n"
+        "        const num = typeof v === \"number\" ? v : (String(v).match(/^\\d*\\.?\\d+$/) ? parseFloat(v) : NaN);\n"
+        "        const barra = _ESCORE.test(k) && !isNaN(num) && num >= 0 && num <= 100;\n"
+        "        const pct = barra ? (num <= 1 ? num * 100 : num) : 0;\n"
+        "        const c = rotulo ? corDoEstado(v) : null;\n"
+        "        return (\n"
+        "          <div key={k} style={{ display: \"flex\", alignItems: \"center\", gap: 12, padding: \"7px 0\", borderBottom: \"1px solid #f1f5f9\" }}>\n"
+        "            <span style={{ minWidth: 210, fontSize: 13, color: \"#64748b\" }}>{k.replace(/_/g, \" \")}</span>\n"
+        "            {rotulo ? (\n"
+        "              <span style={{ background: c.bg, color: c.fg, border: \"1px solid \" + c.bd, padding: \"3px 10px\", borderRadius: 999, fontSize: 13, fontWeight: 600 }}>{rotulo}</span>\n"
+        "            ) : barra ? (\n"
+        "              <span style={{ display: \"flex\", alignItems: \"center\", gap: 10, flex: 1 }}>\n"
+        "                <span role=\"progressbar\" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}\n"
+        "                      style={{ flex: 1, height: 10, background: \"#e2e8f0\", borderRadius: 999, overflow: \"hidden\" }}>\n"
+        "                  <span style={{ display: \"block\", width: pct + \"%\", height: \"100%\", background: pct >= 66 ? \"#dc2626\" : pct >= 33 ? \"#f59e0b\" : \"#16a34a\" }} />\n"
+        "                </span>\n"
+        "                <b style={{ fontSize: 13, color: \"#0f172a\" }}>{pct.toFixed(0)}%</b>\n"
+        "              </span>\n"
+        "            ) : (\n"
+        "              <b style={{ fontSize: 13, color: \"#0f172a\" }}>{String(v)}</b>\n"
+        "            )}\n"
+        "          </div>);\n"
+        "      })}\n"
+        "      {listas.map(([k, v]) => (\n"
+        "        <div key={k} style={{ marginTop: 12 }}>\n"
+        "          <div style={{ display: \"flex\", alignItems: \"center\", gap: 10, marginBottom: 6 }}>\n"
+        "            <b style={{ fontSize: 13 }}>{k.replace(/_/g, \" \")} ({v.length})</b>\n"
+        "            <button onClick={() => baixarCsv(v, k)} style={{ fontSize: 12, padding: \"4px 10px\", borderRadius: 6, border: \"1px solid #cbd5e1\", background: \"#fff\", cursor: \"pointer\" }}>Exportar CSV</button>\n"
+        "          </div>\n"
+        "          <div style={{ overflowX: \"auto\" }}><table style={{ width: \"100%\", fontSize: 12, borderCollapse: \"collapse\" }}>\n"
+        "            <thead><tr>{Object.keys(v[0]).map((c) => <th key={c} style={{ textAlign: \"left\", padding: 6, borderBottom: \"1px solid #e2e8f0\", color: \"#64748b\" }}>{c}</th>)}</tr></thead>\n"
+        "            <tbody>{v.slice(0, 100).map((r, i) => (<tr key={i}>{Object.keys(v[0]).map((c) => <td key={c} style={{ padding: 6, borderBottom: \"1px solid #f1f5f9\" }}>{String(r[c] == null ? \"\" : r[c])}</td>)}</tr>))}</tbody>\n"
+        "          </table></div>\n"
+        "        </div>))}\n"
+        "      {Array.isArray(result.logs) && result.logs.length === 0 && (\n"
+        "        <div style={{ color: \"#64748b\", padding: \"10px 0\" }}>Nenhum registro encontrado para os filtros aplicados.</div>)}\n"
+        "      <details style={{ marginTop: 12 }}><summary style={{ cursor: \"pointer\", fontSize: 12, color: \"#64748b\" }}>ver resposta completa</summary>\n"
+        "        <pre style={{ background: \"#f6f8fa\", padding: 12, borderRadius: 8, fontSize: 11, overflow: \"auto\" }}>{JSON.stringify(result, null, 2)}</pre>\n"
+        "      </details>\n"
+        "    </div>);\n"
+        "}\n"
+    )
+    # 1) vocabulário + renderizador entram depois dos imports
+    import re as _re
+    _last = 0
+    for _m in _re.finditer(r'(?m)^import .*?;\s*$', src):
+        _last = _m.end()
+    src = src[:_last] + "\n" + bloco + src[_last:]
+    # 2) o JSON cru do resultado dá lugar ao desfecho (o JSON segue dentro do <details>)
+    src = _re.sub(r'<pre[^>]*>\s*\{JSON\.stringify\(result, null, 2\)\}\s*</pre>',
+                  '<Desfecho result={result} />', src)
+    src = _re.sub(r'\{JSON\.stringify\(result, null, 2\)\}(?!\s*</pre>)',
+                  '<Desfecho result={result} />', src, count=0)
+    # 3) o erro do servidor sai no vocabulário do caso de uso
+    src = src.replace("{err}", "{mensagemDeErro(err)}")
+    return src
+
+
 def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, tasks_yaml: str = "",
-                               schema_sql: str = "", task_modules: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
+                               schema_sql: str = "", task_modules: Optional[Dict[str, str]] = None,
+                               uc_messages: Optional[Dict[str, List[str]]] = None) -> List[Dict[str, str]]:
     """Emite os arquivos React das telas de negócio + wsClient + App shell.
 
     Cada tela é classificada e gera um componente rico conforme o tipo:
@@ -8715,6 +8964,13 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
             src = _agent_screen(s, comp_name, task_fields, model)
         else:
             src = _react_component_for_screen(s, comp_name, task_fields)
+        # Vocabulário de desfecho do caso de uso desta tela (selos, barra, exportação,
+        # mensagem de erro no idioma do negócio em vez do jargão de verificação).
+        _msgs: List[str] = []
+        for _uc in (s.get("uc") or []):
+            _msgs.extend((uc_messages or {}).get(_uc, []))
+        if _msgs:
+            src = _inject_outcome_rendering(src, comp_name, _msgs)
         add(f"frontend/src/screens/{comp_name}.jsx", src)
         comp_meta.append((s.get("id"), s.get("name", comp_name), comp_name, s.get("route", "/"), kind, module))
 
