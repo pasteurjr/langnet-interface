@@ -8933,12 +8933,11 @@ def _inject_outcome_rendering(src: str, comp_name: str, msgs: List[str]) -> str:
         "    </div>);\n"
         "}\n"
     )
-    # 1) vocabulário + renderizador entram depois dos imports
+    # ORDEM IMPORTA: as substituições acontecem no código ORIGINAL da tela. Se o bloco fosse
+    # inserido antes, a regra abaixo trocaria o JSON de dentro do PRÓPRIO renderizador por uma
+    # chamada a ele mesmo — recursão infinita que derrubava a aba do navegador ao exibir
+    # qualquer resultado.
     import re as _re
-    _last = 0
-    for _m in _re.finditer(r'(?m)^import .*?;\s*$', src):
-        _last = _m.end()
-    src = src[:_last] + "\n" + bloco + src[_last:]
     # 2) o JSON cru do resultado dá lugar ao desfecho (o JSON segue dentro do <details>)
     src = _re.sub(r'<pre[^>]*>\s*\{JSON\.stringify\(result, null, 2\)\}\s*</pre>',
                   '<Desfecho result={result} />', src)
@@ -8952,6 +8951,11 @@ def _inject_outcome_rendering(src: str, comp_name: str, msgs: List[str]) -> str:
         "    if (r && typeof r === \"object\" && !Array.isArray(r)) return <Desfecho result={r} />;", 1)
     # 3) o erro do servidor sai no vocabulário do caso de uso
     src = src.replace("{err}", "{mensagemDeErro(err)}")
+    # 4) só agora o vocabulário + o renderizador entram, depois dos imports
+    _last = 0
+    for _m in _re.finditer(r'(?m)^import .*?;\s*$', src):
+        _last = _m.end()
+    src = src[:_last] + "\n" + bloco + src[_last:]
     return src
 
 
