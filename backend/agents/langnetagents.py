@@ -7280,6 +7280,60 @@ def _derive_mcp_aliases(assignments: list, tasks_yaml: str, adapters_py: str):
     return arg_aliases, out_aliases, target_keys
 
 
+def _inject_insufficient_data_rule(tasks_yaml: str) -> str:
+    """Regra ANTI-INVENÇÃO nas tarefas de agente.
+
+    Medido nos casos de teste: sem os dados clínicos, o sistema RECOMENDOU bundle e ESTIMOU
+    redução de risco assim mesmo — o agente preencheu o que faltava. Em domínio clínico isso é
+    pior do que recusar. Os casos de uso preveem "Nenhuma recomendação específica disponível" e
+    "Estimativa não disponível para este perfil".
+
+    A pré-condição mecânica não alcança essas tarefas (o que elas precisam para RACIOCINAR não
+    está declarado como entrada). Então a regra entra no contrato da própria tarefa: se os dados
+    forem insuficientes, responder `dados_insuficientes: true` com o motivo, em vez de inventar.
+    """
+    if not tasks_yaml:
+        return tasks_yaml
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml) or {}
+    except Exception:
+        return tasks_yaml
+    if not isinstance(parsed, dict):
+        return tasks_yaml
+    MARCA = "REGRA DE DADOS INSUFICIENTES"
+    regra = (
+        "\n\n" + MARCA + " (obrigatória): antes de responder, confira se os dados recebidos bastam "
+        "para a conclusão pedida. Se NÃO bastarem — campo clínico essencial ausente, vazio ou "
+        "inconsistente — NÃO invente, NÃO preencha por suposição e NÃO devolva um resultado "
+        "genérico. Responda um JSON com `dados_insuficientes: true`, `motivo` (o que faltou, em "
+        "uma frase) e `campos_faltantes` (lista). Só produza o resultado normal quando os dados "
+        "sustentarem a conclusão."
+    )
+    changed = False
+    for tname, cfg in parsed.items():
+        if not isinstance(cfg, dict) or cfg.get("execution") != "agent":
+            continue
+        desc = str(cfg.get("description") or "")
+        if MARCA in desc:
+            continue
+        cfg["description"] = desc.rstrip() + regra
+        osch = cfg.get("output_schema")
+        if isinstance(osch, dict):
+            props = osch.setdefault("properties", {})
+            props.setdefault("dados_insuficientes", {"type": "boolean"})
+            props.setdefault("motivo", {"type": "string"})
+        changed = True
+        print(f"[CODE-GEN][ANTI-INVENÇÃO] regra de dados insuficientes aplicada em {tname}")
+    if not changed:
+        return tasks_yaml
+    try:
+        import yaml as _yaml
+        return _yaml.safe_dump(parsed, allow_unicode=True, sort_keys=False)
+    except Exception:
+        return tasks_yaml
+
+
 def _derive_require_inputs(tasks_yaml: str, adapters_py: str, mcp_assign: list,
                            mcp_target_keys: dict, mcp_tool_args: dict, schema_sql: str) -> str:
     """PRÉ-CONDIÇÃO por task: quais campos o chamador é OBRIGADO a fornecer.
@@ -8279,6 +8333,8 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     _mcp_args_map = {_a["tool_name"]: list(_a.get("input_args") or []) for _a in (_mcp_assign or [])}
     tasks_yaml = _derive_require_inputs(tasks_yaml, adapters_py, _mcp_assign, _mcp_tgt,
                                         _mcp_args_map, _schema_sql_cg)
+    # ANTI-INVENÇÃO: tarefa de agente deve declarar dados insuficientes em vez de supor.
+    tasks_yaml = _inject_insufficient_data_rule(tasks_yaml)
     if _mcp_py:
         add("ws-server/mcp_tools.py", _mcp_py)
     # Coerência da CAMADA DE EXECUÇÃO (passos 2/3): alinha a CHAVE lida do input_data com a
