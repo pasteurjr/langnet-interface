@@ -8836,7 +8836,8 @@ def _classify_screen(screen: dict, entity_exists: bool) -> str:
 
 
 
-def _inject_outcome_rendering(src: str, comp_name: str, msgs: List[str]) -> str:
+def _inject_outcome_rendering(src: str, comp_name: str, msgs: List[str],
+                              campos_na_tela: Optional[List[str]] = None) -> str:
     """Faz a tela EXIBIR o desfecho no vocabulário do caso de uso.
 
     O gerador entregava o resultado como JSON cru e o erro como texto técnico. A especificação
@@ -8853,10 +8854,15 @@ def _inject_outcome_rendering(src: str, comp_name: str, msgs: List[str]) -> str:
     if not msgs or not (_anc_json or _anc_render):
         return src
     vocab = _json.dumps(msgs, ensure_ascii=False)
+    # Campos que a tela JÁ mostra nos seus próprios componentes (valores de leitura, cartões de
+    # indicador, tabelas): o desfecho não os repete embaixo — senão a mesma justificativa clínica
+    # aparecia duas vezes na mesma tela.
+    ja_na_tela = _json.dumps(sorted(set(campos_na_tela or [])), ensure_ascii=False)
     bloco = (
         "\n// Vocabulário de desfecho ESPECIFICADO no caso de uso (Especificação → fluxos).\n"
         "// A tela usa estes rótulos para o selo de estado e para traduzir o erro do servidor.\n"
         "const MENSAGENS_UC = " + vocab + ";\n"
+        "const CAMPOS_NA_TELA = new Set(" + ja_na_tela + ");\n"
         "const _ESCORE = /(escore|score|risco|risk|probabilidade|percent|reducao|redu\\u00e7\\u00e3o)/i;\n"
         "function corDoEstado(v) {\n"
         "  const t = String(v);\n"
@@ -8882,7 +8888,7 @@ def _inject_outcome_rendering(src: str, comp_name: str, msgs: List[str]) -> str:
         "function Desfecho({ result }) {\n"
         "  if (!result || typeof result !== \"object\") return null;\n"
         "  const meta = new Set([\"status\", \"timestamp\", \"raw\", \"from_transition\", \"received_at\", \"tokens_received\"]);\n"
-        "  const campos = Object.entries(result).filter(([k, v]) => !meta.has(k) && v !== null && typeof v !== \"object\");\n"
+        "  const campos = Object.entries(result).filter(([k, v]) => !meta.has(k) && !CAMPOS_NA_TELA.has(k) && v !== null && typeof v !== \"object\");\n"
         "  const listas = Object.entries(result).filter(([, v]) => Array.isArray(v) && v.length && typeof v[0] === \"object\");\n"
         "  return (\n"
         "    <div style={{ marginTop: 16 }}>\n"
@@ -9064,8 +9070,9 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
         _msgs: List[str] = []
         for _uc in (s.get("uc") or []):
             _msgs.extend((uc_messages or {}).get(_uc, []))
+        _campos_tela = [c.get("field") for c in (s.get("components") or []) if c.get("field")]
         if _msgs:
-            src = _inject_outcome_rendering(src, comp_name, _msgs)
+            src = _inject_outcome_rendering(src, comp_name, _msgs, _campos_tela)
         add(f"frontend/src/screens/{comp_name}.jsx", src)
         comp_meta.append((s.get("id"), s.get("name", comp_name), comp_name, s.get("route", "/"), kind, module))
 
