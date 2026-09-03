@@ -9764,14 +9764,38 @@ __GEOMSUBMIT__      if (!tarefa) { setErr("Ação não vinculada a uma tarefa do
   // valor de leitura / indicador (dado), série de gráfico (serie), linhas de tabela (linhas)
   // e itens de lista (itens). Cada um busca primeiro na resposta do agente e, se não achar,
   // no contexto do atendimento corrente — que é o que a tela já sabe sobre o caso aberto.
-  const dado = (k) => {
+  // metadado da resposta (status/timestamp/erro) NUNCA é dado clínico: sem isso a tela
+  // mostrava "Status do Caso: sucesso", que é o status da chamada, não do caso.
+  const _METARESP = new Set(["status","timestamp","error","raw","from_transition","received_at","tokens_received","persistido_em"]);
+  const _norm = (x) => String(x).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_");
+  const _achaChave = (k) => {
     const r = result || {};
-    let v = r[k];
-    if (v == null && r.kpis && typeof r.kpis === "object") v = r.kpis[k];
-    if (v == null) v = form[k];
+    if (r[k] != null && !_METARESP.has(k)) return r[k];
+    if (r.kpis && typeof r.kpis === "object" && r.kpis[k] != null) return r.kpis[k];
+    // o nome declarado na especificação e o devolvido pelo agente podem diferir
+    // (casos_icsac_30d x casos_icsac): casa por partes do nome, nunca por posição.
+    const alvo = _norm(k).split("_").filter((t) => t.length > 2);
+    let melhor = null, pontos = 0;
+    for (const [ck, cv] of Object.entries(r)) {
+      if (_METARESP.has(ck) || cv == null || typeof cv === "object") continue;
+      const toks = _norm(ck).split("_").filter((t) => t.length > 2);
+      const pp = alvo.filter((t) => toks.includes(t)).length;
+      if (pp > pontos) { pontos = pp; melhor = cv; }
+    }
+    if (pontos > 0) return melhor;
+    return (form[k] != null && form[k] !== "") ? form[k] : null;
+  };
+  const dado = (k) => {
+    const v = _achaChave(k);
     if (v == null || typeof v === "object") return "\u2014";
     if (typeof v === "boolean") return v ? "Sim" : "N\u00e3o";
     return String(v);
+  };
+  const marcado = (k) => {
+    const v = _achaChave(k);
+    if (typeof v === "boolean") return v;
+    if (v == null) return !!form[k];
+    return /^(1|true|sim|s|positiv|present)/i.test(String(v));
   };
   const _arrays = (k) => {
     const r = result || {};
