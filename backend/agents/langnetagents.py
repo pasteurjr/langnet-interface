@@ -6134,7 +6134,14 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
             for _c in _sl_cols:
                 _n = _re.sub(r'(?is).*\bas\s+', '', _c).replace('`', '').replace('"', '').strip()
                 _sl_names.add(_n.split(".")[-1].lower())
-            _is_rowset = (len(_sl_cols) > 1 and capture_var.lower() not in _sl_names
+            # Só é conjunto quando o NOME guardado é de coleção (plural ou palavra de lista).
+            # 'SELECT id, senha_hash, papel FROM usuarios ... Guarde em usuario_id' é ESCALAR —
+            # capturá-lo como lista mandava uma lista como parâmetro do INSERT seguinte.
+            _cv = capture_var.lower()
+            _coletivo = ((_cv.endswith("s") and _cv not in {"status", "cpf_s"})
+                         or _cv in {"dados", "linhas", "registros", "itens", "lista", "historico"})
+            _is_rowset = (len(_sl_cols) > 1 and _cv not in _sl_names and _coletivo
+                          and not _cv.endswith("_id") and _cv != "id"
                           and not _re.search(r'(?i)\b(count|sum|avg|min|max)\s*\(', _sel_scope))
             if _is_rowset and capture_var not in dot_accessed and capture_var not in loop_lists:
                 lines.append(f"{indent}{capture_var} = _rows  # conjunto de linhas ([] quando vazio)")
