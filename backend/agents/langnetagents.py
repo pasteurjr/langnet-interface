@@ -9546,7 +9546,7 @@ def _componentes_jsx(comps, action_label):
         elif t == "checkbox":
             partes.append(
                 '<label style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:14,color:"#334155"}}>'
-                + '<input type="checkbox" checked={!!form["' + campo + '"]} '
+                + '<input type="checkbox" checked={marcado("' + campo + '")} '
                 + 'onChange={(e)=>setForm({...form,["' + campo + '"]:e.target.checked})} />'
                 + _lbl(c) + '</label>')
         elif t in ("readonly", "label", "static"):
