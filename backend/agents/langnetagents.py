@@ -7322,6 +7322,19 @@ def _derive_require_inputs(tasks_yaml: str, adapters_py: str, mcp_assign: list,
     for a in (mcp_assign or []):
         por_agente.setdefault(a["agent_id"], []).extend(list((mcp_tool_args or {}).get(a["tool_name"], [])))
         fornecidos.setdefault(a["agent_id"], set()).update((mcp_target_keys or {}).get(a["tool_name"], []))
+    # Campo PRODUZIDO (por esta task ou por outra da cadeia) nunca é campo EXIGIDO do chamador —
+    # senão a task passaria a exigir justamente o que ela mesma determina (bundle_nome,
+    # classificacao_nhsn) e nunca poderia rodar.
+    produz: Dict[str, set] = {}
+    for tn, cf in parsed.items():
+        if not isinstance(cf, dict):
+            continue
+        osch = cf.get("output_schema") or {}
+        campos = set(osch.get("properties") or {}) | set(osch.get("required") or [])
+        campos |= set(((cf.get("verification") or {}).get("output_has") or []))
+        campos |= set(cf.get("produces") or [])   # o que o portão apurou que a task determina
+        produz[tn] = {c for c in campos if c}
+    todos_produzidos = set().union(*produz.values()) if produz else set()
     changed = False
     for tname, cfg in parsed.items():
         if not isinstance(cfg, dict):
@@ -7335,7 +7348,7 @@ def _derive_require_inputs(tasks_yaml: str, adapters_py: str, mcp_assign: list,
         prov = fornecidos.get(agente, set())
         req += [c for c in sorted(escritas)
                 if c in notnull and c not in prov and not (c == "id" or c.endswith("_id"))]
-        req = list(dict.fromkeys(req))
+        req = [c for c in dict.fromkeys(req) if c not in todos_produzidos]
         if not req:
             continue
         verif["require_inputs"] = req
@@ -7461,6 +7474,9 @@ def _gate_execution_computed_values(tasks_yaml: str, adapters_py: str, mcp_assig
         print(f"[CODE-GEN][PORTÃO execution] {tname}: copia da entrada {residual} → deve determinar {computed}")
         if computed:
             cfg["execution"] = "agent"
+            # registra de forma estruturada o que a task DETERMINA — a derivação de
+            # pré-condições usa isso para nunca exigir do chamador o que a task produz.
+            cfg["produces"] = sorted(set(map(str, computed)))
             cfg["execution_reason"] = ("portão: o código fixo só COPIA da entrada " + ", ".join(map(str, computed))
                                        + ", mas pela descrição esta task deve DETERMINÁ-lo(s) (regra/classificação/"
                                        "recomendação/estimativa) → roteado p/ agent (o agente produz, a camada "
