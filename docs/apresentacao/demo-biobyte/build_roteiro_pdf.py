@@ -5,20 +5,41 @@ Cada cena vira uma seção: NARRAÇÃO (destacada, é a fala do locutor), PRODU�
 mostrar), TELA(s) (imagens embutidas quando o arquivo existe em shots/) e NOTA.
 Uso: python3 build_roteiro_pdf.py  →  ROTEIRO-VIDEO-biobyte.pdf
 """
-import re, base64, html
+import re, base64, html, io, os, sys
 from pathlib import Path
 
 BASE = Path(__file__).parent
 SHOTS = BASE / "shots"
 SRC = BASE / "narracao_log.md"
-OUT = BASE / "ROTEIRO-VIDEO-biobyte.pdf"
+# DUAS SAÍDAS, ARQUIVOS DIFERENTES — a versão leve NUNCA substitui a original:
+#   python3 build_roteiro_pdf.py          -> ROTEIRO-VIDEO-biobyte.pdf       (telas em PNG, máxima qualidade)
+#   python3 build_roteiro_pdf.py --leve   -> ROTEIRO-VIDEO-biobyte-leve.pdf  (telas comprimidas, abre fácil)
+LEVE = "--leve" in sys.argv
+OUT = BASE / ("ROTEIRO-VIDEO-biobyte-leve.pdf" if LEVE else "ROTEIRO-VIDEO-biobyte.pdf")
+
+# Só na versão leve: capturas de interface seguem legíveis em JPEG ~1400px de largura.
+MAX_W = int(os.environ.get("ROTEIRO_MAX_W", "1400"))
+JPEG_Q = int(os.environ.get("ROTEIRO_JPEG_Q", "72"))
+
 
 def img_tag(name: str) -> str:
     f = SHOTS / name.strip()
     if not f.exists():
         return f'<div class="missing">[tela não capturada: {html.escape(name)}]</div>'
-    b64 = base64.b64encode(f.read_bytes()).decode()
-    return (f'<figure><img src="data:image/png;base64,{b64}"/>'
+    if not LEVE:   # versão original: PNG sem recompressão
+        return (f'<figure><img src="data:image/png;base64,{base64.b64encode(f.read_bytes()).decode()}"/>'
+                f'<figcaption>{html.escape(f.name)}</figcaption></figure>')
+    try:
+        from PIL import Image
+        im = Image.open(f).convert("RGB")
+        if im.width > MAX_W:
+            im = im.resize((MAX_W, round(im.height * MAX_W / im.width)), Image.LANCZOS)
+        buf = io.BytesIO()
+        im.save(buf, format="JPEG", quality=JPEG_Q, optimize=True, progressive=True)
+        src = "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()
+    except Exception:
+        src = "data:image/png;base64," + base64.b64encode(f.read_bytes()).decode()
+    return (f'<figure><img src="{src}"/>'
             f'<figcaption>{html.escape(f.name)}</figcaption></figure>')
 
 def inline(t: str) -> str:
