@@ -3293,6 +3293,18 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                     _obj, _missing = _c2s(getattr(_r2, "raw", None) or str(_r2), _schema)
                 except Exception:
                     pass
+            # RECUSA HONESTA é resposta válida: quando o agente declara dados insuficientes
+            # (regra anti-invenção), ele NÃO deve produzir os campos do resultado — exigir o
+            # contrato aqui transformaria a recusa correta em erro, que é o oposto do desejado.
+            _recusa = None
+            for _cand in (_obj, parsed, _src):
+                if isinstance(_cand, dict) and _cand.get("dados_insuficientes"):
+                    _recusa = _cand; break
+            if _recusa:
+                _recusa.setdefault("status", "dados_insuficientes")
+                print(f"[task] DADOS INSUFICIENTES {{task_name}}: {{str(_recusa.get('motivo'))[:120]}}", flush=True)
+                await _send(ws, "task_completed", {{"task_name": task_name, "result": _recusa}})
+                return
             if _missing:
                 await _send(ws, "error", {{"task_name": task_name,
                     "error": "saída do agente não cumpre o contrato de saída; faltam: " + ", ".join(_missing),
