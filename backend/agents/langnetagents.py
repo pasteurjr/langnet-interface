@@ -3281,8 +3281,11 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             _src = parsed if callable(output_fn) else raw
             _obj, _missing = _c2s(_src, _schema)
             if _missing:
-                _hint = ("\\n\\nRESPONDA ESTRITAMENTE em JSON contendo TODOS estes campos preenchidos: "
-                         + ", ".join(_schema.get("required", [])) + ". Não escreva nada fora do JSON.")
+                _hint = ("\\n\\nRESPONDA ESTRITAMENTE em JSON. Se os dados BASTAREM, inclua estes campos "
+                         "preenchidos: " + ", ".join(_schema.get("required", [])) + ". Se NÃO bastarem, "
+                         "responda um JSON com dados_insuficientes=true, motivo (texto) e "
+                         "campos_faltantes (lista) "
+                         "— NUNCA invente valores só para cumprir o formato. Nada fora do JSON.")
                 try:
                     _t2 = _build_task(task_name, agent, description + _hint)
                     _c2 = Crew(agents=[agent], tasks=[_t2], process=Process.sequential, verbose=False)
@@ -6069,7 +6072,21 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
                         first = first.split(".")[-1]                     # remove prefixo de tabela
                     if _re.match(r'^\w+$', first):
                         sel_col = first
-            if capture_var in loop_lists:
+            # LISTA DE REGISTROS: o SELECT traz VÁRIAS colunas e o nome guardado não é
+            # nenhuma delas (ex.: "SELECT l.timestamp, u.nome, l.acao ... Guarde em logs").
+            # A intenção é o CONJUNTO de linhas, não uma célula da primeira linha. Capturar
+            # escalar devolvia `logs: null` mesmo com resultado, e não distinguia "vazio".
+            _sl_cols = [c.strip() for c in _split_top_level_commas(_sel_scope)] if _selm else []
+            _sl_names = set()
+            for _c in _sl_cols:
+                _n = _re.sub(r'(?is).*\bas\s+', '', _c).replace('`', '').replace('"', '').strip()
+                _sl_names.add(_n.split(".")[-1].lower())
+            _is_rowset = (len(_sl_cols) > 1 and capture_var.lower() not in _sl_names
+                          and not _re.search(r'(?i)\b(count|sum|avg|min|max)\s*\(', _sel_scope))
+            if _is_rowset and capture_var not in dot_accessed and capture_var not in loop_lists:
+                lines.append(f"{indent}{capture_var} = _rows  # conjunto de linhas ([] quando vazio)")
+                list_captured.add(capture_var)
+            elif capture_var in loop_lists:
                 # A variável é FONTE de um loop adiante ("Para CADA x em capture_var") →
                 # captura a LISTA de linhas (dicts) do SELECT, não um escalar. Assim o loop
                 # itera as linhas reais e faz item['campo'] (antes: capturava _row['id'] e o
