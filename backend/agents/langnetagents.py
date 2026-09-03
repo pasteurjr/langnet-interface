@@ -3180,6 +3180,16 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                         continue
                     if det_result.get(_ck) is None:
                         det_result[_ck] = _cv
+            # Consulta não achou o registro: o adapter parou antes de gravar. A resposta sai na
+            # mensagem do caso de uso ("Credenciais inválidas"), com o detalhe técnico à parte.
+            if isinstance(det_result, dict) and det_result.get("nao_encontrado"):
+                _tec = str(det_result.get("error") or "registro não encontrado")
+                await _send(ws, "error", {{"task_name": task_name,
+                    "error": _msg_negocio(task_name, "saida", _tec),
+                    "detalhe_tecnico": _tec,
+                    "campo_nao_encontrado": det_result.get("nao_encontrado")}})
+                return
+
             # VERIFICAÇÃO (Inserção B): PÓS-condição — a linha criada liga ao contexto CERTO.
             _vf = getattr(adapters_module, "_run_verifications", None)
             _fails = _vf(det_result, input_data, _verif) if (callable(_vf) and _verif) else []
@@ -7116,6 +7126,70 @@ def _extract_sql_input_keys(adapters_py: str) -> Dict[str, List[str]]:
     return out
 
 
+
+def _guard_missing_lookups(adapters_py: str) -> str:
+    """Consulta que não acha o registro tem de PARAR a tarefa, não seguir gravando nulo.
+
+    O adapter determinístico executava os passos em sequência às cegas: no login, o SELECT do
+    usuário não achava ninguém e o passo seguinte registrava LOGIN_SUCCESS com usuario_id nulo
+    (estourava "Column 'usuario_id' cannot be null"). Aqui, todo valor capturado de um SELECT
+    que é USADO adiante como parâmetro de escrita ganha uma parada explícita: registro não
+    encontrado → a tarefa devolve erro de negócio (o servidor traduz para a mensagem do caso
+    de uso, ex.: "Credenciais inválidas") sem persistir nada.
+    """
+    import re as _re
+    linhas = adapters_py.split("\n")
+    saida: List[str] = []
+    # blocos de função: começam em "def <nome>_deterministic("
+    inicio_func = None
+    corpo: List[str] = []
+
+    def _fecha(corpo_f: List[str]) -> List[str]:
+        capturas = []   # (indice, var, indentacao)
+        for i, ln in enumerate(corpo_f):
+            m = _re.match(r"^(\s+)([A-Za-z_]\w*) = input_data\.get\('(\w+)'\) or \(_row\[", ln)
+            if m and m.group(2) == m.group(3):
+                capturas.append((i, m.group(2), m.group(1)))
+        if not capturas:
+            return corpo_f
+        novo = list(corpo_f)
+        for i, var, ind in reversed(capturas):
+            usado = any(("cur.execute(" in l or "_ins" in l or "_vals" in l)
+                        and _re.search(r'\b' + _re.escape(var) + r'\b', l)
+                        for l in corpo_f[i + 1:])
+            if not usado:
+                continue
+            guarda = [
+                f"{ind}if {var} is None:",
+                f"{ind}    # consulta não achou o registro: parar antes de gravar (nunca persistir nulo)",
+                f"{ind}    conn.rollback()",
+                f"{ind}    return {{'status': 'erro', 'nao_encontrado': {var!r},",
+                f"{ind}            'error': 'registro não encontrado para os dados informados'}}",
+            ]
+            novo[i + 1:i + 1] = guarda
+        return novo
+
+    for ln in linhas:
+        if _re.match(r"^def \w+_deterministic\(", ln):
+            if inicio_func is not None:
+                saida.extend(_fecha(corpo))
+            inicio_func = ln
+            saida.append(ln)
+            corpo = []
+        elif inicio_func is not None and _re.match(r"^\S", ln) and ln.strip():
+            saida.extend(_fecha(corpo))
+            corpo = []
+            inicio_func = None
+            saida.append(ln)
+        elif inicio_func is not None:
+            corpo.append(ln)
+        else:
+            saida.append(ln)
+    if inicio_func is not None:
+        saida.extend(_fecha(corpo))
+    return "\n".join(saida)
+
+
 def _align_update_set_params(adapters_py: str) -> str:
     """Coerência da CAMADA DE EXECUÇÃO — passo 2/N.
 
@@ -8510,6 +8584,8 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # nhsn, admin_id×usuario_id) que fazia SET/INSERT gravar NULL e quebrar a cadeia clínica.
     # Roda ANTES do postgresify (ambos usam %s; postgresify só troca dialeto/geo).
     _before_align = adapters_py
+    # Parada explícita quando a consulta não acha o registro (antes do alinhamento de params).
+    adapters_py = _guard_missing_lookups(adapters_py)
     adapters_py = _align_update_set_params(adapters_py)
     adapters_py = _align_insert_params(adapters_py)
     if adapters_py != _before_align:
