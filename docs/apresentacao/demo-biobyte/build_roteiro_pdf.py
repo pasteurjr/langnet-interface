@@ -77,7 +77,11 @@ for block in rest:
                 body.append(f'<p class="{cls}"><span class="lbl">{tag}</span> {inline(txt)}</p>')
         elif ln.strip():
             body.append(f"<p>{inline(ln.strip())}</p>")
+    # As capturas são o material que o narrador olha: vão para página própria, em tamanho
+    # cheio, logo depois do texto da cena — em vez de espremidas no rodapé da página do texto.
     imgs = "".join(img_tag(s) for s in shots)
+    if imgs:
+        imgs = f'<div class="telas-bloco">{imgs}</div>' 
     parts.append(f'<section><h2>{inline(scene)}</h2>{"".join(body)}{imgs}</section>')
 
 CSS = """
@@ -97,7 +101,9 @@ h2 { font-size: 13pt; color:#4338ca; border-bottom:2px solid #e0e7ff; padding-bo
 .telas .lbl { background:#0ea5e9; color:#fff; }
 .nota { background:#fffbeb; border-left:4px solid #f59e0b; padding:7px 10px; margin:6px 0; font-size:9pt; }
 .nota .lbl { background:#f59e0b; color:#fff; }
-figure { margin:10px 0; break-inside: avoid; }
+figure { margin:0 0 6px; break-inside: avoid; }
+.telas-bloco { break-before: page; }
+.telas-bloco figure img { width:100%; }
 img { width:100%; border:1px solid #d4d4d8; border-radius:4px; }
 figcaption { font-size:7.5pt; color:#888; text-align:center; margin-top:2px; }
 pre { background:#0f172a; color:#e2e8f0; padding:8px; border-radius:4px; font-size:8pt; white-space:pre-wrap; }
