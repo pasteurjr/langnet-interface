@@ -2849,6 +2849,60 @@ def _parse_json_lenient(raw):
             return None
 
 
+# Nomes que o agent_task_spec usa para as ferramentas de arquivo × chave real no registry.
+_ARTIFACT_ALIAS = {{
+    "pdf_writer": "pdf_generator_tool", "pdf_generator": "pdf_generator_tool",
+    "pdf_generator_tool": "pdf_generator_tool", "gerar_pdf": "pdf_generator_tool",
+    "csv_writer": "csv_exporter_tool", "csv_exporter": "csv_exporter_tool",
+    "csv_exporter_tool": "csv_exporter_tool", "gerar_csv": "csv_exporter_tool",
+}}
+
+
+def _artifact_poststep(task_name, payload, result):
+    """Tarefa que deve PRODUZIR UM ARQUIVO (relatório PDF/CSV) roda como procedimento fixo — e
+    procedimento fixo não chama ferramenta. Resultado: a consulta rodava e nenhum arquivo era
+    gerado (o requisito de exportação ficava sem cumprir). Aqui, DEPOIS do SQL, chama a
+    ferramenta de arquivo ligada ao agente da tarefa com os dados consultados e devolve o
+    caminho do arquivo em `arquivo_gerado`."""
+    if not isinstance(result, dict) or result.get("status") == "erro":
+        return
+    _tc = TASKS_CONFIG.get(task_name) or {{}}
+    agente = _tc.get("agent") or _tc.get("agent_id")
+    nomes = [_ARTIFACT_ALIAS.get(str(t).lower()) for t in (AGENT_TOOLS.get(agente, []) or [])]
+    nomes = [n for n in nomes if n and n in TOOL_REGISTRY and TOOL_REGISTRY.get(n)]
+    if not nomes:
+        return
+    desc = str(_tc.get("description") or "").lower()
+    fmt = str((payload or {{}}).get("formato") or (payload or {{}}).get("format") or "").lower()
+    quer_csv = ("csv" in fmt) or (not fmt and "csv" in desc and "pdf" not in desc)
+    alvo = "csv_exporter_tool" if (quer_csv and "csv_exporter_tool" in nomes) else nomes[0]
+    # dados: a primeira lista de linhas do resultado (ex.: dados_vigilancia), senão o próprio dict
+    linhas = None
+    for v in result.values():
+        if isinstance(v, list) and v and isinstance(v[0], dict):
+            linhas = v; break
+    if linhas is None:
+        linhas = [{{k: v for k, v in result.items() if not isinstance(v, (dict, list))}}]
+    import os as _os, time as _t
+    base = _os.path.join(_os.getcwd(), "relatorios")
+    try:
+        _os.makedirs(base, exist_ok=True)
+    except Exception:
+        base = _os.getcwd()
+    ext = "csv" if alvo == "csv_exporter_tool" else "pdf"
+    caminho = _os.path.join(base, f"{{task_name}}_{{int(_t.time())}}.{{ext}}")
+    try:
+        tool = TOOL_REGISTRY[alvo]
+        dados = linhas if alvo == "csv_exporter_tool" else {{"titulo": task_name, "linhas": linhas}}
+        saida = tool.run(data=dados, output_path=caminho) if hasattr(tool, "run") else tool._run(data=dados, output_path=caminho)
+        result["arquivo_gerado"] = caminho
+        result["formato_arquivo"] = ext
+        print(f"[task] ARTEFATO {{task_name}} -> {{caminho}} ({{alvo}})", flush=True)
+    except Exception as _e:
+        result["arquivo_erro"] = str(_e)[:180]
+        print(f"[task] ARTEFATO {{task_name}} FALHOU: {{_e}}", flush=True)
+
+
 def _mcp_prefetch(task_name, input_data):
     """Path B — coerência MCP↔Modelo de Dados. Task DETERMINÍSTICA com tool(s) MCP ligada(s)
     ao seu agente: chama a(s) tool(s) (args do input_data, com alias de coerência de entrada) e
@@ -2926,6 +2980,7 @@ def _mcp_prefetch(task_name, input_data):
 
 
 def _resolve_tools(names):
+    names = [_ARTIFACT_ALIAS.get(str(n).lower(), n) for n in (names or [])]
     """Converte lista de nomes em instâncias de tool via TOOL_REGISTRY.
 
     Tool referenciada mas AUSENTE do registry NÃO é descartada em silêncio (isso faria o
@@ -3072,6 +3127,9 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             if _pref:
                 payload = {{**payload, **_pref}}
             det_result = await loop.run_in_executor(None, det_fn, payload)
+            # Tarefa que deve gerar arquivo (relatório): produz o artefato com a ferramenta
+            # ligada ao agente — o caminho determinístico sozinho nunca chamaria a ferramenta.
+            await loop.run_in_executor(None, _artifact_poststep, task_name, payload, det_result)
             # Carry-forward de CONTEXTO: o contexto acumulado do caso (IDs de sessão/caso +
             # valores já produzidos) precisa fluir por TODA a cadeia — cada task devolvia só
             # seu resultado. Ecoa todo escalar da entrada que a task não sobrescreveu.
@@ -7222,6 +7280,77 @@ def _derive_mcp_aliases(assignments: list, tasks_yaml: str, adapters_py: str):
     return arg_aliases, out_aliases, target_keys
 
 
+def _derive_require_inputs(tasks_yaml: str, adapters_py: str, mcp_assign: list,
+                           mcp_target_keys: dict, mcp_tool_args: dict, schema_sql: str) -> str:
+    """PRÉ-CONDIÇÃO por task: quais campos o chamador é OBRIGADO a fornecer.
+
+    O ws-server já checa `verification.require_inputs`, mas o gerador só preenchia isso para
+    tarefas de cadastro com contexto de paciente — as demais ficavam sem pré-condição nenhuma.
+    Consequência medida nos casos de teste: sem os parâmetros clínicos o sistema CALCULOU o
+    escore, RECOMENDOU bundle e ESTIMOU risco assim mesmo, em vez de apontar os campos
+    faltantes. Em domínio clínico, responder sem dado é pior do que recusar.
+
+    Deriva de duas fontes objetivas:
+      1. parâmetros declarados da ferramenta externa (MCP) ligada ao agente da task — sem eles
+         a chamada externa não acontece;
+      2. colunas NOT NULL que o SQL da task grava A PARTIR DA ENTRADA — menos identificadores e
+         menos o que a própria ferramenta externa devolve (esses chegam depois, no prefetch).
+    """
+    if not tasks_yaml or not adapters_py:
+        return tasks_yaml
+    import re as _re
+    try:
+        import yaml as _yaml
+        parsed = _yaml.safe_load(tasks_yaml) or {}
+    except Exception:
+        return tasks_yaml
+    if not isinstance(parsed, dict):
+        return tasks_yaml
+    model = _schema_model(schema_sql) if schema_sql else {}
+    notnull = set()
+    for ent in (model or {}):
+        try:
+            notnull |= set(_notnull_cols(model[ent]["ddl"]))
+        except Exception:
+            pass
+    blocos = {}
+    for m in _re.finditer(r'(?m)^def\s+([A-Za-z_]\w*?)_deterministic\s*\(', adapters_py):
+        nxt = _re.search(r'(?m)^def\s', adapters_py[m.end():])
+        end = m.end() + nxt.start() if nxt else len(adapters_py)
+        blocos[m.group(1)] = adapters_py[m.start():end]
+    por_agente, fornecidos = {}, {}
+    for a in (mcp_assign or []):
+        por_agente.setdefault(a["agent_id"], []).extend(list((mcp_tool_args or {}).get(a["tool_name"], [])))
+        fornecidos.setdefault(a["agent_id"], set()).update((mcp_target_keys or {}).get(a["tool_name"], []))
+    changed = False
+    for tname, cfg in parsed.items():
+        if not isinstance(cfg, dict):
+            continue
+        verif = cfg.get("verification") or {}
+        if verif.get("require_inputs"):
+            continue
+        agente = cfg.get("agent") or cfg.get("agent_id")
+        req = list(dict.fromkeys(por_agente.get(agente, [])))
+        escritas = _written_from_input_cols(blocos.get(tname, ""))
+        prov = fornecidos.get(agente, set())
+        req += [c for c in sorted(escritas)
+                if c in notnull and c not in prov and not (c == "id" or c.endswith("_id"))]
+        req = list(dict.fromkeys(req))
+        if not req:
+            continue
+        verif["require_inputs"] = req
+        cfg["verification"] = verif
+        changed = True
+        print(f"[CODE-GEN][PRÉ-CONDIÇÃO] {tname}: exige {req}")
+    if not changed:
+        return tasks_yaml
+    try:
+        import yaml as _yaml
+        return _yaml.safe_dump(parsed, allow_unicode=True, sort_keys=False)
+    except Exception:
+        return tasks_yaml
+
+
 def _written_from_input_cols(det_block: str) -> set:
     """Colunas que um bloco `<task>_deterministic` GRAVA (UPDATE SET / INSERT) cujo valor vem da
     ENTRADA (param `input_data.get(...)`, com ou sem fallback de coerência). Ignora literais/NOW()."""
@@ -8130,6 +8259,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # fornece (não é id, não vem da tool MCP, nenhuma outra task produz) → precisa de julgamento →
     # reclassifica p/ 'agent' e registra o motivo no YAML. Antes de gravar o tasks.yaml no pacote.
     tasks_yaml = _gate_execution_computed_values(tasks_yaml, adapters_py, _mcp_assign, _mcp_tgt)
+    # PRÉ-CONDIÇÃO: sem os campos obrigatórios a task deve RECUSAR, não responder assim mesmo.
+    _mcp_args_map = {_a["tool_name"]: list(_a.get("input_args") or []) for _a in (_mcp_assign or [])}
+    tasks_yaml = _derive_require_inputs(tasks_yaml, adapters_py, _mcp_assign, _mcp_tgt,
+                                        _mcp_args_map, _schema_sql_cg)
     if _mcp_py:
         add("ws-server/mcp_tools.py", _mcp_py)
     # Coerência da CAMADA DE EXECUÇÃO (passos 2/3): alinha a CHAVE lida do input_data com a
