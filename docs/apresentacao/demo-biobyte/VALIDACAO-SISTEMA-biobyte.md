@@ -141,3 +141,84 @@ existem. Em outras palavras: **o feliz caminho foi implementado; os requisitos d
 os artefatos de saída, não.**
 
 Reexecutar: `python3 e2e/run_test_cases.py <porta_do_servidor_de_agentes>`
+
+---
+
+# 7. Segunda rodada: os defeitos corrigidos NO GERADOR e reconferidos
+
+Cada defeito da seção 5 foi corrigido no **gerador** (nunca no aplicativo) e reconferido do jeito
+mais caro: **regerando o sistema inteiro pela interface do LangNet e implantando de novo**, uma vez
+por correção. Foram **cinco regenerações e cinco implantações** nesta rodada, todas pela interface
+(sessões `332b0907`, `58a867b8`, `d6b52738`, `7b2e9e88`, `388013c4`; implantação final nas portas
+5014 / 8008 / 3010).
+
+## 7.1 Placar antes e depois
+
+| Categoria | Antes | Depois |
+|---|---|---|
+| Comportamento **verificado OK** | 3 | **9** |
+| Comportamento com **defeito confirmado** | 7 | **0** |
+| **Não exercitável** pelo método | 3 | 6 |
+| Elemento de interface **existe** | 18 | **25** |
+| Elemento de interface **faltando** | 7 | **0** |
+| Efeito **não implementado** | 5 | 5 |
+| Caso de uso **sem casos gerados** | 1 | 1 |
+
+O total de casos subiu de 43 para 46 verificações: os 43 casos gerados, mais uma **sonda de recusa**
+aplicada a duas tarefas (o agente inventa ou declara falta de dado?), mais o caso de uso sem casos.
+"Não exercitável" subiu de 3 para 6 porque três casos que antes eram reprovados por um critério
+grosseiro passaram a ser classificados com honestidade: a condição que eles exigem (a base de
+protocolos falhar, o perfil não ter estimativa) não se cria pela entrada.
+
+## 7.2 O que foi corrigido, defeito a defeito
+
+1. **Exportação não gerava arquivo.** A tarefa de exportação estava marcada como procedimento fixo,
+   e procedimento fixo não chamava ferramenta. Agora, quando a tarefa produz um artefato, o sistema
+   aciona a ferramenta de PDF ou CSV depois de gravar. Prova: a resposta traz o caminho do arquivo,
+   em PDF e em CSV. *(TC-UC-012-01, TC-UC-012-02 passam)*
+2. **Consulta de auditoria devolvia vazio.** A consulta selecionava várias colunas e o gerador
+   guardava uma única célula da primeira linha. Agora guarda o conjunto de linhas, que volta como
+   lista vazia quando não há nada — e a tela diz "Nenhum registro encontrado para os filtros
+   aplicados". *(TC-UC-011-02 passa)*
+3. **Sistema respondia sem os dados obrigatórios.** Passou a existir pré-condição derivada do
+   modelo de dados e dos parâmetros da ferramenta externa: sem os fatores clínicos, o cálculo do
+   escore recusa e lista o que falta. *(TC-UC-006-02 passa)*
+4. **O agente inventava quando faltava dado.** Duas mudanças: toda tarefa de agente recebe a regra
+   de dados insuficientes, e o contrato de saída passou a aceitar a recusa como resposta válida.
+   Faltava uma terceira: quando a resposta não cumpria o contrato, o servidor **recobrava os campos
+   obrigatórios**, empurrando o agente a inventar. Agora a recobrança oferece a saída honesta.
+   Prova: com um caso sem dado nenhum, as duas tarefas responderam "dados insuficientes" com o
+   motivo. *(sonda de recusa passa nas duas tarefas)*
+5. **Importação aceitava dado fora do padrão.** O sistema já bloqueava, mas com jargão interno.
+   Agora responde "dados não conformes recebidos do sistema externo — importação bloqueada",
+   dizendo quais campos faltaram. *(TC-UC-003-04 passa)*
+6. **Sete elementos de interface especificados não existiam.** Causa raiz: a especificação diz o
+   que cada desfecho deve exibir — selo "ICSAC Confirmado", "Não ICSAC", "Classificação Pendente",
+   as mensagens "Credenciais inválidas" e "Código incorreto", o botão "Exportar CSV", a barra do
+   escore — e **nada disso chegava ao gerador de código**. Agora a especificação funcional é
+   carregada junto com os demais artefatos, o vocabulário de cada caso de uso é extraído e a tela
+   passa a renderizar o desfecho com ele: valor especificado vira selo colorido, escore vira barra
+   de progresso, lista de registros ganha exportação. *(os 7 casos de interface passam)*
+7. **Jargão interno vazando para o usuário.** O login com senha errada respondia "verificação (pós)
+   falhou: output_has:usuario_id". Duas correções: a consulta que não acha o registro **para a
+   tarefa** em vez de seguir gravando nulo, e o servidor traduz a falha para a mensagem do caso de
+   uso. Na tela, agora, "Credenciais inválidas" — com o detalhe técnico guardado à parte.
+
+## 7.3 O que continua fora (sem maquiagem)
+
+- **5 efeitos não implementados**: e-mail e push do alerta MDR, tratamento de tempo esgotado,
+  processamento assíncrono da exportação, carregamento animado do painel.
+- **6 casos não exercitáveis** por fora: exigem provocar falha interna (erro da regra de
+  classificação, base de protocolos indisponível, perfil sem estimativa, erro no cálculo, reenvio
+  de código após falha).
+- **1 caso de uso sem casos de teste**: gestão de usuários e permissões — a falha é da etapa que
+  gera os casos, não do sistema.
+
+## 7.4 Um defeito que o próprio teste criou (e como foi pego)
+
+A primeira versão da correção da consulta de auditoria era larga demais: qualquer consulta com
+várias colunas virava lista. O login guardava o identificador do usuário a partir de uma consulta
+com quatro colunas e passou a receber uma lista onde esperava um valor — o registro de auditoria
+quebrou com "lista não pode virar tipo do banco". A regra foi estreitada para valer só quando o
+nome guardado é de coleção. Fica o registro: a correção entrou, quebrou outra coisa, a bateria
+pegou, e a bateria foi rodada de novo até fechar em zero falhas.

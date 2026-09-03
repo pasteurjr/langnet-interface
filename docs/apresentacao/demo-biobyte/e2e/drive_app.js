@@ -3,7 +3,7 @@
 const { firefox: chromium } = require('/home/pasteurjr/progreact/langnet-interface/node_modules/playwright');
 const fs = require('fs');
 const MODE = process.argv[2] || 'tour'; let N = parseInt(process.argv[3] || '86', 10);
-const BASE = 'http://localhost:3002';
+const BASE = process.env.APP_URL || 'http://localhost:3010';
 const OUT = '/home/pasteurjr/progreact/langnet-interface/docs/apresentacao/demo-biobyte/shots';
 const RES = '/home/pasteurjr/progreact/langnet-interface/docs/apresentacao/demo-biobyte/e2e/app_drive_results.json';
 const results = fs.existsSync(RES) ? JSON.parse(fs.readFileSync(RES,'utf8')) : {};

@@ -90,6 +90,10 @@ def entrada_do_caso(tc):
     ent = dict(BASE)
     for e in (tc.get("entradas") or []):
         if e.get("verdadeira", True):
+            # causa AFIRMADA que define parâmetro (ex.: "Formato selecionado é CSV")
+            d = (e.get("desc") or "").lower()
+            if "csv" in d: ent["formato"] = "csv"
+            elif "pdf" in d: ent["formato"] = "pdf"
             continue
         d = (e.get("desc") or "").lower()
         if "credenciais" in d: ent["email"] = "inexistente@x.br"; ent["senha"] = "errada"
@@ -98,7 +102,12 @@ def entrada_do_caso(tc):
         elif "dados suficientes" in d or "parâmetros" in d or "obrigat" in d:
             for k in ("idade", "dias_cateter", "uti", "apache_ii", "microrganismo"): ent.pop(k, None)
         elif "mdr" in d or "multirresist" in d: ent["multirresistente"] = False
-        elif "csv" in d: ent["formato"] = "pdf"
+        elif "csv" in d: ent["formato"] = "pdf"   # caso nega CSV ⇒ pede PDF
+        elif "schema" in d or "conform" in d or "nhsn" in d:
+            # causa negada = "JSON recebido válido contra schema NHSN" é FALSA, ou seja, o
+            # laboratório devolveu dado não conforme. Induz-se pedindo um caso que o
+            # laboratório externo não conhece — a resposta volta sem os campos exigidos.
+            ent["caso_id"] = "CAS-NAO-CONFORME"; ent["paciente_id"] = "P-NAO-CONFORME"
         elif "conexão" in d or "api" in d: ent["caso_id"] = "CAS-INEXISTENTE"
     return ent
 
@@ -110,6 +119,35 @@ def classifica(tc):
     for pat, alvo in UI_ALVO:
         if re.search(pat, ef, re.I): return "INTERFACE", alvo
     return "SISTEMA", ef
+
+
+def _arquivo(r, ext):
+    a = str((r or {}).get("arquivo_gerado") or "")
+    return (a.endswith(ext), f"arquivo_gerado={a.rsplit('/',1)[-1] or 'NENHUM'}")
+
+
+# Asserção por caso de teste: recebe (resultado, houve_erro, texto) e devolve (passou, motivo).
+# Só os casos cujo efeito é objetivamente conferível no resultado entram aqui; os demais são
+# reportados como NÃO EXERCITÁVEL — nem aprovados, nem reprovados.
+ASSERTS = {
+    "TC-UC-003-04": lambda r, e, t: (e and ("conform" in t or "bloquead" in t),
+                                     "bloqueou e avisou dados não conformes" if ("conform" in t)
+                                     else ("bloqueou, sem dizer que era dado não conforme" if e
+                                           else "deveria bloquear dado não conforme")),
+    "TC-UC-005-01": lambda r, e, t: (not e and ("alerta_id" in t or "notificado" in t),
+                                     "criou registro de alerta" if not e else "não criou"),
+    "TC-UC-005-05": lambda r, e, t: (not e, "seguiu o fluxo" if not e else "interrompeu"),
+    "TC-UC-006-02": lambda r, e, t: (e and ("verifica" in t or "obrigat" in t or "require" in t),
+                                     "recusou por campo obrigatório" if e else "calculou mesmo sem os dados"),
+    # 007-02 / 008-02: a condição do caso é "a base de bundles falha" / "dados insuficientes".
+    # Remover campos da ENTRADA não cria essa condição — o agente lê o caso do banco e, com dados,
+    # recomendar é o comportamento CERTO. A verificação real é a sonda de recusa (SONDA_RECUSA),
+    # com um caso sem dado nenhum; por isso estes dois saem como não exercitáveis pela entrada.
+    "TC-UC-011-02": lambda r, e, t: (("nenhum registro" in t) or isinstance((r or {}).get("logs"), list),
+                                     "distinguiu resultado vazio" if "nenhum registro" in t else "devolveu logs nulo, sem distinguir vazio"),
+    "TC-UC-012-01": lambda r, e, t: _arquivo(r, ".pdf"),
+    "TC-UC-012-02": lambda r, e, t: _arquivo(r, ".csv"),
+}
 
 
 async def semear_contexto():
@@ -138,7 +176,7 @@ async def semear_contexto():
 async def main():
     global BASE
     BASE = await semear_contexto()
-    linhas, resumo = [], {"SISTEMA_OK": 0, "SISTEMA_FALHA": 0, "INTERFACE_OK": 0,
+    linhas, resumo = [], {"SISTEMA_OK": 0, "SISTEMA_FALHA": 0, "NAO_EXERC": 0, "INTERFACE_OK": 0,
                           "INTERFACE_FALTA": 0, "NAO_IMPL": 0, "SEM_CASO": 0}
     for bloco in TCS:
         nome_uc = bloco.get("uc_name") or bloco.get("name") or "?"
@@ -167,14 +205,34 @@ async def main():
                 except Exception as exc:
                     r = {"status": "erro", "error": str(exc)[:120]}
                 erro = (isinstance(r, dict) and (r.get("status") == "erro" or r.get("error")))
-                negativo = any(not e.get("verdadeira", True) for e in (tc.get("entradas") or []))
-                # caso NEGATIVO deve ser rejeitado; caso POSITIVO deve concluir
-                ok = (erro if negativo else not erro)
+                txt = json.dumps(r, ensure_ascii=False).lower()
                 det = json.dumps(r, ensure_ascii=False)[:110]
-                linhas.append((tid, uc, "PASSOU" if ok else "FALHOU",
-                               f"{'(negativo) ' if negativo else ''}{efeito} → {det}"))
+                # Confere o EFEITO ESPERADO, não apenas sucesso/erro — um caso "negativo" pode
+                # esperar um caminho alternativo de SUCESSO (ex.: formato != CSV ⇒ gera PDF).
+                veredito = ASSERTS.get(tid)
+                if veredito is None:
+                    linhas.append((tid, uc, "NÃO EXERCITÁVEL",
+                                   f"{efeito} — exige induzir falha interna; nem aprova nem reprova → {det}"))
+                    resumo["NAO_EXERC"] += 1
+                    print(f"  {tid:16} NÃO EXERCITÁVEL", flush=True); continue
+                ok, porque = veredito(r, erro, txt)
+                linhas.append((tid, uc, "PASSOU" if ok else "FALHOU", f"{efeito} — {porque} → {det}"))
                 resumo["SISTEMA_OK" if ok else "SISTEMA_FALHA"] += 1
-                print(f"  {tid:16} {'PASSOU' if ok else 'FALHOU'}  {det[:80]}", flush=True)
+                print(f"  {tid:16} {'PASSOU' if ok else 'FALHOU'}  {porque[:44]} | {det[:60]}", flush=True)
+    print("\n--- SONDA DE RECUSA (caso sem dado nenhum): o agente inventa ou declara insuficiência? ---")
+    for tarefa in ("recommend_treatment_bundle", "estimate_risk_reduction"):
+        try:
+            rr = await exec_task(tarefa, {"caso_id": "CAS-SEM-DADOS", "usuario_id": "U-001"})
+        except Exception as exc:
+            rr = {"status": "erro", "error": str(exc)[:90]}
+        tt = json.dumps(rr, ensure_ascii=False)
+        recusou = bool(rr.get("dados_insuficientes")) or "dados_insuficientes" in tt
+        inventou = (not recusou) and (rr.get("status") == "sucesso" or rr.get("bundle_nome") or rr.get("reducao_risco"))
+        estado = "DECLAROU INSUFICIÊNCIA (correto)" if recusou else ("INVENTOU (defeito)" if inventou else "erro")
+        print(f"  {tarefa:30} {estado}  {tt[:100]}")
+        linhas.append((f"SONDA:{tarefa[:22]}", "—", "PASSOU" if recusou else "FALHOU",
+                       f"caso sem dados → {tt[:80]}"))
+        resumo["SISTEMA_OK" if recusou else "SISTEMA_FALHA"] += 1
     print("\n" + "=" * 100)
     print(f"{'CASO':17}{'UC':9}{'RESULTADO':20}DETALHE")
     print("=" * 100)
@@ -182,7 +240,8 @@ async def main():
     print("=" * 100)
     tot = sum(resumo.values())
     print(f"TOTAL {tot} casos:")
-    print(f"  comportamento do sistema — PASSOU: {resumo['SISTEMA_OK']} | FALHOU: {resumo['SISTEMA_FALHA']}")
+    print(f"  comportamento do sistema — PASSOU: {resumo['SISTEMA_OK']} | FALHOU: {resumo['SISTEMA_FALHA']}"
+          f" | NÃO EXERCITÁVEL: {resumo['NAO_EXERC']}")
     print(f"  elemento de interface    — EXISTE: {resumo['INTERFACE_OK']} | FALTA: {resumo['INTERFACE_FALTA']}")
     print(f"  efeito NÃO implementado  — {resumo['NAO_IMPL']}")
     print(f"  caso de uso sem caso gerado — {resumo['SEM_CASO']}")
