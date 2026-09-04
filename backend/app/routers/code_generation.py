@@ -265,6 +265,26 @@ async def generate_code(
             state["agent_task_spec_document"] = ats_session["agent_task_spec_document"]
             print(f"[CODE-GEN] spec_md carregado: {len(ats_session['agent_task_spec_document'])} chars")
 
+    # Carrega o documento da etapa FERRAMENTAS (aprovado, se houver): é ele que diz de onde
+    # vem a implementação de cada ferramenta. Sem ele, o gerador aceita o que o modelo
+    # escreveu — que costuma ser valor fixo disfarçado de implementação.
+    try:
+        with get_db_connection() as _conn:
+            _cur = _conn.cursor(dictionary=True)
+            _cur.execute(
+                "SELECT tools_json, approval_status, version FROM tool_sessions "
+                "WHERE project_id=%s ORDER BY (approval_status='approved') DESC, created_at DESC "
+                "LIMIT 1", (project_id,))
+            _r = _cur.fetchone()
+            _cur.close()
+        if _r and _r.get("tools_json"):
+            import json as _json_tools
+            state["tools_stage_doc"] = _json_tools.loads(_r["tools_json"])
+            print(f"[CODE-GEN] etapa Ferramentas v{_r.get('version')} carregada "
+                  f"({_r.get('approval_status')})")
+    except Exception as _e:
+        print(f"[CODE-GEN] etapa Ferramentas não carregada: {_e}")
+
     # Carrega a ESPECIFICAÇÃO FUNCIONAL (fluxos dos casos de uso). É dela que saem as
     # mensagens que o sistema deve exibir ("Credenciais inválidas", "ICSAC Confirmado",
     # "Exportar CSV"). Sem isso o app respondia jargão interno de verificação na tela.

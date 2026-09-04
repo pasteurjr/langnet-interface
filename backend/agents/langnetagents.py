@@ -4105,6 +4105,40 @@ _LIST_HELPER = (
     "    import hashlib as _hl\n"
     "    return _hl.sha256(str(raw).encode('utf-8')).hexdigest()\n"
     "\n\n"
+    "def _confere_senha(input_data, origem):\n"
+    "    \"\"\"Confere a senha informada contra o hash guardado no banco.\n"
+    "    `origem` pode ser o hash em si OU a linha lida do banco (o adapter passa a linha, e\n"
+    "    aqui se acha a coluna de hash). Passo de VERIFICAÇÃO que a descrição da tarefa manda\n"
+    "    fazer e que antes sumia na tradução para SQL — o adapter registrava LOGIN_SUCCESS sem\n"
+    "    olhar a senha.\"\"\"\n"
+    "    hash_guardado = origem\n"
+    "    if isinstance(origem, dict):\n"
+    "        hash_guardado = None\n"
+    "        for _k, _v in origem.items():\n"
+    "            if 'hash' in str(_k).lower() or 'senha' in str(_k).lower():\n"
+    "                hash_guardado = _v\n"
+    "                break\n"
+    "    if not hash_guardado:\n"
+    "        return False\n"
+    "    informado = _pw(input_data, 'senha_hash')\n"
+    "    return bool(informado) and str(informado) == str(hash_guardado)\n"
+    "\n\n"
+    "def _conta_no_json(valor, alvo):\n"
+    "    \"\"\"Conta quantos campos de um JSON (ou dict) têm determinado valor — ex.: quantas\n"
+    "    classes de antibiótico deram 'R'. Passo de CONTAGEM que a descrição pede.\"\"\"\n"
+    "    import json as _json\n"
+    "    dados = valor\n"
+    "    if isinstance(dados, str):\n"
+    "        try:\n"
+    "            dados = _json.loads(dados)\n"
+    "        except Exception:\n"
+    "            return 0\n"
+    "    if isinstance(dados, dict):\n"
+    "        return sum(1 for v in dados.values() if str(v).strip().upper() == str(alvo).strip().upper())\n"
+    "    if isinstance(dados, (list, tuple)):\n"
+    "        return sum(1 for v in dados if str(v).strip().upper() == str(alvo).strip().upper())\n"
+    "    return 0\n"
+    "\n\n"
     "def _coerce_to_schema(raw, schema):\n"
     "    \"\"\"CONTRATO DE SAÍDA (Inserção A): normaliza/coage/valida a saída do agente contra o\n"
     "    output_schema. Desembrulha {raw}/string -> objeto, coage por tipo (via _cv) e valida os\n"
@@ -4400,6 +4434,7 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
     if not blocks:  # YAML inválido: extrai blocos por texto, tolerante a nomes malformados.
         blocks = _extract_task_blocks(tasks_yaml)
 
+    PASSOS_SEM_CODIGO.clear()
     generated: List[str] = []
     generated_names: List[str] = []
     for _blk in blocks:
@@ -4408,6 +4443,7 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
         if not isinstance(desc, str) or not desc:
             continue
 
+        globals()["_TASK_EM_TRADUCAO"] = task_name
         body = _parse_task_description_to_python(desc, _blk.get('expected_output') or "")
         if not body:
             continue
@@ -4471,6 +4507,11 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
         "    v = _num(v)\n"
         "    return float(v) if v is not None else None\n"
     )
+    if PASSOS_SEM_CODIGO:
+        print(f"[CODE-GEN][LÓGICA] {len(PASSOS_SEM_CODIGO)} passo(s) da descrição não viraram "
+              f"código — a regra fica FALTANDO no app:")
+        for _t, _p in PASSOS_SEM_CODIGO[:12]:
+            print(f"    {_t}: {_p}")
     return header + "\n\n".join(generated) + "\n"
 
 
@@ -5519,6 +5560,68 @@ def _rewrite_spatial_overlap_flag(desc: str) -> str:
     ) % (agg_q, flag, upd_q, flag)
 
 
+
+# Passos de LÓGICA da descrição da tarefa que não viraram código (para o portão avisar).
+PASSOS_SEM_CODIGO: List[tuple] = []
+
+
+def _emit_logic_step(linha: str, captured_vars: List[str]):
+    """Traduz para Python um passo da descrição que NÃO é SQL.
+
+    O tradutor de tarefas só entendia passos com `query=`; qualquer outro passo era pulado em
+    SILÊNCIO. Era por aí que a regra de negócio sumia: "verifique se a senha corresponde ao
+    hash", "conte as classes com resultado R", "se a contagem for >= 3 então é multirresistente",
+    "se for multirresistente, então…". O adapter saía sem nada disso — autenticava sem conferir
+    senha e alertava multirresistência em toda amostra.
+
+    Devolve (linhas_python, variavel_produzida) ou (None, None) quando não reconhece o passo —
+    e nesse caso o passo é REGISTRADO como não implementado, nunca ignorado.
+    """
+    import re as _re
+    txt = linha.strip()
+    baixa = txt.lower()
+
+    # 1) Verificação de senha contra o hash guardado.
+    if _re.search(r"(?i)(verific|valid|confir|compar)", baixa) and "senha" in baixa and \
+       _re.search(r"(?i)(hash|bcrypt|criptograf)", baixa):
+        alvo = None
+        for v in captured_vars:
+            if "senha" in v.lower() and "hash" in v.lower():
+                alvo = v
+                break
+        alvo = alvo or "senha_hash"
+        _origem = alvo if alvo in captured_vars else "_row"
+        return ([f"if not _confere_senha(input_data, {_origem}):",
+                 "    conn.rollback()",
+                 "    return {'status': 'erro', 'nao_encontrado': 'credenciais',",
+                 "            'error': 'senha não confere com o registro'}"], None)
+
+    # 2) Contagem de um valor dentro de um JSON: "contar ... com resultado 'R'" em <var>.
+    m_cont = _re.search(r"(?i)cont(?:ar|e|agem)\b.{0,80}?['\"]([A-Za-z0-9_]+)['\"]", txt)
+    if m_cont and _re.search(r"(?i)json|sensibilidad|resultado", baixa):
+        alvo = m_cont.group(1)
+        fonte = None
+        m_em = _re.search(r"(?i)\bem\s+([a-z_][a-z0-9_]*)", txt)
+        if m_em and m_em.group(1) in captured_vars:
+            fonte = m_em.group(1)
+        fonte = fonte or (captured_vars[-1] if captured_vars else "micro_data")
+        return ([f"_contagem = _conta_no_json({fonte}, {alvo!r})"], "_contagem")
+
+    # 3) Limiar sobre a contagem: "se a contagem for >= 3, is_mdr = true".
+    m_lim = _re.search(r"(?i)se\s+a?\s*contagem\s*(?:for|>=|maior|>)\D{0,12}(\d+)", txt)
+    m_var = _re.search(r"(?i)determinar\s+([a-z_][a-z0-9_]*)|([a-z_][a-z0-9_]*)\s*=\s*true", txt)
+    if m_lim and m_var:
+        var = m_var.group(1) or m_var.group(2)
+        return ([f"{var} = _contagem >= {int(m_lim.group(1))}"], var)
+
+    # 4) Condicional que governa os passos seguintes: "Se <var> for true:".
+    m_if = _re.match(r"(?i)^\d*\.?\s*se\s+([a-z_][a-z0-9_]*)\s+for\s+(true|verdadeir[ao])\s*:?\s*$", txt)
+    if m_if:
+        return (["__COND__" + m_if.group(1)], None)
+
+    return (None, None)
+
+
 def _parse_task_description_to_python(desc: str, expected_output: str = "") -> str:
     """Parses a task description's steps and returns the Python body (indented
     with 8 spaces to fit inside ``try:`` of the wrapper). Returns "" if nothing
@@ -5530,6 +5633,9 @@ def _parse_task_description_to_python(desc: str, expected_output: str = "") -> s
         return _comp
     lines_out: List[str] = []
     _steps: List = []  # (kind, py_lines) por passo — p/ reordenar INSERT antes de UPDATE
+    _cond_var = ""      # condicional aberto por "Se <var> for true:" — governa os passos
+    _cond_indent = -1   # indentação do passo condicional (os sub-passos vêm mais indentados)
+    _task_atual = globals().get("_TASK_EM_TRADUCAO", "")
     captured_vars: List[str] = []  # variable names bound by SELECT id captures
 
     # Split into logical "steps": lines that start with a number "N. " or bare SQL.
@@ -5632,6 +5738,22 @@ def _parse_task_description_to_python(desc: str, expected_output: str = "") -> s
         # Now expect a query= line, then possibly a params= line
         query_m = query_re.search(raw_lines[i])
         if not query_m:
+            # PASSO SEM SQL: antes era pulado em SILÊNCIO — e era aí que a regra de negócio
+            # sumia (conferir senha, contar resistências, condicionar o alerta). Agora tenta
+            # emitir; o que não for reconhecido fica REGISTRADO como não implementado.
+            _ln_txt = raw_lines[i]
+            _passo = _re.match(r"^\s*(?:\d+\.|[a-z]\.)\s+\S", _ln_txt)
+            if _passo:
+                _py_logica, _var = _emit_logic_step(_ln_txt, captured_vars)
+                if _py_logica and _py_logica[0].startswith("__COND__"):
+                    _cond_var = _py_logica[0][len("__COND__"):]
+                    _cond_indent = len(_ln_txt) - len(_ln_txt.lstrip())
+                elif _py_logica:
+                    _steps.append(("logic", _py_logica))
+                    if _var and _var not in captured_vars:
+                        captured_vars.append(_var)
+                elif not _re.search(r"(?i)retorn|chame database_tool|guarde o resultado", _ln_txt):
+                    PASSOS_SEM_CODIGO.append((_task_atual, _ln_txt.strip()[:160]))
             i += 1
             continue
         query = query_m.group(1).strip()
@@ -5664,6 +5786,14 @@ def _parse_task_description_to_python(desc: str, expected_output: str = "") -> s
             _kind = ('update' if _ql.startswith('update')
                      else 'insert' if _ql.startswith('insert')
                      else 'select' if _ql.startswith('select') else 'other')
+            # Passo governado por um "Se <var> for true:" anterior (sub-passo mais indentado):
+            # sai dentro do condicional. Sem isso o alerta de multirresistência era criado em
+            # TODA amostra, com a condição declarada na descrição e ignorada pelo código.
+            _ind_passo = len(raw_lines[i]) - len(raw_lines[i].lstrip())
+            if _cond_var and _ind_passo > _cond_indent:
+                py = [f"if {_cond_var}:"] + ["    " + _l for _l in py]
+            elif _cond_var and _ind_passo <= _cond_indent:
+                _cond_var, _cond_indent = "", -1
             _steps.append((_kind, py))
         i += 1
 
@@ -7014,6 +7144,113 @@ EXT_TOOLS = {
 def _generate_tools_ext_py() -> str:
     """Retorna ws-server/tools_ext.py — integrações externas reais (config via .env)."""
     return _TOOLS_EXT_PY
+
+
+
+def _emit_declared_tools(tools_py: str, tools_doc: dict) -> str:
+    """Substitui, no tools.py, TODA implementação escrita pelo modelo pela que a etapa
+    FERRAMENTAS declarou.
+
+    Antes, a Geração de Código pedia o corpo da ferramenta ao modelo e aceitava o que viesse —
+    era daí que saíam as implementações de mentira (escore fixo em 0.5, bundle "Padrão",
+    validador de senha que devolve sempre verdadeiro, gerador de token que devolve a string
+    "fake_jwt_token"). Agora:
+
+      - origem 'biblioteca' ou 'mcp': a classe do modelo é REMOVIDA — quem vale é a biblioteca
+        real do gerador / o wrapper MCP, que já são mesclados no registro em tempo de execução;
+      - origem 'deterministica': o corpo é substituído por uma função gerada a partir da REGRA
+        declarada na etapa, com o contrato de entrada e saída;
+      - pendente ou externa não registrada: vira falha explícita ("não implementada"), nunca
+        valor inventado.
+    """
+    import re as _re
+    if not tools_doc or not tools_doc.get("tools"):
+        return tools_py
+    por_origem = {t["nome"]: t for t in tools_doc["tools"] if t.get("nome")}
+
+    def _classe_de(nome: str) -> str:
+        return "".join(w.capitalize() for w in _re.split(r"[^a-zA-Z0-9]+", nome) if w)
+
+    blocos_novos = []
+    for nome, t in sorted(por_origem.items()):
+        origem = (t.get("origem") or "").lower()
+        cls = _classe_de(nome)
+        # remove a classe que o modelo escreveu para esta ferramenta (qualquer que seja o corpo)
+        padrao = _re.compile(r"(?ms)^class\s+" + _re.escape(cls) + r"\b.*?(?=^class |\Z)")
+        tools_py = padrao.sub("", tools_py)
+        padrao_in = _re.compile(r"(?ms)^class\s+" + _re.escape(cls) + r"Input\b.*?(?=^class |\Z)")
+        tools_py = padrao_in.sub("", tools_py)
+        if origem in ("biblioteca", "mcp"):
+            continue  # implementação real vem da biblioteca/MCP no registro em runtime
+        entrada = [e for e in (t.get("entrada") or []) if _re.match(r"^[a-zA-Z_]\w*$", str(e))]
+        args = ", ".join(f"{e}=None" for e in entrada) if entrada else "**kwargs"
+        campos_saida = [c for c in (t.get("saida") or []) if _re.match(r"^[a-zA-Z_]\w*$", str(c))]
+        if origem == "deterministica" and (t.get("regra") or "").strip():
+            corpo = (
+                f'        """{t.get("descricao") or nome}\n\n'
+                f'        REGRA DECLARADA NA ETAPA FERRAMENTAS:\n        {t["regra"]}\n'
+                f'        """\n'
+                f'        from tools_rules import {nome} as _regra\n'
+                f'        return _regra({", ".join(f"{e}={e}" for e in entrada) if entrada else "**kwargs"})\n'
+            )
+        else:
+            motivo = (t.get("implementacao") or "sem implementação declarada na etapa Ferramentas")
+            corpo = (
+                f'        """{t.get("descricao") or nome} — NÃO IMPLEMENTADA."""\n'
+                f'        raise RuntimeError(\n'
+                f'            "Ferramenta {nome} não está implementada: {motivo}. "\n'
+                f'            "NENHUMA ação foi executada e nenhum valor foi inventado."\n'
+                f'        )\n'
+            )
+        doc_saida = (" Devolve: " + ", ".join(campos_saida) + ".") if campos_saida else ""
+        blocos_novos.append(
+            f'class {cls}(BaseTool):\n'
+            f'    """{t.get("descricao") or nome}.{doc_saida}\n\n'
+            f'    Origem declarada na etapa Ferramentas: {origem or "pendente"}.\n'
+            f'    """\n'
+            f'    name: str = "{nome}"\n'
+            f'    description: str = {t.get("descricao", nome)!r}\n\n'
+            f'    def _run(self, {args}):\n{corpo}\n'
+        )
+    if blocos_novos:
+        tools_py = tools_py.rstrip() + "\n\n\n" + "\n\n".join(blocos_novos)
+    return tools_py
+
+
+def _emit_tools_rules_py(tools_doc: dict) -> str:
+    """Módulo ws-server/tools_rules.py — uma função por ferramenta DETERMINÍSTICA, com a
+    regra declarada na etapa Ferramentas no corpo do docstring.
+
+    O corpo real é escrito pelo LLM a partir da regra? NÃO. Aqui vai o esqueleto com a regra
+    e a checagem dos parâmetros; o que a regra manda calcular é emitido pelo gerador de
+    computação determinística quando ele reconhece o padrão, e o que ele não reconhecer falha
+    explícito — nunca devolve valor de exemplo.
+    """
+    linhas = ['"""Regras determinísticas declaradas na etapa FERRAMENTAS (auto-gerado)."""',
+              "from typing import Any, Dict", ""]
+    for t in (tools_doc or {}).get("tools", []):
+        if (t.get("origem") or "").lower() != "deterministica":
+            continue
+        nome = t.get("nome")
+        entrada = [e for e in (t.get("entrada") or []) if str(e).isidentifier()]
+        args = ", ".join(f"{e}=None" for e in entrada) if entrada else "**kwargs"
+        linhas += [
+            f"def {nome}({args}) -> Dict[str, Any]:",
+            f'    """{t.get("descricao") or nome}',
+            "",
+            "    REGRA (declarada na etapa Ferramentas, aprovada pelo usuário):",
+            f"    {t.get('regra')}",
+            '    """',
+            "    faltando = [n for n, v in locals().items() if v is None]" if entrada else "    faltando = []",
+            "    if faltando:",
+            f'        raise ValueError("{nome}: faltam parâmetros obrigatórios: " + ", ".join(faltando))',
+            f'    raise NotImplementedError(',
+            f'        "{nome}: a regra foi declarada na etapa Ferramentas mas o gerador ainda não '
+            f'emite o cálculo. Nenhum valor foi inventado."',
+            "    )",
+            "",
+        ]
+    return "\n".join(linhas) + "\n"
 
 
 def _drop_undefined_registry_entries(tools_py: str) -> str:
@@ -8550,6 +8787,22 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # substitui o stub None por uma tool completa (shapely/pyproj/PostGIS/QGIS/WFS).
     _needed_tools = set(detected_tools) | set(all_tool_names)
     tools_py = _ship_geoprocessing_into_app(add, tools_py, _needed_tools)
+    # ETAPA FERRAMENTAS: o que ela declarou MANDA sobre o que o modelo escreveu. Sem a etapa
+    # aprovada, o comportamento antigo é mantido (e o log avisa que o app pode conter
+    # implementação inventada).
+    _tools_doc = state.get("tools_stage_doc") or {}
+    if _tools_doc.get("tools"):
+        _pend = [t["nome"] for t in _tools_doc["tools"] if not t.get("resolvida")]
+        tools_py = _emit_declared_tools(tools_py, _tools_doc)
+        _regras = _emit_tools_rules_py(_tools_doc)
+        if "def " in _regras:
+            add("ws-server/tools_rules.py", _regras)
+        print(f"[CODE-GEN][FERRAMENTAS] {len(_tools_doc['tools'])} declaradas; "
+              f"{len(_pend)} sem implementação → falha explícita" +
+              (f" ({', '.join(_pend)})" if _pend else ""))
+    else:
+        print("[CODE-GEN][FERRAMENTAS] etapa não executada para este projeto — as ferramentas "
+              "vêm como o modelo escreveu (podem conter implementação de mentira)")
     add("ws-server/tools.py", tools_py if tools_py.endswith("\n") else tools_py + "\n")
     add("ws-server/tools_std.py", _generate_tools_std_py())
     add("ws-server/tools_ext.py", _generate_tools_ext_py())
