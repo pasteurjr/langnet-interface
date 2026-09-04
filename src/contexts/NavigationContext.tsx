@@ -87,6 +87,7 @@ const PROJECT_MENU_ITEMS: MenuItem[] = [
   { id: "data-model", label: "Modelo de Dados", icon: "🗄️", path: "/data-model", section: "Pipeline" },
   { id: "ui-spec", label: "Interface & Protótipo", icon: "🎨", path: "/ui-spec", section: "Pipeline" },
   { id: "agent-task", label: "Agentes & Tarefas", icon: "⚙️", path: "/agent-task", section: "Pipeline" },
+  { id: "tools-stage", label: "Ferramentas", icon: "🧰", path: "/tools-stage", section: "Pipeline" },
   { id: "yaml-generation", label: "YAML de Agentes e Tarefas", icon: "📦", path: "/yaml-generation", section: "Pipeline" },
   { id: "task-execution-flow", label: "Sequência de Tarefas", icon: "🔄", path: "/task-execution-flow", section: "Pipeline" },
   { id: "petri-net", label: "Rede de Petri", icon: "🔗", path: "/petri-net", section: "Pipeline" },

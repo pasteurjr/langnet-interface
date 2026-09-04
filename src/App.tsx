@@ -13,6 +13,7 @@ import SpecificationPage from "./pages/SpecificationPage";
 import DataModelPage from "./pages/DataModelPage";
 import UISpecPage from "./pages/UISpecPage";
 import TestCasesPage from "./pages/TestCasesPage";
+import ToolsStagePage from "./pages/ToolsStagePage";
 import SequenciaTarefasPage from "./pages/SequenciaTarefasPage";
 import AgentsPage from "./pages/AgentsPage";
 import TasksPage from "./pages/TasksPage";
@@ -133,7 +134,9 @@ const App: React.FC = () => {
             <Route path="/project/:projectId/data-model" element={<DataModelPage />} />
             <Route path="/ui-spec" element={<UISpecPage />} />
             <Route path="/project/:projectId/ui-spec" element={<UISpecPage />} />
+            <Route path="/tools-stage" element={<ToolsStagePage />} />
             <Route path="/test-cases" element={<TestCasesPage />} />
+            <Route path="/project/:projectId/tools-stage" element={<ToolsStagePage />} />
             <Route path="/project/:projectId/test-cases" element={<TestCasesPage />} />
             <Route path="/task-execution-flow" element={<SequenciaTarefasPage />} />
             <Route path="/code" element={<CodePage />} />

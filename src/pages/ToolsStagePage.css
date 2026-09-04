@@ -1,0 +1,53 @@
+.ferramentas-pagina { padding: 24px; max-width: 1400px; }
+.ferramentas-cabecalho { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 18px; }
+.ferramentas-cabecalho h1 { font-size: 22px; font-weight: 700; color: #0f172a; margin: 0 0 6px; }
+.ferramentas-cabecalho p { color: #475569; font-size: 13.5px; margin: 0; max-width: 760px; line-height: 1.5; }
+.ferramentas-acoes { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.ferramentas-acoes select { padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; min-width: 260px; }
+.btn-primario { background: #4f46e5; color: #fff; border: 0; padding: 9px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; }
+.btn-primario:disabled { background: #94a3b8; cursor: not-allowed; }
+.btn-secundario { background: #fff; color: #4f46e5; border: 1px solid #c7d2fe; padding: 9px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 13px; }
+.btn-secundario:disabled { color: #94a3b8; border-color: #e2e8f0; cursor: not-allowed; }
+.ferramentas-erro { background: #fef2f2; border: 1px solid #fecaca; color: #b91c1c; padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; font-size: 13px; }
+.ferramentas-vazio { background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 40px; text-align: center; color: #64748b; }
+.ferramentas-indicadores { display: flex; gap: 14px; margin-bottom: 14px; flex-wrap: wrap; }
+.indicador { flex: 1; min-width: 150px; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px 16px; }
+.indicador span { display: block; font-size: 11.5px; color: #64748b; text-transform: uppercase; letter-spacing: .4px; }
+.indicador b { font-size: 24px; color: #0f172a; }
+.indicador.ok b { color: #16a34a; }
+.indicador.falha b { color: #dc2626; }
+.portao { padding: 11px 16px; border-radius: 10px; font-size: 13px; font-weight: 500; margin-bottom: 16px; }
+.portao-liberado { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+.portao-bloqueado { background: #fffbeb; border: 1px solid #fcd34d; color: #92400e; }
+.ferramentas-corpo { display: grid; grid-template-columns: 1fr 380px; gap: 18px; align-items: start; }
+.ferramentas-tabela { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; font-size: 13px; }
+.ferramentas-tabela th { text-align: left; background: #f8fafc; padding: 10px 12px; border-bottom: 1px solid #e2e8f0; color: #475569; font-weight: 600; font-size: 12px; }
+.ferramentas-tabela td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; color: #0f172a; vertical-align: top; }
+.ferramentas-tabela tr { cursor: pointer; }
+.ferramentas-tabela tr:hover { background: #f8fafc; }
+.ferramentas-tabela tr.selecionada { background: #eef2ff; }
+.ferramentas-tabela code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; font-size: 12.5px; }
+.usos { color: #64748b; font-size: 12px; }
+.selo { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.origem-biblioteca { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+.origem-mcp { background: #e0e7ff; color: #3730a3; border: 1px solid #c7d2fe; }
+.origem-deterministica { background: #cffafe; color: #155e75; border: 1px solid #a5f3fc; }
+.origem-externa { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+.origem-pendente { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+.ferramentas-lateral { display: flex; flex-direction: column; gap: 16px; }
+.detalhe, .refino, .versoes { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; }
+.detalhe h3 { margin: 0 0 12px; font-size: 15px; color: #0f172a; }
+.detalhe.vazio { color: #94a3b8; font-size: 13px; }
+.detalhe label { display: block; font-size: 11.5px; font-weight: 600; color: #64748b; margin: 10px 0 4px; text-transform: uppercase; letter-spacing: .3px; }
+.detalhe input, .detalhe textarea, .detalhe select, .refino textarea { width: 100%; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 13px; font-family: inherit; }
+.refino h4, .versoes h4 { margin: 0 0 10px; font-size: 13px; color: #334155; }
+.mensagens { max-height: 160px; overflow-y: auto; margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px; }
+.msg { padding: 7px 10px; border-radius: 8px; font-size: 12.5px; line-height: 1.45; }
+.msg.user { background: #eef2ff; color: #3730a3; }
+.msg.assistant { background: #f8fafc; color: #334155; }
+.refino button { margin-top: 8px; }
+.versoes ul { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow-y: auto; }
+.versoes li { display: flex; gap: 8px; align-items: baseline; padding: 5px 0; border-bottom: 1px solid #f1f5f9; font-size: 12.5px; }
+.versoes li button { background: #eef2ff; color: #4338ca; border: 0; border-radius: 6px; padding: 2px 8px; cursor: pointer; font-weight: 600; font-size: 12px; }
+.versoes li span { color: #64748b; }
+@media (max-width: 1100px) { .ferramentas-corpo { grid-template-columns: 1fr; } }
