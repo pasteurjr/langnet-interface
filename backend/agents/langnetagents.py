@@ -5791,7 +5791,15 @@ def _parse_task_description_to_python(desc: str, expected_output: str = "") -> s
             # TODA amostra, com a condição declarada na descrição e ignorada pelo código.
             _ind_passo = len(raw_lines[i]) - len(raw_lines[i].lstrip())
             if _cond_var and _ind_passo > _cond_indent:
-                py = [f"if {_cond_var}:"] + ["    " + _l for _l in py]
+                # Variável capturada DENTRO do condicional precisa existir mesmo quando a
+                # condição é falsa — senão o resultado final quebra com "variável local não
+                # associada a valor" (aconteceu com alerta_id quando a amostra não era MDR).
+                _iniciais = []
+                for _l in py:
+                    _mv = _re.match(r"^([a-z_][a-z0-9_]*) = ", _l)
+                    if _mv and _mv.group(1) not in ("_rows", "_row"):
+                        _iniciais.append(f"{_mv.group(1)} = None")
+                py = _iniciais + [f"if {_cond_var}:"] + ["    " + _l for _l in py]
             elif _cond_var and _ind_passo <= _cond_indent:
                 _cond_var, _cond_indent = "", -1
             _steps.append((_kind, py))
