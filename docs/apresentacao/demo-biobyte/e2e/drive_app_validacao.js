@@ -14,6 +14,9 @@ const CTX = { usuario_id: 'U-001', paciente_id: 'P-001', caso_id: 'CAS-2023-001'
   multirresistente: true, formato: 'csv' };
 
 const PASSOS = [
+  { tag: 'dashboard-com-dados', menu: 'Dashboard de Vigilância', espera: /casos|taxa|escore|\d/i, prova: 'indicadores e gráficos preenchidos' },
+  { tag: 'bundle-com-itens', menu: 'Recomendação de Bundle', espera: /bundle|justificativa|insuficien/i, prova: 'bundle com justificativa e itens' },
+  { tag: 'classificacao-criterios', menu: 'Detalhe do Caso Clínico', espera: /ICSAC|Pendente|classific/i, prova: 'critérios da norma e classificação' },
   { tag: 'login-credenciais-invalidas', menu: 'Login e MFA', semContexto: true,
     campos: { email: 'inexistente@x.br', senha: 'errada', codigo_mfa: '000000' },
     espera: /Credenciais inválidas/i, prova: 'mensagem do caso de uso' },

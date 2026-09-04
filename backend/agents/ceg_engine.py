@@ -185,6 +185,49 @@ def build_decision_table(ceg: dict) -> List[dict]:
     return columns
 
 
+
+def _efeito_observavel(desc_efeito: str, entradas: list) -> dict:
+    """Deriva, do texto do efeito, O QUE CONFERIR NO SISTEMA — não só o que o usuário lê.
+
+    O efeito vem escrito na linguagem do caso de uso ("Exibe mensagem 'Credenciais inválidas'"),
+    que descreve o que aparece na tela. Quem executa o caso não sabia, daí, se devia procurar
+    uma frase na interface ou exercitar o comportamento — e acabava conferindo texto de tela
+    onde o certo era tentar entrar com senha errada. Este campo diz explicitamente:
+
+      onde:      'sistema' (executar a tarefa e conferir a resposta)
+               | 'tela'    (conferir na interface)
+               | 'externo' (depende de serviço de fora: e-mail, push, fila)
+      espera:    'recusa'  (a tarefa deve recusar)
+               | 'sucesso' (a tarefa deve concluir)
+               | 'exibicao'(rótulo/elemento visível)
+      frase:     texto que deve aparecer, quando o efeito nomeia um entre aspas
+    """
+    import re as _re
+    txt = desc_efeito or ""
+    baixa = txt.lower()
+    m = _re.search(r"['\"\u2018\u201c]([^'\"\u2019\u201d]{4,60})['\"\u2019\u201d]", txt)
+    frase = m.group(1) if m else ""
+    tem_causa_negada = any(not e.get("verdadeira", True) for e in (entradas or []))
+
+    if _re.search(r"(?i)e-?mail|push|notifica[çc][ãa]o|fila|ass[íi]ncron", baixa):
+        onde = "externo"
+    elif _re.search(r"(?i)\btela\b|banner|badge|selo|skeleton|spinner|barra de progresso|"
+                    r"cards? de kpi|gr[áa]fico", baixa):
+        onde = "tela"
+    else:
+        onde = "sistema"
+
+    if tem_causa_negada and _re.search(r"(?i)inv[áa]lid|incorret|erro|bloquei|recus|n[ãa]o "
+                                       r"encontrad|n[ãa]o conform|insuficien|faltant", baixa):
+        espera = "recusa"
+    elif onde == "tela":
+        espera = "exibicao"
+    else:
+        espera = "sucesso"
+
+    return {"onde": onde, "espera": espera, "frase": frase}
+
+
 def decision_table_to_cases(ceg: dict, columns: List[dict]) -> List[dict]:
     """Converte cada coluna num caso de teste legível."""
     cdesc = {c["id"]: c["desc"] for c in ceg.get("causes", [])}
@@ -203,6 +246,9 @@ def decision_table_to_cases(ceg: dict, columns: List[dict]) -> List[dict]:
             "uc": uc,
             "entradas": entradas,          # condições de entrada (ações do ator)
             "efeito_esperado": esperado,   # resposta do sistema esperada
+            # O QUE CONFERIR (onde/espera/frase) — sem isto, quem executa o caso adivinhava
+            # pelo texto e conferia rótulo de tela onde devia exercitar o comportamento.
+            "efeito_observavel": _efeito_observavel(esperado.get("desc", ""), entradas),
             "causes": col["causes"],
             "effects": col["effects"],
         })
