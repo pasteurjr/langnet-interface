@@ -63,7 +63,7 @@ carrega). Respostas reais observadas:
 - escore de Cox **0,2437 (risco baixo)** com os fatores listados, vindo do serviço externo;
 - recomendação **"Bundle MRSA — Vancomicina"** com justificativa clínica (72 anos, UTI, cateter
   central há 12 dias, nutrição parenteral);
-- estimativa de redução de risco **−35%**, intervalo [−20, −50];
+- estimativa de redução de risco **−35%**, intervalo [−20, −50] — **ATENÇÃO: esse valor NÃO é calculado.** É o exemplo ilustrativo do wireframe da Especificação, que entrou na instrução da tarefa como "ex: -35" e o agente repete. Achado na auditoria de valores falsos (04/09/2026); 42 tratamentos no banco carregam exatamente esse número;
 - microbiologia buscada no laboratório externo: *Staphylococcus aureus*, multirresistente, com
   antibiograma.
 
@@ -222,3 +222,24 @@ com quatro colunas e passou a receber uma lista onde esperava um valor — o reg
 quebrou com "lista não pode virar tipo do banco". A regra foi estreitada para valer só quando o
 nome guardado é de coleção. Fica o registro: a correção entrou, quebrou outra coisa, a bateria
 pegou, e a bateria foi rodada de novo até fechar em zero falhas.
+
+---
+
+# 8. Auditoria de valores falsos (04/09/2026)
+
+Varredura do app gerado à procura de qualquer coisa simulada. Resultado: **13 implementações de
+mentira**, quatro delas no caminho que o sistema usa.
+
+| Achado | Situação |
+|---|---|
+| Login não conferia senha nem código de verificação | **CORRIGIDO** — senha errada agora devolve "Credenciais inválidas"; senha certa entra |
+| Detector de multirresistência alertava em toda amostra | **CORRIGIDO** — amostra com 2 resistências dá `is_mdr: false` e não gera alerta |
+| Estimativa de redução de risco repete o exemplo da Especificação (−35%) | **ABERTO** — não há modelo estatístico; o exemplo vai na instrução e o agente copia |
+| Relatório de vigilância gera arquivo sem os dados da vigilância | **ABERTO** — a consulta traz 8 colunas e o gerador guarda uma célula |
+| 9 ferramentas com corpo inventado (token "fake_jwt_token", validador de senha sempre verdadeiro) | **CORRIGIDO na origem** — a etapa Ferramentas manda no código; sem implementação declarada, a ferramenta falha explícito |
+| Laboratório externo com dois pacientes escritos no código | **POR DESENHO** — é a fronteira do sistema; um laboratório real se pluga no mesmo ponto |
+| Coeficientes do modelo de Cox "ilustrativos" | **POR DESENHO** — a fórmula é real e determinística; os coeficientes não vêm de estudo publicado |
+
+Causa estrutural: passos de LÓGICA da descrição da tarefa (conferir hash, contar resistências,
+condicionar o alerta) não viravam SQL e sumiam sem aviso. O tradutor passou a emiti-los e a
+**listar no log da geração** o que ainda não converte — 23 passos no BioByte.
