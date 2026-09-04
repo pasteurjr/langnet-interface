@@ -5752,8 +5752,17 @@ def _parse_task_description_to_python(desc: str, expected_output: str = "") -> s
                     _steps.append(("logic", _py_logica))
                     if _var and _var not in captured_vars:
                         captured_vars.append(_var)
-                elif not _re.search(r"(?i)retorn|chame database_tool|guarde o resultado", _ln_txt):
-                    PASSOS_SEM_CODIGO.append((_task_atual, _ln_txt.strip()[:160]))
+                else:
+                    # Não é lacuna quando: (a) é CABEÇALHO de um passo cujo SQL vem logo abaixo
+                    # e virou código; (b) é instrução de conduta ao agente, não passo executável.
+                    _seguintes = " ".join(raw_lines[i + 1:i + 4])
+                    _cabecalho = _ln_txt.rstrip().endswith(":") and "query=" in _seguintes
+                    _conduta = _re.search(r"(?i)você deve|voce deve|não invente|nao invente|"
+                                          r"se a tarefa exige", _ln_txt)
+                    _ja_coberto = _re.search(r"(?i)retorn|chame database_tool|guarde o resultado",
+                                             _ln_txt)
+                    if not (_cabecalho or _conduta or _ja_coberto):
+                        PASSOS_SEM_CODIGO.append((_task_atual, _ln_txt.strip()[:160]))
             i += 1
             continue
         query = query_m.group(1).strip()
