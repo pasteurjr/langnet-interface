@@ -5,7 +5,10 @@
  * implementação REAL (biblioteca do gerador, servidor MCP ou função determinística com
  * contrato declarado). Ferramenta sem implementação bloqueia a geração de código.
  */
-const BASE = process.env.REACT_APP_API_URL || "http://localhost:8003";
+// As demais etapas usam REACT_APP_API_URL já COM o sufixo /api; aqui aceitamos as duas
+// formas para não depender de como o ambiente foi configurado.
+const RAIZ = process.env.REACT_APP_API_URL || "http://localhost:8003/api";
+const BASE = RAIZ.replace(/\/api\/?$/, "");
 
 export type OrigemFerramenta = "biblioteca" | "mcp" | "deterministica" | "externa" | "pendente";
 

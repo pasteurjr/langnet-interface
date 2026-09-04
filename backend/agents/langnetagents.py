@@ -7176,9 +7176,9 @@ def _emit_declared_tools(tools_py: str, tools_doc: dict) -> str:
         origem = (t.get("origem") or "").lower()
         cls = _classe_de(nome)
         # remove a classe que o modelo escreveu para esta ferramenta (qualquer que seja o corpo)
-        padrao = _re.compile(r"(?ms)^class\s+" + _re.escape(cls) + r"\b.*?(?=^class |\Z)")
+        padrao = _re.compile(r"(?ms)^class\s+" + _re.escape(cls) + r"\b.*?(?=^[A-Za-z_@#]|\Z)")
         tools_py = padrao.sub("", tools_py)
-        padrao_in = _re.compile(r"(?ms)^class\s+" + _re.escape(cls) + r"Input\b.*?(?=^class |\Z)")
+        padrao_in = _re.compile(r"(?ms)^class\s+" + _re.escape(cls) + r"Input\b.*?(?=^[A-Za-z_@#]|\Z)")
         tools_py = padrao_in.sub("", tools_py)
         if origem in ("biblioteca", "mcp"):
             continue  # implementação real vem da biblioteca/MCP no registro em runtime
@@ -7213,7 +7213,15 @@ def _emit_declared_tools(tools_py: str, tools_doc: dict) -> str:
             f'    def _run(self, {args}):\n{corpo}\n'
         )
     if blocos_novos:
-        tools_py = tools_py.rstrip() + "\n\n\n" + "\n\n".join(blocos_novos)
+        # As classes têm de vir ANTES do TOOL_REGISTRY, que as instancia: emitidas no fim do
+        # arquivo, o import quebrava com NameError na subida do servidor de agentes.
+        bloco = "\n\n".join(blocos_novos)
+        _m_reg = _re.search(r"(?m)^TOOL_REGISTRY\s*=", tools_py)
+        if _m_reg:
+            corte = _m_reg.start()
+            tools_py = tools_py[:corte] + bloco + "\n\n" + tools_py[corte:]
+        else:
+            tools_py = tools_py.rstrip() + "\n\n\n" + bloco
     return tools_py
 
 
@@ -8794,6 +8802,9 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     if _tools_doc.get("tools"):
         _pend = [t["nome"] for t in _tools_doc["tools"] if not t.get("resolvida")]
         tools_py = _emit_declared_tools(tools_py, _tools_doc)
+        # Ferramenta de biblioteca/MCP tem a classe do modelo REMOVIDA (quem vale é a real):
+        # a entrada dela no registro tem de sair junto, senão o import quebra com NameError.
+        tools_py = _drop_undefined_registry_entries(tools_py)
         _regras = _emit_tools_rules_py(_tools_doc)
         if "def " in _regras:
             add("ws-server/tools_rules.py", _regras)
