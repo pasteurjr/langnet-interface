@@ -412,7 +412,10 @@ async def generate_code(
             "total_files": len(files),
             "current_version": 1,
             "finished_at": datetime.utcnow(),
-            "execution_metadata": {"validation_warnings": warnings},
+            # Veredito dos portões (lógica, ferramentas, contrato de tela): gravado junto com
+            # a geração para a Implantação poder recusar subir código reprovado.
+            "execution_metadata": {"validation_warnings": warnings,
+                                   "portoes": result_state.get("portoes") or {}},
         },
     )
     create_code_generation_version(
@@ -486,7 +489,10 @@ def update_files(
             "generated_files": request.files,
             "total_files": len(request.files),
             "current_version": new_version,
-            "execution_metadata": {"validation_warnings": warnings},
+            # Veredito dos portões (lógica, ferramentas, contrato de tela): gravado junto com
+            # a geração para a Implantação poder recusar subir código reprovado.
+            "execution_metadata": {"validation_warnings": warnings,
+                                   "portoes": result_state.get("portoes") or {}},
         },
     )
     create_code_generation_version(
@@ -606,7 +612,10 @@ REGRAS:
             "generated_files": new_files,
             "total_files": len(new_files),
             "current_version": new_version,
-            "execution_metadata": {"validation_warnings": warnings},
+            # Veredito dos portões (lógica, ferramentas, contrato de tela): gravado junto com
+            # a geração para a Implantação poder recusar subir código reprovado.
+            "execution_metadata": {"validation_warnings": warnings,
+                                   "portoes": result_state.get("portoes") or {}},
         },
     )
     create_code_generation_version(
@@ -673,6 +682,8 @@ def chat_history(session_id: str, current_user: dict = Depends(get_current_user)
 class DeployConfig(BaseModel):
     """Configuração informada na tela de Implantação (banco, provedor de LLM, chaves)."""
     env: Dict[str, str] = {}
+    forcar: bool = False   # implantar mesmo com a geração reprovada nos portões
+
 
 
 @router.get("/{session_id}/env-template")
@@ -709,6 +720,34 @@ def start_run_endpoint(session_id: str, config: Optional[DeployConfig] = None,
     files = session.get("generated_files") or []
     if not files:
         raise HTTPException(400, "Sessão sem arquivos")
+
+    # PORTÃO: geração reprovada não sobe sem decisão explícita. Antes os três relatórios
+    # (lógica que não virou código, ferramenta sem implementação, componente declarado e não
+    # emitido) só apareciam no registro e a implantação seguia como se estivesse tudo certo.
+    _meta = session.get("execution_metadata") or {}
+    if isinstance(_meta, str):
+        try:
+            _meta = json.loads(_meta)
+        except Exception:
+            _meta = {}
+    _portoes = _meta.get("portoes") or {}
+    if _portoes.get("reprovado") and not (config and getattr(config, "forcar", False)):
+        _resumo = []
+        for _nome, _p in _portoes.items():
+            if isinstance(_p, dict) and _p.get("reprovado"):
+                _resumo.append(f"{_p.get('descricao') or _nome}: {_p.get('quantidade')}")
+        raise HTTPException(409, {
+            "erro": "geração reprovada nos portões — implantar assim sobe um sistema com "
+                    "lacuna conhecida",
+            "portoes": _portoes,
+            "resumo": _resumo,
+            "como_prosseguir": "corrija na origem e gere de novo, ou repita com forcar=true "
+                               "para implantar mesmo assim (a decisão fica registrada)",
+        })
+    if _portoes.get("reprovado"):
+        print(f"[DEPLOY] implantação FORÇADA de geração reprovada nos portões: "
+              f"{[k for k, v in _portoes.items() if isinstance(v, dict) and v.get('reprovado')]}")
+
     run = code_runner.start_run(session_id, files, (config.env if config else None))
     return run.to_public()
 

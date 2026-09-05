@@ -8965,6 +8965,39 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
                       f"declarados, todos emitidos")
         except Exception as _e:
             print(f"[CODE-GEN][CONTRATO DE TELA] não foi possível conferir: {_e}")
+            _contrato = {"ok": True, "divergencias": [], "conferidas": 0, "componentes": 0,
+                         "erro": str(_e)}
+
+        # VEREDITO DOS PORTÕES: até agora os três só imprimiam no registro e a geração seguia
+        # como se estivesse tudo certo. Agora o resultado fica GRAVADO na sessão, e a etapa de
+        # Implantação recusa subir uma geração reprovada (com opção explícita de forçar).
+        state["portoes"] = {
+            "logica": {
+                "reprovado": bool(PASSOS_SEM_CODIGO),
+                "quantidade": len(PASSOS_SEM_CODIGO),
+                "itens": [{"tarefa": _t, "passo": _p} for _t, _p in PASSOS_SEM_CODIGO[:40]],
+                "descricao": "passos da descrição da tarefa que não viraram código",
+            },
+            "ferramentas": {
+                "reprovado": bool(_tools_doc.get("tools")) and any(
+                    not t.get("resolvida") for t in _tools_doc.get("tools", [])),
+                "quantidade": sum(1 for t in _tools_doc.get("tools", []) if not t.get("resolvida")),
+                "itens": [{"ferramenta": t["nome"], "motivo": t.get("implementacao") or "sem implementação"}
+                          for t in _tools_doc.get("tools", []) if not t.get("resolvida")],
+                "descricao": "ferramentas sem implementação declarada",
+            },
+            "contrato_tela": {
+                "reprovado": bool(_contrato.get("divergencias")),
+                "quantidade": len(_contrato.get("divergencias") or []),
+                "itens": (_contrato.get("divergencias") or [])[:40],
+                "descricao": "componentes declarados na interface que não foram emitidos",
+            },
+        }
+        state["portoes"]["reprovado"] = any(v.get("reprovado") for v in state["portoes"].values()
+                                            if isinstance(v, dict))
+        _rep = [k for k, v in state["portoes"].items()
+                if isinstance(v, dict) and v.get("reprovado")]
+        print(f"[CODE-GEN][PORTÕES] {'REPROVADO em ' + ', '.join(_rep) if _rep else 'aprovado'}")
         # Remove o App.jsx do template (vamos sobrescrever)
         files = [f for f in files if f["path"] != "frontend/src/App.jsx"]
         files.extend(screen_files)
