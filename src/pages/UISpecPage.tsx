@@ -123,6 +123,10 @@ const UISpecPage: React.FC = () => {
   const [protoInfo, setProtoInfo] = useState<{ telas?: number; bytes?: number } | null>(null);
   const [protoBusy, setProtoBusy] = useState(false);
   const [protoErr, setProtoErr] = useState<string>("");
+  // Alvo apontado DENTRO do protótipo: vai junto com a instrução para o agente, para ele saber
+  // de que tela e de que componente se está falando (antes ia só o texto).
+  const [apontando, setApontando] = useState(false);
+  const [alvo, setAlvo] = useState<{ tela?: string; rotulo?: string; campo?: string } | null>(null);
   const [generating, setGenerating] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [instructions, setInstructions] = useState("");
@@ -215,6 +219,28 @@ const UISpecPage: React.FC = () => {
     loadSpecs();
   }, [loadLatest, loadSpecs]);
 
+  // Mensagens vindas do protótipo embutido (tela aberta / componente apontado).
+  useEffect(() => {
+    const ouvir = (ev: MessageEvent) => {
+      const m: any = ev.data || {};
+      if (m.origem !== "prototipo-langnet") return;
+      if (m.tipo === "tela") setAlvo((a) => ({ ...(a || {}), tela: m.tela }));
+      if (m.tipo === "componente") {
+        setAlvo({ tela: m.tela, rotulo: m.rotulo, campo: m.campo });
+        setApontando(false);
+      }
+    };
+    window.addEventListener("message", ouvir);
+    return () => window.removeEventListener("message", ouvir);
+  }, []);
+
+  const alternarApontar = () => {
+    const q = document.querySelector('iframe[title="protótipo"]') as HTMLIFrameElement | null;
+    const lig = !apontando;
+    setApontando(lig);
+    q?.contentWindow?.postMessage({ origem: "etapa-langnet", tipo: "apontar", ligado: lig }, "*");
+  };
+
   // Protótipo já montado desta versão, se houver — abre junto com a etapa.
   useEffect(() => { carregarPrototipo(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [effectiveProjectId]);
 
@@ -258,7 +284,14 @@ const UISpecPage: React.FC = () => {
     try {
       const r = await fetch(`${API_BASE}/ui-spec/${session.session_id}/chat`, {
         method: "POST", headers,
-        body: JSON.stringify({ content: instruction, screen_id: selected }),
+        // O agente recebe a instrução JUNTO com a tela aberta e o componente apontado no
+        // protótipo — sem isso ele precisa adivinhar de que tela se fala.
+        body: JSON.stringify({
+          content: alvo?.rotulo
+            ? `Na tela "${alvo.tela}", no componente "${alvo.rotulo}"${alvo.campo ? ` (campo ${alvo.campo})` : ""}: ${instruction}`
+            : instruction,
+          screen_id: selected,
+        }),
       });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const d = await r.json();
@@ -578,6 +611,21 @@ const UISpecPage: React.FC = () => {
               mesmas telas do aplicativo · dados fictícios do Modelo de Dados
             </span>
             {protoInfo?.telas ? <span>{protoInfo.telas} telas</span> : null}
+            {protoUrl && (
+              <button
+                className={`tc-btn ${apontando ? "apontando" : ""}`}
+                onClick={alternarApontar}
+                title="Clique num componente do protótipo para falar com o agente sobre ele"
+              >
+                {apontando ? "🎯 clique no componente…" : "🎯 Apontar componente"}
+              </button>
+            )}
+            {alvo?.rotulo && (
+              <span className="uispec-proto-alvo">
+                alvo: <b>{alvo.rotulo}</b>{alvo.tela ? ` · ${alvo.tela}` : ""}
+                <button className="uispec-proto-limpar" onClick={() => setAlvo(null)} title="limpar alvo">×</button>
+              </span>
+            )}
             {protoUrl && (
               <a href={protoUrl} target="_blank" rel="noreferrer" className="tc-btn">
                 Abrir em outra aba ↗
