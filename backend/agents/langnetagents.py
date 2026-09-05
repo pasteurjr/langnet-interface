@@ -124,13 +124,25 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
         model = _os.getenv("LMSTUDIO_MODEL_NAME", "qwen2.5-coder-32b-instruct")
         _api_key = _os.getenv("LMSTUDIO_API_KEY", "lm-studio")
         _max_tokens = int(_os.getenv("LMSTUDIO_MAX_TOKENS", "16000"))
-    _timeout = float(_os.getenv("LMSTUDIO_TIMEOUT", "1800"))
+    # Tempo limite POR PROVEDOR: 1800s é do modelo LOCAL, que pode levar meia hora numa geração
+    # longa. Aplicar isso ao modelo em NUVEM faz uma chamada travada segurar a etapa inteira por
+    # 30 min antes de tentar de novo — foi o que travou a geração de casos de teste.
+    # As variáveis LMSTUDIO_* são do modelo LOCAL (o .env fixa 3600s, uma hora). O provedor em
+    # nuvem não pode herdá-las: uma chamada travada segurava a etapa inteira por uma hora antes
+    # de tentar de novo — foi o que travou a geração dos casos de teste.
+    if _provider == "deepseek":
+        _timeout = float(_os.getenv("LLM_TIMEOUT", "300"))
+    else:
+        _timeout = float(_os.getenv("LMSTUDIO_TIMEOUT", "1800"))
     # READ timeout (tempo entre bytes) SEPARADO do total: o link externo (DDNS) às vezes
     # estola no MEIO do stream — conexão fica ESTABLISHED mas SEM bytes por dezenas de min,
     # pendurando até o timeout total. Uma geração legítima produz chunks continuamente
     # (< read s entre tokens, mesmo no prefill de prompts grandes), então read=300s pega o
     # estol silencioso e falha ~12x mais rápido → o retry abaixo refaz a chamada.
-    _read = float(_os.getenv("LMSTUDIO_READ_TIMEOUT", "300"))
+    if _provider == "deepseek":
+        _read = float(_os.getenv("LLM_READ_TIMEOUT", "90"))
+    else:
+        _read = float(_os.getenv("LMSTUDIO_READ_TIMEOUT", "300"))
     _to = _httpx.Timeout(_timeout, read=_read, connect=30.0)
     client = _OpenAI(api_key=_api_key,
                      base_url=base, timeout=_to, max_retries=1)
