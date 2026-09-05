@@ -476,7 +476,19 @@ def conferir_contrato_de_tela(ui_spec: dict, arquivos: List[Dict[str, str]]) -> 
     # telas e acusar divergência onde não havia.
     from agents.langnetagents import _pascal_case
 
-    fontes = {a["path"].rsplit("/", 1)[-1][:-4]: a["content"]
+    def _sem_vocabulario(codigo: str) -> str:
+        """Remove os blocos que LISTAM nomes de campo sem renderizá-los.
+
+        O renderizador de desfecho injeta `CAMPOS_NA_TELA` e `MENSAGENS_UC` com todos os nomes
+        declarados. Procurar o campo no arquivo inteiro achava o nome nessas listas e a
+        conferência dizia "todos emitidos" mesmo com componente faltando — falso negativo que
+        anula o portão inteiro.
+        """
+        c = _re.sub(r"(?s)const CAMPOS_NA_TELA = new Set\(\[.*?\]\);", "", codigo)
+        c = _re.sub(r"(?s)const MENSAGENS_UC = \[.*?\];", "", c)
+        return c
+
+    fontes = {a["path"].rsplit("/", 1)[-1][:-4]: _sem_vocabulario(a["content"])
               for a in arquivos if "/screens/" in a["path"] and a["path"].endswith(".jsx")}
     telas = (ui_spec or {}).get("screens") or ui_spec or []
     divergencias: List[dict] = []
