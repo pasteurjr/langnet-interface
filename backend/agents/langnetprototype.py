@@ -378,3 +378,86 @@ def montar_prototipo(arquivos: List[Dict[str, str]], destino: Path,
     resumo = resumo_prototipo(arquivos)
     resumo.update({"ok": True, "erro": "", "bytes": saida_js.stat().st_size})
     return resumo
+
+
+# ── Fase 5: contrato de tela ──────────────────────────────────────────────────
+
+_MARCAS_POR_TIPO = {
+    "metric-card": ("flex:1,minWidth:170", "cartão de indicador"),
+    "kpi": ("flex:1,minWidth:170", "cartão de indicador"),
+    "metric": ("flex:1,minWidth:170", "cartão de indicador"),
+    "chart": ("ResponsiveContainer", "gráfico"),
+    "table": ("<table", "tabela"),
+    "grid": ("<table", "tabela"),
+    "datagrid": ("<table", "tabela"),
+    "kanban": ("<ol", "lista de itens"),
+    "list": ("<ol", "lista de itens"),
+    "checklist": ("<ol", "lista de itens"),
+    "checkbox": ('type="checkbox"', "caixa de marcação"),
+    "readonly": ('dado("', "valor de leitura"),
+    "label": ('dado("', "valor de leitura"),
+    "static": ('dado("', "valor de leitura"),
+    "text": ("<input", "campo"),
+    "number": ("<input", "campo"),
+    "date": ("<input", "campo"),
+    "textarea": ("<input", "campo"),
+    "password": ("<input", "campo"),
+    "email": ("<input", "campo"),
+    "select": ("<select", "seleção"),
+}
+
+
+def conferir_contrato_de_tela(ui_spec: dict, arquivos: List[Dict[str, str]]) -> dict:
+    """Compara o que a Especificação de Interface DECLARA com o que o código EMITIU.
+
+    Foi por falta desta conferência que sete telas de negócio nasceram com um título e um
+    botão: o emissor descartava calado o que não sabia desenhar, e ninguém comparava o
+    aprovado com o entregue. Aqui toda diferença é NOMEADA — nunca some.
+
+    Devolve {ok, divergencias:[{tela, tipo, campo, o_que}], conferidas, componentes}.
+    """
+    import re as _re
+
+    # Usa a MESMA nomeação do emissor — inventar outra fazia a conferência não achar 10 das 12
+    # telas e acusar divergência onde não havia.
+    from agents.langnetagents import _pascal_case
+
+    fontes = {a["path"].rsplit("/", 1)[-1][:-4]: a["content"]
+              for a in arquivos if "/screens/" in a["path"] and a["path"].endswith(".jsx")}
+    telas = (ui_spec or {}).get("screens") or ui_spec or []
+    divergencias: List[dict] = []
+    conferidas = componentes = 0
+
+    for tela in telas if isinstance(telas, list) else []:
+        nome = tela.get("name") or ""
+        alvo = _pascal_case(tela.get("id") or nome or "Screen")
+        src = fontes.get(alvo, "")
+        if not src:
+            for chave, conteudo in fontes.items():
+                if chave.lower().startswith(alvo.lower()[:12]) or alvo.lower().startswith(chave.lower()[:12]):
+                    src = conteudo
+                    break
+        if not src:
+            divergencias.append({"tela": nome, "tipo": "-", "campo": "-",
+                                 "o_que": "tela declarada não tem código emitido"})
+            continue
+        conferidas += 1
+        for c in (tela.get("components") or []):
+            componentes += 1
+            tipo = (c.get("type") or "").lower()
+            campo = c.get("field") or ""
+            marca, rotulo = _MARCAS_POR_TIPO.get(tipo, ("", tipo or "componente"))
+            # Duas perguntas, nesta ordem: o CAMPO declarado chegou ao código? E a ESTRUTURA
+            # que o tipo exige (gráfico, tabela, lista, marcação, indicador) está lá? Marca de
+            # um molde só dava falso positivo nas telas emitidas pelo outro molde — por isso a
+            # estrutura só é cobrada dos tipos que têm forma própria.
+            estruturais = ("chart", "table", "grid", "datagrid", "kanban", "list",
+                           "checklist", "checkbox", "metric-card", "kpi", "metric", "select")
+            if campo and campo not in src:
+                divergencias.append({"tela": nome, "tipo": tipo, "campo": campo,
+                                     "o_que": f"campo declarado ({rotulo}) não aparece no código"})
+            elif tipo in estruturais and marca and marca not in src:
+                divergencias.append({"tela": nome, "tipo": tipo, "campo": campo,
+                                     "o_que": f"{rotulo} declarado não foi emitido"})
+    return {"ok": not divergencias, "divergencias": divergencias,
+            "conferidas": conferidas, "componentes": componentes}

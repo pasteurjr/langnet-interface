@@ -8930,6 +8930,24 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         screen_files = _generate_business_screens(ui_spec, ws_port, project_name, tasks_yaml,
                                                   schema_sql=_schema_for_ui, task_modules=_modules,
                                                   uc_messages=_uc_msgs)
+        # CONTRATO DE TELA: compara o que a Especificação de Interface DECLARA com o que o
+        # código EMITIU. Foi por falta desta conferência que sete telas de negócio nasceram
+        # com um título e um botão — o emissor descartava calado o que não sabia desenhar.
+        try:
+            from agents.langnetprototype import conferir_contrato_de_tela as _conf_tela
+            _contrato = _conf_tela(ui_spec, screen_files)
+            if _contrato["divergencias"]:
+                print(f"[CODE-GEN][CONTRATO DE TELA] {len(_contrato['divergencias'])} divergência(s) "
+                      f"entre o declarado e o emitido ({_contrato['conferidas']} telas, "
+                      f"{_contrato['componentes']} componentes):")
+                for _d in _contrato["divergencias"][:15]:
+                    print(f"    {_d['tela']}: {_d['o_que']}"
+                          + (f" [{_d['campo']}]" if _d.get("campo") else ""))
+            else:
+                print(f"[CODE-GEN][CONTRATO DE TELA] {_contrato['componentes']} componentes "
+                      f"declarados, todos emitidos")
+        except Exception as _e:
+            print(f"[CODE-GEN][CONTRATO DE TELA] não foi possível conferir: {_e}")
         # Remove o App.jsx do template (vamos sobrescrever)
         files = [f for f in files if f["path"] != "frontend/src/App.jsx"]
         files.extend(screen_files)
