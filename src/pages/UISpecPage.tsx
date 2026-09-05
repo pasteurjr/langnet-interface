@@ -117,6 +117,12 @@ const UISpecPage: React.FC = () => {
 
   const [session, setSession] = useState<Session | null>(null);
   const [mockups, setMockups] = useState<Record<string, string>>({});
+  // ── PROTÓTIPO (Fase 3): o protótipo React roda DENTRO da etapa, num quadro embutido.
+  // Não é imagem: é o aplicativo com a fonte de dados trocada, navegável aqui mesmo.
+  const [protoUrl, setProtoUrl] = useState<string>("");
+  const [protoInfo, setProtoInfo] = useState<{ telas?: number; bytes?: number } | null>(null);
+  const [protoBusy, setProtoBusy] = useState(false);
+  const [protoErr, setProtoErr] = useState<string>("");
   const [generating, setGenerating] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [instructions, setInstructions] = useState("");
@@ -208,6 +214,9 @@ const UISpecPage: React.FC = () => {
     loadLatest();
     loadSpecs();
   }, [loadLatest, loadSpecs]);
+
+  // Protótipo já montado desta versão, se houver — abre junto com a etapa.
+  useEffect(() => { carregarPrototipo(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [effectiveProjectId]);
 
   const generate = async () => {
     if (!effectiveProjectId) {
@@ -497,6 +506,35 @@ const UISpecPage: React.FC = () => {
     </div>
   );
 
+  const raizApi = API_BASE.replace(/\/api\/?$/, "");
+
+  const carregarPrototipo = async () => {
+    if (!effectiveProjectId) return;
+    try {
+      const r = await fetch(`${API_BASE}/prototype/project/${effectiveProjectId}/latest`, { headers });
+      if (!r.ok) return;
+      const d = await r.json();
+      setProtoUrl(`${raizApi}${d.url}`);
+      setProtoInfo({ bytes: d.bytes });
+    } catch (e) { /* protótipo ainda não montado */ }
+  };
+
+  const gerarPrototipo = async () => {
+    if (!effectiveProjectId) return;
+    setProtoBusy(true); setProtoErr("");
+    try {
+      const r = await fetch(`${API_BASE}/prototype/${effectiveProjectId}/generate`, {
+        method: "POST", headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "falha ao montar o protótipo");
+      setProtoUrl(`${raizApi}${d.url}?t=${Date.now()}`);
+      setProtoInfo({ telas: d.telas, bytes: d.bytes });
+    } catch (e: any) { setProtoErr(String(e.message || e)); }
+    setProtoBusy(false);
+  };
+
   // ---- Miolo (coluna principal): galeria de mockups ----
   const galleryViewer = (
     <div className="tc-viewer">
@@ -506,6 +544,14 @@ const UISpecPage: React.FC = () => {
           <span>Versão <b>v{session.version || 1}</b></span>
           <span><b>{session.screens_count || screens.length}</b> telas</span>
           <div className="tc-summary-actions">
+            <button
+              className="tc-btn"
+              onClick={gerarPrototipo}
+              disabled={protoBusy || generating}
+              title="Monta o protótipo React desta versão e abre aqui dentro, com dados fictícios do Modelo de Dados"
+            >
+              {protoBusy ? "Montando…" : "🧪 Protótipo"}
+            </button>
             <button
               className="tc-btn"
               onClick={() => session.session_id && loadCoherence(session.session_id)}
@@ -520,6 +566,29 @@ const UISpecPage: React.FC = () => {
               </button>
             )}
           </div>
+        </div>
+      )}
+
+      {/* ── PROTÓTIPO EMBUTIDO: o aplicativo com a fonte de dados trocada, navegável aqui ── */}
+      {(protoUrl || protoErr) && (
+        <div className="uispec-proto">
+          <div className="uispec-proto-head">
+            <b>Protótipo navegável</b>
+            <span className="uispec-proto-nota">
+              mesmas telas do aplicativo · dados fictícios do Modelo de Dados
+            </span>
+            {protoInfo?.telas ? <span>{protoInfo.telas} telas</span> : null}
+            {protoUrl && (
+              <a href={protoUrl} target="_blank" rel="noreferrer" className="tc-btn">
+                Abrir em outra aba ↗
+              </a>
+            )}
+          </div>
+          {protoErr ? (
+            <div className="uispec-proto-erro">⚠ {protoErr}</div>
+          ) : (
+            <iframe title="protótipo" src={protoUrl} className="uispec-proto-quadro" />
+          )}
         </div>
       )}
 

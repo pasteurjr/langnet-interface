@@ -19,6 +19,7 @@ from app.routers.petri_net import router as petri_net_router
 from app.routers.code_generation import router as code_generation_router
 from app.routers.test_cases import router as test_cases_router
 from app.routers.tools_stage import router as tools_stage_router
+from app.routers.prototype import router as prototype_router
 from app.routers.settings import router as settings_router, apply_settings_to_env
 from app.routers.mcp import router as mcp_router
 from api.langnetapi import router as langnet_router
@@ -60,6 +61,16 @@ app.include_router(tasks_yaml_router, prefix="/api")  # tasks.yaml generation fr
 app.include_router(task_execution_flow_router, prefix="/api")  # Task execution flow document generation
 app.include_router(petri_net_router, prefix="/api")  # Petri Net generation/get/update (project_data)
 app.include_router(code_generation_router, prefix="/api")  # Code generation: Python multi-file
+app.include_router(prototype_router)
+
+# Protótipos montados: servidos estaticamente para a etapa embutir no quadro da página.
+try:
+    from fastapi.staticfiles import StaticFiles
+    from agents.langnetprototype import RAIZ_PROTOTIPOS as _RAIZ_PROTO
+    _RAIZ_PROTO.mkdir(parents=True, exist_ok=True)
+    app.mount("/prototipo", StaticFiles(directory=str(_RAIZ_PROTO)), name="prototipo")
+except Exception as _e:
+    print(f"[prototipo] serviço estático indisponível: {_e}")  # Etapa Protótipo (prefix /api/prototype)
 app.include_router(tools_stage_router)  # Etapa Ferramentas (prefix /api/tools-stage)
 app.include_router(test_cases_router)  # Casos de Teste por Grafo de Causa-Efeito (prefix já inclui /api/test-cases)
 app.include_router(settings_router, prefix="/api")  # Configurações do Sistema (banco, LLM, integrações)

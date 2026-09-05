@@ -292,3 +292,89 @@ def resumo_prototipo(arquivos: List[Dict[str, str]]) -> dict:
     telas = [a["path"].rsplit("/", 1)[-1][:-4] for a in arquivos
              if "/screens/" in a["path"] and a["path"].endswith(".jsx")]
     return {"arquivos": len(arquivos), "telas": len(telas), "nomes": sorted(telas)}
+
+
+# ── Montagem: grava, empacota e deixa pronto para servir ──────────────────────
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+RAIZ_PROTOTIPOS = Path(os.environ.get("LANGNET_PROTOTIPOS", "/tmp/langnet-prototipos"))
+CACHE_FRONTEND = Path(os.environ.get("LANGNET_FRONTEND_CACHE",
+                                     str(Path.home() / ".langnet-cache" / "frontend")))
+
+
+def _achar_esbuild() -> Optional[str]:
+    """esbuild empacota o protótipo em milissegundos, sem instalar nada e sem servidor de
+    desenvolvimento — que aqui não funciona (o limite de observação de arquivos do sistema já
+    está esgotado pelos aplicativos implantados)."""
+    candidatos = [
+        Path(__file__).resolve().parents[2] / "node_modules" / ".bin" / "esbuild",
+        CACHE_FRONTEND / "node_modules" / ".bin" / "esbuild",
+    ]
+    candidatos += sorted(Path.home().glob(".npm/_npx/*/node_modules/.bin/esbuild"))
+    for c in candidatos:
+        if c and Path(c).exists():
+            return str(c)
+    return shutil.which("esbuild")
+
+
+def montar_prototipo(arquivos: List[Dict[str, str]], destino: Path,
+                     project_name: str = "Protótipo") -> dict:
+    """Grava os arquivos, empacota e deixa `destino` pronto para ser servido estaticamente.
+
+    Devolve {ok, erro, arquivos, telas, bytes}. As dependências (React, Recharts) vêm do cache
+    que o motor de implantação já mantém — o protótipo não instala nada.
+    """
+    destino = Path(destino)
+    fonte = destino / "src_"
+    if fonte.exists():
+        shutil.rmtree(fonte, ignore_errors=True)
+    for a in arquivos:
+        caminho = a["path"]
+        if not caminho.startswith("frontend/"):
+            continue
+        alvo = fonte / caminho[len("frontend/"):]
+        alvo.parent.mkdir(parents=True, exist_ok=True)
+        alvo.write_text(a["content"], encoding="utf-8")
+
+    modulos = CACHE_FRONTEND / "node_modules"
+    if modulos.exists():
+        link = fonte / "node_modules"
+        if not link.exists():
+            try:
+                link.symlink_to(modulos, target_is_directory=True)
+            except OSError:
+                pass
+
+    esbuild = _achar_esbuild()
+    if not esbuild:
+        return {"ok": False, "erro": "esbuild não encontrado — não é possível empacotar o protótipo"}
+
+    destino.mkdir(parents=True, exist_ok=True)
+    saida_js = destino / "bundle.js"
+    cmd = [esbuild, str(fonte / "src" / "index.js"), "--bundle", "--loader:.js=jsx",
+           "--loader:.jsx=jsx", f"--outfile={saida_js}",
+           # O App gerado lê process.env.REACT_APP_BACKEND_URL; sem definir o objeto inteiro,
+           # o pacote quebra no navegador com "process is not defined" e a tela fica em branco.
+           '--define:process={"env":{"NODE_ENV":"production"}}', "--minify"]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180, cwd=str(fonte))
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "erro": f"falha ao empacotar: {e}"}
+    if r.returncode != 0:
+        return {"ok": False, "erro": (r.stderr or r.stdout or "erro ao empacotar")[-1200:]}
+
+    (destino / "index.html").write_text(
+        '<!doctype html><html lang="pt-br"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{project_name} — protótipo</title>'
+        '<script src="https://cdn.tailwindcss.com"></script>'
+        '<style>body{margin:0}</style></head><body><div id="root"></div>'
+        '<script src="./bundle.js"></script></body></html>', encoding="utf-8")
+
+    resumo = resumo_prototipo(arquivos)
+    resumo.update({"ok": True, "erro": "", "bytes": saida_js.stat().st_size})
+    return resumo
