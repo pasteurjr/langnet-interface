@@ -205,10 +205,12 @@ def assercao_padrao(tc, r, houve_erro, txt):
         achou = msg.lower() in txt
         if achou:
             return True, f"respondeu '{msg}'"
-        # Caso com causa NEGADA: a frase é uma RECUSA e tem de vir do sistema. Caso com todas
-        # as causas verdadeiras: a frase é um RÓTULO do resultado, e a tela é quem exibe —
-        # basta o rótulo existir na tela e o sistema ter devolvido o dado.
-        if not _tem_causa_negada(tc) and msg.lower() in FE_SRC.lower() and not houve_erro:
+        # DEFEITO CORRIGIDO: eu tratava QUALQUER causa falsa como "espere recusa". Mas negar uma
+        # causa que já é negativa ("Dados insuficientes" = FALSO) descreve o caminho FELIZ. Quem
+        # sabe o que esperar é o campo declarado pela etapa (espera: recusa | sucesso), não a
+        # contagem de causas negadas. Com 'sucesso', a frase é RÓTULO e a tela é quem exibe.
+        espera_sucesso = (obs.get("espera") == "sucesso") if obs else (not _tem_causa_negada(tc))
+        if espera_sucesso and msg.lower() in FE_SRC.lower() and not houve_erro:
             return True, f"rótulo '{msg}' exibido pela tela; sistema devolveu o dado"
         return False, f"não disse '{msg}' — respondeu: {txt[:90]}"
     if _tem_causa_negada(tc):

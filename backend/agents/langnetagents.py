@@ -3211,8 +3211,13 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                 # tem de dizer isso, não "verificação falhou".
                 _ext = [f.split(":", 1)[1] for f in _fails if f.startswith("output_has:")]
                 if _ext and _mcp_bound(task_name):
-                    _msg = ("dados não conformes recebidos do sistema externo — importação "
-                            "bloqueada (faltam: " + ", ".join(_ext) + ")")
+                    # Usa a frase que o caso de uso especifica ("Dados do laboratório não
+                    # conformes com NHSN"), quando existe; só cai no texto genérico se não houver.
+                    _msg = _msg_negocio(task_name, "saida", "")
+                    if not _msg or "conform" not in _msg.lower():
+                        _msg = ("dados não conformes recebidos do sistema externo — importação "
+                                "bloqueada")
+                    _msg = _msg + " (faltam: " + ", ".join(_ext) + ")"
                     _pay = {{"task_name": task_name, "error": _msg, "dados_nao_conformes": True,
                             "campos_faltantes": _ext, "verif_falha": _fails}}
                 else:
