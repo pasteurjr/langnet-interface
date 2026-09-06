@@ -173,9 +173,10 @@ class _Parser:
         if t[0] == "NOME":
             nome = self._come()[1]
             if self._olha()[0] == "OP" and self._olha()[1] == "(":
-                return self._chamada(nome)
-            self.nomes_usados.append(nome)
-            py = f"_v({nome!r})"
+                py = self._chamada(nome)          # `.campo` depois da chamada é tratado abaixo
+            else:
+                self.nomes_usados.append(nome)
+                py = f"_v({nome!r})"
         else:
             py = self._prim()
         while self._olha()[0] == "OP" and self._olha()[1] == ".":
@@ -234,6 +235,8 @@ def compilar_expressao(texto: str) -> Tuple[str, List[str]]:
     """Devolve (python, nomes_referenciados). Levanta ErroDeRegra se não compilar."""
     if not isinstance(texto, str) or not texto.strip():
         raise ErroDeRegra("expressão vazia")
+    # Herança da prosa: `{campo}` e `{{campo}}` significam o nome `campo`.
+    texto = re.sub(r"\{\{?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}?\}", r"\1", texto)
     p = _Parser(texto.strip())
     return p.compilar(), p.nomes_usados
 
@@ -302,7 +305,9 @@ def validar_passos(passos: Any, execution: str = "deterministic",
                 f = p.get("ferramenta") or ""
                 if not f:
                     raise ErroDeRegra("`ferramenta` obrigatória")
-                if ferramentas_resolvidas is not None and f not in ferramentas_resolvidas:
+                if ferramentas_resolvidas is not None and f not in ferramentas_resolvidas \
+                        and _canonizar_ferramenta(f) not in ferramentas_resolvidas \
+                        and f not in ferramentas_da_biblioteca():
                     raise ErroDeRegra(f"ferramenta «{f}» não está resolvida na etapa Ferramentas")
                 for a in (p.get("argumentos") or {}).values():
                     compilar_expressao(str(a))
@@ -322,6 +327,24 @@ def validar_passos(passos: Any, execution: str = "deterministic",
 
 
 # ────────────────────────────────── emissão ──────────────────────────────────────
+
+def _canonizar_ferramenta(nome: Any) -> str:
+    """Sinônimo -> nome canônico da biblioteca (mesma tabela da etapa Ferramentas)."""
+    try:
+        from agents.langnettools_stage import SINONIMOS
+        return SINONIMOS.get(str(nome), str(nome))
+    except Exception:
+        return str(nome)
+
+
+def ferramentas_da_biblioteca() -> set:
+    """Nomes que SEMPRE têm implementação real (biblioteca do gerador), com sinônimos."""
+    try:
+        from agents.langnettools_stage import BIBLIOTECA_REAL, SINONIMOS
+        return set(BIBLIOTECA_REAL) | set(SINONIMOS)
+    except Exception:
+        return set()
+
 
 def _params_py(params: List[Any]) -> str:
     return "[" + ", ".join(compilar_expressao(str(a))[0] for a in (params or [])) + "]"
@@ -402,8 +425,13 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
             elif tipo == "externo":
                 # Ferramenta sem implementação declarada NÃO vira chamada: o passo fica não
                 # emitido, a tarefa recusa em runtime e o portão barra a implantação.
-                if ferramentas_resolvidas is not None and p.get("ferramenta") not in ferramentas_resolvidas:
+                # Sinônimo (gerar_jwt, gerar_relatorio…) vira o nome CANÔNICO da biblioteca, que é o
+                # que existe no registro em tempo de execução.
+                _ferr = _canonizar_ferramenta(p.get("ferramenta"))
+                if ferramentas_resolvidas is not None and _ferr not in ferramentas_resolvidas \
+                        and p.get("ferramenta") not in ferramentas_resolvidas:
                     raise ErroDeRegra(f"ferramenta «{p.get('ferramenta')}» não está resolvida na etapa Ferramentas")
+                p = dict(p, ferramenta=_ferr)
                 args = ", ".join(f"{k!r}: {compilar_expressao(str(v))[0]}"
                                  for k, v in (p.get("argumentos") or {}).items())
                 linhas.append(f"{indent}# passo {n}: sistema externo -> {p['guarda_em']}")

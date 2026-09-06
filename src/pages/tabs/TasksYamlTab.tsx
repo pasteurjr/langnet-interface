@@ -9,6 +9,7 @@ import YamlViewerModal from '../../components/yaml/YamlViewerModal';
 import MarkdownEditorModal from '../../components/documents/MarkdownEditorModal';
 import DiffViewerModal from '../../components/documents/DiffViewerModal';
 import StagePageLayout from '../../components/stage/StagePageLayout';
+import { estruturarPassos } from '../../services/tasksYamlService';
 import { toast } from 'react-toastify';
 import '../DocumentsPage.css'; // USA O MESMO CSS
 import * as tasksYamlService from '../../services/tasksYamlService';
@@ -116,7 +117,9 @@ const TasksYamlTab: React.FC<TasksYamlTabProps> = ({ projectId, tabSwitcher }) =
 
       const session = await response.json();
 
-      setCurrentSessionId(session.session_id);
+      // A resposta traz `id`, não `session_id`: carregar do histórico deixava a sessão vazia e
+      // as ações da etapa (refinar, aprovar, estruturar) ficavam desabilitadas.
+      setCurrentSessionId(session.session_id || session.id || sessionId);
       setGeneratedYaml(session.tasks_yaml_content || '');
       setCurrentLoadedVersion(null); // Reset version when loading session
       setTotalTasks(session.total_tasks || 0);
@@ -607,9 +610,69 @@ const TasksYamlTab: React.FC<TasksYamlTabProps> = ({ projectId, tabSwitcher }) =
     </div>
   );
 
+  // Abre automaticamente a sessão mais recente do projeto (padrão "auto — mais recente" das
+  // outras etapas): sem isso as ações da etapa ficavam desabilitadas até o usuário achar a
+  // sessão no histórico.
+  useEffect(() => {
+    if (!projectId || currentSessionId) return;
+    (async () => {
+      try {
+        const r: any = await tasksYamlService.listTasksYamlSessions(projectId);
+        const lista: any[] = Array.isArray(r) ? r : (r?.sessions || []);
+        const ok = lista.filter((x) => x.status === 'completed' && x.id);
+        if (ok.length) {
+          ok.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+          await handleHistorySessionSelect(ok[0].id, ok[0].session_name || 'tasks.yaml');
+        }
+      } catch (e) { /* sem sessão anterior: a etapa começa vazia */ }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  // ---- ESTRUTURAR PASSOS (tradutor de regras) ----
+  // Converte a prosa de cada tarefa em `steps:` com tipos fechados; cada expressão é validada
+  // ANTES de gravar. O que não validar volta marcado como passo de agente para refinar.
+  const [estruturando, setEstruturando] = useState(false);
+  const [relatorioPassos, setRelatorioPassos] = useState<any[] | null>(null);
+  const handleEstruturar = async () => {
+    if (!currentSessionId) return;
+    setEstruturando(true); setRelatorioPassos(null);
+    try {
+      const r = await estruturarPassos(currentSessionId);
+      setRelatorioPassos(r.relatorio || []);
+      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token') || '';
+      const sess = await fetch(`${API_BASE_URL}/tasks-yaml/${currentSessionId}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (sess.ok) { const d = await sess.json(); if (d.tasks_yaml_content) setGeneratedYaml(d.tasks_yaml_content); }
+    } catch (e: any) { setRelatorioPassos([{ tarefa: '—', situacao: 'erro', erro: String(e.message || e) }]); }
+    setEstruturando(false);
+  };
+
   // ---- Controles de configuração específicos (alternador de abas + opções) ----
   const configExtras = (
     <>
+      <div className="config-group" style={{ marginBottom: 10 }}>
+        <button
+          className="btn-requirements-compact"
+          disabled={!currentSessionId || estruturando}
+          onClick={handleEstruturar}
+          title="Converte a prosa de cada tarefa num contrato de passos com tipos fechados, validado antes de gravar"
+        >
+          {estruturando ? '⏳ Estruturando passos…' : '🧩 Estruturar passos'}
+        </button>
+        {relatorioPassos && (
+          <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5 }}>
+            {relatorioPassos.map((r, i) => (
+              <div key={i} style={{ padding: '4px 0', borderBottom: '1px solid #eee' }}>
+                <b>{r.tarefa}</b> — {r.situacao}
+                {typeof r.passos === 'number' ? ` · ${r.passos} passos` : ''}
+                {r.invalidos ? ` · ${r.invalidos} sem validar` : ''}
+                {r.erro ? ` · ${String(r.erro).slice(0, 80)}` : ''}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       {tabSwitcher}
 
       <label>Nível de Detalhamento</label>

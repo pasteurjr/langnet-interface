@@ -30,6 +30,7 @@ BIBLIOTECA_REAL = {
     "document_parser_tool": "extrai texto de documento",
     "file_reader_tool": "lê arquivo do disco",
     "database_tool": "executa SQL parametrizado no banco do app",
+    "jwt_tool": "emite token de sessão assinado (HS256) com segredo do ambiente",
 }
 
 # Sinônimos comuns que o ATS costuma usar para as ferramentas da biblioteca.
@@ -44,6 +45,10 @@ SINONIMOS = {
     "notification_tool": "email_sender_tool",
     "file_reader": "file_reader_tool",
     "db_tool": "database_tool",
+    "gerar_jwt": "jwt_tool",
+    "jwt_generator": "jwt_tool",
+    "gerar_relatorio": "pdf_generator_tool",
+    "report_generator_tool": "pdf_generator_tool",
 }
 
 

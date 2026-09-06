@@ -5,8 +5,10 @@ Gera tasks.yaml a partir de documentos MD de especificação de agentes/tarefas
 
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import uuid
+import re
+import json
 from datetime import datetime
 
 from app.database import (
@@ -704,3 +706,173 @@ async def get_chat_history(session_id: str):
         "messages": messages,
         "total": len(messages)
     }
+
+
+# ─────────────── ESTRUTURAR PASSOS (tradutor de regras) ───────────────
+#
+# A descrição de cada tarefa mistura passos de banco com passos de regra em prosa; o gerador de
+# código só traduz com garantia o que está em `steps:` (tipos fechados + mini-linguagem). Esta
+# ação pede ao agente a conversão da prosa em `steps:`, VALIDA cada passo e cada expressão ANTES
+# de gravar, guarda uma versão nova do YAML e devolve, por tarefa, o que entrou e o que voltou
+# para o usuário refinar. Mesmo padrão das outras etapas: gerar → refinar → aprovar.
+
+class EstruturarRequest(BaseModel):
+    apenas_tarefas: Optional[List[str]] = None   # restringe a algumas tarefas; ausente = todas sem steps
+
+
+def _ferramentas_resolvidas_do_projeto(project_id: str) -> Optional[set]:
+    """Nomes de ferramenta com implementação declarada na etapa Ferramentas (para o passo `externo`)."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT tools_json FROM tool_sessions WHERE project_id=%s "
+                        "ORDER BY (approval_status='approved') DESC, created_at DESC LIMIT 1", (project_id,))
+            row = cur.fetchone(); cur.close()
+        if not row or not row.get("tools_json"):
+            return None
+        doc = json.loads(row["tools_json"])
+        return {t["nome"] for t in doc.get("tools", []) if t.get("resolvida")}
+    except Exception:
+        return None
+
+
+_GUIA_STEPS = """Você converte a descrição em PROSA de uma tarefa num CONTRATO de passos em JSON.
+
+Tipos permitidos (use exatamente estes nomes de campo):
+- {"tipo":"consulta","sql":"SELECT ...","params":["expr",...],"guarda_em":"nome","forma":"escalar|linha|linhas"}
+- {"tipo":"escrita","sql":"INSERT/UPDATE/DELETE ...","params":["expr",...]}
+- {"tipo":"verificacao","condicao":"expr booleana","mensagem":"frase de recusa do caso de uso"}
+- {"tipo":"calculo","atribui":"nome","expressao":"expr"}
+- {"tipo":"condicao","se":"expr booleana","passos":[...]}
+- {"tipo":"laco","para_cada":"item","em":"expr de lista","passos":[...]}
+- {"tipo":"externo","ferramenta":"nome_da_tool","argumentos":{"param":"expr"},"guarda_em":"nome","mapeia":{"campo_devolvido":"variavel"}}
+- {"tipo":"retorno","campos":["nome",...]}
+- {"tipo":"agente","instrucao":"..."}  -> SÓ quando a tarefa exige julgamento que não cabe em regra
+
+Mini-linguagem das expressões: nomes (entradas e variáveis guardadas), acesso a campo (usuario.papel),
++ - * /, == != < <= > >=, e / ou / nao, literais ('texto', 12, verdadeiro, falso, nulo, [lista]) e as funções:
+conta_valor(json,'R'), tamanho(x), confere_senha(senha, hash), existe(x), entre(x,a,b), em(x,[...]),
+arredonda(x,n), hoje(), dias_entre(a,b), texto(x), numero(x), maiusculas(x), minusculas(x),
+contem(texto,parte), soma(lista,campo), media(lista,campo), primeiro(lista), vazio(x),
+codigo_valido(codigo, tamanho).
+Nos `params`, cada item é UMA expressão (normalmente o nome de uma entrada, ex.: "email"); a
+quantidade de itens deve ser IGUAL à de marcadores %s do SQL — sem marcador, `params` é [].
+NUNCA escreva chaves: {campo} da prosa vira apenas campo. Em `externo`, `ferramenta` tem de ser
+EXATAMENTE um dos nomes da lista FERRAMENTAS RESOLVIDAS; se a prosa cita outra ferramenta, use a
+equivalente da lista, ou declare o passo como `agente` explicando.
+Um SELECT que precisa de várias colunas usa forma "linha" e depois acessa nome.campo.
+Verificações de regra ("validar senha", "se X então recuse") viram `verificacao` com a MENSAGEM que o
+caso de uso especifica. Nunca invente valores de exemplo como resultado. Responda SÓ JSON:
+{"steps":[...], "observacao": "o que não coube no contrato, se houver"}"""
+
+
+@router.post("/{session_id}/estruturar-passos")
+def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dict = Depends(get_current_user)):
+    import yaml as _yaml
+    from agents.langnetagents import _direct_llm_complete
+    from agents.langnetregras import validar_passos
+
+    session = get_tasks_yaml_session(session_id)
+    if not session or not session.get("tasks_yaml_content"):
+        raise HTTPException(404, "Sessão de tasks.yaml não encontrada ou vazia")
+    try:
+        tarefas = _yaml.safe_load(session["tasks_yaml_content"]) or {}
+    except Exception as e:
+        raise HTTPException(400, f"tasks.yaml inválido: {e}")
+    resolvidas = _ferramentas_resolvidas_do_projeto(session.get("project_id") or "")
+
+    relatorio: List[dict] = []
+    alteradas = 0
+    for nome, cfg in tarefas.items():
+        if not isinstance(cfg, dict):
+            continue
+        if req.apenas_tarefas and nome not in req.apenas_tarefas:
+            continue
+        execution = str(cfg.get("execution") or "deterministic")
+        if cfg.get("steps") and not req.apenas_tarefas:
+            # Tarefa que já tem contrato: em vez de pular, tenta RECUPERAR sem o agente os passos
+            # que voltaram marcados como não validados (a gramática pode ter evoluído) e repara o
+            # único caso mecânico seguro: parâmetro sem marcador %s no SQL (parâmetro morto).
+            recuperados, reparados = 0, 0
+            novos = []
+            for st in cfg["steps"]:
+                if isinstance(st, dict) and st.get("tipo") == "agente" and \
+                        str(st.get("instrucao", "")).startswith("[NÃO VALIDADO"):
+                    m = re.search(r"\]\s*(\{.*\})\s*$", st["instrucao"], re.S)
+                    try:
+                        original = json.loads(m.group(1)) if m else None
+                    except Exception:
+                        original = None
+                    if isinstance(original, dict):
+                        if original.get("tipo") in ("consulta", "escrita") and \
+                                str(original.get("sql", "")).count("%s") == 0 and original.get("params"):
+                            original["params"] = []          # parâmetro morto: não muda o comando
+                            reparados += 1
+                        if not validar_passos([original], execution, resolvidas):
+                            novos.append(original); recuperados += 1
+                            continue
+                novos.append(st)
+            cfg["steps"] = novos
+            if recuperados:
+                alteradas += 1
+            relatorio.append({"tarefa": nome, "situacao": "já tinha contrato", "passos": len(novos),
+                              "recuperados": recuperados, "reparados": reparados,
+                              "invalidos": sum(1 for x in novos if isinstance(x, dict) and
+                                               str(x.get("instrucao", "")).startswith("[NÃO VALIDADO"))})
+            continue
+        prompt = (f"TAREFA: {nome}\nEXECUÇÃO: {execution}\n"
+                  f"FERRAMENTAS RESOLVIDAS (as únicas aceitas em `externo`): "
+                  f"{sorted(resolvidas) if resolvidas else 'nenhuma'}\n\n"
+                  f"DESCRIÇÃO EM PROSA:\n{cfg.get('description', '')}\n\n"
+                  f"SAÍDA ESPERADA:\n{cfg.get('expected_output', '')}\n")
+        try:
+            bruto = _direct_llm_complete(prompt, "JSON puro com a chave steps", _GUIA_STEPS)
+            m = re.search(r"\{.*\}", bruto or "", re.S)
+            dados = json.loads(m.group(0)) if m else {}
+        except Exception as e:  # noqa: BLE001
+            relatorio.append({"tarefa": nome, "situacao": "falha do agente", "erro": str(e)[:200]})
+            continue
+        steps = dados.get("steps")
+        if not isinstance(steps, list) or not steps:
+            relatorio.append({"tarefa": nome, "situacao": "agente não devolveu passos",
+                              "observacao": dados.get("observacao", "")})
+            continue
+        problemas = validar_passos(steps, execution, resolvidas)
+        # Passo inválido NÃO entra como está: vira `agente` com a instrução original + o motivo,
+        # para o usuário ver e refinar — o contrato nunca grava expressão que não compila.
+        indices_ruins = {p["passo"].split(".")[0] for p in problemas}
+        saneados = []
+        for i, st in enumerate(steps, 1):
+            if str(i) in indices_ruins and isinstance(st, dict):
+                motivos = "; ".join(p["motivo"] for p in problemas if p["passo"].split(".")[0] == str(i))
+                saneados.append({"tipo": "agente",
+                                 "instrucao": f"[NÃO VALIDADO: {motivos}] {json.dumps(st, ensure_ascii=False)[:300]}"})
+            else:
+                saneados.append(st)
+        cfg["steps"] = saneados
+        alteradas += 1
+        relatorio.append({"tarefa": nome, "situacao": "estruturada",
+                          "passos": len(saneados), "invalidos": len(indices_ruins),
+                          "problemas": problemas, "observacao": dados.get("observacao", "")})
+
+    if not alteradas:
+        return {"session_id": session_id, "alteradas": 0, "relatorio": relatorio}
+
+    novo_yaml = _yaml.safe_dump(tarefas, allow_unicode=True, sort_keys=False, width=100)
+    versions = get_tasks_yaml_versions(session_id)
+    nova_versao = (max([v["version"] for v in versions]) if versions else 0) + 1
+    update_tasks_yaml_session(session_id, {"tasks_yaml_content": novo_yaml, "status": "completed"})
+    create_tasks_yaml_version({
+        "session_id": session_id, "version": nova_versao, "tasks_yaml_content": novo_yaml,
+        "created_by": current_user.get("id") if isinstance(current_user, dict) else None,
+        # a coluna é um ENUM fechado: usa o valor permitido e diz o que foi na descrição
+        "change_type": "ai_refinement",
+        "change_description": f"estruturar passos: contrato `steps:` em {alteradas} tarefa(s)",
+        "doc_size": len(novo_yaml),
+    })
+    save_tasks_yaml_chat_message({
+        "session_id": session_id, "sender_type": "assistant", "sender_name": "Tradutor de regras",
+        "message_text": f"Passos estruturados em {alteradas} tarefa(s); versão v{nova_versao}.",
+        "message_type": "estruturar_passos",
+    })
+    return {"session_id": session_id, "version": nova_versao, "alteradas": alteradas, "relatorio": relatorio}

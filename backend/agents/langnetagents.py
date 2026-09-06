@@ -3656,6 +3656,8 @@ def _template_env_example(detected_tools: List[str]) -> str:
         "DEEPSEEK_API_BASE=https://api.deepseek.com",
         "DEEPSEEK_MODEL_NAME=deepseek/deepseek-v4-flash",
         "DEEPSEEK_REASONING=false",
+        "# Segredo do token de sessão (jwt_tool) — TROQUE este valor antes de usar de verdade",
+        "JWT_SECRET=troque-este-segredo-antes-de-producao",
         "DEEPSEEK_MAX_TOKENS=32768",
         "",
         "# Alternativa OpenAI: troque LLM_PROVIDER=openai e informe SUA chave",
@@ -7011,7 +7013,29 @@ class PdfReaderTool(BaseTool):
             return f"[erro ao ler {file_path}: {_e}]"
 
 
+class JwtTool(BaseTool):
+    """Emite um token de sessão assinado (HS256) com o segredo do ambiente. REAL: sem segredo
+    configurado falha explícito; nunca devolve token de enfeite."""
+    name: str = "jwt_tool"
+    description: str = ("Emite token JWT assinado (HS256). Args: sub (id do usuário), role (papel), "
+                        "exp_horas (validade em horas, padrão 8). Requer JWT_SECRET no ambiente.")
+
+    def _run(self, sub: str = "", role: str = "", exp_horas: float = 8, **kwargs) -> Dict[str, Any]:
+        import os, json, base64, hmac, hashlib, time
+        segredo = os.getenv("JWT_SECRET", "")
+        if not segredo:
+            raise RuntimeError("JwtTool: JWT_SECRET não configurado no ambiente — nenhum token emitido.")
+        def _b64(b): return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+        cab = _b64(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+        agora = int(time.time())
+        corpo = _b64(json.dumps({"sub": str(sub), "role": str(role), "iat": agora,
+                                 "exp": agora + int(float(exp_horas or 8) * 3600)}).encode())
+        ass = _b64(hmac.new(segredo.encode(), f"{cab}.{corpo}".encode(), hashlib.sha256).digest())
+        return {"token_jwt": f"{cab}.{corpo}.{ass}", "expira_em_horas": float(exp_horas or 8)}
+
+
 STD_TOOLS = {
+    "jwt_tool": JwtTool(),
     "pdf_generator_tool": PdfGeneratorTool(),
     "csv_exporter_tool": CsvExporterTool(),
     "embedding_tool": EmbeddingTool(),

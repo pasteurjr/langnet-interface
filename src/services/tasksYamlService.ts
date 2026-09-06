@@ -220,3 +220,22 @@ export default {
   getTasksYamlVersions,
   getTasksYamlChatHistory,
 };
+
+
+/**
+ * Estruturar passos (tradutor de regras): converte a prosa de cada tarefa em `steps:` com tipos
+ * fechados, valida cada expressão ANTES de gravar e devolve o relatório por tarefa.
+ * Síncrono: devolve quando a nova versão do YAML já está gravada.
+ */
+export const estruturarPassos = async (sessionId: string): Promise<any> => {
+  const response = await fetch(`${API_BASE_URL}/tasks-yaml/${sessionId}/estruturar-passos`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || 'Falha ao estruturar os passos');
+  }
+  return response.json();
+};
