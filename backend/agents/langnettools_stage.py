@@ -77,7 +77,7 @@ def resolver_ferramentas(binding: Dict[str, Dict[str, List[str]]],
                 "implementacao": f"servidor MCP — {a.get('server_name') or a.get('server_id') or 'externo'}",
                 "descricao": (a.get("description") or "").strip(),
                 "entrada": list(a.get("input_args") or []),
-                "saida": [], "regra": "", "usada_por": usos[nome],
+                "saida": list(a.get("output_args") or []), "regra": "", "usada_por": usos[nome],
             })
         elif canon in BIBLIOTECA_REAL:
             itens.append({
@@ -102,8 +102,8 @@ def resolver_ferramentas(binding: Dict[str, Dict[str, List[str]]],
             "nome": nome, "origem": "mcp", "resolvida": True,
             "implementacao": f"servidor MCP — {a.get('server_name') or a.get('server_id') or 'externo'}",
             "descricao": (a.get("description") or "").strip(),
-            "entrada": list(a.get("input_args") or []), "saida": [], "regra": "",
-            "usada_por": ["atribuída na etapa MCP"],
+            "entrada": list(a.get("input_args") or []), "saida": list(a.get("output_args") or []),
+            "regra": "", "usada_por": ["atribuída na etapa MCP"],
         })
     itens.sort(key=lambda i: i["nome"])
     return {

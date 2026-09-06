@@ -37,6 +37,7 @@ async def _discover_tools(transport: str, url: str, headers: Optional[dict],
                 "name": t.name,
                 "description": t.description or "",
                 "input_schema": getattr(t, "inputSchema", None),
+                "output_schema": getattr(t, "outputSchema", None),
             } for t in res.tools]
 
     if transport == "stdio":

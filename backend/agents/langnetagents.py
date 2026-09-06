@@ -4465,6 +4465,10 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
     MANIFESTOS_STEPS.clear()
     generated: List[str] = []
     generated_names: List[str] = []
+    # nome -> execution de TODAS as tarefas: o passo `tarefa` (orquestração) só encadeia tarefa
+    # determinística existente
+    _tarefas_sys = {str(b.get('name') or ''): str(b.get('execution') or 'deterministic')
+                    for b in blocks if b.get('name')}
     for _blk in blocks:
         task_name = _blk.get('name') or ''
         desc = _blk.get('description') or ""
@@ -4483,11 +4487,13 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
                                                "execution": "agent", "declarados": len(_blk['steps']),
                                                "emitidos": 0, "nao_emitidos": [], "passos": []}
                 continue   # tarefa de agente: os passos são instrução, não código
-            _probs = _vp(_blk['steps'], _exec, FERRAMENTAS_RESOLVIDAS_CG)
+            _probs = _vp(_blk['steps'], _exec, FERRAMENTAS_RESOLVIDAS_CG,
+                         tarefas_do_sistema=_tarefas_sys)
             _tr = _blk.get("traceability") if isinstance(_blk.get("traceability"), dict) else {}
             _fn, _man = _et(task_name, _blk['steps'],
                             _fmt_traceability_comment(_tr, indent="").strip(),
-                            ferramentas_resolvidas=FERRAMENTAS_RESOLVIDAS_CG)
+                            ferramentas_resolvidas=FERRAMENTAS_RESOLVIDAS_CG,
+                            tarefas_do_sistema=_tarefas_sys)
             _man["contrato"] = "steps"
             _man["execution"] = _exec
             _man["problemas_validacao"] = _probs
@@ -8746,8 +8752,11 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Ferramentas resolvidas na etapa Ferramentas: o passo `externo` do contrato só é aceito
     # se a ferramenta tiver implementação declarada (biblioteca, MCP ou determinística).
     _td = state.get("tools_stage_doc") or {}
+    # dict nome -> argumentos aceitos (MCP declara a entrada; biblioteca não restringe)
     globals()["FERRAMENTAS_RESOLVIDAS_CG"] = (
-        {t["nome"] for t in _td.get("tools", []) if t.get("resolvida")} if _td.get("tools") else None)
+        {t["nome"]: {"argumentos": list(t.get("entrada") or []), "saida": list(t.get("saida") or [])}
+         for t in _td.get("tools", []) if t.get("resolvida") and t.get("origem") in ("biblioteca", "mcp")}
+        if _td.get("tools") else None)
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)
     _list_helper_added = False
     if _det_snippet:
@@ -9944,6 +9953,9 @@ def _componentes_jsx(comps, action_label):
     precisa_grafico = False
     precisa_upload = False
     leitura, indicadores = [], []
+    # o campo do upload da tela: é ele que a prévia mostra e que vai no envio da ação
+    campo_upload = next((c.get("field") for c in comps
+                         if (c.get("type") or "").lower() == "file-upload" and c.get("field")), "")
 
     def _lbl(c):
         return (c.get("label") or _humanize(c.get("field") or "")).replace('"', "'")
@@ -10019,8 +10031,28 @@ def _componentes_jsx(comps, action_label):
                 + '{' + fonte + '.length > 0 ? <ol style={{margin:0,paddingLeft:20,fontSize:14,color:"#0f172a",lineHeight:1.9}}>'
                 + '{' + fonte + '.map((x,i)=><li key={i}>{typeof x==="object"?(x.nome||x.item||x.descricao||JSON.stringify(x)):String(x)}</li>)}</ol>'
                 + ' : <div style={{color:"#94a3b8",fontSize:13}}>Nenhum item — execute a ação para obter a recomendação.</div>}</div>')
+        elif t == "file-upload" and campo:
+            # Upload LIGADO ao campo declarado: o conteúdo do arquivo entra no formulário sob o
+            # nome do campo (e o nome do arquivo em <campo>_nome), logo vai no envio da ação.
+            # Antes o botão existia solto — nada chegava à tarefa e a prévia não tinha o que mostrar.
+            partes.append(
+                '<div style={{marginTop:12,marginBottom:12}}><div style={{fontSize:13,fontWeight:600,color:"#334155",marginBottom:6}}>' + _lbl(c) + '</div>'
+                + '<label data-campo="' + campo + '" style={{display:"block",border:"2px dashed #cbd5e1",borderRadius:12,padding:20,textAlign:"center",color:"#64748b",cursor:"pointer"}}>'
+                + '{form["' + campo + '_nome"] ? ("Arquivo: " + form["' + campo + '_nome"]) : "Clique para escolher o arquivo"}'
+                + '<input type="file" name="' + campo + '" style={{display:"none"}} onChange={(e)=>{const f=e.target.files&&e.target.files[0]; if(!f) return; '
+                + 'const r=new FileReader(); r.onload=()=>setForm(p=>({...p,["' + campo + '"]:String(r.result||""),["' + campo + '_nome"]:f.name})); r.readAsText(f);}} />'
+                + '</label></div>')
+        elif t == "file-preview" and campo:
+            # Prévia REAL: as primeiras linhas do arquivo carregado; sem arquivo, o que a ação devolveu
+            # para este campo; sem nada, diz que não há arquivo.
+            fonte = ('form["' + campo_upload + '"]') if campo_upload else "null"
+            partes.append(
+                '<div style={{marginTop:12,marginBottom:12}}><div style={{fontSize:13,fontWeight:600,color:"#334155",marginBottom:6}}>' + _lbl(c) + '</div>'
+                + '<pre data-campo="' + campo + '" style={{margin:0,background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:12,fontSize:12,maxHeight:220,overflow:"auto",whiteSpace:"pre-wrap"}}>'
+                + '{' + fonte + ' ? String(' + fonte + ').split("\\n").slice(0,20).join("\\n") : (dado("' + campo + '") ? (typeof dado("' + campo + '")==="object" ? JSON.stringify(dado("' + campo + '"),null,2) : String(dado("' + campo + '"))) : "Nenhum arquivo carregado.")}'
+                + '</pre></div>')
         elif t in ("file-upload", "file-preview"):
-            precisa_upload = True
+            precisa_upload = True     # declarado sem campo: fica o bloco genérico de upload
 
     bloco_leitura = ""
     if leitura:

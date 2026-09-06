@@ -3,7 +3,7 @@ BioByte Sentinela — Servidor MCP (Model Context Protocol) de integrações ext
 
 Expõe DUAS ferramentas que os agentes do app gerado consomem via MCP:
   - consultar_microbiologia(paciente_id): consulta hemocultura/antibiograma no LIS externo.
-  - escore_risco_cox(...): serviço externo que calcula o escore de risco pelo modelo de Cox.
+  - escore_risco_cox(idade, apache_ii, tipo_cateter): serviço externo que calcula o escore de risco pelo modelo de Cox.
 
 Transporte: SSE (compatível com o cliente MCP do backend LangNet). Porta padrão 9120.
 Dados são simulados de forma realista (é a fronteira do sistema — um LIS/serviço estatístico real
@@ -12,6 +12,7 @@ plugaria aqui). Rodar:  python biobyte_mcp_server.py
 import os
 import math
 import hashlib
+from typing import TypedDict
 from mcp.server.fastmcp import FastMCP
 
 PORT = int(os.getenv("BIOBYTE_MCP_PORT", "9120"))
@@ -51,18 +52,27 @@ def consultar_microbiologia(paciente_id: str) -> dict:
     return out
 
 
+class ResultadoCox(TypedDict):
+    escore_cox: float
+    nivel_risco: str
+    linear_predictor: float
+    fatores_de_risco: list
+    modelo: str
+
+
 @mcp.tool()
-def escore_risco_cox(dias_cateter: int, uti: bool, nutricao_parenteral: bool,
-                     neutropenia: bool, idade: int) -> dict:
+def escore_risco_cox(idade: int, apache_ii: int, tipo_cateter: str) -> ResultadoCox:
     """Calcula o escore de risco de ICSAC pelo modelo de perigos proporcionais de Cox.
-    Recebe fatores clínicos (dias de cateter, internação em UTI, nutrição parenteral,
-    neutropenia, idade) e devolve o escore (0-1) e o nível de risco (Baixo/Médio/Alto)."""
+    Recebe os parâmetros clínicos que a especificação define (UC-006): idade, APACHE II e tipo
+    de cateter; devolve o escore (0-1), o nível de risco (Baixo/Médio/Alto) e os fatores."""
     # Coeficientes ilustrativos do modelo de Cox (hazard ratios log-lineares).
-    lp = (0.045 * float(dias_cateter)
-          + 0.62 * (1 if uti else 0)
-          + 0.48 * (1 if nutricao_parenteral else 0)
-          + 0.85 * (1 if neutropenia else 0)
-          + 0.018 * max(0, float(idade) - 40))
+    tc = (tipo_cateter or "").strip().lower()
+    peso_cateter = (0.85 if ("dial" in tc or "hemod" in tc) else
+                    0.62 if ("central" in tc or "cvc" in tc or "venoso" in tc) else
+                    0.35 if "picc" in tc else 0.0)
+    lp = (0.018 * max(0, float(idade) - 40)
+          + 0.055 * float(apache_ii)
+          + peso_cateter)
     # baseline de sobrevida acumulada -> risco = 1 - S0^exp(lp)
     S0 = 0.97
     escore = round(1.0 - math.pow(S0, math.exp(lp)), 4)
@@ -70,10 +80,8 @@ def escore_risco_cox(dias_cateter: int, uti: bool, nutricao_parenteral: bool,
     nivel = "Alto" if escore >= 0.66 else ("Médio" if escore >= 0.33 else "Baixo")
     fatores = []
     if idade > 65: fatores.append("Idade > 65")
-    if uti: fatores.append("Internação em UTI")
-    if nutricao_parenteral: fatores.append("Nutrição parenteral")
-    if neutropenia: fatores.append("Neutropenia")
-    if dias_cateter >= 7: fatores.append(f"Cateter central há {dias_cateter} dias")
+    if apache_ii >= 20: fatores.append(f"APACHE II elevado ({apache_ii})")
+    if peso_cateter >= 0.6: fatores.append(f"Cateter de alto risco ({tipo_cateter})")
     return {"escore_cox": escore, "nivel_risco": nivel, "linear_predictor": round(lp, 4),
             "fatores_de_risco": fatores, "modelo": "Cox proportional hazards"}
 

@@ -11,6 +11,7 @@ import re
 import json
 from datetime import datetime
 
+from app.database import get_db_connection
 from app.database import (
     create_tasks_yaml_session, get_tasks_yaml_session, update_tasks_yaml_session,
     list_tasks_yaml_sessions, create_tasks_yaml_version, get_tasks_yaml_versions,
@@ -720,8 +721,9 @@ class EstruturarRequest(BaseModel):
     apenas_tarefas: Optional[List[str]] = None   # restringe a algumas tarefas; ausente = todas sem steps
 
 
-def _ferramentas_resolvidas_do_projeto(project_id: str) -> Optional[set]:
-    """Nomes de ferramenta com implementação declarada na etapa Ferramentas (para o passo `externo`)."""
+def _ferramentas_resolvidas_do_projeto(project_id: str) -> Optional[dict]:
+    """Ferramentas com implementação declarada na etapa Ferramentas: nome -> argumentos aceitos
+    (a ferramenta MCP declara a entrada; a da biblioteca não restringe -> None)."""
     try:
         with get_db_connection() as conn:
             cur = conn.cursor(dictionary=True)
@@ -731,9 +733,70 @@ def _ferramentas_resolvidas_do_projeto(project_id: str) -> Optional[set]:
         if not row or not row.get("tools_json"):
             return None
         doc = json.loads(row["tools_json"])
-        return {t["nome"] for t in doc.get("tools", []) if t.get("resolvida")}
+        # só o que TEM código: biblioteca do gerador e MCP. Ferramenta "determinística" da etapa
+        # é regra declarada ainda sem implementação — não serve de alvo para `externo`.
+        return {t["nome"]: {"argumentos": list(t.get("entrada") or []), "saida": list(t.get("saida") or [])}
+                for t in doc.get("tools", []) if t.get("resolvida") and t.get("origem") in ("biblioteca", "mcp")}
     except Exception:
         return None
+
+
+def _resumo_modelo_de_dados(project_id: str) -> str:
+    """Tabelas e colunas do DDL aprovado, compactas, para o agente escrever SQL que existe."""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT schema_sql FROM data_model_sessions WHERE project_id=%s "
+                        "AND schema_sql IS NOT NULL AND CHAR_LENGTH(schema_sql)>0 "
+                        "ORDER BY version DESC, created_at DESC LIMIT 1", (project_id,))
+            row = cur.fetchone(); cur.close()
+    except Exception:
+        return ""
+    ddl = (row or {}).get("schema_sql") or ""
+    linhas = []
+    for m in re.finditer(r"(?is)create\s+table\s+(?:if\s+not\s+exists\s+)?`?(\w+)`?\s*\((.*?)\)\s*(?:engine|comment|;|$)", ddl):
+        cols = []
+        for l in m.group(2).splitlines():
+            l = l.strip().rstrip(",")
+            if not l or re.match(r"(?i)^(primary|foreign|unique|key|index|constraint|check)\b", l):
+                continue
+            cols.append(l.split()[0].strip("`"))
+        if cols:
+            linhas.append(f"{m.group(1)}({', '.join(cols)})")
+    return "; ".join(linhas)[:3000]
+
+
+def _sanear_passos(steps: list, problemas: list) -> list:
+    """Passo que não valida NÃO entra como está: vira `agente` com o passo original e o motivo,
+    para o usuário ver e refinar — o contrato nunca grava expressão que não compila."""
+    ruins = {p["passo"].split(".")[0] for p in problemas}
+    saida = []
+    for i, st in enumerate(steps, 1):
+        if str(i) in ruins and isinstance(st, dict):
+            motivos = "; ".join(p["motivo"] for p in problemas if p["passo"].split(".")[0] == str(i))
+            saida.append({"tipo": "agente",
+                          "instrucao": f"[NÃO VALIDADO: {motivos}] {json.dumps(st, ensure_ascii=False)[:400]}"})
+        else:
+            saida.append(st)
+    return saida
+
+
+def _desmarcar(steps: list) -> list:
+    """Devolve os passos com os `[NÃO VALIDADO: …] {json}` de volta à forma original (para
+    revalidar/reparar); o que não der para ler fica como está."""
+    saida = []
+    for st in steps or []:
+        if isinstance(st, dict) and st.get("tipo") == "agente" and \
+                str(st.get("instrucao", "")).startswith("[NÃO VALIDADO"):
+            m = re.search(r"\]\s*(\{.*\})\s*$", st["instrucao"], re.S)
+            try:
+                orig = json.loads(m.group(1)) if m else None
+            except Exception:
+                orig = None
+            saida.append(orig if isinstance(orig, dict) else st)
+        else:
+            saida.append(st)
+    return saida
 
 
 _GUIA_STEPS = """Você converte a descrição em PROSA de uma tarefa num CONTRATO de passos em JSON.
@@ -746,6 +809,7 @@ Tipos permitidos (use exatamente estes nomes de campo):
 - {"tipo":"condicao","se":"expr booleana","passos":[...]}
 - {"tipo":"laco","para_cada":"item","em":"expr de lista","passos":[...]}
 - {"tipo":"externo","ferramenta":"nome_da_tool","argumentos":{"param":"expr"},"guarda_em":"nome","mapeia":{"campo_devolvido":"variavel"}}
+- {"tipo":"tarefa","nome":"outra_tarefa_deste_sistema","entrada":{"campo":"expr"},"guarda_em":"nome","mapeia":{...}}  -> orquestração: encadeia OUTRA tarefa determinística (nunca uma de agente)
 - {"tipo":"retorno","campos":["nome",...]}
 - {"tipo":"agente","instrucao":"..."}  -> SÓ quando a tarefa exige julgamento que não cabe em regra
 
@@ -758,8 +822,18 @@ codigo_valido(codigo, tamanho).
 Nos `params`, cada item é UMA expressão (normalmente o nome de uma entrada, ex.: "email"); a
 quantidade de itens deve ser IGUAL à de marcadores %s do SQL — sem marcador, `params` é [].
 NUNCA escreva chaves: {campo} da prosa vira apenas campo. Em `externo`, `ferramenta` tem de ser
-EXATAMENTE um dos nomes da lista FERRAMENTAS RESOLVIDAS; se a prosa cita outra ferramenta, use a
-equivalente da lista, ou declare o passo como `agente` explicando.
+EXATAMENTE um dos nomes da lista FERRAMENTAS RESOLVIDAS, com os argumentos que ela aceita; se a
+prosa diz "chame api_call_tool com a função X" / "service_call_X", o nome genérico NÃO é ferramenta —
+use X (se está na lista) ou, se X é outra tarefa deste sistema, o passo `tarefa`. Só é `externo` o
+que sai do sistema (laboratório, e-mail, PDF, token); validar código, senha, prazo ou saldo é
+`verificacao`/`calculo` com as funções acima. BANCO DE DADOS NUNCA é `externo` (nem database_tool,
+nem database_query): banco é `consulta`/`escrita` com o SQL no campo `sql`. Use apenas tabelas e
+colunas do MODELO DE DADOS. Argumento de ferramenta: passe o dado com o MESMO significado — nunca
+encaixe outro campo só para preencher (uti não é apache_ii); se o sistema não tem o dado, use uma
+ENTRADA da tarefa com o nome do argumento e registre isso em `observacao`. Depois de um `externo`,
+use os campos que a ferramenta DEVOLVE (via `mapeia` ou resposta.campo) — nunca outro nome.
+"Notificar" usuários do sistema sem canal externo na lista = registrar na tabela de alertas/
+notificações do MODELO (`escrita`); e-mail só com email_sender_tool. Não invente ferramenta.
 Um SELECT que precisa de várias colunas usa forma "linha" e depois acessa nome.campo.
 Verificações de regra ("validar senha", "se X então recuse") viram `verificacao` com a MENSAGEM que o
 caso de uso especifica. Nunca invente valores de exemplo como resultado. Responda SÓ JSON:
@@ -779,7 +853,47 @@ def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dic
         tarefas = _yaml.safe_load(session["tasks_yaml_content"]) or {}
     except Exception as e:
         raise HTTPException(400, f"tasks.yaml inválido: {e}")
-    resolvidas = _ferramentas_resolvidas_do_projeto(session.get("project_id") or "")
+    from agents.langnetregras import reparar_passos_mecanicos
+    project_id = session.get("project_id") or ""
+    resolvidas = _ferramentas_resolvidas_do_projeto(project_id)
+    tarefas_sys = {n: str(c.get("execution") or "deterministic")
+                   for n, c in tarefas.items() if isinstance(c, dict)}
+    from agents.langnetregras import FERRAMENTAS_DE_BANCO
+    def _assinatura(n, v):
+        a = (v or {}).get("argumentos") if isinstance(v, dict) else v
+        d = (v or {}).get("saida") if isinstance(v, dict) else None
+        txt = f"{n}({', '.join(a)})" if a else n
+        return txt + (f" -> devolve {{{', '.join(d)}}}" if d else "")
+    ferramentas_txt = ", ".join(
+        _assinatura(n, v) for n, v in sorted((resolvidas or {}).items())
+        if n not in FERRAMENTAS_DE_BANCO) or "nenhuma"
+    tarefas_txt = ", ".join(f"{n} [{e}]" for n, e in sorted(tarefas_sys.items()))
+    modelo_txt = _resumo_modelo_de_dados(project_id)
+    contexto = (f"FERRAMENTAS RESOLVIDAS (as únicas aceitas em `externo`, com os argumentos): {ferramentas_txt}\n"
+                f"TAREFAS DO SISTEMA (para o passo `tarefa`; só as [deterministic] se encadeiam): {tarefas_txt}\n"
+                f"MODELO DE DADOS: {modelo_txt or 'não disponível'}\n")
+
+    def _pedir_ao_agente(nome, cfg, execution, atuais=None, problemas=None):
+        """Uma chamada ao agente: estruturar do zero, ou CORRIGIR o contrato atual dados os motivos."""
+        if atuais is None:
+            prompt = (f"TAREFA: {nome}\nEXECUÇÃO: {execution}\n{contexto}\n"
+                      f"DESCRIÇÃO EM PROSA:\n{cfg.get('description', '')}\n\n"
+                      f"SAÍDA ESPERADA:\n{cfg.get('expected_output', '')}\n")
+        else:
+            probs = "\n".join(f"- passo {p['passo']}: {p['motivo']}" for p in (problemas or []))
+            prompt = (f"TAREFA: {nome}\nEXECUÇÃO: {execution}\n{contexto}\n"
+                      f"DESCRIÇÃO EM PROSA:\n{cfg.get('description', '')}\n\n"
+                      f"CONTRATO ATUAL (JSON):\n{json.dumps({'steps': atuais}, ensure_ascii=False)}\n\n"
+                      f"PROBLEMAS QUE IMPEDEM O CONTRATO DE VIRAR CÓDIGO:\n{probs}\n\n"
+                      "Corrija SOMENTE o necessário para eliminar esses problemas, mantendo os demais "
+                      "passos iguais, e devolva o contrato COMPLETO.")
+        bruto = _direct_llm_complete(prompt, "JSON puro com a chave steps", _GUIA_STEPS)
+        m = re.search(r"\{.*\}", bruto or "", re.S)
+        dados = json.loads(m.group(0)) if m else {}
+        steps = dados.get("steps")
+        if not isinstance(steps, list) or not steps:
+            raise ValueError("agente não devolveu passos" + (f" — {dados.get('observacao')}" if dados.get("observacao") else ""))
+        return steps, dados.get("observacao", "")
 
     relatorio: List[dict] = []
     alteradas = 0
@@ -789,71 +903,72 @@ def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dic
         if req.apenas_tarefas and nome not in req.apenas_tarefas:
             continue
         execution = str(cfg.get("execution") or "deterministic")
-        if cfg.get("steps") and not req.apenas_tarefas:
-            # Tarefa que já tem contrato: em vez de pular, tenta RECUPERAR sem o agente os passos
-            # que voltaram marcados como não validados (a gramática pode ter evoluído) e repara o
-            # único caso mecânico seguro: parâmetro sem marcador %s no SQL (parâmetro morto).
-            recuperados, reparados = 0, 0
-            novos = []
-            for st in cfg["steps"]:
-                if isinstance(st, dict) and st.get("tipo") == "agente" and \
-                        str(st.get("instrucao", "")).startswith("[NÃO VALIDADO"):
-                    m = re.search(r"\]\s*(\{.*\})\s*$", st["instrucao"], re.S)
-                    try:
-                        original = json.loads(m.group(1)) if m else None
-                    except Exception:
-                        original = None
-                    if isinstance(original, dict):
-                        if original.get("tipo") in ("consulta", "escrita") and \
-                                str(original.get("sql", "")).count("%s") == 0 and original.get("params"):
-                            original["params"] = []          # parâmetro morto: não muda o comando
-                            reparados += 1
-                        if not validar_passos([original], execution, resolvidas):
-                            novos.append(original); recuperados += 1
-                            continue
-                novos.append(st)
-            cfg["steps"] = novos
-            if recuperados:
-                alteradas += 1
-            relatorio.append({"tarefa": nome, "situacao": "já tinha contrato", "passos": len(novos),
-                              "recuperados": recuperados, "reparados": reparados,
-                              "invalidos": sum(1 for x in novos if isinstance(x, dict) and
-                                               str(x.get("instrucao", "")).startswith("[NÃO VALIDADO"))})
-            continue
-        prompt = (f"TAREFA: {nome}\nEXECUÇÃO: {execution}\n"
-                  f"FERRAMENTAS RESOLVIDAS (as únicas aceitas em `externo`): "
-                  f"{sorted(resolvidas) if resolvidas else 'nenhuma'}\n\n"
-                  f"DESCRIÇÃO EM PROSA:\n{cfg.get('description', '')}\n\n"
-                  f"SAÍDA ESPERADA:\n{cfg.get('expected_output', '')}\n")
-        try:
-            bruto = _direct_llm_complete(prompt, "JSON puro com a chave steps", _GUIA_STEPS)
-            m = re.search(r"\{.*\}", bruto or "", re.S)
-            dados = json.loads(m.group(0)) if m else {}
-        except Exception as e:  # noqa: BLE001
-            relatorio.append({"tarefa": nome, "situacao": "falha do agente", "erro": str(e)[:200]})
-            continue
-        steps = dados.get("steps")
-        if not isinstance(steps, list) or not steps:
-            relatorio.append({"tarefa": nome, "situacao": "agente não devolveu passos",
-                              "observacao": dados.get("observacao", "")})
-            continue
-        problemas = validar_passos(steps, execution, resolvidas)
-        # Passo inválido NÃO entra como está: vira `agente` com a instrução original + o motivo,
-        # para o usuário ver e refinar — o contrato nunca grava expressão que não compila.
-        indices_ruins = {p["passo"].split(".")[0] for p in problemas}
-        saneados = []
-        for i, st in enumerate(steps, 1):
-            if str(i) in indices_ruins and isinstance(st, dict):
-                motivos = "; ".join(p["motivo"] for p in problemas if p["passo"].split(".")[0] == str(i))
-                saneados.append({"tipo": "agente",
-                                 "instrucao": f"[NÃO VALIDADO: {motivos}] {json.dumps(st, ensure_ascii=False)[:300]}"})
-            else:
-                saneados.append(st)
-        cfg["steps"] = saneados
-        alteradas += 1
-        relatorio.append({"tarefa": nome, "situacao": "estruturada",
-                          "passos": len(saneados), "invalidos": len(indices_ruins),
-                          "problemas": problemas, "observacao": dados.get("observacao", "")})
+        item = {"tarefa": nome, "reparos": [], "problemas": [], "observacao": ""}
+        forcar_do_zero = bool(req.apenas_tarefas)
+        antes = json.dumps(cfg.get("steps"), ensure_ascii=False, sort_keys=True) if cfg.get("steps") else None
+
+        if cfg.get("steps") and not forcar_do_zero:
+            # Tarefa que já tem contrato: 1) volta os passos marcados à forma original; 2) reparos
+            # mecânicos (evidência no próprio passo); 3) revalida; 4) o que ainda não valida vai ao
+            # agente COM os motivos — em vez de ficar marcado para sempre.
+            steps = _desmarcar(cfg["steps"])
+            steps, reparos = reparar_passos_mecanicos(steps, resolvidas)
+            item["reparos"] = reparos
+            problemas = validar_passos(steps, execution, resolvidas, tarefas_do_sistema=tarefas_sys)
+            item["situacao"] = "já tinha contrato"
+            # Até TRÊS rodadas com o agente: a correção fica se faz PROGRESSO — nenhum dos problemas
+            # apontados sobrevive (os que surgirem a jusante vão para a rodada seguinte). (Resolver um problema
+            # pode revelar o seguinte, ex.: acertar os argumentos da ferramenta e então a leitura de
+            # um campo que ela não devolve; isso é avanço, não regressão.)
+            rodadas = 0
+            while problemas and rodadas < 3:
+                rodadas += 1
+                try:
+                    novos, obs = _pedir_ao_agente(nome, cfg, execution, atuais=steps, problemas=problemas)
+                except Exception as e:  # noqa: BLE001
+                    item["erro_agente"] = str(e)[:200]
+                    break
+                novos, rep2 = reparar_passos_mecanicos(novos, resolvidas)
+                probs_novos = validar_passos(novos, execution, resolvidas, tarefas_do_sistema=tarefas_sys)
+                antigos = {(q["passo"], q["motivo"]) for q in problemas}
+                sobreviventes = [q for q in probs_novos if (q["passo"], q["motivo"]) in antigos]
+                # progresso = os problemas apontados foram resolvidos (os que surgirem a jusante
+                # vão para a rodada seguinte); regressão = algum apontado continua lá
+                progresso = not sobreviventes
+                if progresso:
+                    steps, problemas = novos, probs_novos
+                    item["reparos"] += rep2
+                    item["observacao"] = obs
+                    item["situacao"] = "corrigida pelo agente" if not problemas else "corrigida em parte"
+                else:
+                    item["situacao"] = "correção do agente descartada (não fez progresso)"
+                    item["problemas_da_correcao"] = probs_novos
+                    break
+            steps = _sanear_passos(steps, problemas)
+        else:
+            try:
+                steps, obs = _pedir_ao_agente(nome, cfg, execution)
+            except Exception as e:  # noqa: BLE001
+                relatorio.append({"tarefa": nome, "situacao": "falha do agente", "erro": str(e)[:200]})
+                continue
+            item["observacao"] = obs
+            steps, reparos = reparar_passos_mecanicos(steps, resolvidas)
+            item["reparos"] = reparos
+            problemas = validar_passos(steps, execution, resolvidas, tarefas_do_sistema=tarefas_sys)
+            item["situacao"] = "estruturada"
+            steps = _sanear_passos(steps, problemas)
+
+        item["passos"] = len(steps)
+        item["problemas"] = problemas
+        item["invalidos"] = sum(1 for x in steps if isinstance(x, dict) and
+                                str(x.get("instrucao", "")).startswith("[NÃO VALIDADO"))
+        depois = json.dumps(steps, ensure_ascii=False, sort_keys=True)
+        if depois != antes:
+            cfg["steps"] = steps
+            alteradas += 1
+        else:
+            item["situacao"] = item.get("situacao", "") + " · sem mudança"
+        relatorio.append(item)
 
     if not alteradas:
         return {"session_id": session_id, "alteradas": 0, "relatorio": relatorio}
@@ -870,9 +985,17 @@ def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dic
         "change_description": f"estruturar passos: contrato `steps:` em {alteradas} tarefa(s)",
         "doc_size": len(novo_yaml),
     })
-    save_tasks_yaml_chat_message({
-        "session_id": session_id, "sender_type": "assistant", "sender_name": "Tradutor de regras",
-        "message_text": f"Passos estruturados em {alteradas} tarefa(s); versão v{nova_versao}.",
-        "message_type": "estruturar_passos",
-    })
+    try:
+        save_tasks_yaml_chat_message({
+            "session_id": session_id, "sender_type": "agent", "sender_name": "Tradutor de regras",
+            "message_text": f"Passos estruturados em {alteradas} tarefa(s); versão v{nova_versao}.",
+            "message_type": "result",
+        })
+    except Exception as e:  # noqa: BLE001 — a mensagem é registro; a versão já está gravada
+        print(f"[ESTRUTURAR] aviso: mensagem de chat não gravada: {e}")
+    for r in relatorio:
+        print(f"[ESTRUTURAR] {r.get('tarefa')}: {r.get('situacao')} · passos={r.get('passos')} "
+              f"invalidos={r.get('invalidos')} reparos={r.get('reparos')} problemas={r.get('problemas')}"
+              + (f" erro_agente={r.get('erro_agente')}" if r.get('erro_agente') else "")
+              + (f" problemas_da_correcao={r.get('problemas_da_correcao')}" if r.get('problemas_da_correcao') else ""))
     return {"session_id": session_id, "version": nova_versao, "alteradas": alteradas, "relatorio": relatorio}

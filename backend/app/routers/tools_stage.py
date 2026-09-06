@@ -62,37 +62,44 @@ def _ats_do_projeto(project_id: str, session_id: Optional[str]):
 
 
 def _mcp_do_projeto(project_id: str) -> List[dict]:
-    """Ferramentas MCP atribuídas ao projeto (etapa MCP)."""
-    try:
-        from app.routers.mcp import get_project_tool_assignments  # type: ignore
-        return get_project_tool_assignments(project_id) or []
-    except Exception:
-        pass
+    """Ferramentas MCP atribuídas aos agentes do projeto (etapa MCP) — mesma consulta que o
+    gerador de código usa para ligar as ferramentas, para as duas etapas enxergarem o mesmo
+    inventário. Antes procurava numa tabela que não existe e voltava vazio em silêncio: as
+    ferramentas do laboratório e do escore de Cox nunca entravam no documento."""
+    if not project_id:
+        return []
     try:
         with get_db_connection() as conn:
             cur = conn.cursor(dictionary=True)
             cur.execute(
-                "SELECT a.tool_name, a.agent_id, s.name AS server_name, t.description, t.input_schema "
-                "FROM mcp_tool_assignments a "
-                "LEFT JOIN mcp_servers s ON s.id = a.server_id "
-                "LEFT JOIN mcp_tools t ON t.server_id = a.server_id AND t.name = a.tool_name "
-                "WHERE a.project_id = %s", (project_id,))
+                "SELECT at.agent_id, at.tool_name, s.id AS server_id, s.name AS server_name, "
+                "       s.capabilities_json "
+                "FROM mcp_agent_tools at "
+                "JOIN mcp_servers s ON s.id = at.mcp_server_id "
+                "JOIN mcp_project_servers ps ON ps.mcp_server_id = s.id AND ps.project_id = at.project_id "
+                "WHERE at.project_id = %s AND ps.enabled = 1", (project_id,))
             linhas = cur.fetchall() or []
             cur.close()
-        saida = []
-        for l in linhas:
-            args = []
-            try:
-                esquema = json.loads(l.get("input_schema") or "{}")
-                args = list((esquema.get("properties") or {}).keys())
-            except Exception:
-                args = []
-            saida.append({"tool_name": l.get("tool_name"), "server_name": l.get("server_name"),
-                          "description": l.get("description") or "", "input_args": args,
-                          "agent_id": l.get("agent_id")})
-        return saida
-    except Exception:
+    except Exception as e:  # noqa: BLE001
+        print(f"[FERRAMENTAS] atribuições MCP indisponíveis: {e}")
         return []
+    saida = []
+    for l in linhas:
+        desc, args, devolve = "", [], []
+        try:
+            for t in (json.loads(l.get("capabilities_json") or "[]") or []):
+                if t.get("name") == l.get("tool_name"):
+                    desc = t.get("description") or ""
+                    esquema = t.get("inputSchema") or t.get("input_schema") or {}
+                    args = list((esquema.get("properties") or {}).keys())
+                    saida_sch = t.get("outputSchema") or t.get("output_schema") or {}
+                    devolve = list((saida_sch.get("properties") or {}).keys())
+        except Exception:
+            pass
+        saida.append({"tool_name": l.get("tool_name"), "server_name": l.get("server_name"),
+                      "server_id": l.get("server_id"), "description": desc, "input_args": args,
+                      "output_args": devolve, "agent_id": l.get("agent_id")})
+    return saida
 
 
 def _gravar_versao(conn, session_id: str, versao: int, doc: dict, tipo: str, desc: str, user_id):

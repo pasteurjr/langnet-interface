@@ -668,6 +668,17 @@ const TasksYamlTab: React.FC<TasksYamlTabProps> = ({ projectId, tabSwitcher }) =
                 {typeof r.passos === 'number' ? ` · ${r.passos} passos` : ''}
                 {r.invalidos ? ` · ${r.invalidos} sem validar` : ''}
                 {r.erro ? ` · ${String(r.erro).slice(0, 80)}` : ''}
+                {r.erro_agente ? ` · agente: ${String(r.erro_agente).slice(0, 80)}` : ''}
+                {Array.isArray(r.reparos) && r.reparos.length > 0 && (
+                  <div style={{ color: '#166534', paddingLeft: 12 }}>
+                    {r.reparos.map((x: string, k: number) => <div key={k}>✓ {x}</div>)}
+                  </div>
+                )}
+                {Array.isArray(r.problemas) && r.problemas.length > 0 && (
+                  <div style={{ color: '#9a3412', paddingLeft: 12 }}>
+                    {r.problemas.map((x: any, k: number) => <div key={k}>✗ passo {x.passo}: {x.motivo}</div>)}
+                  </div>
+                )}
               </div>
             ))}
           </div>

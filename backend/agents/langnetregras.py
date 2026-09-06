@@ -16,6 +16,8 @@ Tipos de passo:
   condicao     {se, passos: [...]}
   laco         {para_cada, em, passos: [...]}
   externo      {ferramenta, argumentos: {nome: expressao}, guarda_em, mapeia?: {campo_tool: variavel}}
+  tarefa       {nome, entrada: {campo: expressao}, guarda_em, mapeia?}  -- encadeia OUTRA tarefa
+               determinística do mesmo sistema (orquestração); tarefa de agente não se encadeia
   retorno      {campos: [...]}
   agente       {instrucao}   -- só vale em tarefa `execution: agent`
 
@@ -29,7 +31,18 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 TIPOS = ("consulta", "escrita", "verificacao", "calculo", "condicao", "laco",
-         "externo", "retorno", "agente")
+         "externo", "tarefa", "retorno", "agente")
+
+# Nomes GENÉRICOS de chamada externa que a prosa usa ("chame api_call_tool com a função X"):
+# não são ferramentas — o alvo real está no argumento. O reparo mecânico troca pelo alvo.
+CHAMADORES_GENERICOS = ("api_call_tool", "api_tool", "http_tool", "external_api", "api_call",
+                        "service_call", "rest_client", "webservice_tool")
+ARGS_DE_ALVO = ("endpoint", "funcao", "função", "function", "tool", "ferramenta", "servico",
+                "serviço", "service", "nome", "name", "operacao", "operação", "method")
+# Banco de dados NÃO é ferramenta externa: no contrato, banco é `consulta`/`escrita`. Se o agente
+# embrulha o SQL numa "ferramenta de banco", o passo perde a validação de SQL/params e a
+# emissão determinística — por isso é recusado.
+FERRAMENTAS_DE_BANCO = ("database_tool", "database_query", "db_tool", "sql_tool", "database")
 
 # nome na mini-linguagem -> (função do runtime emitido, aridade mínima, aridade máxima)
 FUNCOES: Dict[str, Tuple[str, int, int]] = {
@@ -241,6 +254,43 @@ def compilar_expressao(texto: str) -> Tuple[str, List[str]]:
     return p.compilar(), p.nomes_usados
 
 
+def acessos_de_campo(texto: str) -> List[Tuple[str, str]]:
+    """Pares (nome, campo) de cada acesso `nome.campo` na expressão (para conferir se o campo
+    existe no que a ferramenta devolve). Expressão que não tokeniza devolve lista vazia — o
+    erro de sintaxe é reportado pela compilação."""
+    try:
+        t = re.sub(r"\{\{?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}?\}", r"\1", str(texto))
+        toks = _tokenizar(t)
+    except Exception:
+        return []
+    pares = []
+    for i in range(len(toks) - 2):
+        if toks[i][0] == "NOME" and toks[i + 1][1] == "." and toks[i + 2][0] == "NOME":
+            pares.append((toks[i][1], toks[i + 2][1]))
+    return pares
+
+
+def _expressoes_do_passo(p: dict) -> List[str]:
+    tipo = str(p.get("tipo") or "").lower()
+    if tipo in ("consulta", "escrita"):
+        return [str(a) for a in (p.get("params") or [])]
+    if tipo == "verificacao":
+        return [str(p.get("condicao") or "")]
+    if tipo == "calculo":
+        return [str(p.get("expressao") or "")]
+    if tipo == "condicao":
+        return [str(p.get("se") or "")]
+    if tipo == "laco":
+        return [str(p.get("em") or "")]
+    if tipo == "externo":
+        return [str(v) for v in (p.get("argumentos") or {}).values()] if isinstance(p.get("argumentos"), dict) else []
+    if tipo == "tarefa":
+        return [str(v) for v in (p.get("entrada") or {}).values()] if isinstance(p.get("entrada"), dict) else []
+    if tipo == "retorno":
+        return [str(c) for c in (p.get("campos") or []) if isinstance(c, str)]
+    return []
+
+
 # ────────────────────────────── validação do contrato ───────────────────────────
 
 def _erro(n: str, msg: str) -> dict:
@@ -248,10 +298,18 @@ def _erro(n: str, msg: str) -> dict:
 
 
 def validar_passos(passos: Any, execution: str = "deterministic",
-                   ferramentas_resolvidas: Optional[set] = None,
-                   prefixo: str = "") -> List[dict]:
-    """Confere estrutura e compila as expressões. Devolve a lista de problemas (vazia = ok)."""
+                   ferramentas_resolvidas: Any = None,
+                   prefixo: str = "", tarefas_do_sistema: Any = None,
+                   saidas_conhecidas: Optional[dict] = None) -> List[dict]:
+    """Confere estrutura e compila as expressões. Devolve a lista de problemas (vazia = ok).
+
+    `ferramentas_resolvidas`: nomes (ou dict nome -> argumentos) que a etapa Ferramentas resolveu.
+    `tarefas_do_sistema`: dict nome -> execution das tarefas do mesmo tasks.yaml (passo `tarefa`).
+    `saidas_conhecidas`: variável guardada por `externo` -> campos que a ferramenta devolve; todo
+    acesso `variavel.campo` a ela é conferido (campo inexistente = passo inválido)."""
     problemas: List[dict] = []
+    if saidas_conhecidas is None:
+        saidas_conhecidas = {}
     if not isinstance(passos, list):
         return [_erro(prefixo or "-", "`steps` deve ser uma lista")]
     for idx, p in enumerate(passos, 1):
@@ -262,6 +320,14 @@ def validar_passos(passos: Any, execution: str = "deterministic",
         if tipo not in TIPOS:
             problemas.append(_erro(n, f"tipo «{tipo or '?'}» não existe; use um de: {', '.join(TIPOS)}"))
             continue
+        # acesso a campo que a ferramenta não devolve (ex.: resposta.valor_escore quando ela
+        # devolve escore_cox): pega ANTES de virar NULL no banco
+        for expr in _expressoes_do_passo(p):
+            for var, campo in acessos_de_campo(expr):
+                if var in saidas_conhecidas and campo not in saidas_conhecidas[var]:
+                    problemas.append(_erro(n, f"«{var}.{campo}» não existe — a ferramenta que preencheu "
+                                              f"«{var}» devolve: {', '.join(saidas_conhecidas[var])} "
+                                              "(use `mapeia` ou o nome certo)"))
         try:
             if tipo in ("consulta", "escrita"):
                 sql = p.get("sql") or ""
@@ -294,25 +360,74 @@ def validar_passos(passos: Any, execution: str = "deterministic",
             elif tipo == "condicao":
                 compilar_expressao(str(p.get("se") or ""))
                 problemas += validar_passos(p.get("passos") or [], execution,
-                                            ferramentas_resolvidas, prefixo=f"{n}.")
+                                            ferramentas_resolvidas, prefixo=f"{n}.",
+                                            tarefas_do_sistema=tarefas_do_sistema,
+                                            saidas_conhecidas=saidas_conhecidas)
             elif tipo == "laco":
                 if not re.match(r"^[A-Za-z_]\w*$", str(p.get("para_cada") or "")):
                     raise ErroDeRegra("`para_cada` deve ser um nome de variável")
                 compilar_expressao(str(p.get("em") or ""))
                 problemas += validar_passos(p.get("passos") or [], execution,
-                                            ferramentas_resolvidas, prefixo=f"{n}.")
+                                            ferramentas_resolvidas, prefixo=f"{n}.",
+                                            tarefas_do_sistema=tarefas_do_sistema,
+                                            saidas_conhecidas=saidas_conhecidas)
             elif tipo == "externo":
-                f = p.get("ferramenta") or ""
+                f = str(p.get("ferramenta") or "")
                 if not f:
                     raise ErroDeRegra("`ferramenta` obrigatória")
-                if ferramentas_resolvidas is not None and f not in ferramentas_resolvidas \
-                        and _canonizar_ferramenta(f) not in ferramentas_resolvidas \
-                        and f not in ferramentas_da_biblioteca():
+                if f in CHAMADORES_GENERICOS or f.startswith("service_call"):
+                    raise ErroDeRegra(f"«{f}» é um nome genérico, não uma ferramenta — nomeie a "
+                                      "ferramenta resolvida na etapa Ferramentas (ou a tarefa, "
+                                      "com o passo `tarefa`)")
+                if f in FERRAMENTAS_DE_BANCO or _canonizar_ferramenta(f) in FERRAMENTAS_DE_BANCO:
+                    raise ErroDeRegra("banco de dados não é ferramenta externa — escreva o passo "
+                                      "como `consulta` (SELECT) ou `escrita` (INSERT/UPDATE/DELETE)")
+                aceita, canon = _ferramenta_aceita(f, ferramentas_resolvidas)
+                if not aceita:
                     raise ErroDeRegra(f"ferramenta «{f}» não está resolvida na etapa Ferramentas")
-                for a in (p.get("argumentos") or {}).values():
+                args = p.get("argumentos") or {}
+                if not isinstance(args, dict):
+                    raise ErroDeRegra("`argumentos` deve ser um objeto {nome: expressão}")
+                for a in args.values():
                     compilar_expressao(str(a))
+                aceitos = _res_args(ferramentas_resolvidas, f)
+                if aceitos:
+                    estranhos = [k for k in args if k not in aceitos]
+                    if estranhos:
+                        raise ErroDeRegra(f"a ferramenta «{canon}» não tem o(s) argumento(s) "
+                                          f"{', '.join(estranhos)} — ela aceita: {', '.join(aceitos)}")
+                    if not args:
+                        raise ErroDeRegra(f"a ferramenta «{canon}» exige argumento(s): {', '.join(aceitos)}")
+                devolve = _res_saida(ferramentas_resolvidas, f)
+                if devolve and isinstance(p.get("mapeia"), dict):
+                    fora = [k for k in p["mapeia"] if k not in devolve]
+                    if fora:
+                        raise ErroDeRegra(f"a ferramenta «{canon}» não devolve {', '.join(fora)} — "
+                                          f"ela devolve: {', '.join(devolve)}")
                 if not p.get("guarda_em"):
                     raise ErroDeRegra("`externo` exige `guarda_em`")
+                if devolve:
+                    saidas_conhecidas[str(p["guarda_em"])] = list(devolve)
+            elif tipo == "tarefa":
+                alvo = str(p.get("nome") or "")
+                if not re.match(r"^[A-Za-z_]\w*$", alvo):
+                    raise ErroDeRegra("`nome` da tarefa a encadear é obrigatório")
+                if tarefas_do_sistema is not None:
+                    execs = tarefas_do_sistema if isinstance(tarefas_do_sistema, dict) else \
+                        {t: "deterministic" for t in tarefas_do_sistema}
+                    if alvo not in execs:
+                        raise ErroDeRegra(f"tarefa «{alvo}» não existe neste tasks.yaml")
+                    if str(execs.get(alvo) or "deterministic") == "agent":
+                        raise ErroDeRegra(f"tarefa «{alvo}» é executada por agente e não pode ser "
+                                          "encadeada dentro de uma regra — encerre aqui e deixe a "
+                                          "interface dispará-la na etapa seguinte")
+                entrada = p.get("entrada") or {}
+                if not isinstance(entrada, dict):
+                    raise ErroDeRegra("`entrada` deve ser um objeto {campo: expressão}")
+                for a in entrada.values():
+                    compilar_expressao(str(a))
+                if not p.get("guarda_em"):
+                    raise ErroDeRegra("`tarefa` exige `guarda_em`")
             elif tipo == "retorno":
                 campos = p.get("campos") or []
                 if not isinstance(campos, list) or not campos:
@@ -326,7 +441,109 @@ def validar_passos(passos: Any, execution: str = "deterministic",
     return problemas
 
 
+# ────────────────────────────── reparos mecânicos ──────────────────────────────────
+def _sem_aspas(v: Any) -> str:
+    t = str(v).strip()
+    if len(t) >= 2 and t[0] == t[-1] and t[0] in ("'", '"'):
+        return t[1:-1]
+    return t
+
+
+def reparar_passos_mecanicos(passos: List[dict], ferramentas_resolvidas: Any = None,
+                             prefixo: str = "") -> Tuple[List[dict], List[str]]:
+    """Reparos SEM agente, só onde a evidência está no próprio passo (cada um fica registrado):
+      · parâmetro morto: `params` com itens num SQL sem marcador %s -> params []
+      · sinônimo de ferramenta (gerar_jwt) -> nome canônico da biblioteca (jwt_tool)
+      · chamador genérico (api_call_tool com endpoint/funcao = X) -> a ferramenta X, se X está
+        resolvida na etapa Ferramentas; o argumento que só nomeava o alvo sai da chamada
+    Devolve (passos_reparados, lista_de_reparos)."""
+    reparos: List[str] = []
+    saida: List[dict] = []
+    nomes = _res_nomes(ferramentas_resolvidas)
+    for idx, p in enumerate(passos or [], 1):
+        n = f"{prefixo}{idx}"
+        if not isinstance(p, dict):
+            saida.append(p); continue
+        p = dict(p)
+        tipo = str(p.get("tipo") or "").lower()
+        if tipo in ("consulta", "escrita") and str(p.get("sql", "")).count("%s") == 0 and p.get("params"):
+            p["params"] = []
+            reparos.append(f"passo {n}: parâmetro sem marcador %s removido (não mudava o comando)")
+        if tipo == "externo":
+            f = str(p.get("ferramenta") or "")
+            args = dict(p.get("argumentos") or {}) if isinstance(p.get("argumentos"), dict) else {}
+            if f in CHAMADORES_GENERICOS or f.startswith("service_call"):
+                for k in list(args):
+                    if k.lower() in ARGS_DE_ALVO:
+                        alvo = _sem_aspas(args[k])
+                        ok, canon = _ferramenta_aceita(alvo, ferramentas_resolvidas)
+                        if ok and (canon in nomes or alvo in nomes):
+                            del args[k]
+                            p["ferramenta"], p["argumentos"] = canon, args
+                            reparos.append(f"passo {n}: «{f}» era só o meio de chamar — a ferramenta é «{canon}»")
+                            break
+            else:
+                canon = _canonizar_ferramenta(f)
+                if canon != f:
+                    p["ferramenta"] = canon
+                    reparos.append(f"passo {n}: «{f}» é sinônimo de «{canon}» (nome da biblioteca)")
+        for k in ("passos",):
+            if isinstance(p.get(k), list):
+                p[k], sub = reparar_passos_mecanicos(p[k], ferramentas_resolvidas, prefixo=f"{n}.")
+                reparos += sub
+        saida.append(p)
+    return saida, reparos
+
+
 # ────────────────────────────────── emissão ──────────────────────────────────────
+
+def _res_nomes(res: Any) -> set:
+    """`ferramentas_resolvidas` pode ser um conjunto de nomes ou um dict nome -> argumentos aceitos."""
+    if res is None:
+        return set()
+    return set(res.keys()) if isinstance(res, dict) else set(res)
+
+
+def _res_args(res: Any, nome: str) -> Optional[List[str]]:
+    """Argumentos aceitos pela ferramenta, quando a etapa Ferramentas os conhece (MCP)."""
+    if not isinstance(res, dict):
+        return None
+    v = res.get(nome)
+    if v is None:
+        v = res.get(_canonizar_ferramenta(nome))
+    if isinstance(v, dict):
+        v = v.get("argumentos") or v.get("input_args")
+    return list(v) if isinstance(v, (list, tuple)) and v else None
+
+
+def _res_saida(res: Any, nome: str) -> Optional[List[str]]:
+    """Campos que a ferramenta DEVOLVE, quando declarados (esquema de saída do MCP)."""
+    if not isinstance(res, dict):
+        return None
+    v = res.get(nome)
+    if v is None:
+        v = res.get(_canonizar_ferramenta(nome))
+    if isinstance(v, dict):
+        v = v.get("saida") or v.get("output_args")
+        return list(v) if isinstance(v, (list, tuple)) and v else None
+    return None
+
+
+def _ferramenta_aceita(nome: str, res: Any) -> Tuple[bool, str]:
+    """(aceita?, nome canônico). Aceita o que a etapa Ferramentas resolveu e o que a biblioteca
+    do gerador SEMPRE embarca — e nada mais: nome desconhecido não vira chamada."""
+    canon = _canonizar_ferramenta(nome)
+    nomes = _res_nomes(res)
+    if nome in nomes or canon in nomes:
+        return True, canon
+    try:
+        from agents.langnettools_stage import BIBLIOTECA_REAL
+        if canon in BIBLIOTECA_REAL:
+            return True, canon
+    except Exception:
+        pass
+    return False, canon
+
 
 def _canonizar_ferramenta(nome: Any) -> str:
     """Sinônimo -> nome canônico da biblioteca (mesma tabela da etapa Ferramentas)."""
@@ -365,7 +582,8 @@ def _coluna_escalar(sql: str, guarda_em: str) -> str:
 
 
 def emitir_passos(passos: List[dict], indent: str = "        ",
-                  prefixo: str = "", ferramentas_resolvidas: Optional[set] = None) -> Tuple[List[str], List[dict]]:
+                  prefixo: str = "", ferramentas_resolvidas: Any = None,
+                  tarefas_do_sistema: Any = None) -> Tuple[List[str], List[dict]]:
     """Devolve (linhas_python, manifesto). Cada passo declarado aparece no manifesto como
     emitido=True ou emitido=False com motivo — nunca desaparece."""
     linhas: List[str] = []
@@ -409,7 +627,8 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 linhas.append(f"{indent}# passo {n}: condição")
                 linhas.append(f"{indent}if {cond}:")
                 sub, sub_m = emitir_passos(p.get("passos") or [], indent + "    ", prefixo=f"{n}.",
-                                           ferramentas_resolvidas=ferramentas_resolvidas)
+                                           ferramentas_resolvidas=ferramentas_resolvidas,
+                                           tarefas_do_sistema=tarefas_do_sistema)
                 linhas += sub or [f"{indent}    pass"]
                 manifesto += sub_m
             elif tipo == "laco":
@@ -419,7 +638,8 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 linhas.append(f"{indent}for _item in _rt_lista({em}):")
                 linhas.append(f"{indent}    _ctx[{var!r}] = _item")
                 sub, sub_m = emitir_passos(p.get("passos") or [], indent + "    ", prefixo=f"{n}.",
-                                           ferramentas_resolvidas=ferramentas_resolvidas)
+                                           ferramentas_resolvidas=ferramentas_resolvidas,
+                                           tarefas_do_sistema=tarefas_do_sistema)
                 linhas += sub or [f"{indent}    pass"]
                 manifesto += sub_m
             elif tipo == "externo":
@@ -427,15 +647,47 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 # emitido, a tarefa recusa em runtime e o portão barra a implantação.
                 # Sinônimo (gerar_jwt, gerar_relatorio…) vira o nome CANÔNICO da biblioteca, que é o
                 # que existe no registro em tempo de execução.
-                _ferr = _canonizar_ferramenta(p.get("ferramenta"))
-                if ferramentas_resolvidas is not None and _ferr not in ferramentas_resolvidas \
-                        and p.get("ferramenta") not in ferramentas_resolvidas:
-                    raise ErroDeRegra(f"ferramenta «{p.get('ferramenta')}» não está resolvida na etapa Ferramentas")
+                _nome_f = str(p.get("ferramenta") or "")
+                if _nome_f in CHAMADORES_GENERICOS or _nome_f.startswith("service_call"):
+                    raise ErroDeRegra(f"«{_nome_f}» é um nome genérico, não uma ferramenta resolvida")
+                if _nome_f in FERRAMENTAS_DE_BANCO or _canonizar_ferramenta(_nome_f) in FERRAMENTAS_DE_BANCO:
+                    raise ErroDeRegra("banco de dados não é ferramenta externa — use `consulta`/`escrita`")
+                _ok, _ferr = _ferramenta_aceita(_nome_f, ferramentas_resolvidas)
+                if not _ok:
+                    raise ErroDeRegra(f"ferramenta «{_nome_f}» não está resolvida na etapa Ferramentas")
+                _aceitos = _res_args(ferramentas_resolvidas, _nome_f)
+                _estranhos = [k for k in (p.get("argumentos") or {}) if _aceitos and k not in _aceitos]
+                if _estranhos:
+                    raise ErroDeRegra(f"a ferramenta «{_ferr}» não tem o(s) argumento(s) "
+                                      f"{', '.join(_estranhos)} — ela aceita: {', '.join(_aceitos)}")
+                _devolve = _res_saida(ferramentas_resolvidas, _nome_f)
+                _fora = [k for k in (p.get("mapeia") or {}) if _devolve and k not in _devolve]
+                if _fora:
+                    raise ErroDeRegra(f"a ferramenta «{_ferr}» não devolve {', '.join(_fora)} — "
+                                      f"ela devolve: {', '.join(_devolve)}")
                 p = dict(p, ferramenta=_ferr)
                 args = ", ".join(f"{k!r}: {compilar_expressao(str(v))[0]}"
                                  for k, v in (p.get("argumentos") or {}).items())
                 linhas.append(f"{indent}# passo {n}: sistema externo -> {p['guarda_em']}")
                 linhas.append(f"{indent}_ctx[{p['guarda_em']!r}] = _rt_chamar_ferramenta({p['ferramenta']!r}, {{{args}}})")
+                for origem, destino in (p.get("mapeia") or {}).items():
+                    linhas.append(f"{indent}_ctx[{destino!r}] = _rt_campo(_ctx[{p['guarda_em']!r}], {origem!r})")
+            elif tipo == "tarefa":
+                # Orquestração: chama a função determinística de OUTRA tarefa deste sistema.
+                # Tarefa de agente não se encadeia — o passo fica não emitido com o motivo.
+                alvo = str(p.get("nome") or "")
+                if not re.match(r"^[A-Za-z_]\w*$", alvo):
+                    raise ErroDeRegra("`nome` da tarefa a encadear é obrigatório")
+                if isinstance(tarefas_do_sistema, dict):
+                    if alvo not in tarefas_do_sistema:
+                        raise ErroDeRegra(f"tarefa «{alvo}» não existe neste tasks.yaml")
+                    if str(tarefas_do_sistema.get(alvo) or "deterministic") == "agent":
+                        raise ErroDeRegra(f"tarefa «{alvo}» é executada por agente e não pode ser "
+                                          "encadeada dentro de uma regra")
+                ent = ", ".join(f"{k!r}: {compilar_expressao(str(v))[0]}"
+                                for k, v in (p.get("entrada") or {}).items())
+                linhas.append(f"{indent}# passo {n}: encadeia a tarefa {alvo} -> {p['guarda_em']}")
+                linhas.append(f"{indent}_ctx[{p['guarda_em']!r}] = _rt_chamar_tarefa({alvo!r}, {{{ent}}}, _ctx)")
                 for origem, destino in (p.get("mapeia") or {}).items():
                     linhas.append(f"{indent}_ctx[{destino!r}] = _rt_campo(_ctx[{p['guarda_em']!r}], {origem!r})")
             elif tipo == "retorno":
@@ -454,14 +706,15 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
 
 
 def emitir_tarefa(nome: str, passos: List[dict], traceability_comment: str = "",
-                  ferramentas_resolvidas: Optional[set] = None) -> Tuple[str, dict]:
+                  ferramentas_resolvidas: Any = None, tarefas_do_sistema: Any = None) -> Tuple[str, dict]:
     """Função `<nome>_deterministic(input_data)` completa + manifesto da tarefa.
 
     Se algum passo NÃO foi emitido, a função nasce com uma recusa explícita no topo: em vez de
     rodar pela metade e gravar resultado incompleto, ela devolve erro dizendo qual passo faltou.
     O portão de implantação lê o manifesto e barra a subida.
     """
-    corpo, manifesto = emitir_passos(passos, ferramentas_resolvidas=ferramentas_resolvidas)
+    corpo, manifesto = emitir_passos(passos, ferramentas_resolvidas=ferramentas_resolvidas,
+                                     tarefas_do_sistema=tarefas_do_sistema)
     faltando = [m for m in manifesto if not m["emitido"]]
     tem_retorno = any(str(p.get("tipo")) == "retorno" for p in passos)
     if not tem_retorno:
@@ -668,5 +921,19 @@ def _rt_chamar_ferramenta(nome, argumentos):
     if isinstance(saida, str):
         try: return _rt_json.loads(saida)
         except Exception: return {"texto": saida}
+    return saida
+
+def _rt_chamar_tarefa(nome, entrada, contexto=None):
+    """Encadeia OUTRA tarefa determinística deste sistema (orquestração). A entrada declarada
+    vai por cima do contexto corrente; o resultado da tarefa é devolvido inteiro. Tarefa de
+    agente não se encadeia — erro claro, nunca resultado inventado."""
+    fn = globals().get(f"{nome}_deterministic")
+    if fn is None:
+        raise _RegraExecucao(f"tarefa «{nome}» não tem regra determinística neste sistema "
+                             "(é executada por agente) — a interface a dispara na etapa seguinte")
+    dados = dict(contexto or {}); dados.update(entrada or {})
+    saida = fn(dados)
+    if isinstance(saida, dict) and saida.get("status") == "erro":
+        raise _RegraExecucao(f"a tarefa encadeada «{nome}» recusou: {saida.get('error')}")
     return saida
 '''
