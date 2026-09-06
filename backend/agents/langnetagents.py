@@ -3139,6 +3139,12 @@ async def _send(ws, msg_type: str, data: Any) -> None:
 
 
 async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
+    # Dado de SISTEMA: o endereço de origem é da conexão, não do formulário (auditoria).
+    if isinstance(input_data, dict) and not input_data.get("ip_origem"):
+        try:
+            input_data["ip_origem"] = (ws.remote_address or ("", 0))[0] or "127.0.0.1"
+        except Exception:
+            input_data["ip_origem"] = "127.0.0.1"
     await _send(ws, "task_start", {{"task_name": task_name, "input_data": input_data}})
 
     # VERIFICAÇÃO (Inserção B / Fase 4): PRÉ-condição — o chamador deve fornecer os inputs
@@ -7974,6 +7980,17 @@ def _derive_require_inputs(tasks_yaml: str, adapters_py: str, mcp_assign: list,
         if not isinstance(cfg, dict):
             continue
         verif = cfg.get("verification") or {}
+        _man = MANIFESTOS_STEPS.get(tname) if isinstance(cfg.get("steps"), list) else None
+        if _man and _man.get("entradas") is not None:
+            # CONTRATO manda: as entradas obrigatórias são as que os passos leem — nem a lista em
+            # prosa (idade, apache_ii… que o contrato busca no banco), nem as FKs adivinhadas.
+            _req_c = [e for e in _man["entradas"] if e != "ip_origem"]
+            if _req_c != list(verif.get("require_inputs") or []):
+                verif["require_inputs"] = _req_c
+                cfg["verification"] = verif
+                changed = True
+                print(f"[CODE-GEN][PRÉ-CONDIÇÃO] {tname}: exige {_req_c} (do contrato)")
+            continue
         if verif.get("require_inputs"):
             continue
         agente = cfg.get("agent") or cfg.get("agent_id")
@@ -8753,10 +8770,11 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # se a ferramenta tiver implementação declarada (biblioteca, MCP ou determinística).
     _td = state.get("tools_stage_doc") or {}
     # dict nome -> argumentos aceitos (MCP declara a entrada; biblioteca não restringe)
-    globals()["FERRAMENTAS_RESOLVIDAS_CG"] = (
+    from agents.langnetregras import com_biblioteca as _com_bib
+    globals()["FERRAMENTAS_RESOLVIDAS_CG"] = _com_bib(
         {t["nome"]: {"argumentos": list(t.get("entrada") or []), "saida": list(t.get("saida") or [])}
          for t in _td.get("tools", []) if t.get("resolvida") and t.get("origem") in ("biblioteca", "mcp")}
-        if _td.get("tools") else None)
+        if _td.get("tools") else {})
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)
     _list_helper_added = False
     if _det_snippet:
@@ -9030,6 +9048,34 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         try:
             from agents.langnetprototype import conferir_contrato_de_tela as _conf_tela
             _contrato = _conf_tela(ui_spec, screen_files)
+            # ENTRADAS: a tela que dispara uma tarefa com contrato tem de enviar o que o contrato
+            # lê (ou o contexto corrente carrega: *_id, usuario_id). Sem isso o operador vê
+            # "variável não definida" — o portão pega antes.
+            try:
+                _tf = {}
+                for _tn, _tc in (yaml.safe_load(tasks_yaml or "") or {}).items():
+                    if isinstance(_tc, dict):
+                        _tf[_tn] = _parse_task_input_fields(_tc.get("description", "") or "")
+                for _scr in ui_spec.get("screens") or []:
+                    _act = next((a for a in (_scr.get("actions") or []) if a.get("kind") == "task" and a.get("target")), None)
+                    if not _act:
+                        continue
+                    _alvo = _resolve_task_target(_act["target"], _tf, _scr.get("name"), screen_ucs=_scr.get("uc"),
+                                                 entity=_scr.get("entity"), kind="task")
+                    _man = MANIFESTOS_STEPS.get(_alvo or "")
+                    if not _man or _man.get("entradas") is None:
+                        continue
+                    _campos = {c.get("field") for c in (_scr.get("components") or []) if c.get("field")}
+                    for _e in _man["entradas"]:
+                        if _e in ("ip_origem", "usuario_id") or _e.endswith("_id") or _e in _campos:
+                            continue
+                        _contrato.setdefault("divergencias", []).append({
+                            "tela": _scr.get("name"), "tipo": "entrada", "campo": _e,
+                            "o_que": f"a tarefa {_alvo} exige a entrada «{_e}» e a tela não a envia "
+                                     f"(campos da tela: {', '.join(sorted(_campos)) or 'nenhum'})"})
+                        _contrato["ok"] = False
+            except Exception as _ie:
+                print(f"[CODE-GEN][CONTRATO DE TELA] conferência de entradas pulada: {_ie}")
             if _contrato["divergencias"]:
                 print(f"[CODE-GEN][CONTRATO DE TELA] {len(_contrato['divergencias'])} divergência(s) "
                       f"entre o declarado e o emitido ({_contrato['conferidas']} telas, "

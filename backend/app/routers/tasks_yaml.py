@@ -766,6 +766,141 @@ def _resumo_modelo_de_dados(project_id: str) -> str:
     return "; ".join(linhas)[:3000]
 
 
+def _ui_spec_do_projeto(project_id: str) -> dict:
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT ui_spec_json FROM ui_spec_sessions WHERE project_id=%s "
+                        "ORDER BY version DESC, created_at DESC LIMIT 1", (project_id,))
+            row = cur.fetchone(); cur.close()
+        ui = (row or {}).get("ui_spec_json") or "{}"
+        return json.loads(ui) if isinstance(ui, str) else (ui or {})
+    except Exception:
+        return {}
+
+
+def _entradas_disponiveis_por_tarefa(tarefas: dict, ui_spec: dict, ddl: str) -> dict:
+    """Para cada tarefa, os nomes que ela PODE ler: campos das telas que a disparam, identificadores
+    do contexto corrente (<tabela>_id) e dados de sistema (usuario_id, ip_origem). Tarefa que nenhuma
+    tela dispara (vem do fluxo) recebe os campos de todas as telas. É a lista que o agente vê e que
+    a validação cobra — acaba com `micro_id` inventado quando a tela manda `microbiologia_id`."""
+    try:
+        from agents import langnetagents as _la
+        tf = {n: _la._parse_task_input_fields((c or {}).get("description", "") or "")
+              for n, c in tarefas.items() if isinstance(c, dict)}
+        try:
+            _la._TASK_UCS.clear()
+            for n, c in tarefas.items():
+                if isinstance(c, dict):
+                    _uc = ((c.get("traceability") or {}).get("uc") or [])
+                    _la._TASK_UCS[n] = list(_uc) if isinstance(_uc, list) else [str(_uc)]
+        except Exception:
+            pass
+        resolver = _la._resolve_task_target
+    except Exception:
+        tf, resolver = {}, None
+    ids = {"usuario_id", "ip_origem"}
+    for m in re.finditer(r"(?is)create\s+table\s+(?:if\s+not\s+exists\s+)?`?(\w+)`?", ddl or ""):
+        t = m.group(1).lower()
+        sing = t[:-1] if t.endswith("s") else t
+        ids |= {f"{t}_id", f"{sing}_id"}
+    todos_campos = set()
+    por_tarefa: dict = {}
+    for scr in (ui_spec or {}).get("screens") or []:
+        campos = {c.get("field") for c in (scr.get("components") or []) if c.get("field")}
+        todos_campos |= campos
+        for a in scr.get("actions") or []:
+            if a.get("kind") != "task" or not a.get("target"):
+                continue
+            alvo = None
+            if resolver:
+                try:
+                    alvo = resolver(a["target"], tf, scr.get("name"), screen_ucs=scr.get("uc"),
+                                    entity=scr.get("entity"), kind="task")
+                except Exception:
+                    alvo = None
+            if alvo in tarefas:
+                por_tarefa.setdefault(alvo, set()).update(campos)
+    saida = {}
+    for n in tarefas:
+        base = por_tarefa.get(n)
+        saida[n] = (set(base) if base else set(todos_campos)) | ids
+    return saida
+
+
+_BD_CONFERENCIA = {}
+
+
+def _conferir_sql_no_modelo(steps: list, ddl: str) -> list:
+    """Roda EXPLAIN de cada SQL do contrato num banco TEMPORÁRIO criado do DDL aprovado (mesmo
+    servidor do LangNet): sintaxe, tabela e coluna erradas aparecem aqui, não na mão do operador.
+    Parâmetros recebem valor fictício 1 (EXPLAIN não executa). Erros de restrição (FK, NOT NULL,
+    duplicidade) não são erro do SQL e são ignorados."""
+    if not ddl or not steps:
+        return []
+    import hashlib
+    nome_bd = "langnet_chk_" + hashlib.sha1(ddl.encode("utf-8")).hexdigest()[:10]
+    problemas = []
+    try:
+        import mysql.connector
+        from app.config import settings as _st
+        cfg = dict(host=getattr(_st, "db_host", "127.0.0.1"), port=int(getattr(_st, "db_port", 3306)),
+                   user=getattr(_st, "db_user", ""), password=getattr(_st, "db_password", ""))
+        conn = mysql.connector.connect(**cfg)
+        cur = conn.cursor()
+        if nome_bd not in _BD_CONFERENCIA:
+            cur.execute(f"CREATE DATABASE IF NOT EXISTS `{nome_bd}`")
+            cur.execute(f"USE `{nome_bd}`")
+            cur.execute("SET FOREIGN_KEY_CHECKS=0")
+            cur.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=%s", (nome_bd,))
+            if (cur.fetchone() or [0])[0] == 0:
+                for stmt in [x.strip() for x in re.split(r";\s*\n", ddl) if x.strip()]:
+                    if re.match(r"(?is)^\s*(create|alter|set)\b", stmt):
+                        try:
+                            cur.execute(stmt)
+                        except Exception:
+                            pass
+            conn.commit()
+            _BD_CONFERENCIA[nome_bd] = True
+        else:
+            cur.execute(f"USE `{nome_bd}`")
+
+        def _varre(lista, pre=""):
+            for i, p in enumerate(lista or [], 1):
+                n = f"{pre}{i}"
+                if not isinstance(p, dict):
+                    continue
+                if p.get("tipo") in ("consulta", "escrita") and isinstance(p.get("sql"), str):
+                    sql = p["sql"]
+                    params = tuple([1] * sql.count("%s"))
+                    try:
+                        cur.execute("EXPLAIN " + sql, params)
+                        cur.fetchall()
+                    except Exception as e:
+                        msg = str(e)
+                        # constrição de dado não é erro de SQL; EXPLAIN de INSERT simples não existe
+                        # em toda versão → tenta a execução com rollback só para checar a forma
+                        if re.search(r"^1(452|048|062|364|366)\b", msg):
+                            pass
+                        elif p.get("tipo") == "escrita" and "1064" in msg and re.match(r"(?is)^\s*insert", sql):
+                            try:
+                                cur.execute("START TRANSACTION"); cur.execute(sql, params); cur.execute("ROLLBACK")
+                            except Exception as e2:
+                                cur.execute("ROLLBACK")
+                                m2 = str(e2)
+                                if not re.search(r"^1(452|048|062|364|366|265|292)\b", m2):
+                                    problemas.append({"passo": n, "motivo": f"SQL inválido no modelo de dados: {m2[:160]}"})
+                        else:
+                            problemas.append({"passo": n, "motivo": f"SQL inválido no modelo de dados: {msg[:160]}"})
+                if isinstance(p.get("passos"), list):
+                    _varre(p["passos"], f"{n}.")
+        _varre(steps)
+        cur.close(); conn.close()
+    except Exception as e:  # noqa: BLE001 — sem banco de conferência, não inventa problema
+        print(f"[ESTRUTURAR] conferência de SQL indisponível: {e}")
+    return problemas
+
+
 def _sanear_passos(steps: list, problemas: list) -> list:
     """Passo que não valida NÃO entra como está: vira `agente` com o passo original e o motivo,
     para o usuário ver e refinar — o contrato nunca grava expressão que não compila."""
@@ -804,13 +939,13 @@ _GUIA_STEPS = """Você converte a descrição em PROSA de uma tarefa num CONTRAT
 Tipos permitidos (use exatamente estes nomes de campo):
 - {"tipo":"consulta","sql":"SELECT ...","params":["expr",...],"guarda_em":"nome","forma":"escalar|linha|linhas"}
 - {"tipo":"escrita","sql":"INSERT/UPDATE/DELETE ...","params":["expr",...]}
-- {"tipo":"verificacao","condicao":"expr booleana","mensagem":"frase de recusa do caso de uso"}
+- {"tipo":"verificacao","condicao":"expr que PRECISA ser verdadeira para continuar","mensagem":"frase de recusa dada quando ela é falsa"}  (ex.: condicao "existe(paciente)", mensagem "Paciente não encontrado")
 - {"tipo":"calculo","atribui":"nome","expressao":"expr"}
 - {"tipo":"condicao","se":"expr booleana","passos":[...]}
 - {"tipo":"laco","para_cada":"item","em":"expr de lista","passos":[...]}
 - {"tipo":"externo","ferramenta":"nome_da_tool","argumentos":{"param":"expr"},"guarda_em":"nome","mapeia":{"campo_devolvido":"variavel"}}
 - {"tipo":"tarefa","nome":"outra_tarefa_deste_sistema","entrada":{"campo":"expr"},"guarda_em":"nome","mapeia":{...}}  -> orquestração: encadeia OUTRA tarefa determinística (nunca uma de agente)
-- {"tipo":"retorno","campos":["nome",...]}
+- {"tipo":"retorno","campos":["nome", "resposta.campo", "usuario.id como usuario_id", ...]}  (`como` dá o nome de saída)
 - {"tipo":"agente","instrucao":"..."}  -> SÓ quando a tarefa exige julgamento que não cabe em regra
 
 Mini-linguagem das expressões: nomes (entradas e variáveis guardadas), acesso a campo (usuario.papel),
@@ -818,7 +953,15 @@ Mini-linguagem das expressões: nomes (entradas e variáveis guardadas), acesso 
 conta_valor(json,'R'), tamanho(x), confere_senha(senha, hash), existe(x), entre(x,a,b), em(x,[...]),
 arredonda(x,n), hoje(), dias_entre(a,b), texto(x), numero(x), maiusculas(x), minusculas(x),
 contem(texto,parte), soma(lista,campo), media(lista,campo), primeiro(lista), vazio(x),
-codigo_valido(codigo, tamanho).
+codigo_valido(codigo, tamanho), hash_senha(senha) (para gravar senha_hash — senha NUNCA em claro),
+opcional(nome) (valor da entrada se veio, senão nulo — para filtros
+que podem ficar vazios: SQL "(%s IS NULL OR col >= %s)" com params ["opcional(data_inicio)","opcional(data_inicio)"]).
+Só leia nomes da lista ENTRADAS DISPONÍVEIS ou produzidos por passo anterior; nunca invente nome
+(micro_id, admin_id). Período sem entrada na tela é literal no SQL (INTERVAL 30 DAY), nunca %s.
+Ao encadear resultados para as telas seguintes, devolva identificadores com o nome do contexto
+(usuario_id, caso_id, microbiologia_id) usando `como`. Token/JWT SÓ com a ferramenta jwt_tool
+(argumentos sub, role, exp_horas; devolve token_jwt) — nunca montado com texto. Marcador de SQL
+é %s (nunca ?).
 Nos `params`, cada item é UMA expressão (normalmente o nome de uma entrada, ex.: "email"); a
 quantidade de itens deve ser IGUAL à de marcadores %s do SQL — sem marcador, `params` é [].
 NUNCA escreva chaves: {campo} da prosa vira apenas campo. Em `externo`, `ferramenta` tem de ser
@@ -853,9 +996,9 @@ def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dic
         tarefas = _yaml.safe_load(session["tasks_yaml_content"]) or {}
     except Exception as e:
         raise HTTPException(400, f"tasks.yaml inválido: {e}")
-    from agents.langnetregras import reparar_passos_mecanicos
+    from agents.langnetregras import reparar_passos_mecanicos, com_biblioteca
     project_id = session.get("project_id") or ""
-    resolvidas = _ferramentas_resolvidas_do_projeto(project_id)
+    resolvidas = com_biblioteca(_ferramentas_resolvidas_do_projeto(project_id))
     tarefas_sys = {n: str(c.get("execution") or "deterministic")
                    for n, c in tarefas.items() if isinstance(c, dict)}
     from agents.langnetregras import FERRAMENTAS_DE_BANCO
@@ -869,19 +1012,39 @@ def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dic
         if n not in FERRAMENTAS_DE_BANCO) or "nenhuma"
     tarefas_txt = ", ".join(f"{n} [{e}]" for n, e in sorted(tarefas_sys.items()))
     modelo_txt = _resumo_modelo_de_dados(project_id)
+    ddl_txt = ""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT schema_sql FROM data_model_sessions WHERE project_id=%s AND schema_sql IS NOT NULL "
+                        "AND CHAR_LENGTH(schema_sql)>0 ORDER BY version DESC, created_at DESC LIMIT 1", (project_id,))
+            ddl_txt = ((cur.fetchone() or {}).get("schema_sql") or ""); cur.close()
+    except Exception:
+        ddl_txt = ""
+    disponiveis = _entradas_disponiveis_por_tarefa(tarefas, _ui_spec_do_projeto(project_id), ddl_txt)
+
+    def _validar(nome, steps, execution):
+        probs = validar_passos(steps, execution, resolvidas, tarefas_do_sistema=tarefas_sys,
+                               entradas_disponiveis=disponiveis.get(nome))
+        probs += _conferir_sql_no_modelo(steps, ddl_txt)
+        return probs
     contexto = (f"FERRAMENTAS RESOLVIDAS (as únicas aceitas em `externo`, com os argumentos): {ferramentas_txt}\n"
                 f"TAREFAS DO SISTEMA (para o passo `tarefa`; só as [deterministic] se encadeiam): {tarefas_txt}\n"
                 f"MODELO DE DADOS: {modelo_txt or 'não disponível'}\n")
 
     def _pedir_ao_agente(nome, cfg, execution, atuais=None, problemas=None):
         """Uma chamada ao agente: estruturar do zero, ou CORRIGIR o contrato atual dados os motivos."""
+        ent_txt = ", ".join(sorted(disponiveis.get(nome) or [])) or "nenhuma"
+        cab = (f"TAREFA: {nome}\nEXECUÇÃO: {execution}\n{contexto}"
+               f"ENTRADAS DISPONÍVEIS PARA ESTA TAREFA (únicos nomes que podem ser lidos sem passo anterior; "
+               f"usuario_id e ip_origem vêm do sistema): {ent_txt}\n\n")
         if atuais is None:
-            prompt = (f"TAREFA: {nome}\nEXECUÇÃO: {execution}\n{contexto}\n"
+            prompt = (cab +
                       f"DESCRIÇÃO EM PROSA:\n{cfg.get('description', '')}\n\n"
                       f"SAÍDA ESPERADA:\n{cfg.get('expected_output', '')}\n")
         else:
             probs = "\n".join(f"- passo {p['passo']}: {p['motivo']}" for p in (problemas or []))
-            prompt = (f"TAREFA: {nome}\nEXECUÇÃO: {execution}\n{contexto}\n"
+            prompt = (cab +
                       f"DESCRIÇÃO EM PROSA:\n{cfg.get('description', '')}\n\n"
                       f"CONTRATO ATUAL (JSON):\n{json.dumps({'steps': atuais}, ensure_ascii=False)}\n\n"
                       f"PROBLEMAS QUE IMPEDEM O CONTRATO DE VIRAR CÓDIGO:\n{probs}\n\n"
@@ -914,7 +1077,7 @@ def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dic
             steps = _desmarcar(cfg["steps"])
             steps, reparos = reparar_passos_mecanicos(steps, resolvidas)
             item["reparos"] = reparos
-            problemas = validar_passos(steps, execution, resolvidas, tarefas_do_sistema=tarefas_sys)
+            problemas = _validar(nome, steps, execution)
             item["situacao"] = "já tinha contrato"
             # Até TRÊS rodadas com o agente: a correção fica se faz PROGRESSO — nenhum dos problemas
             # apontados sobrevive (os que surgirem a jusante vão para a rodada seguinte). (Resolver um problema
@@ -929,7 +1092,7 @@ def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dic
                     item["erro_agente"] = str(e)[:200]
                     break
                 novos, rep2 = reparar_passos_mecanicos(novos, resolvidas)
-                probs_novos = validar_passos(novos, execution, resolvidas, tarefas_do_sistema=tarefas_sys)
+                probs_novos = _validar(nome, novos, execution)
                 antigos = {(q["passo"], q["motivo"]) for q in problemas}
                 sobreviventes = [q for q in probs_novos if (q["passo"], q["motivo"]) in antigos]
                 # progresso = os problemas apontados foram resolvidos (os que surgirem a jusante
@@ -954,7 +1117,7 @@ def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dic
             item["observacao"] = obs
             steps, reparos = reparar_passos_mecanicos(steps, resolvidas)
             item["reparos"] = reparos
-            problemas = validar_passos(steps, execution, resolvidas, tarefas_do_sistema=tarefas_sys)
+            problemas = _validar(nome, steps, execution)
             item["situacao"] = "estruturada"
             steps = _sanear_passos(steps, problemas)
 

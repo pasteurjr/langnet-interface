@@ -43,6 +43,28 @@ ARGS_DE_ALVO = ("endpoint", "funcao", "função", "function", "tool", "ferrament
 # embrulha o SQL numa "ferramenta de banco", o passo perde a validação de SQL/params e a
 # emissão determinística — por isso é recusado.
 FERRAMENTAS_DE_BANCO = ("database_tool", "database_query", "db_tool", "sql_tool", "database")
+# Ferramentas da biblioteca do gerador: SEMPRE embarcadas no app (tools_std.py), com a assinatura
+# real. Entram na lista que o agente vê e na conferência de argumentos/saída mesmo quando a etapa
+# Ferramentas não as cita — foi por não vê-las que o agente "fabricou" um token juntando textos.
+BIBLIOTECA_ASSINATURAS = {
+    "jwt_tool":           {"argumentos": ["sub", "role", "exp_horas"], "saida": ["token_jwt", "expira_em_horas"]},
+    "pdf_generator_tool": {"argumentos": ["data", "output_path"], "saida": []},
+    "csv_exporter_tool":  {"argumentos": ["data", "output_path"], "saida": []},
+    "email_sender_tool":  {"argumentos": ["to", "subject", "body", "attachment_path"], "saida": []},
+}
+
+
+def com_biblioteca(resolvidas: Any) -> dict:
+    """Resolvidas da etapa Ferramentas + biblioteca do gerador (nome -> {argumentos, saida})."""
+    base = {}
+    if isinstance(resolvidas, dict):
+        base.update(resolvidas)
+    elif resolvidas:
+        base.update({n: None for n in resolvidas})
+    for n, v in BIBLIOTECA_ASSINATURAS.items():
+        if not isinstance(base.get(n), dict):
+            base[n] = dict(v)
+    return base
 
 # nome na mini-linguagem -> (função do runtime emitido, aridade mínima, aridade máxima)
 FUNCOES: Dict[str, Tuple[str, int, int]] = {
@@ -50,6 +72,8 @@ FUNCOES: Dict[str, Tuple[str, int, int]] = {
     "tamanho":       ("_rt_tamanho", 1, 1),
     "confere_senha": ("_rt_confere_senha", 2, 2),  # confere_senha(senha, hash_guardado)
     "existe":        ("_rt_existe", 1, 1),         # tratado à parte: recebe o NOME
+    "opcional":      ("_rt_opcional", 1, 1),       # idem: valor da entrada se veio, senão nulo
+    "hash_senha":    ("_rt_hash_senha", 1, 1),     # SHA-256 — o mesmo que confere_senha reconhece
     "entre":         ("_rt_entre", 3, 3),
     "em":            ("_rt_em", 2, 2),
     "arredonda":     ("_rt_arredonda", 1, 2),
@@ -204,11 +228,12 @@ class _Parser:
         fn, mn, mx = FUNCOES[nome]
         self._come("OP", "(")
         args: List[str] = []
-        if nome == "existe" and self._olha()[0] == "NOME":
-            # existe(x) pergunta pelo NOME, não pelo valor — senão x ausente já daria erro antes.
+        if nome in ("existe", "opcional") and self._olha()[0] == "NOME":
+            # existe(x)/opcional(x) perguntam pelo NOME, não pelo valor — senão x ausente já
+            # daria erro antes. opcional(x) é o jeito de um filtro que pode vir vazio.
             alvo = self._come()[1]
             self._come("OP", ")")
-            return f"_rt_existe_nome({alvo!r})"
+            return f"_rt_{nome}_nome({alvo!r})"
         if not (self._olha()[0] == "OP" and self._olha()[1] == ")"):
             args.append(self._ou())
             while self._olha()[0] == "OP" and self._olha()[1] == ",":
@@ -287,8 +312,49 @@ def _expressoes_do_passo(p: dict) -> List[str]:
     if tipo == "tarefa":
         return [str(v) for v in (p.get("entrada") or {}).values()] if isinstance(p.get("entrada"), dict) else []
     if tipo == "retorno":
-        return [str(c) for c in (p.get("campos") or []) if isinstance(c, str)]
+        return [re.split(r"\s+como\s+", str(c))[0] for c in (p.get("campos") or []) if isinstance(c, str)]
     return []
+
+
+def entradas_do_contrato(passos: List[dict]) -> Tuple[List[str], List[str]]:
+    """(entradas_obrigatorias, entradas_opcionais) que o contrato ESPERA receber: todo nome usado
+    numa expressão que nenhum passo anterior produziu. Nome só dentro de existe()/opcional() é
+    opcional. É o que a tela/contexto tem de fornecer — e o que o servidor confere antes de rodar."""
+    obrig: List[str] = []
+    opc: List[str] = []
+    produzidos: set = set()
+
+    def _varre(lista):
+        for p in lista or []:
+            if not isinstance(p, dict):
+                continue
+            for expr in _expressoes_do_passo(p):
+                try:
+                    toks = _tokenizar(re.sub(r"\{\{?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}?\}", r"\1", str(expr)))
+                except Exception:
+                    continue
+                for i, t in enumerate(toks):
+                    if t[0] != "NOME":
+                        continue
+                    if i + 1 < len(toks) and toks[i + 1][1] == "(":
+                        continue                       # chamada de função
+                    if i > 0 and toks[i - 1][1] == ".":
+                        continue                       # campo de um valor
+                    if t[1] in produzidos or t[1] in ("verdadeiro", "falso", "nulo"):
+                        continue
+                    tolerado = i >= 2 and toks[i - 1][1] == "(" and toks[i - 2][1] in ("existe", "opcional")
+                    (opc if tolerado else obrig).append(t[1])
+            for k in ("guarda_em", "atribui", "para_cada", "guarda_id_em"):
+                if p.get(k):
+                    produzidos.add(str(p[k]))
+            for _, destino in (p.get("mapeia") or {}).items():
+                produzidos.add(str(destino))
+            if isinstance(p.get("passos"), list):
+                _varre(p["passos"])
+    _varre(passos)
+    obrig_u = sorted(set(obrig))
+    opc_u = sorted(set(opc) - set(obrig))
+    return obrig_u, opc_u
 
 
 # ────────────────────────────── validação do contrato ───────────────────────────
@@ -300,7 +366,8 @@ def _erro(n: str, msg: str) -> dict:
 def validar_passos(passos: Any, execution: str = "deterministic",
                    ferramentas_resolvidas: Any = None,
                    prefixo: str = "", tarefas_do_sistema: Any = None,
-                   saidas_conhecidas: Optional[dict] = None) -> List[dict]:
+                   saidas_conhecidas: Optional[dict] = None,
+                   entradas_disponiveis: Optional[set] = None) -> List[dict]:
     """Confere estrutura e compila as expressões. Devolve a lista de problemas (vazia = ok).
 
     `ferramentas_resolvidas`: nomes (ou dict nome -> argumentos) que a etapa Ferramentas resolveu.
@@ -312,6 +379,14 @@ def validar_passos(passos: Any, execution: str = "deterministic",
         saidas_conhecidas = {}
     if not isinstance(passos, list):
         return [_erro(prefixo or "-", "`steps` deve ser uma lista")]
+    if not prefixo and entradas_disponiveis is not None:
+        # Entrada que ninguém fornece (a tela não tem o campo, o contexto não carrega, nenhum
+        # passo produz): em runtime seria "variável não definida" na mão do operador.
+        obrig, _opc = entradas_do_contrato(passos)
+        fora = [e for e in obrig if e not in entradas_disponiveis]
+        if fora:
+            problemas.append(_erro("-", f"entrada(s) que nenhuma tela/contexto fornece: {', '.join(fora)} — "
+                                        f"use um destes nomes: {', '.join(sorted(entradas_disponiveis))}"))
     for idx, p in enumerate(passos, 1):
         n = f"{prefixo}{idx}"
         if not isinstance(p, dict):
@@ -342,6 +417,16 @@ def validar_passos(passos: Any, execution: str = "deterministic",
                 if sql.count("%s") != len(p.get("params") or []):
                     raise ErroDeRegra(f"o SQL tem {sql.count('%s')} marcador(es) %s e "
                                       f"{len(p.get('params') or [])} parâmetro(s)")
+                if "?" in re.sub(r"'[^']*'", "", sql):
+                    raise ErroDeRegra("o SQL usa `?` como marcador — o marcador é %s")
+                # Senha em claro: coluna *_hash recebendo a senha sem hash_senha(...)
+                _params = [str(a) for a in (p.get("params") or [])]
+                for _col, _idx in _colunas_com_marcador(sql):
+                    if re.search(r"senha_hash|password_hash|hash_senha", _col.lower()) and _idx < len(_params) \
+                            and not re.search(r"hash_senha\(", _params[_idx]) \
+                            and re.search(r"senha|password", _params[_idx].lower()):
+                        raise ErroDeRegra(f"a coluna «{_col}» receberia a senha em claro — grave "
+                                          f"hash_senha({_params[_idx]})")
                 if tipo == "consulta":
                     if not p.get("guarda_em"):
                         raise ErroDeRegra("`consulta` exige `guarda_em`")
@@ -353,10 +438,24 @@ def validar_passos(passos: Any, execution: str = "deterministic",
                 compilar_expressao(str(p["condicao"]))
                 if not p.get("mensagem"):
                     raise ErroDeRegra("`mensagem` de recusa obrigatória (use a frase do caso de uso)")
+                # Polaridade: `condicao` é o que PRECISA ser verdade para seguir. "nao existe(x)"
+                # com mensagem de "não encontrado" recusa justamente quando x existe.
+                cond_l = str(p["condicao"]).strip().lower()
+                msg_l = str(p["mensagem"]).lower()
+                invertida = (re.match(r"^(nao|não)\s+existe\(", cond_l) or cond_l.startswith("vazio(")) and \
+                    re.search(r"n[aã]o[_ ](encontrad|exist|localizad)|inexist|nao_encontrad", msg_l)
+                if invertida:
+                    raise ErroDeRegra("verificação invertida: `condicao` é o que precisa ser VERDADE para "
+                                      "continuar (ex.: existe(paciente)); a mensagem é dada quando ela falha")
             elif tipo == "calculo":
                 if not re.match(r"^[A-Za-z_]\w*$", str(p.get("atribui") or "")):
                     raise ErroDeRegra("`atribui` deve ser um nome de variável")
                 compilar_expressao(str(p.get("expressao") or ""))
+                # Segredo não se fabrica com texto: token/JWT/OTP vem de ferramenta real.
+                if re.search(r"token|jwt|segredo|secret|otp|api_key", str(p["atribui"]).lower()) and \
+                        re.search(r"\+|texto\(|maiusculas\(|minusculas\(|'", str(p.get("expressao") or "")):
+                    raise ErroDeRegra(f"«{p['atribui']}» não pode ser montado com texto — token/segredo vem "
+                                      "de ferramenta real (jwt_tool: sub, role, exp_horas → token_jwt)")
             elif tipo == "condicao":
                 compilar_expressao(str(p.get("se") or ""))
                 problemas += validar_passos(p.get("passos") or [], execution,
@@ -433,8 +532,13 @@ def validar_passos(passos: Any, execution: str = "deterministic",
                 if not isinstance(campos, list) or not campos:
                     raise ErroDeRegra("`campos` do retorno obrigatórios")
                 for c in campos:
-                    if not re.match(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)?$", str(c)):
-                        raise ErroDeRegra(f"campo de retorno «{c}» deve ser um nome ou nome.campo")
+                    if not re.match(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)?(\s+como\s+[A-Za-z_]\w*)?$", str(c)):
+                        raise ErroDeRegra(f"campo de retorno «{c}» deve ser `nome`, `nome.campo` ou "
+                                          "`nome.campo como apelido`")
+                    if re.match(r"^[A-Za-z_]\w*\.id$", str(c).strip()):
+                        _base = str(c).split(".")[0]
+                        raise ErroDeRegra(f"«{c}» devolvido sem nome de contexto — escreva "
+                                          f"«{c} como {_base}_id» para as telas seguintes herdarem")
             elif tipo == "agente":
                 if execution != "agent":
                     raise ErroDeRegra("passo de agente em tarefa determinística — declare a regra "
@@ -564,6 +668,47 @@ def ferramentas_da_biblioteca() -> set:
         return set(BIBLIOTECA_REAL) | set(SINONIMOS)
     except Exception:
         return set()
+
+
+def _colunas_com_marcador(sql: str) -> List[Tuple[str, int]]:
+    """(coluna, índice do %s que a alimenta) em INSERT ... (cols) VALUES (...) e UPDATE ... SET col=%s."""
+    saida: List[Tuple[str, int]] = []
+    m = re.search(r"(?is)insert\s+into\s+`?\w+`?\s*\(([^)]*)\)\s*values\s*\((.*)\)", sql)
+    if m:
+        cols = [c.strip().strip("`") for c in m.group(1).split(",")]
+        vals = [v.strip() for v in _split_nivel0(m.group(2))]
+        k = 0
+        for col, val in zip(cols, vals):
+            if val == "%s":
+                saida.append((col, k))
+            k += val.count("%s")
+        return saida
+    m = re.search(r"(?is)update\s+`?\w+`?\s+set\s+(.*?)(\s+where\b|$)", sql)
+    if m:
+        k = 0
+        for par in _split_nivel0(m.group(1)):
+            mm = re.match(r"\s*`?(\w+)`?\s*=\s*(.*)$", par, re.S)
+            if mm:
+                if mm.group(2).strip() == "%s":
+                    saida.append((mm.group(1), k))
+                k += mm.group(2).count("%s")
+    return saida
+
+
+def _split_nivel0(texto: str) -> List[str]:
+    partes, nivel, atual = [], 0, ""
+    for ch in texto:
+        if ch == "(":
+            nivel += 1
+        elif ch == ")":
+            nivel -= 1
+        if ch == "," and nivel == 0:
+            partes.append(atual); atual = ""
+        else:
+            atual += ch
+    if atual.strip():
+        partes.append(atual)
+    return partes
 
 
 def _params_py(params: List[Any]) -> str:
@@ -699,11 +844,14 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 partes_ret = []
                 for c in p["campos"]:
                     c = str(c)
+                    apelido = None
+                    if re.search(r"\s+como\s+", c):
+                        c, apelido = re.split(r"\s+como\s+", c, maxsplit=1)
                     if "." in c:
                         expr_c, _ = compilar_expressao(c)
-                        partes_ret.append(f"{c.split('.')[-1]!r}: {expr_c}")
+                        partes_ret.append(f"{(apelido or c.split('.')[-1])!r}: {expr_c}")
                     else:
-                        partes_ret.append(f"{c!r}: _ctx.get({c!r})")
+                        partes_ret.append(f"{(apelido or c)!r}: _ctx.get({c!r})")
                 campos = ", ".join(partes_ret)
                 linhas.append(f"{indent}# passo {n}: retorno")
                 linhas.append(f"{indent}_result = {{'status': 'sucesso', {campos}}}")
@@ -761,6 +909,9 @@ def emitir_tarefa(nome: str, passos: List[dict], traceability_comment: str = "",
         "        raise _RegraExecucao(f'variável «{nome}» não definida — confira as entradas e os passos anteriores')\n"
         "    def _rt_existe_nome(nome):\n"
         "        return _ctx.get(nome) not in (None, '', [], {})\n"
+        "    def _rt_opcional_nome(nome):\n"
+        "        v = _ctx.get(nome)\n"
+        "        return None if v in ('', [], {}) else v\n"
         "    _result = None\n"
         "    try:\n"
         "        cur = conn.cursor(dictionary=True)\n"
@@ -778,7 +929,8 @@ def emitir_tarefa(nome: str, passos: List[dict], traceability_comment: str = "",
         "        except Exception: pass\n"
         "        conn.close()\n"
     )
-    return src, {"tarefa": nome, "declarados": len(manifesto),
+    _obrig, _opc = entradas_do_contrato(passos)
+    return src, {"tarefa": nome, "declarados": len(manifesto), "entradas": _obrig, "entradas_opcionais": _opc,
                  "emitidos": sum(1 for m in manifesto if m["emitido"]),
                  "nao_emitidos": faltando, "passos": manifesto}
 
@@ -935,6 +1087,10 @@ def _rt_chamar_ferramenta(nome, argumentos):
         try: return _rt_json.loads(saida)
         except Exception: return {"texto": saida}
     return saida
+
+def _rt_hash_senha(senha):
+    """Hash da senha para gravar (SHA-256, o formato que confere_senha reconhece). Senha nunca em claro."""
+    return _rt_hashlib.sha256(str(senha or "").encode("utf-8")).hexdigest()
 
 def _rt_chamar_tarefa(nome, entrada, contexto=None):
     """Encadeia OUTRA tarefa determinística deste sistema (orquestração). A entrada declarada
