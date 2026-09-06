@@ -386,7 +386,9 @@ def validar_passos(passos: Any, execution: str = "deterministic",
         fora = [e for e in obrig if e not in entradas_disponiveis]
         if fora:
             problemas.append(_erro("-", f"entrada(s) que nenhuma tela/contexto fornece: {', '.join(fora)} — "
-                                        f"use um destes nomes: {', '.join(sorted(entradas_disponiveis))}"))
+                                        f"ou é um destes nomes: {', '.join(sorted(entradas_disponiveis))}; ou o valor "
+                                        "tem de ser PRODUZIDO por um passo antes de ser lido (ex.: `calculo` "
+                                        f"que atribui {fora[0]} = 'CRIAR' dentro do ramo em que isso vale)"))
     for idx, p in enumerate(passos, 1):
         n = f"{prefixo}{idx}"
         if not isinstance(p, dict):

@@ -957,7 +957,10 @@ codigo_valido(codigo, tamanho), hash_senha(senha) (para gravar senha_hash — se
 opcional(nome) (valor da entrada se veio, senão nulo — para filtros
 que podem ficar vazios: SQL "(%s IS NULL OR col >= %s)" com params ["opcional(data_inicio)","opcional(data_inicio)"]).
 Só leia nomes da lista ENTRADAS DISPONÍVEIS ou produzidos por passo anterior; nunca invente nome
-(micro_id, admin_id). Período sem entrada na tela é literal no SQL (INTERVAL 30 DAY), nunca %s.
+(micro_id, admin_id). Se a prosa espera um COMANDO que a tela não envia (ex.: acao = CRIAR/EDITAR),
+derive-o dos campos que a tela envia, com `condicao`: existe(usuario_id) → editar, senão criar; um
+campo de status igual a 'Inativo' → desativar. Constantes de retorno ('sucesso') viram `calculo`
+(atribui status, expressao 'sucesso') antes do `retorno`. Período sem entrada na tela é literal no SQL (INTERVAL 30 DAY), nunca %s.
 Ao encadear resultados para as telas seguintes, devolva identificadores com o nome do contexto
 (usuario_id, caso_id, microbiologia_id) usando `como`. Token/JWT SÓ com a ferramenta jwt_tool
 (argumentos sub, role, exp_horas; devolve token_jwt) — nunca montado com texto. Marcador de SQL
@@ -1095,9 +1098,9 @@ def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dic
                 probs_novos = _validar(nome, novos, execution)
                 antigos = {(q["passo"], q["motivo"]) for q in problemas}
                 sobreviventes = [q for q in probs_novos if (q["passo"], q["motivo"]) in antigos]
-                # progresso = os problemas apontados foram resolvidos (os que surgirem a jusante
-                # vão para a rodada seguinte); regressão = algum apontado continua lá
-                progresso = not sobreviventes
+                # progresso = os problemas apontados sumiram (os que surgirem a jusante vão para a
+                # rodada seguinte) OU sobraram menos problemas do que havia; regressão = nada disso
+                progresso = (not sobreviventes) or len(probs_novos) < len(problemas)
                 if progresso:
                     steps, problemas = novos, probs_novos
                     item["reparos"] += rep2
