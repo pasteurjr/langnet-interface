@@ -980,7 +980,8 @@ nem database_query): banco é `consulta`/`escrita` com o SQL no campo `sql`. Use
 colunas do MODELO DE DADOS. Argumento de ferramenta: passe o dado com o MESMO significado — nunca
 encaixe outro campo só para preencher (uti não é apache_ii); se o sistema não tem o dado, use uma
 ENTRADA da tarefa com o nome do argumento e registre isso em `observacao`. Depois de um `externo`,
-use os campos que a ferramenta DEVOLVE (via `mapeia` ou resposta.campo) — nunca outro nome.
+use os campos que a ferramenta DEVOLVE (via `mapeia` ou resposta.campo) — nunca outro nome; para
+conferir se um campo veio preenchido use `resposta.campo != nulo` (contem() só olha texto).
 "Notificar" usuários do sistema sem canal externo na lista = registrar na tabela de alertas/
 notificações do MODELO (`escrita`); e-mail só com email_sender_tool. Não invente ferramenta.
 Um SELECT que precisa de várias colunas usa forma "linha" e depois acessa nome.campo.

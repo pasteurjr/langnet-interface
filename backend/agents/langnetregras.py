@@ -424,6 +424,12 @@ def validar_passos(passos: Any, execution: str = "deterministic",
         # acesso a campo que a ferramenta não devolve (ex.: resposta.valor_escore quando ela
         # devolve escore_cox): pega ANTES de virar NULL no banco
         for expr in _expressoes_do_passo(p):
+            for m_ct in re.finditer(r"contem\(\s*([A-Za-z_]\w*)\s*,\s*'([^']+)'\s*\)", str(expr)):
+                var_ct, campo_ct = m_ct.group(1), m_ct.group(2)
+                if var_ct in saidas_conhecidas and campo_ct in saidas_conhecidas[var_ct]:
+                    problemas.append(_erro(n, f"contem({var_ct}, '{campo_ct}') confere se o TEXTO contém a palavra — "
+                                              f"a chave «{campo_ct}» sempre está na resposta, mesmo vazia; para saber se "
+                                              f"veio preenchida use «{var_ct}.{campo_ct} != nulo»"))
             for var, campo in acessos_de_campo(expr):
                 if var in saidas_conhecidas and campo not in saidas_conhecidas[var]:
                     problemas.append(_erro(n, f"«{var}.{campo}» não existe — a ferramenta que preencheu "
