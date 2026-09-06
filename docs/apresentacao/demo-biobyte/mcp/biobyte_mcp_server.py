@@ -12,7 +12,7 @@ plugaria aqui). Rodar:  python biobyte_mcp_server.py
 import os
 import math
 import hashlib
-from typing import TypedDict
+from typing import TypedDict, Dict, List, Optional
 from mcp.server.fastmcp import FastMCP
 
 PORT = int(os.getenv("BIOBYTE_MCP_PORT", "9120"))
@@ -25,29 +25,45 @@ _LIS = {
         "fonte": "hemocultura",
         "microrganismo": "Staphylococcus aureus",
         "multirresistente": True,   # MRSA
-        "perfil_resistencia": {"oxacilina": "R", "vancomicina": "S", "gentamicina": "R"},
+        "sensibilidades": {"oxacilina": "R", "vancomicina": "S", "gentamicina": "R"},
     },
     "CAS-2023-002": {
         "id_amostra": "HMC-88240",
         "fonte": "hemocultura",
         "microrganismo": "Escherichia coli",
         "multirresistente": False,
-        "perfil_resistencia": {"ceftriaxona": "S", "meropenem": "S", "ciprofloxacino": "S"},
+        "sensibilidades": {"ceftriaxona": "S", "meropenem": "S", "ciprofloxacino": "S"},
     },
 }
 
 
+class ResultadoMicrobiologia(TypedDict):
+    # todos os campos sempre presentes (nulo quando a amostra não foi liberada) — o esquema
+    # publicado pelo MCP é o que o contrato da tarefa confere
+    paciente_id: str
+    status: str
+    id_amostra: Optional[str]
+    fonte: Optional[str]
+    microrganismo: Optional[str]
+    multirresistente: Optional[bool]
+    sensibilidades: Optional[Dict[str, str]]
+    mensagem: Optional[str]
+
+
 @mcp.tool()
-def consultar_microbiologia(paciente_id: str) -> dict:
+def consultar_microbiologia(paciente_id: str) -> ResultadoMicrobiologia:
     """Consulta o resultado de hemocultura e antibiograma do paciente no sistema
-    laboratorial (LIS) externo. Retorna microrganismo, perfil de resistência e flag de
-    multirresistência (MDR). Use o identificador do caso (ex.: 'CAS-2023-001')."""
+    laboratorial (LIS) externo. Devolve, no vocabulário da especificação (UC-003/NHSN),
+    microrganismo, sensibilidades (antibiótico -> S/I/R) e a flag de multirresistência (MDR).
+    Use o identificador do caso (ex.: 'CAS-2023-001'). Amostra não liberada volta status 'pendente'."""
     reg = _LIS.get(paciente_id)
     if not reg:
         # amostra ainda não liberada pelo laboratório
-        return {"paciente_id": paciente_id, "status": "pendente",
+        return {"paciente_id": paciente_id, "status": "pendente", "id_amostra": None, "fonte": None,
+                "microrganismo": None, "multirresistente": None, "sensibilidades": None,
                 "mensagem": "Hemocultura ainda não liberada pelo LIS."}
-    out = {"paciente_id": paciente_id, "status": "liberado"}
+    out = {"paciente_id": paciente_id, "status": "liberado", "id_amostra": None, "fonte": None,
+           "microrganismo": None, "multirresistente": None, "sensibilidades": None, "mensagem": None}
     out.update(reg)
     return out
 
@@ -56,7 +72,7 @@ class ResultadoCox(TypedDict):
     escore_cox: float
     nivel_risco: str
     linear_predictor: float
-    fatores_de_risco: list
+    fatores_de_risco: List[str]
     modelo: str
 
 

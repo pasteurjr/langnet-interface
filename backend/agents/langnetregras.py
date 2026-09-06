@@ -760,7 +760,8 @@ def _split_nivel0(texto: str) -> List[str]:
 
 
 def _params_py(params: List[Any]) -> str:
-    return "[" + ", ".join(compilar_expressao(str(a))[0] for a in (params or [])) + "]"
+    # cada parâmetro passa por _rt_sql: objeto/lista vira JSON (coluna JSON), booleano vira 0/1
+    return "[" + ", ".join(f"_rt_sql({compilar_expressao(str(a))[0]})" for a in (params or [])) + "]"
 
 
 def _coluna_escalar(sql: str, guarda_em: str) -> str:
@@ -1140,6 +1141,13 @@ def _rt_chamar_ferramenta(nome, argumentos):
         try: return _rt_json.loads(saida)
         except Exception: return {"texto": saida}
     return saida
+
+def _rt_sql(v):
+    """Valor de parâmetro SQL: dict/list (ex.: antibiograma do laboratório) vira texto JSON para a
+    coluna JSON; booleano vira 0/1; o resto passa como está."""
+    if isinstance(v, bool): return 1 if v else 0
+    if isinstance(v, (dict, list)): return _rt_json.dumps(v, ensure_ascii=False, default=str)
+    return v
 
 def _rt_hash_senha(senha):
     """Hash da senha para gravar (SHA-256, o formato que confere_senha reconhece). Senha nunca em claro."""

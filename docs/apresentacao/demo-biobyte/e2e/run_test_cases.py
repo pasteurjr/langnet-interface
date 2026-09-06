@@ -39,6 +39,8 @@ BASE = {  # caso clínico de referência (o mesmo do fluxo encadeado)
     "uti": True, "nutricao_parenteral": True, "neutropenia": False,
     "tipo_cateter": "Cateter Central", "apache_ii": 18, "id_amostra": "HMC-88213",
 }
+AMOSTRA_NAO_MDR = "2fe6caad-a94a-11f1-acbb-a0ad9f2fcdf4"   # fixture: 2 resistências (não MDR)
+
 # Efeitos que o sistema NÃO implementa (reportados como lacuna, jamais como sucesso).
 NAO_IMPL = [
     (r"e-?mail|push notification", "envio de e-mail/push não está ligado a nenhum agente"),
@@ -106,7 +108,10 @@ def entrada_do_caso(tc):
         elif "paciente" in d: ent["paciente_id"] = "P-INEXISTENTE"
         elif "dados suficientes" in d or "parâmetros" in d or "obrigat" in d:
             for k in ("idade", "dias_cateter", "uti", "apache_ii", "microrganismo"): ent.pop(k, None)
-        elif "mdr" in d or "multirresist" in d: ent["multirresistente"] = False
+        elif "mdr" in d or "multirresist" in d:
+            # o detector lê a AMOSTRA pelo id: a condição "não é MDR" é uma amostra com 2 resistências
+            # (fixture semeada no banco do app: oxacilina R, gentamicina R, vancomicina S)
+            ent["microbiologia_id"] = AMOSTRA_NAO_MDR
         elif "csv" in d: ent["formato"] = "pdf"   # caso nega CSV ⇒ pede PDF
         elif "schema" in d or "conform" in d or "nhsn" in d:
             # causa negada = "JSON recebido válido contra schema NHSN" é FALSA, ou seja, o
@@ -163,6 +168,19 @@ def _mensagem_exigida(tc):
 
 def _tem_causa_negada(tc):
     return any(not e.get("verdadeira", True) for e in (tc.get("entradas") or []))
+
+
+_FALHA_EXTERNA = re.compile(r"conex[aã]o falha|primeira tentativa|nova tentativa|retry|backoff|timeout|tempo limite|"
+                            r"indispon[íi]vel|falha ao carregar|erro interno|expir|fica indispon", re.I)
+
+
+def _exige_falha_externa(tc):
+    """A condição do caso é uma FALHA de infraestrutura (conexão, timeout, retry, indisponibilidade)
+    — não se cria pela entrada; exige injeção de falha, que este runner não tem."""
+    for e in (tc.get("entradas") or []):
+        if _FALHA_EXTERNA.search(e.get("desc") or ""):
+            return True
+    return bool(_FALHA_EXTERNA.search(((tc.get("efeito_esperado") or {}).get("desc") or "")))
 
 
 def _causa_induzida(tc):
@@ -254,8 +272,8 @@ ASSERTS = {
         (not e) and (r or {}).get("is_mdr") is not True and not (r or {}).get("alerta_id"),
         "seguiu o fluxo sem criar alerta" if not e and not (r or {}).get("alerta_id")
         else "criou alerta numa amostra que não é multirresistente"),
-    "TC-UC-006-02": lambda r, e, t: (e and ("verifica" in t or "obrigat" in t or "require" in t),
-                                     "recusou por campo obrigatório" if e else "calculou mesmo sem os dados"),
+    # (006-02/03 saíram daqui: a asserção fixa por número ficou defasada quando os casos foram
+    # regenerados — quem manda é o `espera` declarado pela etapa de Casos de Teste.)
     # 007-02 / 008-02: a condição do caso é "a base de bundles falha" / "dados insuficientes".
     # Remover campos da ENTRADA não cria essa condição — o agente lê o caso do banco e, com dados,
     # recomendar é o comportamento CERTO. A verificação real é a sonda de recusa (SONDA_RECUSA),
@@ -345,9 +363,11 @@ async def main():
                     # Sem asserção específica, usa a padrão — que EXIGE o efeito (mensagem
                     # especificada, ou recusa quando a causa é negada). Só fica "não
                     # exercitável" o caso cuja condição não se cria pela entrada.
-                    if _NAO_EXERCITAVEL.get(tid):
-                        linhas.append((tid, uc, "NÃO EXERCITÁVEL",
-                                       f"{efeito} — {_NAO_EXERCITAVEL[tid]} → {det}"))
+                    _motivo_ne = _NAO_EXERCITAVEL.get(tid) or (
+                        "exige injeção de falha externa (conexão/timeout/retry), que este runner não faz"
+                        if _exige_falha_externa(tc) else None)
+                    if _motivo_ne:
+                        linhas.append((tid, uc, "NÃO EXERCITÁVEL", f"{efeito} — {_motivo_ne} → {det}"))
                         resumo["NAO_EXERC"] += 1
                         print(f"  {tid:16} NÃO EXERCITÁVEL", flush=True); continue
                     ok, porque = assercao_padrao(tc, r, erro, txt)

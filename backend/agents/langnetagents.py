@@ -3181,7 +3181,11 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             # Path B: task determinística com tool MCP ligada ao seu agente → busca do sistema
             # externo e mergeia no payload ANTES do SQL (coerência MCP↔modelo de dados). Roda
             # em THREAD (o cliente MCP faz asyncio.run(), proibido no event loop corrente).
-            _pref = await loop.run_in_executor(None, _mcp_prefetch, task_name, payload)
+            # Tarefa com CONTRATO de passos chama o sistema externo ela mesma (passo `externo`, com
+            # os argumentos declarados) e confere a resposta — o prefetch adivinhava os argumentos
+            # (paciente_id em vez do caso) e recusava por conta própria.
+            _tem_contrato = bool((TASKS_CONFIG.get(task_name) or {{}}).get("steps"))
+            _pref = None if _tem_contrato else await loop.run_in_executor(None, _mcp_prefetch, task_name, payload)
             if _pref:
                 payload = {{**payload, **_pref}}
             det_result = await loop.run_in_executor(None, det_fn, payload)
@@ -3212,8 +3216,11 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                 return
 
             # VERIFICAÇÃO (Inserção B): PÓS-condição — a linha criada liga ao contexto CERTO.
+            # Tarefa com CONTRATO já verifica e devolve o que declara (`retorno`): a pós-condição
+            # derivada da prosa (output_has) não se aplica — ela cobrava campo que o contrato nomeia
+            # de outro jeito e mascarava a recusa correta com "faltam: …".
             _vf = getattr(adapters_module, "_run_verifications", None)
-            _fails = _vf(det_result, input_data, _verif) if (callable(_vf) and _verif) else []
+            _fails = _vf(det_result, input_data, _verif) if (callable(_vf) and _verif and not _tem_contrato) else []
             if _fails:
                 # Se os campos que faltam vinham de um sistema EXTERNO (tool MCP ligada a esta
                 # task), o que houve foi resposta não conforme do sistema externo — a mensagem
