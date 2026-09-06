@@ -379,6 +379,30 @@ def validar_passos(passos: Any, execution: str = "deterministic",
         saidas_conhecidas = {}
     if not isinstance(passos, list):
         return [_erro(prefixo or "-", "`steps` deve ser uma lista")]
+    if not prefixo:
+        # Identificador que um passo lê de `SELECT id FROM <tabela>` e o `retorno` devolve com outro
+        # nome (micro_id) não chega às telas seguintes, que esperam <tabela>_id (microbiologia_id).
+        _ids_de_tabela: Dict[str, str] = {}
+        def _mapear_ids(lista):
+            for q in lista or []:
+                if not isinstance(q, dict):
+                    continue
+                if q.get("tipo") == "consulta" and str(q.get("forma", "escalar")) == "escalar" and q.get("guarda_em"):
+                    mt = re.match(r"(?is)^\s*select\s+`?(\w+\.)?id`?\s+from\s+`?(\w+)`?", str(q.get("sql") or ""))
+                    if mt:
+                        _ids_de_tabela[str(q["guarda_em"])] = mt.group(2).lower()
+                if isinstance(q.get("passos"), list):
+                    _mapear_ids(q["passos"])
+        _mapear_ids(passos)
+        for idx_r, q in enumerate(passos, 1):
+            if isinstance(q, dict) and q.get("tipo") == "retorno":
+                for c in (q.get("campos") or []):
+                    c_s = str(c).strip()
+                    if c_s in _ids_de_tabela:
+                        tab = _ids_de_tabela[c_s]; sing = tab[:-1] if tab.endswith("s") else tab
+                        if c_s not in (f"{tab}_id", f"{sing}_id"):
+                            problemas.append(_erro(str(idx_r), f"«{c_s}» é o id lido de «{tab}»: devolva-o como "
+                                                              f"«{c_s} como {sing}_id» para as telas seguintes herdarem"))
     if not prefixo and entradas_disponiveis is not None:
         # Entrada que ninguém fornece (a tela não tem o campo, o contexto não carrega, nenhum
         # passo produz): em runtime seria "variável não definida" na mão do operador.
@@ -880,7 +904,7 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                         expr_c, _ = compilar_expressao(c)
                         partes_ret.append(f"{(apelido or c.split('.')[-1])!r}: {expr_c}")
                     else:
-                        partes_ret.append(f"{(apelido or c)!r}: _ctx.get({c!r})")
+                        partes_ret.append(f"{(apelido or c.strip())!r}: _ctx.get({c.strip()!r})")
                 campos = ", ".join(partes_ret)
                 linhas.append(f"{indent}# passo {n}: retorno")
                 linhas.append(f"{indent}_result = {{'status': 'sucesso', {campos}}}")
