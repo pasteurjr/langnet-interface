@@ -8,6 +8,7 @@ import { useParams } from 'react-router-dom';
 import { listCodeSessions, CodeGenerationSession } from '../services/codeGenerationService';
 import {
   startDeployment, getDeployment, stopDeployment, listProjectDeployments, getEnvTemplate,
+  getPortoes, ReprovadoNoPortao, ONDE_CORRIGIR, PortoesVeredito,
   DeploymentRun,
 } from '../services/deploymentService';
 import './DeploymentPage.css';
@@ -39,7 +40,17 @@ const DeploymentPage: React.FC = () => {
   const [erro, setErro] = useState<string>('');
   const [implantando, setImplantando] = useState(false);
   const [config, setConfig] = useState<Record<string, string>>({});
+  // Veredito dos portões desta geração: o que a conferência automática achou de pendente.
+  // Sem mostrar isto, a recusa da implantação virava um erro genérico e ninguém sabia o motivo.
+  const [portoes, setPortoes] = useState<PortoesVeredito>({});
+  const [recusa, setRecusa] = useState<{ resumo: string[]; como: string } | null>(null);
   const logRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    if (!sessaoSel) { setPortoes({}); return; }
+    setRecusa(null);
+    getPortoes(sessaoSel).then(setPortoes).catch(() => setPortoes({}));
+  }, [sessaoSel]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -91,14 +102,22 @@ const DeploymentPage: React.FC = () => {
     return () => clearInterval(t);
   }, [run, acompanhar]);
 
-  const implantar = async () => {
+  const implantar = async (forcar = false) => {
     if (!sessaoSel) return;
-    setErro(''); setImplantando(true);
+    setErro(''); setRecusa(null); setImplantando(true);
     try {
-      const r = await startDeployment(sessaoSel, config);
+      const r = await startDeployment(sessaoSel, config, forcar);
       setRun(r);
       if (projectId) listProjectDeployments(projectId).then((x) => setHistorico(x.runs)).catch(() => {});
-    } catch (e: any) { setErro(String(e.message || e)); }
+    } catch (e: any) {
+      if (e instanceof ReprovadoNoPortao) {
+        // Não é erro de chamada: é o portão barrando uma geração com lacuna conhecida.
+        setPortoes(e.portoes);
+        setRecusa({ resumo: e.resumo, como: e.comoProsseguir });
+      } else {
+        setErro(String(e.message || e));
+      }
+    }
     setImplantando(false);
   };
 
@@ -164,9 +183,69 @@ const DeploymentPage: React.FC = () => {
               </label>
             ))}
           </div>
-          <button className="dep-btn" disabled={!sessaoSel || implantando} onClick={implantar}>
+          <button className="dep-btn" disabled={!sessaoSel || implantando} onClick={() => implantar(false)}>
             {implantando ? 'Implantando…' : '🚀 Implantar esta versão'}
           </button>
+
+          {/* ── CONFERÊNCIA DA GERAÇÃO: o que a etapa achou de pendente, e onde se conserta ── */}
+          {portoes.reprovado && (
+            <div className={`dep-portoes ${recusa ? 'barrado' : ''}`}>
+              <div className="dep-portoes-cab">
+                <b>{recusa ? 'Implantação barrada' : 'Esta versão tem pendências'}</b>
+                <span>a conferência automática comparou o que foi pedido com o que foi gerado</span>
+              </div>
+              <ul className="dep-portoes-lista">
+                {(['logica', 'ferramentas', 'contrato_tela'] as const).map((k) => {
+                  const p = portoes[k];
+                  if (!p || !p.reprovado) return null;
+                  const onde = ONDE_CORRIGIR[k];
+                  return (
+                    <li key={k}>
+                      <div className="dep-portao-linha">
+                        <span className="dep-portao-num">{p.quantidade}</span>
+                        <span className="dep-portao-desc">{p.descricao}</span>
+                        {onde && projectId && (
+                          <a className="dep-portao-onde" href={`/project/${projectId}/${onde.caminho}`}>
+                            corrigir em {onde.etapa} ↗
+                          </a>
+                        )}
+                      </div>
+                      <ul className="dep-portao-itens">
+                        {(p.itens || []).slice(0, 5).map((it: any, i: number) => (
+                          <li key={i}>
+                            {it.passo || it.o_que || it.motivo || JSON.stringify(it)}
+                            {it.tarefa ? <em> — {it.tarefa}</em> : null}
+                            {it.ferramenta ? <em> — {it.ferramenta}</em> : null}
+                            {it.tela ? <em> — {it.tela}</em> : null}
+                          </li>
+                        ))}
+                        {(p.itens || []).length > 5 && (
+                          <li className="dep-portao-mais">e mais {(p.itens || []).length - 5}…</li>
+                        )}
+                      </ul>
+                    </li>
+                  );
+                })}
+              </ul>
+              {recusa && (
+                <div className="dep-portoes-saida">
+                  <p>{recusa.como}</p>
+                  <button
+                    className="dep-btn-forcar"
+                    disabled={implantando}
+                    onClick={() => {
+                      if (window.confirm(
+                        'Implantar mesmo com as pendências acima?\n\n'
+                        + 'O sistema vai subir com lacuna conhecida. A decisão fica registrada.'
+                      )) implantar(true);
+                    }}
+                  >
+                    Implantar mesmo assim
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <section className="dep-card">

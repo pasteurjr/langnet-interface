@@ -10,11 +10,67 @@ const getAuthHeaders = (): Record<string, string> => {
   return { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' };
 };
 
+/** Recusa do portão: a implantação foi barrada porque a geração tem lacuna conhecida. */
+export class ReprovadoNoPortao extends Error {
+  portoes: PortoesVeredito;
+  resumo: string[];
+  comoProsseguir: string;
+  constructor(detalhe: any) {
+    super(detalhe?.erro || 'geração reprovada nos portões');
+    this.name = 'ReprovadoNoPortao';
+    this.portoes = detalhe?.portoes || {};
+    this.resumo = detalhe?.resumo || [];
+    this.comoProsseguir = detalhe?.como_prosseguir || '';
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { headers: getAuthHeaders(), ...init });
-  if (!res.ok) throw new Error(`${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) {
+    const texto = await res.text();
+    // 409 = portão: a resposta traz o veredito estruturado, não é erro de rede.
+    if (res.status === 409) {
+      try {
+        const d = JSON.parse(texto);
+        throw new ReprovadoNoPortao(d.detail || d);
+      } catch (e) {
+        if (e instanceof ReprovadoNoPortao) throw e;
+      }
+    }
+    throw new Error(`${res.status}: ${texto.slice(0, 300)}`);
+  }
   return res.json();
 }
+
+/** Um portão: o que ele confere, quantas pendências achou e quais. */
+export interface Portao {
+  reprovado: boolean;
+  quantidade: number;
+  descricao: string;
+  itens: any[];
+}
+
+export interface PortoesVeredito {
+  reprovado?: boolean;
+  logica?: Portao;
+  ferramentas?: Portao;
+  contrato_tela?: Portao;
+}
+
+/** Onde se conserta cada tipo de pendência — sem isto o painel vira um muro. */
+export const ONDE_CORRIGIR: Record<string, { etapa: string; caminho: string }> = {
+  logica: { etapa: 'Agentes & Tarefas', caminho: 'agent-task' },
+  ferramentas: { etapa: 'Ferramentas', caminho: 'tools-stage' },
+  contrato_tela: { etapa: 'Interface & Protótipo', caminho: 'ui-spec' },
+};
+
+/** Veredito dos portões guardado junto com a geração. */
+export const getPortoes = async (sessionId: string): Promise<PortoesVeredito> => {
+  const d = await req<any>(`/code-generation/${sessionId}`);
+  let meta = d?.execution_metadata || {};
+  if (typeof meta === 'string') { try { meta = JSON.parse(meta); } catch (e) { meta = {}; } }
+  return meta.portoes || {};
+};
 
 export interface DeployedService { name: string; port: number; url: string; }
 
@@ -49,9 +105,9 @@ export const getEnvTemplate = (sessionId: string) =>
  * Implanta a versão gerada. `env` é a configuração informada pelo operador (banco,
  * provedor de LLM, chaves) — o pacote gerado não traz segredo.
  */
-export const startDeployment = (sessionId: string, env: Record<string, string> = {}) =>
+export const startDeployment = (sessionId: string, env: Record<string, string> = {}, forcar = false) =>
   req<DeploymentRun>(`/code-generation/${sessionId}/run`, {
-    method: 'POST', body: JSON.stringify({ env }),
+    method: 'POST', body: JSON.stringify({ env, forcar }),
   });
 
 export const getDeployment = (runId: string) =>
