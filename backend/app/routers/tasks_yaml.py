@@ -940,6 +940,7 @@ Tipos permitidos (use exatamente estes nomes de campo):
 - {"tipo":"consulta","sql":"SELECT ...","params":["expr",...],"guarda_em":"nome","forma":"escalar|linha|linhas"}
 - {"tipo":"escrita","sql":"INSERT/UPDATE/DELETE ...","params":["expr",...]}
 - {"tipo":"verificacao","condicao":"expr que PRECISA ser verdadeira para continuar","mensagem":"frase de recusa dada quando ela é falsa"}  (ex.: condicao "existe(paciente)", mensagem "Paciente não encontrado")
+  ou {"tipo":"verificacao","recusa_se":"expr que, sendo verdadeira, RECUSA","mensagem":"..."}  (ex.: recusa_se "dados.idade == nulo ou dados.apache_ii == nulo", mensagem "PARAMS_MISSING") — prefira recusa_se quando a prosa diz "se X, recuse"
 - {"tipo":"calculo","atribui":"nome","expressao":"expr"}
 - {"tipo":"condicao","se":"expr booleana","passos":[...]}
 - {"tipo":"laco","para_cada":"item","em":"expr de lista","passos":[...]}
@@ -960,7 +961,9 @@ Só leia nomes da lista ENTRADAS DISPONÍVEIS ou produzidos por passo anterior; 
 (micro_id, admin_id). Se a prosa espera um COMANDO que a tela não envia (ex.: acao = CRIAR/EDITAR),
 derive-o dos campos que a tela envia, com `condicao`: existe(usuario_id) → editar, senão criar; um
 campo de status igual a 'Inativo' → desativar. Constantes de retorno ('sucesso') viram `calculo`
-(atribui status, expressao 'sucesso') antes do `retorno`. Período sem entrada na tela é literal no SQL (INTERVAL 30 DAY), nunca %s.
+(atribui status, expressao 'sucesso') antes do `retorno`. Valores de EXEMPLO da especificação
+("ex.: -35", "[-20, -50]") NUNCA viram resultado: resultado se calcula dos dados ou é passo `agente`.
+Filtros de consulta (datas, tipo, busca) são opcional(nome) com SQL "(%s IS NULL OR coluna >= %s)". Período sem entrada na tela é literal no SQL (INTERVAL 30 DAY), nunca %s.
 Ao encadear resultados para as telas seguintes, devolva identificadores com o nome do contexto
 (usuario_id, caso_id, microbiologia_id) usando `como`. Token/JWT SÓ com a ferramenta jwt_tool
 (argumentos sub, role, exp_horas; devolve token_jwt) — nunca montado com texto. Marcador de SQL

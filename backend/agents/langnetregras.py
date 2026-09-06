@@ -11,7 +11,7 @@ motivo — registrados num manifesto que o portão de lógica lê.
 Tipos de passo:
   consulta     {sql, params, guarda_em, forma: escalar|linha|linhas}
   escrita      {sql, params, guarda_id_em?}
-  verificacao  {condicao, mensagem}
+  verificacao  {condicao | recusa_se, mensagem}   -- condicao: o que PRECISA valer; recusa_se: o que recusa
   calculo      {atribui, expressao}
   condicao     {se, passos: [...]}
   laco         {para_cada, em, passos: [...]}
@@ -300,7 +300,7 @@ def _expressoes_do_passo(p: dict) -> List[str]:
     if tipo in ("consulta", "escrita"):
         return [str(a) for a in (p.get("params") or [])]
     if tipo == "verificacao":
-        return [str(p.get("condicao") or "")]
+        return [str(p.get("condicao") or p.get("recusa_se") or "")]
     if tipo == "calculo":
         return [str(p.get("expressao") or "")]
     if tipo == "condicao":
@@ -421,6 +421,13 @@ def validar_passos(passos: Any, execution: str = "deterministic",
                                       f"{len(p.get('params') or [])} parâmetro(s)")
                 if "?" in re.sub(r"'[^']*'", "", sql):
                     raise ErroDeRegra("o SQL usa `?` como marcador — o marcador é %s")
+                if tipo == "consulta":
+                    _filtros = [str(a) for a in (p.get("params") or [])
+                                if re.match(r"^(data_|dt_|filtro|periodo|busca|tipo_|status_)\w*$", str(a).strip())]
+                    if _filtros:
+                        raise ErroDeRegra(f"filtro de consulta lido como obrigatório: {', '.join(_filtros)} — "
+                                          f"use opcional({_filtros[0]}) nos params e no SQL "
+                                          "\"(%s IS NULL OR coluna >= %s)\" para o filtro poder ficar vazio")
                 # Senha em claro: coluna *_hash recebendo a senha sem hash_senha(...)
                 _params = [str(a) for a in (p.get("params") or [])]
                 for _col, _idx in _colunas_com_marcador(sql):
@@ -435,24 +442,39 @@ def validar_passos(passos: Any, execution: str = "deterministic",
                     if str(p.get("forma", "escalar")) not in ("escalar", "linha", "linhas"):
                         raise ErroDeRegra("`forma` deve ser escalar, linha ou linhas")
             elif tipo == "verificacao":
-                if not p.get("condicao"):
-                    raise ErroDeRegra("`condicao` obrigatória")
-                compilar_expressao(str(p["condicao"]))
+                if bool(p.get("condicao")) == bool(p.get("recusa_se")):
+                    raise ErroDeRegra("`verificacao` tem OU `condicao` (o que precisa valer para seguir) "
+                                      "OU `recusa_se` (o que, valendo, recusa) — exatamente um dos dois")
+                compilar_expressao(str(p.get("condicao") or p.get("recusa_se")))
                 if not p.get("mensagem"):
                     raise ErroDeRegra("`mensagem` de recusa obrigatória (use a frase do caso de uso)")
-                # Polaridade: `condicao` é o que PRECISA ser verdade para seguir. "nao existe(x)"
-                # com mensagem de "não encontrado" recusa justamente quando x existe.
-                cond_l = str(p["condicao"]).strip().lower()
-                msg_l = str(p["mensagem"]).lower()
-                invertida = (re.match(r"^(nao|não)\s+existe\(", cond_l) or cond_l.startswith("vazio(")) and \
-                    re.search(r"n[aã]o[_ ](encontrad|exist|localizad)|inexist|nao_encontrad", msg_l)
-                if invertida:
-                    raise ErroDeRegra("verificação invertida: `condicao` é o que precisa ser VERDADE para "
-                                      "continuar (ex.: existe(paciente)); a mensagem é dada quando ela falha")
+                # Polaridade: `condicao` é o que PRECISA ser verdade para seguir. Condição que descreve
+                # o PROBLEMA ("nao existe(x)", "x == nulo ou y == nulo", "vazio(l)") com mensagem de
+                # falta/erro recusa justamente quando está tudo certo — é `recusa_se`.
+                if p.get("condicao"):
+                    cond_l = str(p["condicao"]).strip().lower()
+                    msg_l = str(p["mensagem"]).lower()
+                    descreve_problema = bool(re.match(r"^(nao|não)\s+existe\(", cond_l) or cond_l.startswith("vazio(")
+                                             or re.search(r"==\s*nulo", cond_l))
+                    msg_de_falta = bool(re.search(r"n[aã]o[_ ](encontrad|exist|localizad)|inexist|nao_encontrad|"
+                                                  r"missing|falt|ausent|obrigat|inv[aá]lid|vazi", msg_l))
+                    if descreve_problema and msg_de_falta:
+                        raise ErroDeRegra("verificação invertida: `condicao` é o que precisa ser VERDADE para "
+                                          "continuar; se a expressão descreve o PROBLEMA, use `recusa_se` no "
+                                          "lugar de `condicao`")
             elif tipo == "calculo":
                 if not re.match(r"^[A-Za-z_]\w*$", str(p.get("atribui") or "")):
                     raise ErroDeRegra("`atribui` deve ser um nome de variável")
                 compilar_expressao(str(p.get("expressao") or ""))
+                # Resultado clínico/numérico NÃO pode ser constante ("ex.: -35" da especificação
+                # virando cálculo): ou se calcula de dados, ou é julgamento → passo `agente`.
+                _expr_l = str(p.get("expressao") or "").strip()
+                if re.match(r"^-?\d+(\.\d+)?$", _expr_l) or re.match(r"^'\[.*\]'$", _expr_l):
+                    if re.search(r"reducao|redução|risco|escore|score|estimativa|intervalo|probabilidade|"
+                                 r"percent|taxa|media|média|valor_", str(p["atribui"]).lower()):
+                        raise ErroDeRegra(f"«{p['atribui']}» = {_expr_l} é valor FIXO — resultado não pode ser "
+                                          "constante: calcule a partir dos dados ou, se é julgamento, use passo "
+                                          "`agente` (a tarefa deve ser `execution: agent`)")
                 # Segredo não se fabrica com texto: token/JWT/OTP vem de ferramenta real.
                 if re.search(r"token|jwt|segredo|secret|otp|api_key", str(p["atribui"]).lower()) and \
                         re.search(r"\+|texto\(|maiusculas\(|minusculas\(|'", str(p.get("expressao") or "")):
@@ -761,10 +783,15 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 if p.get("guarda_id_em"):
                     linhas.append(f"{indent}_ctx[{p['guarda_id_em']!r}] = cur.lastrowid or _ctx.get({p['guarda_id_em']!r})")
             elif tipo == "verificacao":
-                cond, _ = compilar_expressao(str(p["condicao"]))
+                if p.get("recusa_se"):
+                    cond, _ = compilar_expressao(str(p["recusa_se"]))
+                    teste = f"if {cond}:"
+                else:
+                    cond, _ = compilar_expressao(str(p["condicao"]))
+                    teste = f"if not {cond}:"
                 msg = str(p.get("mensagem") or "condição não atendida")
                 linhas.append(f"{indent}# passo {n}: verificação")
-                linhas.append(f"{indent}if not {cond}:")
+                linhas.append(f"{indent}{teste}")
                 linhas.append(f"{indent}    conn.rollback()")
                 linhas.append(f"{indent}    return {{'status': 'erro', 'error': {msg!r}, "
                               f"'nao_encontrado': 'verificacao', 'passo': {n!r}}}")

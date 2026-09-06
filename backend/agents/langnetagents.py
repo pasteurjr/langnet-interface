@@ -3448,6 +3448,9 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
         if isinstance(parsed, dict) and isinstance(input_data, dict):
             _META = ("status", "timestamp", "error", "raw", "from_transition", "received_at", "tokens_received")
             for _ck, _cv in input_data.items():
+                # Segredo digitado NUNCA volta na resposta (nem para o contexto da tela):
+                if any(_s in str(_ck).lower() for _s in ("senha", "password", "codigo_mfa", "secret", "api_key")):
+                    continue
                 if _ck in _META or _cv is None or isinstance(_cv, (dict, list)):
                     continue
                 if parsed.get(_ck) is None:
