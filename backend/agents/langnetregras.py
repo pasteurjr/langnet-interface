@@ -342,7 +342,7 @@ def _coluna_escalar(sql: str, guarda_em: str) -> str:
 
 
 def emitir_passos(passos: List[dict], indent: str = "        ",
-                  prefixo: str = "") -> Tuple[List[str], List[dict]]:
+                  prefixo: str = "", ferramentas_resolvidas: Optional[set] = None) -> Tuple[List[str], List[dict]]:
     """Devolve (linhas_python, manifesto). Cada passo declarado aparece no manifesto como
     emitido=True ou emitido=False com motivo — nunca desaparece."""
     linhas: List[str] = []
@@ -385,7 +385,8 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 cond, _ = compilar_expressao(str(p["se"]))
                 linhas.append(f"{indent}# passo {n}: condição")
                 linhas.append(f"{indent}if {cond}:")
-                sub, sub_m = emitir_passos(p.get("passos") or [], indent + "    ", prefixo=f"{n}.")
+                sub, sub_m = emitir_passos(p.get("passos") or [], indent + "    ", prefixo=f"{n}.",
+                                           ferramentas_resolvidas=ferramentas_resolvidas)
                 linhas += sub or [f"{indent}    pass"]
                 manifesto += sub_m
             elif tipo == "laco":
@@ -394,10 +395,15 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 linhas.append(f"{indent}# passo {n}: laço")
                 linhas.append(f"{indent}for _item in _rt_lista({em}):")
                 linhas.append(f"{indent}    _ctx[{var!r}] = _item")
-                sub, sub_m = emitir_passos(p.get("passos") or [], indent + "    ", prefixo=f"{n}.")
+                sub, sub_m = emitir_passos(p.get("passos") or [], indent + "    ", prefixo=f"{n}.",
+                                           ferramentas_resolvidas=ferramentas_resolvidas)
                 linhas += sub or [f"{indent}    pass"]
                 manifesto += sub_m
             elif tipo == "externo":
+                # Ferramenta sem implementação declarada NÃO vira chamada: o passo fica não
+                # emitido, a tarefa recusa em runtime e o portão barra a implantação.
+                if ferramentas_resolvidas is not None and p.get("ferramenta") not in ferramentas_resolvidas:
+                    raise ErroDeRegra(f"ferramenta «{p.get('ferramenta')}» não está resolvida na etapa Ferramentas")
                 args = ", ".join(f"{k!r}: {compilar_expressao(str(v))[0]}"
                                  for k, v in (p.get("argumentos") or {}).items())
                 linhas.append(f"{indent}# passo {n}: sistema externo -> {p['guarda_em']}")
@@ -419,14 +425,15 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
     return linhas, manifesto
 
 
-def emitir_tarefa(nome: str, passos: List[dict], traceability_comment: str = "") -> Tuple[str, dict]:
+def emitir_tarefa(nome: str, passos: List[dict], traceability_comment: str = "",
+                  ferramentas_resolvidas: Optional[set] = None) -> Tuple[str, dict]:
     """Função `<nome>_deterministic(input_data)` completa + manifesto da tarefa.
 
     Se algum passo NÃO foi emitido, a função nasce com uma recusa explícita no topo: em vez de
     rodar pela metade e gravar resultado incompleto, ela devolve erro dizendo qual passo faltou.
     O portão de implantação lê o manifesto e barra a subida.
     """
-    corpo, manifesto = emitir_passos(passos)
+    corpo, manifesto = emitir_passos(passos, ferramentas_resolvidas=ferramentas_resolvidas)
     faltando = [m for m in manifesto if not m["emitido"]]
     tem_retorno = any(str(p.get("tipo")) == "retorno" for p in passos)
     if not tem_retorno:

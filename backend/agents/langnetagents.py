@@ -4409,6 +4409,11 @@ def _extract_task_blocks(tasks_yaml: str) -> List[dict]:
     return res
 
 
+# Manifestos do tradutor de regras (tarefa -> manifesto), preenchidos a cada geração.
+MANIFESTOS_STEPS: Dict[str, dict] = {}
+FERRAMENTAS_RESOLVIDAS_CG: Optional[set] = None   # definido pelo fluxo antes de gerar os adapters
+
+
 def _generate_deterministic_adapters(tasks_yaml: str) -> str:
     """Parse each task's `description` (which by v4 convention embeds SQL steps
     of the form ``query="..."`` / ``params=[...]``) and emit a Python function
@@ -4444,7 +4449,10 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
             blocks = [{'name': k,
                        'description': (v.get('description') or '') if isinstance(v, dict) else '',
                        'expected_output': (v.get('expected_output') or '') if isinstance(v, dict) else '',
-                       'traceability': (v.get('traceability') or {}) if isinstance(v, dict) else {}}
+                       'traceability': (v.get('traceability') or {}) if isinstance(v, dict) else {},
+                       # CONTRATO DE PASSOS (tradutor de regras): quando existe, manda sobre a prosa.
+                       'steps': (v.get('steps') or None) if isinstance(v, dict) else None,
+                       'execution': (v.get('execution') or 'deterministic') if isinstance(v, dict) else 'deterministic'}
                       for k, v in parsed.items()]
     except Exception:
         blocks = []
@@ -4452,6 +4460,7 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
         blocks = _extract_task_blocks(tasks_yaml)
 
     PASSOS_SEM_CODIGO.clear()
+    MANIFESTOS_STEPS.clear()
     generated: List[str] = []
     generated_names: List[str] = []
     for _blk in blocks:
@@ -4461,6 +4470,35 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
             continue
 
         globals()["_TASK_EM_TRADUCAO"] = task_name
+
+        # TRADUTOR DE REGRAS: tarefa com `steps:` é emitida do CONTRATO, não da prosa. Cada passo
+        # termina no manifesto como emitido ou não emitido com motivo — nada some em silêncio.
+        if isinstance(_blk.get('steps'), list) and _blk.get('steps'):
+            from agents.langnetregras import validar_passos as _vp, emitir_tarefa as _et
+            _exec = str(_blk.get('execution') or 'deterministic')
+            if _exec == 'agent':
+                MANIFESTOS_STEPS[task_name] = {"tarefa": task_name, "contrato": "steps",
+                                               "execution": "agent", "declarados": len(_blk['steps']),
+                                               "emitidos": 0, "nao_emitidos": [], "passos": []}
+                continue   # tarefa de agente: os passos são instrução, não código
+            _probs = _vp(_blk['steps'], _exec, FERRAMENTAS_RESOLVIDAS_CG)
+            _tr = _blk.get("traceability") if isinstance(_blk.get("traceability"), dict) else {}
+            _fn, _man = _et(task_name, _blk['steps'],
+                            _fmt_traceability_comment(_tr, indent="").strip(),
+                            ferramentas_resolvidas=FERRAMENTAS_RESOLVIDAS_CG)
+            _man["contrato"] = "steps"
+            _man["execution"] = _exec
+            _man["problemas_validacao"] = _probs
+            MANIFESTOS_STEPS[task_name] = _man
+            generated.append(_fn)
+            generated_names.append(task_name)
+            if _man["nao_emitidos"]:
+                print(f"[CODE-GEN][REGRAS] {task_name}: {len(_man['nao_emitidos'])} de "
+                      f"{_man['declarados']} passo(s) NÃO emitidos → a tarefa recusa em runtime")
+            else:
+                print(f"[CODE-GEN][REGRAS] {task_name}: {_man['declarados']} passo(s) do contrato emitidos")
+            continue
+
         body = _parse_task_description_to_python(desc, _blk.get('expected_output') or "")
         if not body:
             continue
@@ -4529,7 +4567,8 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
               f"código — a regra fica FALTANDO no app:")
         for _t, _p in PASSOS_SEM_CODIGO[:12]:
             print(f"    {_t}: {_p}")
-    return header + "\n\n".join(generated) + "\n"
+    from agents.langnetregras import RUNTIME_PY as _RUNTIME_REGRAS
+    return header + _RUNTIME_REGRAS + "\n\n" + "\n\n".join(generated) + "\n"
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -8680,6 +8719,11 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     except Exception:
         pass
 
+    # Ferramentas resolvidas na etapa Ferramentas: o passo `externo` do contrato só é aceito
+    # se a ferramenta tiver implementação declarada (biblioteca, MCP ou determinística).
+    _td = state.get("tools_stage_doc") or {}
+    globals()["FERRAMENTAS_RESOLVIDAS_CG"] = (
+        {t["nome"] for t in _td.get("tools", []) if t.get("resolvida")} if _td.get("tools") else None)
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)
     _list_helper_added = False
     if _det_snippet:
@@ -8972,12 +9016,20 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         # como se estivesse tudo certo. Agora o resultado fica GRAVADO na sessão, e a etapa de
         # Implantação recusa subir uma geração reprovada (com opção explícita de forçar).
         state["portoes"] = {
-            "logica": {
-                "reprovado": bool(PASSOS_SEM_CODIGO),
-                "quantidade": len(PASSOS_SEM_CODIGO),
-                "itens": [{"tarefa": _t, "passo": _p} for _t, _p in PASSOS_SEM_CODIGO[:40]],
-                "descricao": "passos da descrição da tarefa que não viraram código",
-            },
+            "logica": (lambda _pend: {
+                # Tarefa COM contrato: o manifesto diz exatamente qual passo não virou código.
+                # Tarefa SEM contrato (prosa): fica a heurística antiga, marcada como prosa.
+                "reprovado": bool(_pend) or bool(PASSOS_SEM_CODIGO),
+                "quantidade": len(_pend) + len(PASSOS_SEM_CODIGO),
+                "itens": ([{"tarefa": _t, "passo": f"passo {_m['passo']} ({_m['tipo']})",
+                            "motivo": _m["motivo"], "contrato": "steps"}
+                           for _t, _m in _pend]
+                          + [{"tarefa": _t, "passo": _p, "contrato": "prosa"}
+                             for _t, _p in PASSOS_SEM_CODIGO])[:40],
+                "tarefas_com_contrato": sorted(MANIFESTOS_STEPS.keys()),
+                "descricao": "passos da tarefa que não viraram código",
+            })([(_t, _m) for _t, _man in MANIFESTOS_STEPS.items()
+                for _m in (_man.get("nao_emitidos") or [])]),
             "ferramentas": {
                 "reprovado": bool(_tools_doc.get("tools")) and any(
                     not t.get("resolvida") for t in _tools_doc.get("tools", [])),
