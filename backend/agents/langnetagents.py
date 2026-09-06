@@ -9063,14 +9063,7 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
                 "descricao": "passos da tarefa que não viraram código",
             })([(_t, _m) for _t, _man in MANIFESTOS_STEPS.items()
                 for _m in (_man.get("nao_emitidos") or [])]),
-            "ferramentas": {
-                "reprovado": bool(_tools_doc.get("tools")) and any(
-                    not t.get("resolvida") for t in _tools_doc.get("tools", [])),
-                "quantidade": sum(1 for t in _tools_doc.get("tools", []) if not t.get("resolvida")),
-                "itens": [{"ferramenta": t["nome"], "motivo": t.get("implementacao") or "sem implementação"}
-                          for t in _tools_doc.get("tools", []) if not t.get("resolvida")],
-                "descricao": "ferramentas sem implementação declarada",
-            },
+            "ferramentas": _portao_ferramentas(_tools_doc, agents_yaml, tasks_yaml),
             "contrato_tela": {
                 "reprovado": bool(_contrato.get("divergencias")),
                 "quantidade": len(_contrato.get("divergencias") or []),
@@ -10031,6 +10024,17 @@ def _componentes_jsx(comps, action_label):
                 + '{' + fonte + '.length > 0 ? <ol style={{margin:0,paddingLeft:20,fontSize:14,color:"#0f172a",lineHeight:1.9}}>'
                 + '{' + fonte + '.map((x,i)=><li key={i}>{typeof x==="object"?(x.nome||x.item||x.descricao||JSON.stringify(x)):String(x)}</li>)}</ol>'
                 + ' : <div style={{color:"#94a3b8",fontSize:13}}>Nenhum item — execute a ação para obter a recomendação.</div>}</div>')
+        elif t == "timeline" and campo:
+            # Linha do tempo: eventos (data + descrição) vindos do resultado da ação, do mais
+            # recente ao mais antigo. Antes o tipo era conhecido mas não tinha desenho: sumia.
+            partes.append(
+                '<div style={{marginTop:16}} data-campo="' + campo + '"><div style={{fontSize:13,fontWeight:600,color:"#334155",marginBottom:6}}>' + _lbl(c) + '</div>'
+                + '{itens("' + campo + '").length > 0 ? <ol style={{listStyle:"none",margin:0,padding:0,borderLeft:"2px solid #c7d2fe"}}>'
+                + '{itens("' + campo + '").map((x,i)=><li key={i} style={{position:"relative",padding:"4px 0 10px 16px",fontSize:13}}>'
+                + '<span style={{position:"absolute",left:-6,top:9,width:10,height:10,borderRadius:5,background:"#4f46e5"}} />'
+                + '<div style={{color:"#64748b",fontSize:12}}>{typeof x==="object" ? String(x.data||x.date||x.timestamp||x.created_at||x.data_criacao||"") : ""}</div>'
+                + '<div style={{color:"#0f172a"}}>{typeof x==="object" ? String(x.descricao||x.evento||x.classificacao||x.status||x.acao||JSON.stringify(x)) : String(x)}</div></li>)}</ol>'
+                + ' : <div style={{color:"#94a3b8",fontSize:13}}>Nenhum evento registrado ainda.</div>}</div>')
         elif t == "file-upload" and campo:
             # Upload LIGADO ao campo declarado: o conteúdo do arquivo entra no formulário sob o
             # nome do campo (e o nome do arquivo em <campo>_nome), logo vai no envio da ação.
@@ -10638,10 +10642,14 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
     # inputs = componentes de ENTRADA. P3: campo FK (select+refEntity) vira dropdown da entidade.
     inp = []
     kpis = []
+    saidas = []     # campos de leitura SEM coluna do modelo: são o que a AÇÃO devolve (escore, fatores…)
     fk_used = []
     for c in (screen.get("components") or []):
         if c.get("type") == "readonly" and c.get("field"):
-            kpis.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
+            if not c.get("bindTo"):
+                saidas.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
+            else:
+                kpis.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
         elif c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea") and c.get("field"):
             item = {"key": c["field"], "label": c.get("label", _humanize(c["field"]))}
             if c.get("type") == "select" and c.get("refEntity"):
@@ -10663,7 +10671,9 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
         for k in kpis:
             key_l = str(k["key"]).lower()
             if any(w in key_l for w in _out_kw):
-                continue  # é saída do agente → fica no painel de Resultado
+                if k["key"] not in {x["key"] for x in saidas}:
+                    saidas.append(k)          # é saída do agente → painel de Resultado, com rótulo
+                continue
             _promoted.append({"key": k["key"], "label": k["label"]})
         # evita duplicar campos que já são inputs
         _have = {i["key"] for i in inp}
@@ -10802,6 +10812,7 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
         f'const TASK = {json.dumps(target)};\n'  # null se o alvo não é uma task real → botão desabilita
         f'const INPUTS = {json.dumps(inp, ensure_ascii=False)};\n'
         f'const KPIS = {json.dumps(kpis, ensure_ascii=False)};\n'
+        f'const SAIDAS = {json.dumps(saidas, ensure_ascii=False)};   // o que a ação devolve, com rótulo da especificação\n'
         f'const IS_DASHBOARD = {json.dumps(is_dashboard)};\n'
         f'const HAS_FK = {json.dumps(bool(fk_used))};\n'
         f'const CHAIN = {json.dumps(chain, ensure_ascii=False)};\n'
@@ -11163,6 +11174,8 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
         + (primary_btn + '\n' if primary_btn else '') +
         '      </div>\n'
         '      {err && <div className="mt-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">⚠ {err}</div>}\n'
+        '      {result && SAIDAS.length > 0 && <div className="mt-4 grid gap-2">{SAIDAS.map((s) => { const v = result[s.key]; const txt = v === undefined || v === null || v === "" ? "—" : (Array.isArray(v) ? v.map((x) => typeof x === "object" ? (x.nome || x.descricao || JSON.stringify(x)) : String(x)).join(", ") : (typeof v === "object" ? JSON.stringify(v) : String(v)));\n'
+        '        return <div key={s.key} data-campo={s.key} className="flex items-center justify-between rounded-lg bg-white border border-slate-200 px-4 py-2"><span className="text-sm text-slate-500">{s.label}</span><b className="text-sm text-slate-900">{txt}</b></div>; })}</div>}\n'
         '      {result && <div className="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3"><pre className="text-xs text-emerald-800 whitespace-pre-wrap">{JSON.stringify(result, null, 2)}</pre></div>}\n'
         '    </div>\n'
         '  );\n'
@@ -11498,6 +11511,50 @@ def _validate_generated_project(files: List[Dict[str, str]], state: LangNetFullS
             )
 
     return warnings
+
+
+def _portao_ferramentas(tools_doc: dict, agents_yaml_txt: str, tasks_yaml_txt: str) -> dict:
+    """Portão de ferramentas: barra a implantação só pelo que pode ser CHAMADO em runtime.
+
+    Uma ferramenta sem implementação é bloqueio quando algum caminho de execução chega a ela:
+    um agente que executa alguma tarefa (`execution: agent`) a tem na lista, ou uma tarefa de
+    agente a cita. Ferramenta que o ATS declarou mas que nenhum agente em execução usa (as
+    tarefas viraram contrato determinístico, que só aceita ferramenta resolvida) fica no
+    relatório como "declarada sem uso" — visível, mas não bloqueia. Sem a etapa, não há portão."""
+    import yaml as _y
+    pend = [t for t in (tools_doc or {}).get("tools", []) if not t.get("resolvida")]
+    if not pend:
+        return {"reprovado": False, "quantidade": 0, "itens": [], "sem_uso": [],
+                "descricao": "ferramentas sem implementação declarada"}
+    try:
+        ag = _y.safe_load(agents_yaml_txt or "") or {}
+        tk = _y.safe_load(tasks_yaml_txt or "") or {}
+    except Exception:
+        ag, tk = {}, {}
+    if not isinstance(ag, dict): ag = {}
+    if not isinstance(tk, dict): tk = {}
+    chamaveis = set()
+    for _tn, _t in tk.items():
+        if not isinstance(_t, dict):
+            continue
+        if str(_t.get("execution") or "deterministic") != "agent":
+            continue
+        chamaveis |= {str(x) for x in (_t.get("tools") or [])}
+        _ag = ag.get(str(_t.get("agent") or ""))
+        if isinstance(_ag, dict):
+            chamaveis |= {str(x) for x in (_ag.get("tools") or [])}
+    bloqueiam = [t for t in pend if t["nome"] in chamaveis]
+    sem_uso = [t for t in pend if t["nome"] not in chamaveis]
+    return {
+        "reprovado": bool(bloqueiam),
+        "quantidade": len(bloqueiam),
+        "itens": [{"ferramenta": t["nome"], "motivo": t.get("implementacao") or "sem implementação"}
+                  for t in bloqueiam],
+        "sem_uso": [{"ferramenta": t["nome"],
+                     "motivo": "declarada no ATS, mas nenhum agente em execução a usa — as tarefas "
+                               "viraram contrato determinístico; não bloqueia"} for t in sem_uso],
+        "descricao": "ferramentas sem implementação que algum agente em execução pode chamar",
+    }
 
 
 def generate_code_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:

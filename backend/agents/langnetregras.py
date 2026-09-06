@@ -432,6 +432,9 @@ def validar_passos(passos: Any, execution: str = "deterministic",
                 campos = p.get("campos") or []
                 if not isinstance(campos, list) or not campos:
                     raise ErroDeRegra("`campos` do retorno obrigatórios")
+                for c in campos:
+                    if not re.match(r"^[A-Za-z_]\w*(\.[A-Za-z_]\w*)?$", str(c)):
+                        raise ErroDeRegra(f"campo de retorno «{c}» deve ser um nome ou nome.campo")
             elif tipo == "agente":
                 if execution != "agent":
                     raise ErroDeRegra("passo de agente em tarefa determinística — declare a regra "
@@ -691,7 +694,17 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 for origem, destino in (p.get("mapeia") or {}).items():
                     linhas.append(f"{indent}_ctx[{destino!r}] = _rt_campo(_ctx[{p['guarda_em']!r}], {origem!r})")
             elif tipo == "retorno":
-                campos = ", ".join(f"{c!r}: _ctx.get({c!r})" for c in p["campos"])
+                # `resposta.escore_cox` devolve a chave `escore_cox` com o valor do campo — antes
+                # a chave saía com o ponto e o valor era None (a tela não achava o campo)
+                partes_ret = []
+                for c in p["campos"]:
+                    c = str(c)
+                    if "." in c:
+                        expr_c, _ = compilar_expressao(c)
+                        partes_ret.append(f"{c.split('.')[-1]!r}: {expr_c}")
+                    else:
+                        partes_ret.append(f"{c!r}: _ctx.get({c!r})")
+                campos = ", ".join(partes_ret)
                 linhas.append(f"{indent}# passo {n}: retorno")
                 linhas.append(f"{indent}_result = {{'status': 'sucesso', {campos}}}")
             elif tipo == "agente":
