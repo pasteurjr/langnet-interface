@@ -25,7 +25,7 @@ _LIS = {
         "fonte": "hemocultura",
         "microrganismo": "Staphylococcus aureus",
         "multirresistente": True,   # MRSA
-        "sensibilidades": {"oxacilina": "R", "vancomicina": "S", "gentamicina": "R"},
+        "sensibilidades": {"oxacilina": "R", "vancomicina": "S", "gentamicina": "R", "clindamicina": "R"},
     },
     "CAS-2023-002": {
         "id_amostra": "HMC-88240",

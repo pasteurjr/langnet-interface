@@ -48,8 +48,8 @@ FERRAMENTAS_DE_BANCO = ("database_tool", "database_query", "db_tool", "sql_tool"
 # Ferramentas não as cita — foi por não vê-las que o agente "fabricou" um token juntando textos.
 BIBLIOTECA_ASSINATURAS = {
     "jwt_tool":           {"argumentos": ["sub", "role", "exp_horas"], "saida": ["token_jwt", "expira_em_horas"]},
-    "pdf_generator_tool": {"argumentos": ["data", "output_path"], "saida": []},
-    "csv_exporter_tool":  {"argumentos": ["data", "output_path"], "saida": []},
+    "pdf_generator_tool": {"argumentos": ["data", "output_path"], "saida": ["status", "path", "filename"]},
+    "csv_exporter_tool":  {"argumentos": ["data", "output_path"], "saida": ["status", "path", "filename", "rows"]},
     "email_sender_tool":  {"argumentos": ["to", "subject", "body", "attachment_path"], "saida": []},
 }
 
@@ -653,6 +653,34 @@ def reparar_passos_mecanicos(passos: List[dict], ferramentas_resolvidas: Any = N
                 p[k], sub = reparar_passos_mecanicos(p[k], ferramentas_resolvidas, prefixo=f"{n}.")
                 reparos += sub
         saida.append(p)
+    # `retorno`/expressões que leem `resultado.X` onde X é o NOME DE VARIÁVEL dado por `mapeia`
+    # (path -> arquivo_gerado lido como resultado.arquivo_gerado): a evidência está no próprio
+    # contrato — passa a ler a variável mapeada.
+    mapeados: Dict[str, Dict[str, str]] = {}
+    def _colher(lista):
+        for q in lista or []:
+            if isinstance(q, dict):
+                if q.get("tipo") in ("externo", "tarefa") and q.get("guarda_em") and isinstance(q.get("mapeia"), dict):
+                    mapeados.setdefault(str(q["guarda_em"]), {}).update({str(a): str(b) for a, b in q["mapeia"].items()})
+                if isinstance(q.get("passos"), list):
+                    _colher(q["passos"])
+    _colher(saida)
+    if mapeados:
+        def _troca(expr: str, n: str) -> str:
+            def _sub(m):
+                var, campo = m.group(1), m.group(2)
+                mp = mapeados.get(var) or {}
+                if campo in mp.values():                 # lê pelo nome da variável mapeada
+                    reparos.append(f"passo {n}: «{var}.{campo}» é a variável «{campo}» (mapeada de «{var}»)")
+                    return campo
+                if campo in mp:                          # lê o campo da ferramenta já mapeado
+                    reparos.append(f"passo {n}: «{var}.{campo}» já está mapeado para «{mp[campo]}»")
+                    return mp[campo]
+                return m.group(0)
+            return re.sub(r"\b([A-Za-z_]\w*)\.([A-Za-z_]\w*)\b", _sub, expr)
+        for idx, p in enumerate(saida, 1):
+            if isinstance(p, dict) and p.get("tipo") == "retorno":
+                p["campos"] = [_troca(str(c), f"{prefixo}{idx}") if isinstance(c, str) else c for c in (p.get("campos") or [])]
     return saida, reparos
 
 

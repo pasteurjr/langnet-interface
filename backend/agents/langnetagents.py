@@ -3191,7 +3191,8 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             det_result = await loop.run_in_executor(None, det_fn, payload)
             # Tarefa que deve gerar arquivo (relatório): produz o artefato com a ferramenta
             # ligada ao agente — o caminho determinístico sozinho nunca chamaria a ferramenta.
-            await loop.run_in_executor(None, _artifact_poststep, task_name, payload, det_result)
+            if not _tem_contrato:   # tarefa com contrato gera o arquivo no passo `externo`
+                await loop.run_in_executor(None, _artifact_poststep, task_name, payload, det_result)
             # Carry-forward de CONTEXTO: o contexto acumulado do caso (IDs de sessão/caso +
             # valores já produzidos) precisa fluir por TODA a cadeia — cada task devolvia só
             # seu resultado. Ecoa todo escalar da entrada que a task não sobrescreveu.
@@ -6795,7 +6796,8 @@ logger = logging.getLogger(__name__)
 
 # ---------- PDF (real, reportlab) ----------
 class PdfGeneratorToolSchema(BaseModel):
-    data: Dict[str, Any] = Field(..., description="Dados a renderizar no PDF")
+    data: Union[Dict[str, Any], List[Dict[str, Any]]] = Field(
+        ..., description="Dados a renderizar no PDF: dict {titulo, linhas} ou lista de linhas (tabela)")
     output_path: Optional[str] = Field(default="relatorio.pdf", description="Arquivo de saída")
 
 
@@ -6804,7 +6806,10 @@ class PdfGeneratorTool(BaseTool):
     description: str = "Gera um arquivo PDF REAL a partir de dados (título + pares/linhas)."
     args_schema: type[BaseModel] = PdfGeneratorToolSchema
 
-    def _run(self, data: Dict[str, Any], output_path: str = "relatorio.pdf") -> Dict[str, Any]:
+    def _run(self, data: Union[Dict[str, Any], List[Dict[str, Any]]], output_path: str = "relatorio.pdf") -> Dict[str, Any]:
+        # lista de linhas (resultado de consulta) vira tabela com o nome do arquivo como título
+        if isinstance(data, list):
+            data = {"titulo": os.path.splitext(os.path.basename(output_path))[0].replace("_", " "), "linhas": data}
         from reportlab.lib.pagesizes import A4
         from reportlab.pdfgen import canvas
         c = canvas.Canvas(output_path, pagesize=A4)
@@ -6839,7 +6844,7 @@ class PdfGeneratorTool(BaseTool):
 
         walk(d)
         c.save()
-        return {"status": "ok", "path": os.path.abspath(output_path)}
+        return {"status": "ok", "path": os.path.abspath(output_path), "filename": os.path.basename(output_path)}
 
 
 # ---------- CSV (real) ----------
@@ -6866,7 +6871,7 @@ class CsvExporterTool(BaseTool):
             wtr.writeheader()
             for r in rows:
                 wtr.writerow(r if isinstance(r, dict) else {"valor": r})
-        return {"status": "ok", "path": os.path.abspath(output_path), "rows": len(rows)}
+        return {"status": "ok", "path": os.path.abspath(output_path), "filename": os.path.basename(output_path), "rows": len(rows)}
 
 
 # ---------- Embedding (real, endpoint OpenAI-compat / LM Studio) ----------

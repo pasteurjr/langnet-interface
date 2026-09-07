@@ -966,7 +966,9 @@ campo de status igual a 'Inativo' → desativar. Constantes de retorno ('sucesso
 Filtros de consulta (datas, tipo, busca) são opcional(nome) com SQL "(%s IS NULL OR coluna >= %s)". Período sem entrada na tela é literal no SQL (INTERVAL 30 DAY), nunca %s.
 Ao encadear resultados para as telas seguintes, devolva identificadores com o nome do contexto
 (usuario_id, caso_id, microbiologia_id) usando `como`. Token/JWT SÓ com a ferramenta jwt_tool
-(argumentos sub, role, exp_horas; devolve token_jwt) — nunca montado com texto. Marcador de SQL
+(argumentos sub, role, exp_horas; devolve token_jwt) — nunca montado com texto. Arquivo (PDF/CSV) SÓ
+com pdf_generator_tool/csv_exporter_tool (data = a lista de linhas consultada, output_path = nome do
+arquivo); elas devolvem path e filename — mapeie `path` para `arquivo_gerado` e devolva-o no retorno. Marcador de SQL
 é %s (nunca ?).
 Nos `params`, cada item é UMA expressão (normalmente o nome de uma entrada, ex.: "email"); a
 quantidade de itens deve ser IGUAL à de marcadores %s do SQL — sem marcador, `params` é [].

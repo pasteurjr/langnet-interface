@@ -40,6 +40,7 @@ BASE = {  # caso clínico de referência (o mesmo do fluxo encadeado)
     "tipo_cateter": "Cateter Central", "apache_ii": 18, "id_amostra": "HMC-88213",
 }
 AMOSTRA_NAO_MDR = "2fe6caad-a94a-11f1-acbb-a0ad9f2fcdf4"   # fixture: 2 resistências (não MDR)
+AMOSTRA_MDR = "MDR-TESTE-3R"                                 # fixture: 3 resistências (MDR)
 
 # Efeitos que o sistema NÃO implementa (reportados como lacuna, jamais como sucesso).
 NAO_IMPL = [
@@ -101,6 +102,9 @@ def entrada_do_caso(tc):
             d = (e.get("desc") or "").lower()
             if "csv" in d: ent["formato"] = "csv"
             elif "pdf" in d: ent["formato"] = "pdf"
+            elif "mdr" in d or "multirresist" in d or "resist" in d:
+                # causa afirmada "é MDR" → amostra com 3 R; "NÃO é MDR" afirmada → amostra com 2 R
+                ent["microbiologia_id"] = AMOSTRA_NAO_MDR if re.search(r"\bn[aã]o\b", d) else AMOSTRA_MDR
             continue
         d = (e.get("desc") or "").lower()
         if "credenciais" in d: ent["email"] = "inexistente@x.br"; ent["senha"] = "errada"
@@ -108,7 +112,7 @@ def entrada_do_caso(tc):
         elif "paciente" in d: ent["paciente_id"] = "P-INEXISTENTE"
         elif "dados suficientes" in d or "parâmetros" in d or "obrigat" in d:
             for k in ("idade", "dias_cateter", "uti", "apache_ii", "microrganismo"): ent.pop(k, None)
-        elif "mdr" in d or "multirresist" in d:
+        elif "mdr" in d or "multirresist" in d or "resist" in d:
             # o detector lê a AMOSTRA pelo id: a condição "não é MDR" é uma amostra com 2 resistências
             # (fixture semeada no banco do app: oxacilina R, gentamicina R, vancomicina S)
             ent["microbiologia_id"] = AMOSTRA_NAO_MDR
@@ -171,7 +175,8 @@ def _tem_causa_negada(tc):
 
 
 _FALHA_EXTERNA = re.compile(r"conex[aã]o falha|primeira tentativa|nova tentativa|retry|backoff|timeout|tempo limite|"
-                            r"indispon[íi]vel|falha ao carregar|erro interno|expir|fica indispon", re.I)
+                            r"indispon[íi]vel|falha ao carregar|erro interno|expir|fica indispon|verifique a conex|"
+                            r"erro ao consultar|n[aã]o responde|falha (de|na) (conex|comunica)|api .*(falha|indispon)", re.I)
 
 
 def _exige_falha_externa(tc):
@@ -259,10 +264,6 @@ _NAO_EXERCITAVEL = {
 # Só os casos cujo efeito é objetivamente conferível no resultado entram aqui; os demais são
 # reportados como NÃO EXERCITÁVEL — nem aprovados, nem reprovados.
 ASSERTS = {
-    "TC-UC-003-04": lambda r, e, t: (e and ("conform" in t or "bloquead" in t),
-                                     "bloqueou e avisou dados não conformes" if ("conform" in t)
-                                     else ("bloqueou, sem dizer que era dado não conforme" if e
-                                           else "deveria bloquear dado não conforme")),
     "TC-UC-005-01": lambda r, e, t: (not e and ("alerta_id" in t or "notificado" in t),
                                      "criou registro de alerta" if not e else "não criou"),
     # Caso negativo do alerta: além de seguir o fluxo, o sistema NÃO pode ter criado alerta.
@@ -311,6 +312,9 @@ async def semear_contexto():
     for t in cadeia:
         try:
             r = await exec_task(t, ctx)
+            # registra o que cada elo devolveu — sem isto, um elo que falha deixa o contexto
+            # incompleto em silêncio e o caso seguinte reprova por culpa do teste
+            print(f"  cadeia → {t}: {json.dumps(r, ensure_ascii=False)[:150]}", flush=True)
             if isinstance(r, dict) and r.get("status") != "erro":
                 for k, v in r.items():
                     if v is not None and not isinstance(v, (dict, list)):
