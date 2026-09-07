@@ -139,3 +139,24 @@ interface do LangNet:
 5. as marcações de critério refletem a resposta do agente;
 6. campo de senha deixou de ser texto aberto;
 7. fim do texto geoespacial herdado de outro projeto.
+
+---
+
+## Rodada 3 — o que o requisito pede × o que o sistema faz (comportamento, não só tela)
+
+| Requisito / caso de uso | Antes desta rodada | Agora (implantação 884acc27) |
+|---|---|---|
+| UC-001 Login com MFA | conferia senha; token era texto montado (`id.papel`) | senha conferida por hash; código MFA conferido; **token JWT assinado** pela ferramenta da biblioteca; senha nunca volta na resposta |
+| UC-002 Importação — paciente | recusa estava **invertida** (recusava quem existia) | paciente inexistente → "Paciente não encontrado"; existente → caso ativo selecionado |
+| UC-003 Consulta ao laboratório (MCP) | resposta lida com nomes que a ferramenta não devolve; antibiograma (objeto) quebrava a gravação | ferramenta **declara** o que devolve; contrato lê `sensibilidades`; gravado como JSON; amostra não liberada → frase do caso de uso |
+| UC-005 Multirresistência | regra existia, mas a tarefa exigia um id que a tela não envia | 3 R → alerta; 2 R → sem alerta; id vem pelo contexto com o nome certo (`microbiologia_id`) |
+| UC-006 Escore de Cox | pré-condição exigia idade/APACHE do operador; verificação invertida; campo lido com nome errado | lê o paciente do caso, chama a ferramenta MCP com **idade, APACHE II, tipo de cateter** (UC-006) e grava o escore real |
+| UC-008 Estimativa de redução | constante `−35` (exemplo da especificação) escrita como cálculo | valor fixo **recusado**; estimativa é passo de julgamento do agente (declara insuficiência sem dado) |
+| UC-010 Gerenciar usuários | tarefa esperava um comando `acao` que a tela não tem | comando derivado dos campos (existe `usuario_id` → editar/desativar; senão criar); senha gravada com hash |
+| UC-011 Auditoria | filtros obrigatórios (tela sem filtro não consultava) | filtros opcionais: sem filtro → 8 linhas |
+| UC-012 Relatório de vigilância | PDF de 220 MB: 1,24 milhão de linhas de 8 casos | **uma linha por caso**; PDF 3 KB / CSV 8 linhas |
+
+**A causa era uma só, de novo.** A lógica das tarefas vivia em prosa e o gerador traduzia "o que
+reconhecia". Agora vive num contrato conferido antes de gerar: entradas, SQL, nomes de campo,
+polaridade das verificações, ferramentas e o que elas devolvem. O que não passa **não vira código
+silencioso** — vira item no portão, com o motivo, e a implantação não sobe sem decisão explícita.

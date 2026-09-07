@@ -243,3 +243,67 @@ mentira**, quatro delas no caminho que o sistema usa.
 Causa estrutural: passos de LÓGICA da descrição da tarefa (conferir hash, contar resistências,
 condicionar o alerta) não viravam SQL e sumiam sem aviso. O tradutor passou a emiti-los e a
 **listar no log da geração** o que ainda não converte — 23 passos no BioByte.
+
+## 8. Terceira rodada — a lógica das tarefas deixa de ser texto e vira contrato
+
+As duas rodadas anteriores corrigiram telas e ferramentas. Sobrava a causa mais funda dos defeitos
+de comportamento: a **lógica** de cada tarefa (conferir a senha, contar as resistências, só alertar
+se for multirresistente) estava escrita em prosa na descrição da tarefa, e o gerador traduzia o que
+reconhecia — o resto sumia sem aviso. Nesta rodada a prosa virou **contrato de passos**: cada passo
+tem um tipo fechado (consulta, escrita, verificação, cálculo, condição, laço, chamada a sistema
+externo, encadeamento de outra tarefa, retorno), e **todo passo declarado termina em um de dois
+estados** — virou código, ou não virou e o motivo aparece no portão de implantação.
+
+### 8.1 Placar (bateria de 6 de setembro, versão vigente dos casos de teste: 42 casos + sondas)
+
+| Categoria | Fim da rodada 2 | **Agora** |
+|---|---|---|
+| Comportamento **verificado OK** | 9 | **13** |
+| Comportamento com **defeito confirmado** | 0 (com 11 casos reprovando na primeira bateria desta rodada) | **0** |
+| **Não exercitável** (exige injeção de falha: conexão, tempo limite, nova tentativa) | 6 | 14 |
+| Elemento de interface **existe** / **falta** | 25 / 0 | 8 / 6 (casos regenerados pedem itens novos: spinner, "esqueleto" de carregamento, barra de progresso) |
+| Efeito **não implementado** (e-mail/push, reenvio, fila assíncrona) | 5 | 3 |
+| Caso de uso **sem casos gerados** | 1 | 1 (Gerenciar Usuários) |
+
+Os números de interface caíram porque a etapa de Casos de Teste foi **regenerada** e passou a pedir
+elementos que a versão anterior não pedia — não porque telas tenham regredido (o contrato de tela
+segue 75 de 75 componentes emitidos). "Não exercitável" subiu porque agora o runner reconhece pela
+**causa** do caso (e não pelo número dele) quando a condição exige uma falha externa que a interface
+não cria.
+
+### 8.2 O que a primeira bateria desta rodada mostrou — e o que passou a ser barrado antes de implantar
+
+A primeira implantação com contratos reprovou 11 casos. Cada causa virou uma **conferência
+determinística** que roda na etapa de YAML (ao estruturar os passos) e no portão da geração:
+
+| O que aconteceu em runtime | O que confere agora, antes de implantar |
+|---|---|
+| Tarefa lia `micro_id`; a tela envia `microbiologia_id` → "variável não definida" na mão do operador | Toda entrada do contrato tem de ser campo da tela que dispara a tarefa, identificador do contexto ou dado de sistema; o portão de tela confere que a tela envia o que a tarefa exige |
+| Verificação com a lógica invertida (recusava quando o paciente **existia**) | Polaridade conferida; o contrato ganhou a forma `recusa_se` para "se X, recuse" |
+| Escore de Cox devolvia PARAMS_MISSING com o paciente completo | idem (condição descrevia o problema, não o que precisa valer) |
+| SQL com `?` no lugar do marcador → erro de sintaxe no painel | Cada SQL do contrato roda em EXPLAIN num banco temporário criado do modelo aprovado |
+| Consulta lia `resposta.valor_escore`; a ferramenta devolve `escore_cox` → NULL no banco | A ferramenta declara o que devolve; todo acesso a campo é conferido contra essa lista |
+| Agente **fabricou** um token (id + papel) em vez de chamar a ferramenta de assinatura | Segredo/token não se monta com texto; a biblioteca de ferramentas fica sempre visível e conferida |
+| Senha gravada em claro na coluna `senha_hash` | Coluna de hash só recebe `hash_senha(...)` |
+| Filtros de auditoria obrigatórios → tela sem filtro não consultava | Filtro de consulta tem de ser opcional |
+| Relatório juntava 3 tabelas filhas do caso: **1,24 milhão de linhas** de 8 casos (PDF de 220 MB) | Junção em leque (duas ou mais filhas da mesma tabela sem agregação) recusada com o modelo de dados como prova |
+| Ferramenta de PDF exigia um objeto e recebia a tabela; um import faltante esvaziava o registro de ferramentas em silêncio | Ferramenta de PDF aceita tabela; **portão de módulos** importa cada arquivo do servidor gerado antes de implantar |
+| Resultado clínico constante (`redução = −35`, o exemplo da especificação) | Valor fixo em nome de resultado é recusado — vira passo de julgamento do agente |
+
+### 8.3 Provas ao vivo na implantação final (sessão de geração 884acc27, servidor de agentes na porta 5037)
+
+- **Login**: senha certa + código válido → entra e recebe um **token JWT assinado de verdade** (chave do ambiente); a senha digitada **não volta** na resposta nem fica no contexto da tela; código curto → "Credenciais inválidas" (detalhe técnico: código MFA inválido).
+- **Importação**: paciente inexistente → "Paciente não encontrado"; caso conhecido do laboratório → amostra gravada com o antibiograma; amostra ainda não liberada → "Dados do laboratório não conformes com NHSN" (antes: erro de banco).
+- **Multirresistência**: amostra com 3 resistências → alerta criado; com 2 → sem alerta, `is_mdr: false`.
+- **Escore de Cox**: chamada real à ferramenta MCP com os parâmetros da especificação (idade, APACHE II, tipo de cateter) → 0,2374 · Baixo, gravado em `escores_risco`.
+- **Relatório de vigilância**: PDF de 3 KB e CSV com **8 linhas, uma por caso** (antes: 220 MB e 117 MB).
+- **Portões**: lógica, ferramentas, contrato de tela e módulos **aprovados** — a implantação passou sem "implantar mesmo assim".
+
+### 8.4 O que continua fora (sem maquiagem)
+
+- **14 casos não exercitáveis**: exigem injetar falha no laboratório externo (conexão, tempo limite, nova tentativa). O runner não tem injeção de falha; isso é honesto, não aprovação.
+- **6 elementos de interface** pedidos pela versão nova dos casos: spinner "Consultando laboratório…", esqueleto de carregamento, barra de progresso do escore, atualização automática dos cartões. Não estão na Especificação de Interface — nascem do texto dos casos; decidir se entram na especificação.
+- **3 efeitos não implementados**: e-mail/push ao médico e enfermeiro, reenvio de e-mail, "Processando…" com fila assíncrona. Não há canal de e-mail registrado na etapa MCP.
+- **Gerenciar Usuários** sem casos gerados pela etapa de Casos de Teste.
+- **Orquestração do fluxo clínico**: a tarefa encadeia o cálculo de Cox (outra tarefa determinística), mas **não pode encadear a recomendação de bundle**, que é tarefa de agente — o passo ficou marcado e a interface dispara a recomendação na etapa seguinte.
+- **Ferramentas do ATS sem implementação** (`api_call_tool`, `service_call_cox`, `service_call_bundle_engine`): nenhum agente em execução as usa (as tarefas viraram contrato); ficam listadas como "declaradas sem uso".
