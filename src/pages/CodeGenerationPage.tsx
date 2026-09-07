@@ -19,7 +19,9 @@ import {
 import GenerateCodeModal from '../components/code-generation/GenerateCodeModal';
 import RunConsole from '../components/code-generation/RunConsole';
 import { useCodeRun } from '../components/code-generation/useCodeRun';
+import './CodeGenerationPage.css';
 import StagePageLayout from '../components/stage/StagePageLayout';
+import { ONDE_CORRIGIR } from '../services/deploymentService';
 
 const sectionTitle: React.CSSProperties = {
   fontSize: 12, fontWeight: 700, textTransform: 'uppercase',
@@ -437,6 +439,57 @@ const CodeGenerationPage: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* PORTÕES da geração: o que a conferência automática barrou (ou aprovou). Antes só aparecia
+          na Implantação — o usuário só descobria o motivo ao tentar implantar. */}
+      {currentSession?.execution_metadata?.portoes && (() => {
+        const pt: any = currentSession.execution_metadata.portoes;
+        const chaves = ['logica', 'ferramentas', 'contrato_tela', 'modulos'] as const;
+        const nomes: Record<string, string> = { logica: 'Lógica das tarefas', ferramentas: 'Ferramentas', contrato_tela: 'Contrato de tela', modulos: 'Módulos do servidor' };
+        return (
+          <div className={`cg-portoes ${pt.reprovado ? 'reprovado' : 'aprovado'}`}>
+            <div className="cg-portoes-cab">
+              <b>{pt.reprovado ? 'Portões: esta versão NÃO pode ser implantada sem decisão explícita' : 'Portões: aprovado — pode implantar'}</b>
+              <span>a conferência comparou o que foi pedido (contratos, ferramentas, telas) com o que foi gerado</span>
+            </div>
+            <ul className="cg-portoes-lista">
+              {chaves.map((k) => {
+                const p = pt[k];
+                if (!p) return null;
+                const onde = ONDE_CORRIGIR[k];
+                return (
+                  <li key={k} className={p.reprovado ? 'barrado' : 'ok'}>
+                    <div className="cg-portao-linha">
+                      <span className="cg-portao-estado">{p.reprovado ? '✗' : '✓'}</span>
+                      <span className="cg-portao-nome">{nomes[k]}</span>
+                      <span className="cg-portao-desc">{p.reprovado ? `${p.quantidade} pendência(s) — ${p.descricao}` : 'sem pendências'}</span>
+                      {p.reprovado && onde && projectId && (
+                        <a className="cg-portao-onde" href={`/project/${projectId}/${onde.caminho}`}>corrigir em {onde.etapa} ↗</a>
+                      )}
+                    </div>
+                    {p.reprovado && (
+                      <ul className="cg-portao-itens">
+                        {(p.itens || []).slice(0, 6).map((it: any, i: number) => (
+                          <li key={i}>
+                            {it.passo || it.o_que || it.motivo || it.modulo || JSON.stringify(it)}
+                            {it.tarefa ? <em> — {it.tarefa}</em> : null}
+                            {it.ferramenta ? <em> — {it.ferramenta}</em> : null}
+                            {it.tela ? <em> — {it.tela}</em> : null}
+                          </li>
+                        ))}
+                        {(p.itens || []).length > 6 && <li className="cg-portao-mais">e mais {(p.itens || []).length - 6}…</li>}
+                      </ul>
+                    )}
+                    {!p.reprovado && k === 'ferramentas' && (p.sem_uso || []).length > 0 && (
+                      <div className="cg-portao-nota">{(p.sem_uso || []).length} ferramenta(s) declaradas no ATS sem uso em execução: {(p.sem_uso || []).map((x: any) => x.ferramenta).join(', ')}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        );
+      })()}
 
       {warnings.length > 0 && (
         <div

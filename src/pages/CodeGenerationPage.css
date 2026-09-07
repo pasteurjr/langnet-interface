@@ -1,0 +1,18 @@
+
+/* Portões da geração (mesma leitura do painel da Implantação) */
+.cg-portoes { margin-top: 12px; border: 1px solid #86efac; background: #f0fdf4; border-radius: 10px; padding: 12px 14px; font-size: 13px; }
+.cg-portoes.reprovado { border-color: #fca5a5; background: #fef2f2; }
+.cg-portoes-cab { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
+.cg-portoes-cab b { color: #166534; font-size: 14px; }
+.cg-portoes.reprovado .cg-portoes-cab b { color: #b91c1c; }
+.cg-portoes-cab span { font-size: 12px; color: #78716c; }
+.cg-portoes-lista { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cg-portao-linha { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.cg-portao-estado { font-weight: 700; width: 16px; color: #166534; }
+.cg-portoes-lista li.barrado .cg-portao-estado { color: #b91c1c; }
+.cg-portao-nome { font-weight: 600; color: #1f2937; min-width: 150px; }
+.cg-portao-desc { color: #57534e; }
+.cg-portao-onde { margin-left: auto; color: #1d4ed8; text-decoration: none; font-size: 12px; }
+.cg-portao-itens { margin: 4px 0 0 26px; padding: 0 0 0 14px; color: #44403c; font-size: 12px; }
+.cg-portao-itens em { color: #78716c; }
+.cg-portao-mais, .cg-portao-nota { color: #78716c; font-size: 12px; margin-left: 26px; margin-top: 2px; }
