@@ -6786,7 +6786,7 @@ import os
 import csv
 import math
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -7097,7 +7097,7 @@ mensagem dizendo exatamente qual variável preencher — nunca devolve resultado
 Para habilitar no futuro: preencha as variáveis correspondentes no .env e reinicie o ws-server.
 """
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from crewai.tools import BaseTool
 from pydantic import BaseModel, Field
@@ -9135,6 +9135,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
                 "descricao": "componentes declarados na interface que não foram emitidos",
             },
         }
+        # MÓDULOS: cada arquivo Python do servidor gerado tem de IMPORTAR. Um NameError num deles
+        # (ex.: `Union` sem import em tools_std.py) não derruba o servidor — só esvazia o registro
+        # de ferramentas em silêncio, e a tarefa recusa em runtime com "ferramenta não disponível".
+        state["portoes"]["modulos"] = _portao_modulos(files)
         state["portoes"]["reprovado"] = any(v.get("reprovado") for v in state["portoes"].values()
                                             if isinstance(v, dict))
         _rep = [k for k, v in state["portoes"].items()
@@ -11575,6 +11579,45 @@ def _validate_generated_project(files: List[Dict[str, str]], state: LangNetFullS
             )
 
     return warnings
+
+
+def _portao_modulos(files: list) -> dict:
+    """Importa cada módulo Python do ws-server num processo à parte (mesmo ambiente do LangNet):
+    erro de sintaxe, nome indefinido ou import quebrado aparece aqui, antes da implantação."""
+    import subprocess, sys, tempfile, os as _os
+    mods = ["uc_messages", "tools_rules", "database_tool", "tools_std", "tools_ext", "mcp_tools", "tools", "adapters"]
+    itens = []
+    try:
+        with tempfile.TemporaryDirectory(prefix="langnet_mod_") as tmp:
+            presentes = set()
+            for f in files:
+                pth = str(f.get("path") or "")
+                if pth.startswith("ws-server/") and pth.endswith(".py") and pth.count("/") == 1:
+                    with open(_os.path.join(tmp, pth.split("/")[-1]), "w", encoding="utf-8") as fh:
+                        fh.write(f.get("content") or "")
+                    presentes.add(pth.split("/")[-1][:-3])
+                elif pth.startswith("ws-server/") and pth.endswith((".yaml", ".json", ".env.example")):
+                    with open(_os.path.join(tmp, pth.split("/")[-1]), "w", encoding="utf-8") as fh:
+                        fh.write(f.get("content") or "")
+            env = dict(_os.environ); env["PYTHONPATH"] = tmp
+            for m in mods:
+                if m not in presentes:
+                    continue
+                try:
+                    r = subprocess.run([sys.executable, "-c", f"import {m}"], cwd=tmp, env=env,
+                                       capture_output=True, text=True, timeout=90)
+                    if r.returncode != 0:
+                        err = [l for l in (r.stderr or "").strip().splitlines() if "Error" in l]
+                        itens.append({"modulo": f"ws-server/{m}.py",
+                                      "motivo": (err[-1] if err else (r.stderr or "").strip()[-300:])[:300]})
+                except subprocess.TimeoutExpired:
+                    itens.append({"modulo": f"ws-server/{m}.py", "motivo": "import não terminou em 90s"})
+    except Exception as e:  # noqa: BLE001
+        print(f"[CODE-GEN][MÓDULOS] conferência indisponível: {e}")
+        return {"reprovado": False, "quantidade": 0, "itens": [], "descricao": "módulos do servidor que não importam"}
+    print(f"[CODE-GEN][MÓDULOS] {len(itens)} módulo(s) com erro de import" + (f": {[i['modulo'] for i in itens]}" if itens else ""))
+    return {"reprovado": bool(itens), "quantidade": len(itens), "itens": itens,
+            "descricao": "módulos do servidor que não importam (erro de sintaxe/nome/import)"}
 
 
 def _portao_ferramentas(tools_doc: dict, agents_yaml_txt: str, tasks_yaml_txt: str) -> dict:

@@ -55,6 +55,7 @@ export interface PortoesVeredito {
   logica?: Portao;
   ferramentas?: Portao;
   contrato_tela?: Portao;
+  modulos?: Portao;
 }
 
 /** Onde se conserta cada tipo de pendência — sem isto o painel vira um muro. */
@@ -62,6 +63,7 @@ export const ONDE_CORRIGIR: Record<string, { etapa: string; caminho: string }> =
   logica: { etapa: 'Agentes & Tarefas', caminho: 'agent-task' },
   ferramentas: { etapa: 'Ferramentas', caminho: 'tools-stage' },
   contrato_tela: { etapa: 'Interface & Protótipo', caminho: 'ui-spec' },
+  modulos: { etapa: 'Geração de Código', caminho: 'code-generation' },
 };
 
 /** Veredito dos portões guardado junto com a geração. */

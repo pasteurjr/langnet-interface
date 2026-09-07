@@ -195,7 +195,7 @@ const DeploymentPage: React.FC = () => {
                 <span>a conferência automática comparou o que foi pedido com o que foi gerado</span>
               </div>
               <ul className="dep-portoes-lista">
-                {(['logica', 'ferramentas', 'contrato_tela'] as const).map((k) => {
+                {(['logica', 'ferramentas', 'contrato_tela', 'modulos'] as const).map((k) => {
                   const p = portoes[k];
                   if (!p || !p.reprovado) return null;
                   const onde = ONDE_CORRIGIR[k];
