@@ -16,8 +16,21 @@ from pathlib import Path
 WS_PORT = sys.argv[1] if len(sys.argv) > 1 else "5002"
 FE = Path(sys.argv[2]) if len(sys.argv) > 2 else None
 if FE is None:
-    cands = sorted(Path("/tmp/langnet-runs").glob("*/*/frontend/src"), key=lambda p: p.stat().st_mtime)
+    # o código das telas tem de ser o da implantação que está sendo testada: acha o pacote pela porta
+    # do servidor de agentes (WEBSOCKET_PORT no .env); "o mais recente por data" apontava para outro
+    # pacote sempre que algum arquivo era mexido em outra pasta
+    cands = []
+    for env in Path("/tmp/langnet-runs").glob("*/*/ws-server/.env"):
+        try:
+            if re.search(rf"^WEBSOCKET_PORT={WS_PORT}\s*$", env.read_text(encoding="utf-8"), re.M):
+                cands.append(env.parent.parent / "frontend" / "src")
+        except Exception:
+            pass
+    cands = sorted([c for c in cands if c.exists()], key=lambda p: p.stat().st_mtime)
+    if not cands:
+        cands = sorted(Path("/tmp/langnet-runs").glob("*/*/frontend/src"), key=lambda p: p.stat().st_mtime)
     FE = cands[-1] if cands else Path(".")
+    print(f"telas conferidas em: {FE}")
 TCS = json.load(open("/tmp/biobyte_testcases.json", encoding="utf-8"))
 
 UC_TASK = {
