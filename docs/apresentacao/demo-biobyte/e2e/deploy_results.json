@@ -1,10 +1,8 @@
 {
  "portas": [
-  "5015",
-  "8009",
-  "3011",
-  "8009",
+  "5037",
+  "8031",
   "3011"
  ],
- "resumo": "IMPLANTAÇÃO ATUAL\nNO AR\niniciada 03/09/2026, 08:04:46 · 0s\n⏹ Parar\nOnde o sistema ficou disponível\nservidor de agentes (WebSocket)\tporta 5015\tws://localhost:5015\nAPI do sistema (FastAPI)\tporta 8009\thttp://localhost:8009\ninterface do sistema (React)\tporta 3011\thttp://localhost:3011\nRegistro da implantação (100 linhas)\n[runner] writing 86 file(s) to /tmp/langnet-runs/64268e56-877f-40a6-8f71-abdb8a381eae/23f7d929-5bee-489b-a2fb-c4fb7caf5b47\n[runner] criando ambiente isolado da implantação em /tmp/langnet-runs/64268e56-877f-40a6-8f71-abdb8a381eae/.venv-run\n[runner] interpreter: /tmp/langnet-runs/64268e56-877f-40a6-8f71-abdb8a381eae/.venv-run/bin/python\n[runner] layout visualtasksexec detectado — cwd = ws-server/\n[runner] configuração da implantação aplicada em .env (41 chaves; informadas na tela: CMS_API_KEY, CMS_API_URL, CREWAI_TESTING, DB_HOST, DB_NAME, DB_PASSWORD, DB_PORT, DB_USER, DEEPS"
+ "resumo": "IMPLANTAÇÃO ATUAL\nNO AR\niniciada 07/09/2026, 00:42:47 · 0s\n⏹ Parar\nOnde o sistema ficou disponível\nservidor de agentes (WebSocket)\tporta 5037\tws://localhost:5037\nAPI do sistema (FastAPI)\tporta 8031\thttp://localhost:8031\ninterface do sistema (React)\tporta 3011\thttp://localhost:3011\nRegistro da implantação (438 linhas)\n[frontend]   Line 175:9:  'linhas' is assigned a value but never used         no-unused-vars\n[frontend]   Line 177:9:  'chaveTexto' is assigned a value but never used     no-unused-vars\n[frontend]   Line 179:9:  'chaveNumerica' is assigned a value but never used  no-unused-vars\n[frontend] src/screens/ResultadoEstimativaRisco.jsx\n[frontend]   Line 4:10:   'BarChart' is defined but never used            no-unused-vars\n[frontend]   Line 4:20:   'Bar' is defined but never used                 no-unused-vars\n[frontend]   Line 4:25:   'LineChart' is defined but never used         "
 }
