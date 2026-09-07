@@ -29,8 +29,8 @@ Restrições intercausas (notação do artigo):
   C (Consequentes)       — se a 1ª é verdadeira, as demais também (requires)
   M (Mascaradas)         — máscara entre EFEITOS (um efeito mascara outro)
 """
-import re
 from __future__ import annotations
+import re
 from itertools import product
 from typing import Any, Dict, List, Optional
 
