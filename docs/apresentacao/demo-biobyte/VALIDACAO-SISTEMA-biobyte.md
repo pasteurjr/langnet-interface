@@ -326,3 +326,17 @@ configurável); o contrato marca a falha como "sistema externo"; o servidor devo
 exceção do caso de uso** com o detalhe técnico à parte e a indicação de tentar novamente. Sem
 regenerar, o placar de 8.1 continua valendo; estas duas linhas são defeitos **confirmados e ainda não
 provados corrigidos**.
+
+### 8.6 Canal de e-mail (07/09) — registrado, ainda não ligado ao contrato
+
+Os três efeitos "não implementados" (e-mail/push ao médico e ao enfermeiro, reenvio, aviso de
+processamento) esbarravam na falta de um canal: nenhum servidor de e-mail estava registrado na etapa
+MCP. Agora existe: um servidor MCP de notificações (`enviar_email`, SMTP de verdade) entregando numa
+caixa postal local de demonstração — a mensagem chega como arquivo, dá para abrir. Feito **pela
+interface do LangNet**: registro na página global de MCP, teste com descoberta da ferramenta (entrada
+e saída declaradas), habilitação no projeto e atribuição ao agente detector de MDR.
+
+O que falta, e depende do modelo de linguagem: a etapa Ferramentas incorporar a ferramenta ao
+inventário e o contrato do alerta MDR ganhar o passo "notificar médico e enfermeiro" — hoje a
+notificação é o registro do alerta na tela. Até lá, os três efeitos continuam contados como não
+implementados.

@@ -9162,8 +9162,11 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         _rep = [k for k, v in state["portoes"].items()
                 if isinstance(v, dict) and v.get("reprovado")]
         print(f"[CODE-GEN][PORTÕES] {'REPROVADO em ' + ', '.join(_rep) if _rep else 'aprovado'}")
-        # Remove o App.jsx do template (vamos sobrescrever)
-        files = [f for f in files if f["path"] != "frontend/src/App.jsx"]
+        # As telas de negócio SUBSTITUEM o que o template base já tinha com o mesmo caminho
+        # (App.jsx, index.html…): caminho duplicado no pacote dava duas entradas iguais na lista
+        # de arquivos e chave repetida na página de geração.
+        _subst = {f["path"] for f in screen_files}
+        files = [f for f in files if f["path"] not in _subst]
         files.extend(screen_files)
 
     # === COERÊNCIA: o app carrega o PRÓPRIO schema (DDL) ===
