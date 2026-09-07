@@ -244,6 +244,14 @@ def assercao_padrao(tc, r, houve_erro, txt):
     return (not houve_erro), ("executou" if not houve_erro else f"falhou: {txt[:90]}")
 
 
+def _arquivo_pelo_caso(tc, r):
+    """Relatório: a extensão esperada é a que a CAUSA do caso pede (CSV/PDF), não o número do caso."""
+    txt = " ".join((e.get("desc") or "") for e in (tc.get("entradas") or []) if e.get("verdadeira", True)).lower()
+    txt += " " + ((tc.get("efeito_esperado") or {}).get("desc") or "").lower()
+    ext = ".csv" if "csv" in txt else (".pdf" if "pdf" in txt else None)
+    return _arquivo(r, ext) if ext else (None, "caso não diz o formato do arquivo")
+
+
 def _arquivo(r, ext):
     a = str((r or {}).get("arquivo_gerado") or "")
     return (a.endswith(ext), f"arquivo_gerado={a.rsplit('/',1)[-1] or 'NENHUM'}")
@@ -281,8 +289,7 @@ ASSERTS = {
     # com um caso sem dado nenhum; por isso estes dois saem como não exercitáveis pela entrada.
     "TC-UC-011-02": lambda r, e, t: (("nenhum registro" in t) or isinstance((r or {}).get("logs"), list),
                                      "distinguiu resultado vazio" if "nenhum registro" in t else "devolveu logs nulo, sem distinguir vazio"),
-    "TC-UC-012-01": lambda r, e, t: _arquivo(r, ".pdf"),
-    "TC-UC-012-02": lambda r, e, t: _arquivo(r, ".csv"),
+    # (012-01/02 saíram daqui: a extensão esperada vem da CAUSA do caso — ver _arquivo_pelo_caso)
 }
 
 
@@ -363,6 +370,8 @@ async def main():
                 # Confere o EFEITO ESPERADO, não apenas sucesso/erro — um caso "negativo" pode
                 # esperar um caminho alternativo de SUCESSO (ex.: formato != CSV ⇒ gera PDF).
                 veredito = ASSERTS.get(tid)
+                if veredito is None and uc == "UC-012" and re.search(r"arquivo|download|gera", efeito or "", re.I):
+                    veredito = (lambda r, e, t, _tc=tc: _arquivo_pelo_caso(_tc, r))
                 if veredito is None:
                     # Sem asserção específica, usa a padrão — que EXIGE o efeito (mensagem
                     # especificada, ou recusa quando a causa é negada). Só fica "não
