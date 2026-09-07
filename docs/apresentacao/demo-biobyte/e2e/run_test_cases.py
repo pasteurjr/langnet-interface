@@ -179,6 +179,38 @@ _FALHA_EXTERNA = re.compile(r"conex[aã]o falha|primeira tentativa|nova tentativ
                             r"erro ao consultar|n[aã]o responde|falha (de|na) (conex|comunica)|api .*(falha|indispon)", re.I)
 
 
+FALHA_ARQ = "/tmp/biobyte_mcp_falha.json"
+_FERRAMENTA_DO_UC = {"UC-003": "consultar_microbiologia", "UC-006": "escore_risco_cox"}
+SEM_AGENTE = "--sem-agente" in sys.argv   # modelo de linguagem indisponível: tarefas de agente não rodam
+
+
+def _modo_falha_do_caso(tc):
+    """Se a condição do caso é uma falha do laboratório/motor de Cox SIMULADOS, ela É induzível:
+    o simulador tem modo falha (timeout / indisponível / inválido) ligado por arquivo."""
+    ferr = _FERRAMENTA_DO_UC.get(tc.get("uc") or "")
+    if not ferr:
+        return None, None
+    txt = " ".join((e.get("desc") or "") for e in (tc.get("entradas") or [])).lower() + " " + \
+          ((tc.get("efeito_esperado") or {}).get("desc") or "").lower()
+    negadas = [(e.get("desc") or "").lower() for e in (tc.get("entradas") or []) if not e.get("verdadeira", True)]
+    alvo = " ".join(negadas) if negadas else txt
+    if re.search(r"timeout|tempo limite|demora", alvo) or ("timeout" in txt and not negadas and re.search(r"erro ao (consultar|calcular)", txt)):
+        return ferr, "timeout"
+    if re.search(r"erro 500|indispon|conex[aã]o falha|falha (de|na) (conex|comunica)|n[aã]o responde|sem sucesso de comunica", alvo) \
+            or re.search(r"verifique a conex|erro ao (consultar|calcular)", txt):
+        return ferr, "indisponivel"
+    return None, None
+
+
+def _liga_falha(ferr, modo, vezes=1):
+    json.dump({ferr: {"modo": modo, "vezes": vezes}}, open(FALHA_ARQ, "w"))
+
+
+def _desliga_falha():
+    try: os.remove(FALHA_ARQ)
+    except FileNotFoundError: pass
+
+
 def _exige_falha_externa(tc):
     """A condição do caso é uma FALHA de infraestrutura (conexão, timeout, retry, indisponibilidade)
     — não se cria pela entrada; exige injeção de falha, que este runner não tem."""
@@ -317,6 +349,9 @@ async def semear_contexto():
               "classify_case_nhsn", "detect_mdr_and_alert", "calculate_cox_risk_score",
               "recommend_treatment_bundle", "estimate_risk_reduction"]
     for t in cadeia:
+        if SEM_AGENTE and t in ("recommend_treatment_bundle", "estimate_risk_reduction"):
+            print(f"  cadeia → {t}: NÃO EXECUTADA (modelo de linguagem indisponível — --sem-agente)", flush=True)
+            continue
         try:
             r = await exec_task(t, ctx)
             # registra o que cada elo devolveu — sem isto, um elo que falha deixa o contexto
@@ -361,7 +396,15 @@ async def main():
                 if not tarefa:
                     linhas.append((tid, uc, "SEM TAREFA", efeito)); resumo["SISTEMA_FALHA"] += 1; continue
                 try:
-                    r = await exec_task(tarefa, entrada_do_caso(tc))
+                    _ferr, _modo = _modo_falha_do_caso(tc)
+                    if _ferr:
+                        _liga_falha(_ferr, _modo)
+                        print(f"  {tid:16} falha induzida no simulador: {_ferr} → {_modo}", flush=True)
+                    try:
+                        r = await exec_task(tarefa, entrada_do_caso(tc))
+                    finally:
+                        if _ferr:
+                            _desliga_falha()
                 except Exception as exc:
                     r = {"status": "erro", "error": str(exc)[:120]}
                 erro = (isinstance(r, dict) and (r.get("status") == "erro" or r.get("error")))
@@ -377,8 +420,8 @@ async def main():
                     # especificada, ou recusa quando a causa é negada). Só fica "não
                     # exercitável" o caso cuja condição não se cria pela entrada.
                     _motivo_ne = _NAO_EXERCITAVEL.get(tid) or (
-                        "exige injeção de falha externa (conexão/timeout/retry), que este runner não faz"
-                        if _exige_falha_externa(tc) else None)
+                        "exige injeção de falha externa que o simulador não cobre (e-mail, fila, base de protocolos)"
+                        if (_exige_falha_externa(tc) and not _modo_falha_do_caso(tc)[0]) else None)
                     if _motivo_ne:
                         linhas.append((tid, uc, "NÃO EXERCITÁVEL", f"{efeito} — {_motivo_ne} → {det}"))
                         resumo["NAO_EXERC"] += 1
@@ -394,7 +437,7 @@ async def main():
                 resumo["SISTEMA_OK" if ok else "SISTEMA_FALHA"] += 1
                 print(f"  {tid:16} {'PASSOU' if ok else 'FALHOU'}  {porque[:44]} | {det[:60]}", flush=True)
     print("\n--- SONDA DE RECUSA (caso sem dado nenhum): o agente inventa ou declara insuficiência? ---")
-    for tarefa in ("recommend_treatment_bundle", "estimate_risk_reduction"):
+    for tarefa in (() if SEM_AGENTE else ("recommend_treatment_bundle", "estimate_risk_reduction")):
         try:
             rr = await exec_task(tarefa, {"caso_id": "CAS-SEM-DADOS", "usuario_id": "U-001"})
         except Exception as exc:

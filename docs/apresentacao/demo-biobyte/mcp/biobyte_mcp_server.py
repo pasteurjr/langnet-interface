@@ -16,6 +16,43 @@ from typing import TypedDict, Dict, List, Optional
 from mcp.server.fastmcp import FastMCP
 
 PORT = int(os.getenv("BIOBYTE_MCP_PORT", "9120"))
+
+# ── Injeção de falha (para os testes dos fluxos de exceção E1 dos casos de uso) ──
+# O runner escreve /tmp/biobyte_mcp_falha.json: {"consultar_microbiologia": {"modo": "timeout", "vezes": 1}}
+# modos: timeout (a chamada demora mais que o limite do cliente), indisponivel (erro HTTP 500/503),
+# invalido (resposta sem os campos exigidos). "vezes" = quantas chamadas seguintes falham (decrementa).
+import json as _json, time as _time
+_FALHA_ARQ = os.getenv("BIOBYTE_MCP_FALHA", "/tmp/biobyte_mcp_falha.json")
+
+
+def _modo_falha(ferramenta: str):
+    try:
+        with open(_FALHA_ARQ, encoding="utf-8") as fh:
+            cfg = _json.load(fh)
+    except Exception:
+        return None
+    ent = cfg.get(ferramenta) or {}
+    modo, vezes = ent.get("modo"), int(ent.get("vezes", 1))
+    if not modo or vezes <= 0:
+        return None
+    ent["vezes"] = vezes - 1
+    cfg[ferramenta] = ent
+    try:
+        with open(_FALHA_ARQ, "w", encoding="utf-8") as fh:
+            _json.dump(cfg, fh)
+    except Exception:
+        pass
+    return modo
+
+
+def _aplicar_falha(ferramenta: str):
+    modo = _modo_falha(ferramenta)
+    if modo == "timeout":
+        _time.sleep(float(os.getenv("BIOBYTE_MCP_TIMEOUT_S", "20")))
+        raise RuntimeError(f"{ferramenta}: tempo limite excedido (simulado)")
+    if modo == "indisponivel":
+        raise RuntimeError(f"{ferramenta}: serviço indisponível — HTTP 503 (simulado)")
+    return modo
 mcp = FastMCP("BioByte Sentinela - Integrações Externas", host="127.0.0.1", port=PORT)
 
 # Banco simulado de microbiologia do LIS (por paciente).
@@ -56,6 +93,9 @@ def consultar_microbiologia(paciente_id: str) -> ResultadoMicrobiologia:
     laboratorial (LIS) externo. Devolve, no vocabulário da especificação (UC-003/NHSN),
     microrganismo, sensibilidades (antibiótico -> S/I/R) e a flag de multirresistência (MDR).
     Use o identificador do caso (ex.: 'CAS-2023-001'). Amostra não liberada volta status 'pendente'."""
+    if _aplicar_falha("consultar_microbiologia") == "invalido":
+        return {"paciente_id": paciente_id, "status": "liberado", "id_amostra": "HMC-INVALIDO", "fonte": "hemocultura",
+                "microrganismo": None, "multirresistente": None, "sensibilidades": None, "mensagem": "payload fora do schema (simulado)"}
     reg = _LIS.get(paciente_id)
     if not reg:
         # amostra ainda não liberada pelo laboratório
@@ -81,6 +121,7 @@ def escore_risco_cox(idade: int, apache_ii: int, tipo_cateter: str) -> Resultado
     """Calcula o escore de risco de ICSAC pelo modelo de perigos proporcionais de Cox.
     Recebe os parâmetros clínicos que a especificação define (UC-006): idade, APACHE II e tipo
     de cateter; devolve o escore (0-1), o nível de risco (Baixo/Médio/Alto) e os fatores."""
+    _aplicar_falha("escore_risco_cox")
     # Coeficientes ilustrativos do modelo de Cox (hazard ratios log-lineares).
     tc = (tipo_cateter or "").strip().lower()
     peso_cateter = (0.85 if ("dial" in tc or "hemod" in tc) else

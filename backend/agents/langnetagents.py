@@ -3206,6 +3206,15 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                         continue
                     if det_result.get(_ck) is None:
                         det_result[_ck] = _cv
+            # Sistema EXTERNO falhou (laboratório/motor de Cox fora, tempo limite): a resposta sai na
+            # frase de exceção do caso de uso ("Erro ao consultar laboratório. Verifique a conexão."),
+            # com o detalhe técnico à parte — nunca um texto técnico cru na tela do operador.
+            if isinstance(det_result, dict) and det_result.get("status") == "erro" and det_result.get("sistema_externo"):
+                _tec = str(det_result.get("error") or "sistema externo indisponível")
+                await _send(ws, "error", {{"task_name": task_name,
+                    "error": _msg_negocio(task_name, "erro", _tec), "detalhe_tecnico": _tec,
+                    "sistema_externo": det_result.get("sistema_externo"), "tentar_novamente": True}})
+                return
             # Consulta não achou o registro: o adapter parou antes de gravar. A resposta sai na
             # mensagem do caso de uso ("Credenciais inválidas"), com o detalhe técnico à parte.
             if isinstance(det_result, dict) and det_result.get("nao_encontrado"):
@@ -8210,16 +8219,25 @@ def _generate_mcp_tools_py(assignments: list, arg_aliases: dict = None, out_alia
         '        from mcp.client.sse import sse_client\n'
         '        async with sse_client(url, headers=headers) as (r, w):\n'
         '            return await _run_call(r, w, tool, args)\n'
+        '    # Falha do sistema externo é FALHA (exceção), nunca resposta normal: antes voltava o texto\n'
+        '    # {"mcp_error": ...} e a tarefa seguia lendo campos que não existiam. Limite de tempo por\n'
+        '    # chamada (MCP_CALL_TIMEOUT, padrão 10 s) — o caso de uso prevê "timeout (5s)"; sem isto a\n'
+        '    # chamada podia esperar 5 minutos.\n'
         '    try:\n'
-        '        return asyncio.run(_c())\n'
+        '        return asyncio.run(asyncio.wait_for(_c(), timeout=float(os.getenv("MCP_CALL_TIMEOUT", "10"))))\n'
+        '    except asyncio.TimeoutError:\n'
+        '        raise RuntimeError(f"sistema externo {tool}: tempo limite de {os.getenv(\'MCP_CALL_TIMEOUT\', \'10\')}s excedido")\n'
         '    except Exception as e:\n'
-        '        return json.dumps({"mcp_error": str(e)})\n\n'
+        '        raise RuntimeError(f"sistema externo {tool}: {e}")\n\n'
         'async def _run_call(read, write, tool, args):\n'
         '    from mcp import ClientSession\n'
         '    async with ClientSession(read, write) as s:\n'
         '        await s.initialize()\n'
         '        res = await s.call_tool(tool, args or {})\n'
-        '        return "\\n".join(getattr(c, "text", None) or str(c) for c in res.content)\n\n'
+        '        texto = "\\n".join(getattr(c, "text", None) or str(c) for c in res.content)\n'
+        '        if getattr(res, "isError", False):\n'
+        '            raise RuntimeError(texto or "erro devolvido pela ferramenta")\n'
+        '        return texto\n\n'
         + "\n".join(classes) + "\n\n"
         + "MCP_TOOLS = {\n" + "\n".join(registry) + "\n}\n\n"
         + "# ── Path B — coerência MCP↔Modelo de Dados ──────────────────────────────────\n"

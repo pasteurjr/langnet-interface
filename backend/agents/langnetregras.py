@@ -1007,6 +1007,9 @@ def emitir_tarefa(nome: str, passos: List[dict], traceability_comment: str = "",
         "        conn.commit()\n"
         "        return _result if _result is not None else {'status': 'sucesso'}\n"
         "    except _RegraExecucao as _e:\n"
+        "        if getattr(_e, 'sistema_externo', None):\n"
+        "            conn.rollback()\n"
+        "            return {'status': 'erro', 'error': str(_e), 'sistema_externo': _e.sistema_externo}\n"
         "        conn.rollback()\n"
         "        return {'status': 'erro', 'error': str(_e)}\n"
         "    except Exception as _e:\n"
@@ -1170,10 +1173,20 @@ def _rt_chamar_ferramenta(nome, argumentos):
     fn = getattr(tool, "run", None) or getattr(tool, "_run", None)
     if fn is None:
         raise _RegraExecucao(f"ferramenta «{nome}» não é chamável")
-    saida = fn(**argumentos) if argumentos else fn()
+    try:
+        saida = fn(**argumentos) if argumentos else fn()
+    except Exception as e:
+        # sistema externo fora / tempo limite / erro da ferramenta: falha explícita, marcada
+        exc = _RegraExecucao(f"sistema externo «{nome}» falhou: {e}")
+        exc.sistema_externo = nome
+        raise exc
     if isinstance(saida, str):
-        try: return _rt_json.loads(saida)
+        try: saida = _rt_json.loads(saida)
         except Exception: return {"texto": saida}
+    if isinstance(saida, dict) and saida.get("mcp_error"):
+        exc = _RegraExecucao(f"sistema externo «{nome}» falhou: {saida['mcp_error']}")
+        exc.sistema_externo = nome
+        raise exc
     return saida
 
 def _rt_sql(v):

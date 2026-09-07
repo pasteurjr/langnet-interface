@@ -307,3 +307,22 @@ determinística** que roda na etapa de YAML (ao estruturar os passos) e no port�
 - **Gerenciar Usuários** sem casos gerados pela etapa de Casos de Teste.
 - **Orquestração do fluxo clínico**: a tarefa encadeia o cálculo de Cox (outra tarefa determinística), mas **não pode encadear a recomendação de bundle**, que é tarefa de agente — o passo ficou marcado e a interface dispara a recomendação na etapa seguinte.
 - **Ferramentas do ATS sem implementação** (`api_call_tool`, `service_call_cox`, `service_call_bundle_engine`): nenhum agente em execução as usa (as tarefas viraram contrato); ficam listadas como "declaradas sem uso".
+
+### 8.5 Injeção de falha nos sistemas externos (07/09) — o que apareceu
+
+O laboratório e o motor de Cox simulados ganharam um **modo falha** (tempo limite, indisponível,
+resposta inválida) que o runner liga por caso. Com isso os fluxos de exceção E1 dos casos de uso
+deixam de ser "não exercitáveis" e passam a ser testados de verdade. Rodado contra a implantação
+884acc27 (a última desta rodada), o sistema **falhou nos dois**:
+
+| Falha induzida | O caso de uso exige | O que o sistema fez |
+|---|---|---|
+| Laboratório indisponível (HTTP 503) | "Erro ao consultar laboratório. Verifique a conexão." + botão Tentar Novamente | Devolveu **"Dados do laboratório não conformes com NHSN"** — mensagem errada: a falha do conector voltava como texto e o contrato a leu como resposta |
+| Motor de Cox em tempo limite | "Erro ao calcular risco. Tente novamente." (timeout 5 s) | Esperou **20 s** (o conector não tinha limite de tempo) e devolveu erro cru de banco: *Column 'valor_escore' cannot be null* |
+
+Correção feita no gerador (aguarda regeneração — o modelo de linguagem estava indisponível no
+horário): o conector MCP passa a **falhar explicitamente** com limite de tempo por chamada (10 s,
+configurável); o contrato marca a falha como "sistema externo"; o servidor devolve a **frase de
+exceção do caso de uso** com o detalhe técnico à parte e a indicação de tentar novamente. Sem
+regenerar, o placar de 8.1 continua valendo; estas duas linhas são defeitos **confirmados e ainda não
+provados corrigidos**.
