@@ -1031,8 +1031,44 @@ caso de uso especifica. Nunca invente valores de exemplo como resultado. Respond
 {"steps":[...], "observacao": "o que não coube no contrato, se houver"}"""
 
 
+_ESTRUTURAR_JOBS: dict = {}
+
+
 @router.post("/{session_id}/estruturar-passos")
 def estruturar_passos(session_id: str, req: EstruturarRequest, current_user: dict = Depends(get_current_user)):
+    """Dispara a estruturação em segundo plano e devolve um `job_id` para acompanhar.
+
+    A ação chama o agente para cada tarefa com problema (até 3 rodadas) — minutos, às vezes. Como
+    chamada única ela caía na mão do navegador ("NetworkError") mesmo com a versão gravada no
+    banco; agora a página consulta o andamento e o relatório aparece quando termina."""
+    import threading, uuid as _uuid, datetime as _dt
+    job_id = str(_uuid.uuid4())
+    _ESTRUTURAR_JOBS[job_id] = {"job_id": job_id, "session_id": session_id, "status": "rodando",
+                                "inicio": _dt.datetime.utcnow().isoformat()}
+
+    def _rodar():
+        try:
+            res = _estruturar_passos_impl(session_id, req, current_user)
+            _ESTRUTURAR_JOBS[job_id].update({"status": "concluido", "resultado": res})
+        except HTTPException as e:
+            _ESTRUTURAR_JOBS[job_id].update({"status": "erro", "erro": str(e.detail)})
+        except Exception as e:  # noqa: BLE001
+            _ESTRUTURAR_JOBS[job_id].update({"status": "erro", "erro": str(e)[:300]})
+        _ESTRUTURAR_JOBS[job_id]["fim"] = _dt.datetime.utcnow().isoformat()
+
+    threading.Thread(target=_rodar, daemon=True, name=f"estruturar-{job_id[:8]}").start()
+    return {"job_id": job_id, "session_id": session_id, "status": "rodando"}
+
+
+@router.get("/{session_id}/estruturar-passos/{job_id}")
+def estruturar_passos_andamento(session_id: str, job_id: str, current_user: dict = Depends(get_current_user)):
+    job = _ESTRUTURAR_JOBS.get(job_id)
+    if not job or job.get("session_id") != session_id:
+        raise HTTPException(404, "Estruturação não encontrada (o servidor pode ter reiniciado); a versão gravada está no histórico")
+    return job
+
+
+def _estruturar_passos_impl(session_id: str, req: EstruturarRequest, current_user: dict):
     import yaml as _yaml
     from agents.langnetagents import _direct_llm_complete
     from agents.langnetregras import validar_passos

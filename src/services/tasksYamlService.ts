@@ -227,7 +227,8 @@ export default {
  * fechados, valida cada expressão ANTES de gravar e devolve o relatório por tarefa.
  * Síncrono: devolve quando a nova versão do YAML já está gravada.
  */
-export const estruturarPassos = async (sessionId: string): Promise<any> => {
+export const estruturarPassos = async (sessionId: string, onAndamento?: (s: string) => void): Promise<any> => {
+  // dispara em segundo plano e acompanha: a estruturação pode levar minutos (agente por tarefa)
   const response = await fetch(`${API_BASE_URL}/tasks-yaml/${sessionId}/estruturar-passos`, {
     method: 'POST',
     headers: getAuthHeaders(),
@@ -237,5 +238,20 @@ export const estruturarPassos = async (sessionId: string): Promise<any> => {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.detail || 'Falha ao estruturar os passos');
   }
-  return response.json();
+  const job = await response.json();
+  if (!job.job_id) return job;   // servidor antigo: resposta direta
+  const inicio = Date.now();
+  while (true) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const st = await fetch(`${API_BASE_URL}/tasks-yaml/${sessionId}/estruturar-passos/${job.job_id}`, { headers: getAuthHeaders() });
+    if (!st.ok) {
+      const error = await st.json().catch(() => ({}));
+      throw new Error(error.detail || 'Falha ao acompanhar a estruturação');
+    }
+    const j = await st.json();
+    if (onAndamento) onAndamento(`${j.status} · ${Math.round((Date.now() - inicio) / 1000)}s`);
+    if (j.status === 'concluido') return j.resultado;
+    if (j.status === 'erro') throw new Error(j.erro || 'Falha ao estruturar os passos');
+    if (Date.now() - inicio > 40 * 60 * 1000) throw new Error('Estruturação ainda em andamento após 40 minutos');
+  }
 };
