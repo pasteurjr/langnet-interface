@@ -224,6 +224,17 @@ def _desliga_falha():
     except FileNotFoundError: pass
 
 
+def _contraditorio(tc):
+    """Todas as causas verdadeiras e efeito de exceção: a tabela causa-efeito não tem a causa que
+    dispara a exceção — o caso não se cria pela entrada (mesma regra da etapa de Casos de Teste)."""
+    if tc.get("contraditorio") is not None:
+        return bool(tc.get("contraditorio"))
+    ents = tc.get("entradas") or []
+    todas = bool(ents) and all(e.get("verdadeira", True) for e in ents)
+    ef = ((tc.get("efeito_esperado") or {}).get("desc") or "")
+    return todas and bool(re.search(r"(?i)\berro\b|erro ao|falha|timeout|tempo limite|indispon|inv[áa]lid|bloquei|recus|n[ãa]o conform", ef))
+
+
 def _exige_falha_externa(tc):
     """A condição do caso é uma FALHA de infraestrutura (conexão, timeout, retry, indisponibilidade)
     — não se cria pela entrada; exige injeção de falha, que este runner não tem."""
@@ -433,6 +444,8 @@ async def main():
                     # especificada, ou recusa quando a causa é negada). Só fica "não
                     # exercitável" o caso cuja condição não se cria pela entrada.
                     _motivo_ne = _NAO_EXERCITAVEL.get(tid) or (
+                        "caso contraditório: todas as causas verdadeiras e efeito de exceção — revisar a tabela causa-efeito"
+                        if (_contraditorio(tc) and not _modo_falha_do_caso(tc)[0]) else None) or (
                         "exige injeção de falha externa que o simulador não cobre (e-mail, fila, base de protocolos)"
                         if (_exige_falha_externa(tc) and not _modo_falha_do_caso(tc)[0]) else None)
                     if _motivo_ne:

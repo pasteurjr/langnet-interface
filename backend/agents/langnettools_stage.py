@@ -166,9 +166,12 @@ def propor_contratos(doc: Dict[str, Any], ats_md: str, completar) -> Dict[str, A
         item["saida"] = [str(x) for x in (p.get("saida") or [])]
         item["regra"] = (p.get("regra") or "").strip()
         if origem == "deterministica" and item["regra"]:
+            # regra DECLARADA não é implementação: o módulo gerado guarda a regra e falha explícito.
+            # Fica pendente (com a regra) até o gerador emitir o cálculo — o portão da geração só
+            # barra se algum agente em execução puder chamá-la.
             item["origem"] = "deterministica"
-            item["resolvida"] = True
-            item["implementacao"] = "função gerada a partir da regra declarada"
+            item["resolvida"] = False
+            item["implementacao"] = "regra declarada — sem código gerado ainda (pendente)"
         else:
             item["origem"] = "externa"
             item["resolvida"] = False
@@ -209,8 +212,9 @@ def aplicar_refino(doc: Dict[str, Any], instrucao: str, completar) -> Dict[str, 
                 continue
             base = dict(antigos.get(t["nome"], {}))
             base.update(t)
-            base["resolvida"] = base.get("origem") in ("biblioteca", "mcp") or (
-                base.get("origem") == "deterministica" and bool(base.get("regra")))
+            base["resolvida"] = base.get("origem") in ("biblioteca", "mcp")
+            if base.get("origem") == "deterministica":
+                base["implementacao"] = "regra declarada — sem código gerado ainda (pendente)"
             saida.append(base)
         doc["tools"] = saida
         doc["resumo"] = {

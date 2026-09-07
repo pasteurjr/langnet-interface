@@ -29,6 +29,7 @@ Restrições intercausas (notação do artigo):
   C (Consequentes)       — se a 1ª é verdadeira, as demais também (requires)
   M (Mascaradas)         — máscara entre EFEITOS (um efeito mascara outro)
 """
+import re
 from __future__ import annotations
 from itertools import product
 from typing import Any, Dict, List, Optional
@@ -217,8 +218,10 @@ def _efeito_observavel(desc_efeito: str, entradas: list) -> dict:
     else:
         onde = "sistema"
 
-    if tem_causa_negada and _re.search(r"(?i)inv[áa]lid|incorret|erro|bloquei|recus|n[ãa]o "
-                                       r"encontrad|n[ãa]o conform|insuficien|faltant", baixa):
+    # Efeito que descreve uma EXCEÇÃO ("Erro ao consultar…", "bloqueia", "não conforme") espera
+    # recusa — com ou sem causa negada: a condição pode vir de fora (laboratório fora do ar).
+    if _re.search(r"(?i)inv[áa]lid|incorret|\berro\b|erro ao|bloquei|recus|n[ãa]o "
+                  r"encontrad|n[ãa]o conform|insuficien|faltant|timeout|tempo limite|indispon", baixa):
         espera = "recusa"
     elif onde == "tela":
         espera = "exibicao"
@@ -241,6 +244,14 @@ def decision_table_to_cases(ceg: dict, columns: List[dict]) -> List[dict]:
                 continue
             entradas.append({"causa": cid, "desc": cdesc.get(cid, cid), "verdadeira": bool(val)})
         esperado = {"efeito": col["target"], "desc": edesc.get(col["target"], col["target"])}
+        # Caso CONTRADITÓRIO: todas as causas verdadeiras (caminho feliz) e o efeito é uma exceção.
+        # A tabela causa-efeito não tem a causa que dispara a exceção (ex.: "laboratório
+        # indisponível") — o caso não se cria pela entrada. Fica marcado para revisão, e quem executa
+        # não o conta como aprovado nem reprovado.
+        _todas_verdadeiras = bool(entradas) and all(e.get("verdadeira", True) for e in entradas)
+        _efeito_excecao = bool(re.search(r"(?i)\berro\b|erro ao|falha|timeout|tempo limite|indispon|"
+                                         r"inv[áa]lid|bloquei|recus|n[ãa]o conform", esperado["desc"] or ""))
+        contraditorio = _todas_verdadeiras and _efeito_excecao
         cases.append({
             "id": f"TC-{uc}-{i:02d}",
             "uc": uc,
@@ -249,6 +260,9 @@ def decision_table_to_cases(ceg: dict, columns: List[dict]) -> List[dict]:
             # O QUE CONFERIR (onde/espera/frase) — sem isto, quem executa o caso adivinhava
             # pelo texto e conferia rótulo de tela onde devia exercitar o comportamento.
             "efeito_observavel": _efeito_observavel(esperado.get("desc", ""), entradas),
+            "contraditorio": contraditorio,
+            "alerta": ("todas as causas são verdadeiras e o efeito descreve uma exceção — falta na "
+                       "tabela a causa que a dispara (ex.: sistema externo indisponível); revisar" if contraditorio else ""),
             "causes": col["causes"],
             "effects": col["effects"],
         })

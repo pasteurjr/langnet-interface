@@ -26,6 +26,8 @@ interface TestCase {
   uc: string;
   entradas: { causa: string; desc: string; verdadeira: boolean }[];
   efeito_esperado: { efeito: string; desc: string };
+  contraditorio?: boolean;
+  alerta?: string;
 }
 interface UCResult {
   uc: string;
@@ -546,6 +548,11 @@ const TestCasesPage: React.FC = () => {
                             <div className="tc-case-out">
                               <span className="tc-case-lbl">Resposta esperada do sistema</span>
                               <div className="tc-expected">✔ {tcCase.efeito_esperado.desc}</div>
+                              {tcCase.contraditorio && (
+                                <div className="tc-alerta" title={tcCase.alerta || ''} style={{ marginTop: 4, fontSize: 12, color: '#9a3412', background: '#fff7ed', border: '1px solid #fdba74', borderRadius: 6, padding: '3px 8px' }}>
+                                  ⚠ Caso contraditório: todas as causas verdadeiras e o efeito é uma exceção — falta na tabela a causa que a dispara. Revisar.
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
