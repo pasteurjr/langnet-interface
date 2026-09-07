@@ -759,11 +759,123 @@ def extract_requirements_input_func(state: LangNetFullState) -> Dict[str, Any]:
     return task_input
 
 
+
+def _fontes_da_web(termos: list, dominio: str = "", maximo_consultas: int = 5) -> str:
+    """Faz a pesquisa web AQUI, em Python, e devolve as fontes prontas para entrar no texto do passo.
+
+    Por que não deixar o agente pesquisar com a ferramenta: (a) o provedor claude_code (Claude Opus 5,
+    cota Max) NÃO faz chamada de ferramenta — o passo ficaria sem pesquisa; (b) mesmo com provedor que
+    faz, a busca só acontece se o modelo DECIDIR buscar. Fazendo aqui, a pesquisa é certa, igual em
+    qualquer provedor, e a fonte que aparece no documento é uma que existe de verdade — em vez de uma
+    URL lembrada (ou inventada) pelo modelo.
+
+    Devolve texto vazio se não houver chave de busca ou se a busca falhar: o passo segue com o
+    conhecimento do modelo, e o registro diz que seguiu sem fontes.
+    """
+    import os as _o
+    if not (_o.getenv("SERPER_API_KEY") or _o.getenv("TAVILY_API_KEY")):
+        print("[PESQUISA] sem chave de busca (SERPER/TAVILY) — passo segue sem fontes da web")
+        return ""
+    consultas, vistos = [], set()
+    for t in termos:
+        t = " ".join(str(t).split())[:120]
+        if t and t.lower() not in vistos:
+            vistos.add(t.lower()); consultas.append(t)
+        if len(consultas) >= maximo_consultas:
+            break
+    if not consultas:
+        return ""
+    linhas, achadas = [], 0
+    for consulta in consultas:
+        texto = ""
+        for nome in ("serper_search", "tavily_search"):
+            ferr = LANGNET_TOOLS.get(nome)
+            if ferr is None:
+                continue
+            try:
+                bruto = ferr.run(query=consulta)
+                texto = bruto if isinstance(bruto, str) else json.dumps(bruto, ensure_ascii=False)
+                if texto.strip():
+                    break
+            except Exception as e:  # noqa: BLE001 — busca é apoio: falhou, segue sem ela
+                print(f"[PESQUISA] {nome} falhou em {consulta!r}: {type(e).__name__}")
+                texto = ""
+        if not texto:
+            continue
+        import re as _re_p
+        # título + endereço, do formato que as duas ferramentas devolvem
+        pares = _re_p.findall(r'"(?:title|nome)"\s*:\s*"([^"]{6,140})"[^}]*?"(?:link|url)"\s*:\s*"(https?://[^"]+)"', texto)
+        if not pares:
+            pares = [(u.split("/")[2], u) for u in _re_p.findall(r"https?://[^\s\"',\)]+", texto)[:4]]
+        vistas_url = set()
+        for titulo, url in pares[:4]:
+            if url in vistas_url:
+                continue
+            vistas_url.add(url); achadas += 1
+            # o título vem do JSON bruto com acento escapado (\u00c7); devolve legível
+            try:
+                titulo = titulo.encode("utf-8").decode("unicode_escape").encode("latin-1").decode("utf-8")
+            except Exception:
+                pass
+            linhas.append(f"- [{consulta}] {titulo.strip()[:120]} — {url}")
+    if not linhas:
+        print("[PESQUISA] nenhuma fonte encontrada para as consultas montadas")
+        return ""
+    print(f"[PESQUISA] {achadas} fonte(s) reais em {len(consultas)} consulta(s): {consultas}")
+    return ("\n\nFONTES ENCONTRADAS NA WEB (pesquisa feita pelo sistema, não pelo modelo — use SOMENTE\n"
+            "estes endereços ao citar fonte; se algo que você sabe não estiver aqui, diga que a fonte\n"
+            "não foi verificada em vez de escrever um endereço de memória):\n" + "\n".join(linhas))
+
+
+def _termos_de_pesquisa(nome_projeto: str, dominio: str, entidades_json: str) -> list:
+    """Consultas a partir do que o projeto É: domínio + entidades principais + as normas que a
+    tarefa pede (qualidade, requisitos, segurança) e a conformidade do domínio."""
+    import re as _re_t
+    ent = []
+    try:
+        dados = json.loads(entidades_json or "{}")
+        bruto = dados.get("entities") or dados.get("entidades") or dados
+        if isinstance(bruto, dict):
+            bruto = list(bruto.values())
+        for e in (bruto or [])[:12]:
+            nome = e.get("name") or e.get("nome") if isinstance(e, dict) else str(e)
+            if nome and len(str(nome)) > 2:
+                ent.append(str(nome))
+    except Exception:
+        pass
+    # O NOME do projeto NÃO entra na busca: é nome próprio inventado e traz resultado errado
+    # (medido: "BioByte Sentinela" trouxe o satélite Sentinel-2 e um cateter cerebral). O que
+    # identifica o assunto é o DOMÍNIO + as entidades do próprio modelo.
+    dom = (dominio or "").strip()
+    base = (dom + " " + " ".join(ent[:2])).strip() if ent else dom
+    conformidade = {
+        "saude": "HIPAA LGPD health data compliance requirements",
+        "health": "HIPAA LGPD health data compliance requirements",
+        "financ": "PCI-DSS SOX financial data compliance requirements",
+        "juridic": "LGPD legal data retention compliance requirements",
+    }
+    regra = next((v for k, v in conformidade.items() if k in dom.lower()), "LGPD GDPR personal data compliance requirements")
+    termos = [
+        (f"{base} technical standard specification" if base else "software technical standard specification"),
+        f"{regra} {dom}".strip(),
+        "ISO 25010 software quality model characteristics",
+        "IEEE 830 software requirements specification standard",
+        "OWASP application security verification standard",
+    ]
+    if ent:
+        termos.insert(1, f"{dom} {' '.join(ent[:3])} reference architecture best practices".strip())
+    return termos
+
+
 def research_additional_info_input_func(state: LangNetFullState) -> Dict[str, Any]:
-    """Extract input for research_additional_info task"""
+    """Extract input for research_additional_info task (+ fontes reais da web, buscadas aqui)"""
+    _fontes = _fontes_da_web(
+        _termos_de_pesquisa(state.get("project_name", ""), state.get("project_domain", ""),
+                            state.get("requirements_json", "{}")),
+        state.get("project_domain", ""))
     return {
         "requirements_json": state.get("requirements_json", "{}"),
-        "document_content": state.get("document_content", ""),  # BUG FIX: Add document content for context
+        "document_content": (state.get("document_content", "") or "") + _fontes,
         "additional_instructions": state.get("additional_instructions", ""),
         "project_name": state.get("project_name", "")
     }
@@ -11871,9 +11983,13 @@ def extract_specification_entities_output_func(state: LangNetFullState, result: 
 
 
 def research_specification_context_input_func(state: LangNetFullState) -> Dict[str, Any]:
-    """Extract input for research_specification_context task (WebResearcher)"""
+    """Extract input for research_specification_context task (+ fontes reais da web, buscadas aqui)"""
+    _ent = state.get("spec_entities_json", "{}")
+    _fontes = _fontes_da_web(
+        _termos_de_pesquisa(state.get("project_name", "Sistema"), state.get("project_domain", ""), _ent),
+        state.get("project_domain", ""))
     return {
-        "entities_json": state.get("spec_entities_json", "{}"),
+        "entities_json": (_ent or "{}") + _fontes,
         "project_name": state.get("project_name", "Sistema")
     }
 
@@ -12391,17 +12507,23 @@ def execute_task_with_context(
         task_expected_output = TASKS_CONFIG[task_name]['expected_output']
         # No escaping needed - expected_output now uses textual descriptions instead of JSON with braces
 
-        # Convert tools to framework format: [(crewai_tool, phidata_tool), ...]
-        # Since we only use CrewAI tools, we create tuples with (tool, None)
-        tools_list = task_config.get("tools", [])
-        framework_tools = [(tool, None) for tool in tools_list] if tools_list else []
-
+        # DEFEITO CORRIGIDO (07/09/2026): as ferramentas iam embrulhadas num par
+        # (ferramenta, None) — resto de um plano abandonado de suportar dois frameworks de agente
+        # (CrewAI + Phidata). O CrewAI recusa o par ("Input should be a valid dictionary or
+        # instance of BaseTool"), a tarefa nem era criada, e o tratamento de erro adiante refazia
+        # a chamada SEM ferramenta, em silêncio. Resultado medido: as 4 tarefas com ferramenta
+        # (pesquisa web dos Requisitos e da Especificação, escrita da Especificação e do YAML)
+        # NUNCA usaram as suas ferramentas — a Especificação do BioByte saiu com zero fontes.
+        tools_list = list(task_config.get("tools", []) or [])
         task_obj = TaskClass(
             description=task_description,
             expected_output=task_expected_output,
             agent=agent,
-            tools=framework_tools
+            tools=tools_list
         )
+        if tools_list:
+            print(f"[TOOLS] {task_name}: {len(tools_list)} ferramenta(s) ativas — "
+                  f"{[getattr(t, 'name', type(t).__name__) for t in tools_list]}")
 
         # 4. Execute task
         crew = TeamClass(
@@ -12478,6 +12600,12 @@ def execute_task_with_context(
             _msg = str(_kick_err)
             _provider = (os.getenv("LLM_PROVIDER", "openai") or "").lower()
             print(f"[FALLBACK-DBG] crew levantou em '{task_name}': type={type(_kick_err).__name__} provider={_provider!r} msg={_msg[:120]!r}")
+            # Se a tarefa TINHA ferramentas, o caminho direto NÃO as usa: registra a perda em vez
+            # de deixar o passo "responder" como se tivesse pesquisado/escrito com a ferramenta.
+            if task_config.get("tools"):
+                print(f"[TOOLS][PERDA] '{task_name}' declara {len(task_config['tools'])} ferramenta(s) "
+                      f"({[getattr(t, 'name', type(t).__name__) for t in task_config['tools']]}) mas caiu no "
+                      f"caminho direto — a resposta virá SEM usar ferramenta. Causa: {type(_kick_err).__name__}")
             if _provider == "lmstudio" and ("None or empty" in _msg or "Invalid response from LLM" in _msg or "empty" in _msg.lower()):
                 print(f"[FALLBACK] CrewAI vazio em '{task_name}' — usando chamada DIRETA ao LM Studio")
                 _direct = _direct_llm_complete(task_description, task_expected_output)
