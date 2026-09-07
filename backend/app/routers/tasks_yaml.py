@@ -873,6 +873,10 @@ def _conferir_sql_no_modelo(steps: list, ddl: str) -> list:
                 if p.get("tipo") in ("consulta", "escrita") and isinstance(p.get("sql"), str):
                     sql = p["sql"]
                     params = tuple([1] * sql.count("%s"))
+                    if p.get("tipo") == "consulta":
+                        _lq = _leque_de_juncao(sql, ddl)
+                        if _lq:
+                            problemas.append({"passo": n, "motivo": _lq})
                     try:
                         cur.execute("EXPLAIN " + sql, params)
                         cur.fetchall()
@@ -899,6 +903,41 @@ def _conferir_sql_no_modelo(steps: list, ddl: str) -> list:
     except Exception as e:  # noqa: BLE001 — sem banco de conferência, não inventa problema
         print(f"[ESTRUTURAR] conferência de SQL indisponível: {e}")
     return problemas
+
+
+def _filhas_no_modelo(ddl: str) -> dict:
+    """tabela -> conjunto de tabelas-mãe (pela coluna <mae>_id / <mae_singular>_id ou FOREIGN KEY)."""
+    tabelas = {}
+    for m in re.finditer(r"(?is)create\s+table\s+(?:if\s+not\s+exists\s+)?`?(\w+)`?\s*\((.*?)\)\s*(?:engine|comment|;|$)", ddl or ""):
+        tabelas[m.group(1).lower()] = m.group(2)
+    maes = {t: set() for t in tabelas}
+    for t, corpo in tabelas.items():
+        for ref in re.findall(r"(?i)references\s+`?(\w+)`?", corpo):
+            if ref.lower() in tabelas and ref.lower() != t:
+                maes[t].add(ref.lower())
+        for col in re.findall(r"(?im)^\s*`?(\w+)_id`?\s", corpo):
+            for cand in (col.lower(), col.lower() + "s", col.lower() + "es"):
+                if cand in tabelas and cand != t:
+                    maes[t].add(cand)
+    return maes
+
+
+def _leque_de_juncao(sql: str, ddl: str) -> str:
+    """Duas ou mais tabelas FILHAS da mesma tabela juntas numa consulta sem GROUP BY/DISTINCT:
+    as linhas se multiplicam (N×M por registro-mãe). Devolve a explicação, ou ''."""
+    if re.search(r"(?i)\bgroup\s+by\b|\bdistinct\b", sql):
+        return ""
+    nomes = [m.group(1).lower() for m in re.finditer(r"(?i)\b(?:from|join)\s+`?(\w+)`?", sql)]
+    if len(nomes) < 3:
+        return ""
+    maes = _filhas_no_modelo(ddl)
+    for mae in set(nomes):
+        filhas = [t for t in set(nomes) if t != mae and mae in maes.get(t, set())]
+        if len(filhas) >= 2:
+            return (f"junção em leque: {', '.join(sorted(filhas))} são filhas de «{mae}» e entram juntas sem "
+                    f"agregação — as linhas se multiplicam (N×M por {mae}). Agregue com GROUP BY ou traga uma "
+                    f"linha por {mae} (a mais recente de cada filha, em subconsulta)")
+    return ""
 
 
 def _sanear_passos(steps: list, problemas: list) -> list:
