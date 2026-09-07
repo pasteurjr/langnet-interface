@@ -114,7 +114,15 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     # Provider-aware: o caminho direto (streaming) precisa seguir LLM_PROVIDER, senão
     # o code-gen/spec batem SEMPRE no LM Studio local (e travam se a GPU cair).
     _provider = (_os.getenv("LLM_PROVIDER", "lmstudio") or "lmstudio").lower()
-    if _provider == "deepseek":
+    if _provider == "claude_code":
+        # API self-hospedada (Claude Opus 5, 1M de contexto), sem custo por token.
+        base = _os.getenv("CLAUDE_CODE_API_BASE", "https://192.168.1.100:4443/v1").rstrip("/")
+        if not base.endswith("/v1"):
+            base += "/v1"
+        model = _os.getenv("CLAUDE_CODE_MODEL_NAME", "claude-code")
+        _api_key = _os.getenv("CLAUDE_CODE_API_KEY", "")
+        _max_tokens = int(_os.getenv("CLAUDE_CODE_MAX_TOKENS", "32000"))
+    elif _provider == "deepseek":
         base = _os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
         model = _os.getenv("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash")
         _api_key = _os.getenv("DEEPSEEK_API_KEY", "")
@@ -130,7 +138,10 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     # As variáveis LMSTUDIO_* são do modelo LOCAL (o .env fixa 3600s, uma hora). O provedor em
     # nuvem não pode herdá-las: uma chamada travada segurava a etapa inteira por uma hora antes
     # de tentar de novo — foi o que travou a geração dos casos de teste.
-    if _provider == "deepseek":
+    if _provider == "claude_code":
+        # a resposta vem inteira de uma vez (sem fluxo) e pode levar minutos em documento grande
+        _timeout = float(_os.getenv("CLAUDE_CODE_TIMEOUT", "900"))
+    elif _provider == "deepseek":
         _timeout = float(_os.getenv("LLM_TIMEOUT", "300"))
     else:
         _timeout = float(_os.getenv("LMSTUDIO_TIMEOUT", "1800"))
@@ -139,13 +150,24 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     # pendurando até o timeout total. Uma geração legítima produz chunks continuamente
     # (< read s entre tokens, mesmo no prefill de prompts grandes), então read=300s pega o
     # estol silencioso e falha ~12x mais rápido → o retry abaixo refaz a chamada.
-    if _provider == "deepseek":
+    if _provider == "claude_code":
+        # sem fluxo não há "tempo entre pedaços": a espera é a resposta inteira
+        _read = _timeout
+    elif _provider == "deepseek":
         _read = float(_os.getenv("LLM_READ_TIMEOUT", "90"))
     else:
         _read = float(_os.getenv("LMSTUDIO_READ_TIMEOUT", "300"))
     _to = _httpx.Timeout(_timeout, read=_read, connect=30.0)
-    client = _OpenAI(api_key=_api_key,
-                     base_url=base, timeout=_to, max_retries=1)
+    _http_client = None
+    if _provider == "claude_code":
+        import re as _re_cc
+        _escolha = (_os.getenv("CLAUDE_CODE_VERIFY_SSL", "auto") or "auto").lower()
+        _host = _re_cc.sub(r"^https?://", "", base).split("/")[0].split(":")[0]
+        _verifica = (_escolha in ("true", "1", "sim")) or (
+            _escolha == "auto" and not _re_cc.match(r"^\d{1,3}(\.\d{1,3}){3}$", _host))
+        _http_client = _httpx.Client(verify=_verifica, timeout=_to)
+    client = _OpenAI(api_key=_api_key, base_url=base, timeout=_to, max_retries=1,
+                     **({"http_client": _http_client} if _http_client else {}))
     prompt = description
     if expected_output:
         prompt += "\n\nFORMATO DE SAÍDA ESPERADO:\n" + expected_output
@@ -183,8 +205,21 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     import time as _time
     _txt = ""
     _last_err = None
+    # A API do Claude Code ACEITA `stream=true` mas devolve resposta VAZIA (medido: 0 pedaços).
+    # Para ela, pede-se a resposta inteira de uma vez; os demais provedores seguem em fluxo,
+    # que é o que mantém a conexão viva em geração longa.
+    _em_fluxo = (_provider != "claude_code")
     for _attempt in range(4):
         try:
+            if not _em_fluxo:
+                _resp = client.chat.completions.create(
+                    model=model,
+                    messages=_messages,
+                    max_tokens=_max_tokens,
+                    stream=False,
+                )
+                _txt = (_resp.choices[0].message.content or "") if _resp.choices else ""
+                break
             stream = client.chat.completions.create(
                 model=model,
                 messages=_messages,
@@ -253,15 +288,25 @@ def get_llm(use_deepseek: bool = False):
             # Claude Code via local API using CrewAI's LLM class
             from crewai import LLM
 
-            claude_api_base = os.getenv("CLAUDE_CODE_API_BASE", "http://localhost:8807")
-            print(f"[LangNet] Using Claude Code API at {claude_api_base}/v1")
-
+            claude_api_base = os.getenv("CLAUDE_CODE_API_BASE", "https://192.168.1.100:4443/v1").rstrip("/")
+            if not claude_api_base.endswith("/v1"):
+                claude_api_base += "/v1"      # antes acrescentava sempre e virava /v1/v1
+            _cc_model = os.getenv("CLAUDE_CODE_MODEL_NAME", "claude-code")
+            print(f"[LangNet] Claude Code API em {claude_api_base} — modelo={_cc_model} "
+                  f"(sem chamada de ferramenta: tarefa com ferramenta deve usar outro provedor)")
+            if not os.getenv("CLAUDE_CODE_VERIFY_SSL"):
+                # certificado emitido para o NOME; chamando pelo IP da rede local a conferência
+                # do nome falha — litellm/httpx respeita esta variável
+                import re as _re_cc
+                _h = _re_cc.sub(r"^https?://", "", claude_api_base).split("/")[0].split(":")[0]
+                if _re_cc.match(r"^\d{1,3}(\.\d{1,3}){3}$", _h):
+                    os.environ["SSL_VERIFY"] = "False"
             _llm_cache[cache_key] = LLM(
-                model="openai/claude-code",  # Use openai/ prefix for LiteLLM compatibility
-                base_url=f"{claude_api_base}/v1",
-                api_key="dummy",  # Required by CrewAI but not validated
-                temperature=0.3,
-                max_tokens=16384
+                model=f"openai/{_cc_model}",   # prefixo openai/ = API compatível, para o litellm
+                base_url=claude_api_base,
+                api_key=os.getenv("CLAUDE_CODE_API_KEY", ""),
+                timeout=float(os.getenv("CLAUDE_CODE_TIMEOUT", "900")),
+                max_tokens=int(os.getenv("CLAUDE_CODE_MAX_TOKENS", "32000")),
             )
 
         elif llm_provider == "lmstudio":

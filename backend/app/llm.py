@@ -9,6 +9,24 @@ from anthropic import Anthropic
 from app.config import settings
 
 
+def _claude_code_verifica_certificado(base_url: str) -> bool:
+    """O certificado da API é emitido para o NOME (camerascasas.no-ip.info). Chamando pelo IP da
+    rede local a conferência do nome falharia, então por padrão ela é dispensada só nesse caso."""
+    import os as _o, re as _r
+    escolha = (_o.getenv("CLAUDE_CODE_VERIFY_SSL", "auto") or "auto").lower()
+    if escolha in ("true", "1", "sim"):
+        return True
+    if escolha in ("false", "0", "nao", "não"):
+        return False
+    host = _r.sub(r"^https?://", "", base_url or "").split("/")[0].split(":")[0]
+    return not _r.match(r"^\d{1,3}(\.\d{1,3}){3}$", host)
+
+
+def _claude_code_http_client(base_url: str, timeout: float):
+    import httpx as _hx
+    return _hx.Client(verify=_claude_code_verifica_certificado(base_url), timeout=float(timeout))
+
+
 class LLMClient:
     """Unified LLM client supporting multiple providers"""
 
@@ -38,15 +56,18 @@ class LLMClient:
             self.client = Anthropic(api_key=settings.anthropic_api_key)
             self.model = settings.anthropic_model_name
         elif self.provider == "claude_code":
-            # Claude Code uses OpenAI-compatible API
-            # Add /v1 if not present (OpenAI client doesn't add it automatically)
+            # Claude Code: API self-hospedada compatível com OpenAI (Opus 5, 1M de contexto).
+            # Exige token Bearer (antes ia "not-needed" e a API respondia 401) e tempo limite
+            # próprio: uma chamada com documento grande leva minutos.
             base_url = settings.claude_code_api_base
-            if not base_url.endswith("/v1"):
-                base_url = f"{base_url}/v1"
-
+            if not base_url.rstrip("/").endswith("/v1"):
+                base_url = base_url.rstrip("/") + "/v1"
             self.client = OpenAI(
-                api_key="not-needed",  # Claude Code API doesn't need key
-                base_url=base_url
+                api_key=settings.claude_code_api_key or _os.getenv("CLAUDE_CODE_API_KEY", ""),
+                base_url=base_url,
+                timeout=float(settings.claude_code_timeout),
+                max_retries=2,
+                http_client=_claude_code_http_client(base_url, settings.claude_code_timeout),
             )
             self.model = settings.claude_code_model_name
         else:

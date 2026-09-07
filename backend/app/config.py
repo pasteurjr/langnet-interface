@@ -41,9 +41,17 @@ class Settings(BaseSettings):
     # LLM Configuration
     llm_provider: str = Field(default="openai", env="LLM_PROVIDER")  # lmstudio, openai, deepseek, anthropic, google, claude_code
 
-    # Claude Code (local API)
-    claude_code_api_base: str = Field(default="http://localhost:8807", env="CLAUDE_CODE_API_BASE")
+    # Claude Code (API self-hospedada, compatível com OpenAI; Claude Opus 5 com 1M de contexto).
+    # Sem custo por token — consome a assinatura Max. NÃO faz chamada de ferramenta e NÃO
+    # transmite em fluxo (stream): quem chama tem de pedir a resposta inteira de uma vez.
+    claude_code_api_base: str = Field(default="https://192.168.1.100:4443/v1", env="CLAUDE_CODE_API_BASE")
+    claude_code_api_key: str = Field(default="", env="CLAUDE_CODE_API_KEY")
     claude_code_model_name: str = Field(default="claude-code", env="CLAUDE_CODE_MODEL_NAME")
+    claude_code_max_tokens: int = Field(default=32000, env="CLAUDE_CODE_MAX_TOKENS")
+    claude_code_timeout: int = Field(default=900, env="CLAUDE_CODE_TIMEOUT")
+    # o certificado é do nome camerascasas.no-ip.info; ao chamar pelo IP da rede local a
+    # conferência do nome falha — por isso o padrão é não conferir quando o endereço é um IP
+    claude_code_verify_ssl: str = Field(default="auto", env="CLAUDE_CODE_VERIFY_SSL")
 
     # LM Studio (local)
     lmstudio_api_base: str = Field(default="http://localhost:1234/v1", env="LMSTUDIO_API_BASE")
