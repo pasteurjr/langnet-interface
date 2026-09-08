@@ -986,7 +986,16 @@ Tipos permitidos (use exatamente estes nomes de campo):
 - {"tipo":"externo","ferramenta":"nome_da_tool","argumentos":{"param":"expr"},"guarda_em":"nome","mapeia":{"campo_devolvido":"variavel"}}
 - {"tipo":"tarefa","nome":"outra_tarefa_deste_sistema","entrada":{"campo":"expr"},"guarda_em":"nome","mapeia":{...}}  -> orquestração: encadeia OUTRA tarefa determinística (nunca uma de agente)
 - {"tipo":"retorno","campos":["nome", "resposta.campo", "usuario.id como usuario_id", ...]}  (`como` dá o nome de saída)
-- {"tipo":"agente","instrucao":"..."}  -> SÓ quando a tarefa exige julgamento que não cabe em regra
+- {"tipo":"agente","instrucao":"o julgamento a fazer, em uma frase","usa":["expr","expr"],"devolve":["nome1","nome2"]}
+  -> SÓ quando a tarefa exige JULGAMENTO que não cabe em regra (escolher um pacote de tratamento,
+     redigir uma justificativa, classificar por critério subjetivo). REGRA DE OURO: o modelo não
+     consulta banco, não aciona ferramenta e não grava nada. Ponha ANTES dele os passos `consulta`
+     e `externo` que apuram os dados, liste esses valores em `usa`, e ponha DEPOIS dele os passos
+     `escrita` que gravam o que ele respondeu. `devolve` é obrigatório e nomeia exatamente os
+     valores que o modelo tem de responder — eles ficam disponíveis para os passos seguintes.
+     Ex.: {"tipo":"agente","instrucao":"Escolha o pacote de tratamento adequado e redija a
+     justificativa clínica","usa":["microrganismo","multirresistente","valor_escore"],
+     "devolve":["bundle_nome","justificativa"]}
 
 Mini-linguagem das expressões: nomes (entradas e variáveis guardadas), acesso a campo (usuario.papel),
 + - * /, == != < <= > >=, e / ou / nao, literais ('texto', 12, verdadeiro, falso, nulo, [lista]) e as funções:

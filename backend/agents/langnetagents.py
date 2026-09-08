@@ -3331,7 +3331,11 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
     # mantêm o determinístico-first (agent-SQL é frágil — foi o bug do E2E). O roteamento
     # só desvia para o AGENTE quando `execution: agent` for EXPLÍCITO no tasks.yaml.
     _task_exec = (TASKS_CONFIG.get(task_name) or {{}}).get("execution")
-    if callable(det_fn) and _task_exec != "agent":
+    # Tarefa de JULGAMENTO com receita (contrato `steps:`) também roda pelo caminho do programa:
+    # a receita busca os dados, consulta o modelo no passo declarado e grava o que ele respondeu.
+    # Só cai no agente solto quem NÃO tem receita.
+    _tem_receita = bool((TASKS_CONFIG.get(task_name) or {{}}).get("steps"))
+    if callable(det_fn) and (_task_exec != "agent" or _tem_receita):
         try:
             payload = input_data if isinstance(input_data, dict) else {{}}
             loop = asyncio.get_running_loop()
@@ -3341,7 +3345,7 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             # Tarefa com CONTRATO de passos chama o sistema externo ela mesma (passo `externo`, com
             # os argumentos declarados) e confere a resposta — o prefetch adivinhava os argumentos
             # (paciente_id em vez do caso) e recusava por conta própria.
-            _tem_contrato = bool((TASKS_CONFIG.get(task_name) or {{}}).get("steps"))
+            _tem_contrato = _tem_receita
             _pref = None if _tem_contrato else await loop.run_in_executor(None, _mcp_prefetch, task_name, payload)
             if _pref:
                 payload = {{**payload, **_pref}}
@@ -4668,11 +4672,13 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
         if isinstance(_blk.get('steps'), list) and _blk.get('steps'):
             from agents.langnetregras import validar_passos as _vp, emitir_tarefa as _et
             _exec = str(_blk.get('execution') or 'deterministic')
-            if _exec == 'agent':
-                MANIFESTOS_STEPS[task_name] = {"tarefa": task_name, "contrato": "steps",
-                                               "execution": "agent", "declarados": len(_blk['steps']),
-                                               "emitidos": 0, "nao_emitidos": [], "passos": []}
-                continue   # tarefa de agente: os passos são instrução, não código
+            # REGRA 3 — programa busca, modelo julga, programa grava.
+            # ANTES: tarefa de julgamento tinha a receita DESCARTADA aqui e a prosa inteira ia ao
+            # modelo, que era mandado "consultar o banco" e "gravar" — coisas que ele não faz. O
+            # resultado dependia de o provedor saber pedir o acionamento de ferramenta (o nosso
+            # atalho para o Claude não sabe) e, mesmo quando sabia, nada garantia que gravasse.
+            # AGORA: a receita é emitida como qualquer outra; só o passo `agente` chama o modelo,
+            # com os dados já apurados, e o que ele responde é gravado pelo programa.
             _probs = _vp(_blk['steps'], _exec, FERRAMENTAS_RESOLVIDAS_CG,
                          tarefas_do_sistema=_tarefas_sys)
             _tr = _blk.get("traceability") if isinstance(_blk.get("traceability"), dict) else {}
@@ -4690,7 +4696,13 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
                 print(f"[CODE-GEN][REGRAS] {task_name}: {len(_man['nao_emitidos'])} de "
                       f"{_man['declarados']} passo(s) NÃO emitidos → a tarefa recusa em runtime")
             else:
-                print(f"[CODE-GEN][REGRAS] {task_name}: {_man['declarados']} passo(s) do contrato emitidos")
+                _julg = sum(1 for _pp in _blk['steps'] if str(_pp.get('tipo') or '') == 'agente')
+                if _julg:
+                    print(f"[CODE-GEN][REGRAS] {task_name}: {_man['declarados']} passo(s) do contrato "
+                          f"emitidos — {_man['declarados'] - _julg} de programa + {_julg} de julgamento "
+                          f"(programa busca, modelo julga, programa grava)")
+                else:
+                    print(f"[CODE-GEN][REGRAS] {task_name}: {_man['declarados']} passo(s) do contrato emitidos")
             continue
 
         body = _parse_task_description_to_python(desc, _blk.get('expected_output') or "")

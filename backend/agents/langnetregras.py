@@ -313,6 +313,10 @@ def _expressoes_do_passo(p: dict) -> List[str]:
         return [str(v) for v in (p.get("entrada") or {}).values()] if isinstance(p.get("entrada"), dict) else []
     if tipo == "retorno":
         return [re.split(r"\s+como\s+", str(c))[0] for c in (p.get("campos") or []) if isinstance(c, str)]
+    if tipo == "agente":
+        # `usa`: os valores que o PROGRAMA entrega ao modelo. São expressões como quaisquer
+        # outras — se citarem um nome que nenhum passo produziu, o contrato acusa.
+        return [str(v) for v in (p.get("usa") or []) if isinstance(v, (str, int, float))]
     return []
 
 
@@ -347,6 +351,10 @@ def entradas_do_contrato(passos: List[dict]) -> Tuple[List[str], List[str]]:
             for k in ("guarda_em", "atribui", "para_cada", "guarda_id_em"):
                 if p.get(k):
                     produzidos.add(str(p[k]))
+            # o passo de julgamento produz exatamente os nomes que declara em `devolve`
+            for _d in (p.get("devolve") or []):
+                if isinstance(_d, str) and _d.strip():
+                    produzidos.add(_d.strip())
             for _, destino in (p.get("mapeia") or {}).items():
                 produzidos.add(str(destino))
             if isinstance(p.get("passos"), list):
@@ -594,9 +602,46 @@ def validar_passos(passos: Any, execution: str = "deterministic",
                         raise ErroDeRegra(f"«{c}» devolvido sem nome de contexto — escreva "
                                           f"«{c} como {_base}_id» para as telas seguintes herdarem")
             elif tipo == "agente":
+                # REGRA 3 (programa busca -> modelo julga -> programa grava): o passo de julgamento
+                # deixou de ser "o resto que o modelo se vira" e passou a ser um passo com contrato
+                # como qualquer outro. Ele declara O QUE ENTREGA ao modelo (`usa`) e O QUE ESPERA
+                # DE VOLTA (`devolve`). Sem `devolve`, o programa não teria o que gravar e a
+                # resposta do modelo se perderia — por isso é obrigatório.
                 if execution != "agent":
                     raise ErroDeRegra("passo de agente em tarefa determinística — declare a regra "
                                       "ou marque a tarefa como `execution: agent`")
+                instr = str(p.get("instrucao") or p.get("instrução") or "").strip()
+                if instr.startswith("[NÃO VALIDADO"):
+                    # marcador posto pela etapa de estruturação: repete o motivo REAL em vez de
+                    # cobrar `devolve` de um passo que nunca foi um julgamento de verdade
+                    _mot = instr[1:instr.find("]")] if "]" in instr else "passo não validado"
+                    raise ErroDeRegra(_mot)
+                if not instr:
+                    raise ErroDeRegra("`instrucao` obrigatória — diga ao modelo, em uma frase, "
+                                      "qual julgamento ele deve fazer")
+                if len(instr) < 12:
+                    raise ErroDeRegra(f"`instrucao` «{instr}» é curta demais para ser um julgamento")
+                devolve = p.get("devolve") or []
+                if not isinstance(devolve, list) or not devolve:
+                    raise ErroDeRegra("`devolve` obrigatório — liste os nomes dos valores que o "
+                                      "modelo deve responder (ex.: [bundle_nome, justificativa]); "
+                                      "sem isso o programa não tem o que gravar")
+                for d in devolve:
+                    if not re.match(r"^[A-Za-z_]\w*$", str(d).strip()):
+                        raise ErroDeRegra(f"«{d}» não serve como nome de valor devolvido — "
+                                          "use uma palavra só, sem espaço nem ponto")
+                usa = p.get("usa") or []
+                if not isinstance(usa, list):
+                    raise ErroDeRegra("`usa` deve ser uma lista dos valores entregues ao modelo")
+                for u in usa:
+                    compilar_expressao(str(u))
+                # Ferramenta em passo de julgamento: NÃO. Acionar sistema externo é passo `externo`,
+                # executado pelo programa. Se dependesse do modelo pedir, funcionaria num provedor
+                # e falharia em silêncio noutro.
+                if p.get("ferramenta"):
+                    raise ErroDeRegra(f"passo de julgamento não aciona a ferramenta «{p['ferramenta']}» — "
+                                      "ponha um passo `externo` ANTES dele e entregue o resultado "
+                                      "pelo `usa`; quem aciona sistema externo é o programa")
         except ErroDeRegra as e:
             problemas.append(_erro(n, str(e)))
     return problemas
@@ -812,6 +857,15 @@ def _coluna_escalar(sql: str, guarda_em: str) -> str:
     return primeira.split(".")[-1] if primeira else "id"
 
 
+def _TAREFA_ATUAL() -> str:
+    """Nome da tarefa sendo traduzida (só para a mensagem de erro em runtime)."""
+    try:
+        import agents.langnetagents as _la
+        return str(getattr(_la, "_TASK_EM_TRADUCAO", "") or "")
+    except Exception:
+        return ""
+
+
 def emitir_passos(passos: List[dict], indent: str = "        ",
                   prefixo: str = "", ferramentas_resolvidas: Any = None,
                   tarefas_do_sistema: Any = None) -> Tuple[List[str], List[dict]]:
@@ -944,7 +998,24 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 linhas.append(f"{indent}# passo {n}: retorno")
                 linhas.append(f"{indent}_result = {{'status': 'sucesso', {campos}}}")
             elif tipo == "agente":
-                raise ErroDeRegra("passo de agente não vira código determinístico")
+                # REGRA 3: o julgamento é UM PASSO da receita, não a receita inteira. O programa
+                # entrega os valores de `usa` já apurados, pede exatamente os nomes de `devolve`,
+                # e grava a resposta no contexto para os passos seguintes usarem. O modelo não
+                # consulta banco, não aciona ferramenta e não decide o que fazer depois.
+                instr = str(p.get("instrucao") or p.get("instrução") or "")
+                devolve = [str(d).strip() for d in (p.get("devolve") or [])]
+                usa = [str(u) for u in (p.get("usa") or [])]
+                if not instr.strip() or not devolve:
+                    raise ErroDeRegra("passo de julgamento sem `instrucao` ou sem `devolve`")
+                partes_usa = []
+                for u in usa:
+                    expr_u, _ = compilar_expressao(u)
+                    rotulo = u.strip()
+                    partes_usa.append(f"{rotulo!r}: {expr_u}")
+                dados = "{" + ", ".join(partes_usa) + "}"
+                linhas.append(f"{indent}# passo {n}: julgamento do modelo -> {', '.join(devolve)}")
+                linhas.append(f"{indent}_ctx.update(_rt_consultar_modelo({instr!r}, {dados}, "
+                              f"{devolve!r}, {_TAREFA_ATUAL()!r}, {n!r}))")
             else:
                 raise ErroDeRegra(f"tipo «{tipo}» desconhecido")
             manifesto.append({"passo": n, "tipo": tipo, "emitido": True, "motivo": ""})
@@ -1188,6 +1259,100 @@ def _rt_chamar_ferramenta(nome, argumentos):
         exc.sistema_externo = nome
         raise exc
     return saida
+
+def _rt_consultar_modelo(instrucao, dados, devolve, tarefa="", passo=""):
+    """REGRA 3 — o programa consulta o modelo NUM PASSO, com os dados já apurados na mão.
+
+    Por que assim e não deixando o modelo se virar: o modelo não tem acesso ao banco nem aos
+    sistemas externos, e nem todo provedor sabe pedir o acionamento de uma ferramenta (a nossa
+    ponte para o Claude, por exemplo, não transporta esse pedido). Então quem busca é o programa,
+    quem julga é o modelo, e quem grava é o programa. O mesmo comportamento em qualquer provedor.
+
+    Devolve um dicionário com EXATAMENTE os nomes de `devolve`. Se o modelo não responder algum
+    deles, levanta erro: a tarefa recusa em vez de gravar um julgamento pela metade.
+    """
+    import os as _o
+    _prov = (_o.getenv("LLM_PROVIDER") or "deepseek").lower()
+    if _prov == "lmstudio":
+        _base = _o.getenv("LMSTUDIO_API_BASE", "http://localhost:1234/v1")
+        _model = _o.getenv("LMSTUDIO_MODEL_NAME", "qwen2.5-coder-32b-instruct")
+        _key = _o.getenv("LMSTUDIO_API_KEY", "lm-studio")
+        _max = int(_o.getenv("LMSTUDIO_MAX_TOKENS", "8000"))
+    elif _prov == "claude_code":
+        _base = _o.getenv("CLAUDE_CODE_API_BASE", "https://192.168.1.100:4443/v1").rstrip("/")
+        if not _base.endswith("/v1"):
+            _base += "/v1"
+        _model = _o.getenv("CLAUDE_CODE_MODEL_NAME", "claude-code")
+        _key = _o.getenv("CLAUDE_CODE_API_KEY", "")
+        _max = int(_o.getenv("CLAUDE_CODE_MAX_TOKENS", "8000"))
+    elif _prov == "openai":
+        _base = _o.getenv("OPENAI_API_BASE", "https://api.openai.com/v1")
+        _model = _o.getenv("OPENAI_MODEL_NAME", "gpt-4o-mini")
+        _key = _o.getenv("OPENAI_API_KEY", "")
+        _max = int(_o.getenv("OPENAI_MAX_TOKENS", "8000"))
+    else:
+        _base = _o.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com/v1")
+        if not _base.rstrip("/").endswith("/v1"):
+            _base = _base.rstrip("/") + "/v1"
+        _model = _o.getenv("DEEPSEEK_MODEL_NAME", "deepseek-v4-flash").split("/")[-1]
+        _key = _o.getenv("DEEPSEEK_API_KEY", "")
+        _max = int(_o.getenv("DEEPSEEK_MAX_TOKENS", "8000"))
+    if not _key:
+        raise _RegraExecucao(f"julgamento do passo {passo} não pôde ser feito: falta a chave do "
+                             f"modelo ({_prov}) no ambiente do aplicativo")
+    _campos = ", ".join(devolve)
+    _prompt = (
+        instrucao.strip() + "\n\n"
+        "DADOS APURADOS PELO SISTEMA (use SOMENTE estes; não invente, não peça mais nada):\n"
+        + _rt_json.dumps(dados, ensure_ascii=False, indent=2, default=str) + "\n\n"
+        "Responda SOMENTE um objeto JSON, sem texto antes ou depois, com exatamente estas chaves: "
+        + _campos + "\n"
+        "Se os dados não permitirem concluir, responda o JSON com a chave "
+        '"impossivel" explicando em uma frase.'
+    )
+    try:
+        from openai import OpenAI as _OpenAI
+        _cli_kw = {"api_key": _key or "sem-chave", "base_url": _base,
+                   "timeout": float(_o.getenv("JULGAMENTO_TIMEOUT", "180")), "max_retries": 1}
+        if _prov == "claude_code":
+            import httpx as _hx, re as _re
+            _h = _re.sub(r"^https?://", "", _base).split("/")[0].split(":")[0]
+            _ip = bool(_re.match(r"^\d{1,3}(\.\d{1,3}){3}$", _h))
+            _cli_kw["http_client"] = _hx.Client(verify=not _ip,
+                                                timeout=float(_o.getenv("JULGAMENTO_TIMEOUT", "180")))
+        _cli = _OpenAI(**_cli_kw)
+        _extra = {"thinking": {"type": "disabled"}} if _prov == "deepseek" else {}
+        _r = _cli.chat.completions.create(
+            model=_model,
+            messages=[{"role": "system", "content":
+                       "Você julga com base APENAS nos dados recebidos e responde só JSON."},
+                      {"role": "user", "content": _prompt}],
+            max_tokens=_max, stream=False, **({"extra_body": _extra} if _extra else {}))
+        _txt = (_r.choices[0].message.content or "") if _r.choices else ""
+    except Exception as _e:
+        raise _RegraExecucao(f"julgamento do passo {passo} falhou ao consultar o modelo: {_e}")
+    _t = _txt.strip()
+    if _t.startswith("```"):
+        _t = _t.split("\n", 1)[-1]
+        if _t.rstrip().endswith("```"):
+            _t = _t.rstrip()[:-3]
+    _i = _t.find("{")
+    if _i < 0:
+        raise _RegraExecucao(f"julgamento do passo {passo}: o modelo respondeu texto em vez de JSON")
+    try:
+        _obj, _ = _rt_json.JSONDecoder().raw_decode(_t[_i:])
+    except Exception:
+        raise _RegraExecucao(f"julgamento do passo {passo}: resposta do modelo ilegível")
+    if not isinstance(_obj, dict):
+        raise _RegraExecucao(f"julgamento do passo {passo}: resposta do modelo não é um objeto")
+    if _obj.get("impossivel"):
+        raise _RegraExecucao(f"não foi possível concluir: {_obj['impossivel']}")
+    _faltam = [c for c in devolve if _obj.get(c) in (None, "")]
+    if _faltam:
+        raise _RegraExecucao(f"julgamento do passo {passo} incompleto — o modelo não respondeu: "
+                             + ", ".join(_faltam))
+    return {c: _obj[c] for c in devolve}
+
 
 def _rt_sql(v):
     """Valor de parâmetro SQL: dict/list (ex.: antibiograma do laboratório) vira texto JSON para a
