@@ -355,7 +355,13 @@ import shutil
 import subprocess
 from pathlib import Path
 
-RAIZ_PROTOTIPOS = Path(os.environ.get("LANGNET_PROTOTIPOS", "/tmp/langnet-prototipos"))
+# Os protótipos ficavam em /tmp e SUMIAM na primeira limpeza do sistema — a etapa apontava para
+# uma pasta vazia e o protótipo aprovado deixava de existir sem aviso. Passam a morar junto do
+# cache do usuário, que sobrevive a reinício. A variável de ambiente continua mandando, para quem
+# quiser outro lugar.
+RAIZ_PROTOTIPOS = Path(os.environ.get(
+    "LANGNET_PROTOTIPOS", str(Path.home() / ".langnet" / "prototipos")))
+RAIZ_PROTOTIPOS.mkdir(parents=True, exist_ok=True)
 CACHE_FRONTEND = Path(os.environ.get("LANGNET_FRONTEND_CACHE",
                                      str(Path.home() / ".langnet-cache" / "frontend")))
 
