@@ -2909,6 +2909,21 @@ def _current_provider() -> str:
 
 def _build_llm_flash() -> LLM:
     prov = _current_provider()
+    if prov == "claude_code":
+        # API própria (Claude), sem custo por token. `custom_openai=True` força o provedor nativo
+        # da OpenAI apontando para o nosso endereço — o prefixo "openai/" exigiria o litellm, que
+        # nem sempre está instalado. Aciona ferramenta e transmite em fluxo (medido 09/09/2026).
+        _b = os.getenv("CLAUDE_CODE_API_BASE", "https://camerascasas.no-ip.info:4443/v1").rstrip("/")
+        if not _b.endswith("/v1"):
+            _b += "/v1"
+        return LLM(
+            model=os.getenv("CLAUDE_CODE_MODEL_NAME", "claude-code"),
+            custom_openai=True,
+            api_key=os.getenv("CLAUDE_CODE_API_KEY", ""),
+            base_url=_b,
+            temperature=0.7,
+            max_tokens=int(os.getenv("CLAUDE_CODE_MAX_TOKENS", "24000")),
+        )
     if prov == "lmstudio":
         # LM Studio API OpenAI-compatible. Sem custo por token.
         # Modelo FAST (mesmo do reasoning aqui — LM Studio típico só tem R1 carregado).
@@ -2943,6 +2958,21 @@ def _build_llm_flash() -> LLM:
 
 def _build_llm_pro() -> LLM:
     prov = _current_provider()
+    if prov == "claude_code":
+        # API própria (Claude), sem custo por token. `custom_openai=True` força o provedor nativo
+        # da OpenAI apontando para o nosso endereço — o prefixo "openai/" exigiria o litellm, que
+        # nem sempre está instalado. Aciona ferramenta e transmite em fluxo (medido 09/09/2026).
+        _b = os.getenv("CLAUDE_CODE_API_BASE", "https://camerascasas.no-ip.info:4443/v1").rstrip("/")
+        if not _b.endswith("/v1"):
+            _b += "/v1"
+        return LLM(
+            model=os.getenv("CLAUDE_CODE_MODEL_NAME", "claude-code"),
+            custom_openai=True,
+            api_key=os.getenv("CLAUDE_CODE_API_KEY", ""),
+            base_url=_b,
+            temperature=0.3,
+            max_tokens=int(os.getenv("CLAUDE_CODE_MAX_TOKENS_PRO", "32000")),
+        )
     if prov == "lmstudio":
         # R1 já raciocina por padrão — sem flag necessário. Mesmo modelo do flash aqui.
         _m = os.getenv("LMSTUDIO_MODEL_NAME_PRO", os.getenv("LMSTUDIO_MODEL_NAME", "openai/deepseek-r1-distill-qwen-32b"))
@@ -3829,19 +3859,28 @@ database_tool = DatabaseTool()
 '''
 
 
-def _template_env_example(detected_tools: List[str]) -> str:
+def _template_env_example(detected_tools: List[str], llm_app: Optional[dict] = None) -> str:
     # .env.example é um TEMPLATE versionável/baixável: NUNCA embute segredos reais
     # (senha de banco, API keys) — apenas placeholders. O modelo/endpoint do LM Studio
     # não são segredos e refletem a configuração do ambiente (ajudam o dev a rodar local).
+    _cfg = llm_app or {}
+    _prov_app = _cfg.get("provedor") or "lmstudio"
     lm_model = os.getenv("LMSTUDIO_MODEL_NAME") or "qwen2.5-coder-32b-instruct"
     lm_base = os.getenv("LMSTUDIO_API_BASE") or "http://localhost:1234/v1"
+    _cc_base = _cfg.get("endereco") if _prov_app == "claude_code" else "https://camerascasas.no-ip.info:4443/v1"
+    _cc_model = _cfg.get("modelo") if _prov_app == "claude_code" else "claude-code"
+    if _prov_app == "lmstudio" and _cfg.get("modelo"):
+        lm_model = _cfg["modelo"]
+    if _prov_app == "lmstudio" and _cfg.get("endereco"):
+        lm_base = _cfg["endereco"]
     lines = [
         "# Configurações do servidor WebSocket",
         "WEBSOCKET_HOST=localhost",
         "WEBSOCKET_PORT=5002",
         "",
-        "# LLM — padrão: LM Studio local (sem custo, sem chave real). Para nuvem, veja abaixo.",
-        "LLM_PROVIDER=lmstudio",
+        "# MODELO DE LINGUAGEM DA APLICAÇÃO — escolhido no projeto, na tela Configurações do",
+        "# Projeto. Os outros ficam comentados logo abaixo: trocar é descomentar UMA linha.",
+        f"LLM_PROVIDER={_prov_app}",
         "",
         "# LM Studio local (API OpenAI-compatible)",
         f"LMSTUDIO_API_BASE={lm_base}",
@@ -3850,6 +3889,14 @@ def _template_env_example(detected_tools: List[str]) -> str:
         "LMSTUDIO_MAX_TOKENS=24000",
         "LMSTUDIO_MAX_TOKENS_PRO=32000",
         "",
+        "# Alternativa Claude (API própria, sem custo por token) — aciona ferramenta e transmite",
+        "# em fluxo. Informe a chave da SUA instalação.",
+        "# LLM_PROVIDER=claude_code",
+        f"CLAUDE_CODE_API_BASE={_cc_base}",
+        f"CLAUDE_CODE_MODEL_NAME={_cc_model}",
+        "CLAUDE_CODE_API_KEY=",
+        "CLAUDE_CODE_MAX_TOKENS=24000",
+        "CLAUDE_CODE_MAX_TOKENS_PRO=32000",
         "# Alternativa DeepSeek (nuvem): troque LLM_PROVIDER=deepseek e informe SUA chave",
         "# LLM_PROVIDER=deepseek",
         "DEEPSEEK_API_KEY=",
@@ -9241,7 +9288,7 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     if _cg_is_pg:
         _extra_pkgs = sorted(set(_extra_pkgs) | {"psycopg2-binary>=2.9"})
     add("ws-server/requirements.txt", _template_requirements_txt(_extra_pkgs), "text")
-    add("ws-server/.env.example", _template_env_example(detected_tools), "text")
+    add("ws-server/.env.example", _template_env_example(detected_tools, state.get("llm_app")), "text")
     add("ws-server/Dockerfile", _template_dockerfile(), "dockerfile")
 
     # === Pacote visualtasksexec: frontend React + backend FastAPI + docker-compose ===

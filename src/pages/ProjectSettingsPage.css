@@ -1,0 +1,19 @@
+.cfg-projeto { padding: 24px; max-width: 860px; }
+.cfg-projeto h2 { margin: 0 0 18px; font-size: 20px; }
+.cfg-projeto .cartao { background: #fff; border: 1px solid #e3e6ea; border-radius: 10px; padding: 20px; }
+.cfg-projeto .cartao h3 { margin: 0 0 8px; font-size: 16px; }
+.cfg-projeto .explica { margin: 0 0 16px; color: #5b6470; font-size: 13px; line-height: 1.5; }
+.cfg-projeto .opcoes { display: grid; gap: 8px; margin-bottom: 18px; }
+.cfg-projeto .opcao { display: grid; grid-template-columns: 20px 1fr; gap: 4px 8px;
+  border: 1px solid #e3e6ea; border-radius: 8px; padding: 10px 12px; cursor: pointer; }
+.cfg-projeto .opcao.escolhida { border-color: #2f6feb; background: #f4f8ff; }
+.cfg-projeto .opcao input { grid-row: 1 / span 2; margin-top: 3px; }
+.cfg-projeto .opcao .rotulo { font-weight: 600; font-size: 14px; }
+.cfg-projeto .opcao .obs { color: #6b7280; font-size: 12px; }
+.cfg-projeto .campos { display: grid; grid-template-columns: 200px 1fr; gap: 10px 14px; align-items: center; }
+.cfg-projeto .campos label { font-size: 13px; color: #374151; }
+.cfg-projeto .campos input { padding: 7px 10px; border: 1px solid #d3d8de; border-radius: 6px; font-size: 13px; }
+.cfg-projeto .chave { margin: 18px 0 0; font-size: 12px; color: #6b7280; line-height: 1.5; }
+.cfg-projeto .chave code { background: #f2f4f7; padding: 1px 5px; border-radius: 4px; }
+.cfg-projeto .aviso { margin: 12px 0 0; color: #1b7f3b; font-size: 13px; }
+.cfg-projeto .erro { margin: 12px 0 0; color: #b3261e; font-size: 13px; }

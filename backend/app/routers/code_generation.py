@@ -319,6 +319,17 @@ async def generate_code(
     else:
         print("[CODE-GEN] especificação funcional NÃO encontrada — telas sem vocabulário de mensagens")
 
+    # MODELO DA APLICAÇÃO GERADA: escolha do PROJETO (tela Configurações do Projeto), não do
+    # arquivo de ambiente da máquina que gerou. Vai para o .env.example do pacote com o provedor
+    # escolhido ativo e os demais comentados, prontos para trocar em uma linha.
+    try:
+        from app.routers.projects import llm_do_app as _llm_app
+        state["llm_app"] = _llm_app(project_id)
+        print(f"[CODE-GEN] modelo da aplicação: {state['llm_app']['rotulo']} "
+              f"({state['llm_app']['provedor']} / {state['llm_app']['modelo']})")
+    except Exception as _e:
+        print(f"[CODE-GEN] escolha de modelo da aplicação não lida (usando o padrão): {_e}")
+
     # Carrega ui_spec (telas de negócio) mais recente do projeto — permite ao
     # code gen construir a UI real (Cara A) além do executor de Petri (Cara B).
     # Guarda qual sessão de ui_spec entrou no código (rastreabilidade).

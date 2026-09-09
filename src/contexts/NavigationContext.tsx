@@ -95,6 +95,7 @@ const PROJECT_MENU_ITEMS: MenuItem[] = [
   { id: "test-cases", label: "Casos de Teste & Validação", icon: "🧪", path: "/test-cases", section: "Pipeline" },
 
   // ── Operação (a implementar) ──
+  { id: "project-settings", label: "Configurações do Projeto", icon: "⚙️", path: "/settings", section: "Operação" },
   { id: "deploy", label: "Deploy", icon: "🚀", path: "/deploy", section: "Operação", status: "mock" },
   { id: "monitoring", label: "Monitoramento", icon: "📊", path: "/monitoring", section: "Operação", status: "mock" },
 

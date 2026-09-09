@@ -7,6 +7,10 @@ from app.schemas import Project, ProjectCreate, ProjectUpdate
 from app.database import execute_query, execute_insert, execute_update, execute_delete, get_db_cursor
 from app.utils import generate_uuid, serialize_json, deserialize_json
 from app.dependencies import get_pagination_params, validate_uuid
+import json
+from pydantic import BaseModel
+from app.database import get_db_connection
+from app.routers.auth import get_current_user
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -270,3 +274,103 @@ def get_project_stats(project_id: str):
     stats = execute_query(query, (project_id, project_id, project_id, project_id, project_id), fetch_one=True)
 
     return stats
+
+
+# ══════════════════════════════════════════════════════════════
+# MODELO DE LINGUAGEM DA APLICAÇÃO GERADA (escolha do projeto)
+# ══════════════════════════════════════════════════════════════
+# Quem escolhe o modelo que a aplicação gerada vai usar é o PROJETO, aqui na interface — não o
+# arquivo de ambiente da máquina que gerou. Antes o pacote saía sempre apontando para o modelo
+# local, e trocar exigia editar o arquivo à mão depois de gerar.
+
+PROVEDORES_APP = {
+    "claude_code": {
+        "rotulo": "Claude (API própria, sem custo por token)",
+        "modelo_padrao": "claude-code",
+        "endereco_padrao": "https://camerascasas.no-ip.info:4443/v1",
+        "chave_env": "CLAUDE_CODE_API_KEY",
+        "observacao": "Aciona ferramenta e transmite em fluxo (medido em 09/09/2026).",
+    },
+    "deepseek": {
+        "rotulo": "DeepSeek (nuvem, pago por uso)",
+        "modelo_padrao": "deepseek-v4-flash",
+        "endereco_padrao": "https://api.deepseek.com/v1",
+        "chave_env": "DEEPSEEK_API_KEY",
+        "observacao": "Rápido e barato; exige chave e saldo.",
+    },
+    "lmstudio": {
+        "rotulo": "Modelo local (LM Studio)",
+        "modelo_padrao": "qwen/qwen3.8-27b",
+        "endereco_padrao": "http://localhost:1234/v1",
+        "chave_env": "LMSTUDIO_API_KEY",
+        "observacao": "Sem custo, mas depende da máquina local estar ligada.",
+    },
+    "openai": {
+        "rotulo": "OpenAI",
+        "modelo_padrao": "gpt-4o-mini",
+        "endereco_padrao": "https://api.openai.com/v1",
+        "chave_env": "OPENAI_API_KEY",
+        "observacao": "Exige chave própria.",
+    },
+}
+
+
+class AppLlmConfig(BaseModel):
+    provedor: str
+    modelo: Optional[str] = None
+    endereco: Optional[str] = None
+    max_tokens: Optional[int] = None
+
+
+def llm_do_app(project_id: str) -> dict:
+    """Configuração do modelo da aplicação gerada, já preenchida com os padrões do provedor.
+
+    Projeto que nunca escolheu recebe o padrão do sistema (Claude) — e o pacote gerado sai com
+    todos os provedores listados no arquivo de ambiente, comentados, a uma linha de trocar.
+    """
+    escolha = {"provedor": "claude_code"}
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT app_llm_config FROM projects WHERE id=%s", (project_id,))
+            row = cur.fetchone(); cur.close()
+        if row and row.get("app_llm_config"):
+            guardado = json.loads(row["app_llm_config"])
+            if isinstance(guardado, dict) and guardado.get("provedor") in PROVEDORES_APP:
+                escolha = guardado
+    except Exception as exc:  # noqa: BLE001 — configuração nunca derruba a geração
+        print(f"[PROJETO] leitura da escolha de modelo falhou (usando o padrão): {exc}")
+    base = PROVEDORES_APP.get(escolha.get("provedor"), PROVEDORES_APP["claude_code"])
+    return {
+        "provedor": escolha.get("provedor", "claude_code"),
+        "modelo": escolha.get("modelo") or base["modelo_padrao"],
+        "endereco": escolha.get("endereco") or base["endereco_padrao"],
+        "max_tokens": int(escolha.get("max_tokens") or 24000),
+        "chave_env": base["chave_env"],
+        "rotulo": base["rotulo"],
+    }
+
+
+@router.get("/{project_id}/app-llm")
+async def obter_llm_do_app(project_id: str, current_user: dict = Depends(get_current_user)):
+    """Modelo escolhido para a aplicação gerada + as opções disponíveis."""
+    return {"escolha": llm_do_app(project_id), "provedores": PROVEDORES_APP}
+
+
+@router.put("/{project_id}/app-llm")
+async def definir_llm_do_app(project_id: str, cfg: AppLlmConfig,
+                             current_user: dict = Depends(get_current_user)):
+    """Grava a escolha. Vale para a PRÓXIMA geração de código do projeto."""
+    if cfg.provedor not in PROVEDORES_APP:
+        raise HTTPException(400, f"provedor «{cfg.provedor}» não existe; use um de: "
+                                 + ", ".join(PROVEDORES_APP))
+    dados = {k: v for k, v in cfg.model_dump().items() if v is not None}
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("UPDATE projects SET app_llm_config=%s WHERE id=%s",
+                    (json.dumps(dados, ensure_ascii=False), project_id))
+        afetadas = cur.rowcount
+        cur.close(); conn.commit()
+    if not afetadas:
+        raise HTTPException(404, "Projeto não encontrado")
+    return {"escolha": llm_do_app(project_id), "provedores": PROVEDORES_APP}
