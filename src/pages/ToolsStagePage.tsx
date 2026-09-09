@@ -103,17 +103,16 @@ export default function ToolsStagePage() {
 
   const editarCampo = async (nome: string, campo: keyof Ferramenta, valor: any) => {
     if (!doc) return;
-    const tools = doc.tools.map((t) =>
-      t.nome === nome ? { ...t, [campo]: valor,
-        resolvida: campo === "regra"
-          ? (t.origem === "deterministica" && String(valor).trim().length > 0)
-          : t.resolvida } : t);
+    // "Resolvida" NÃO é decidido aqui: a frase da regra não implementa nada. Quem confere é o
+    // servidor, ao salvar — ele valida os passos do cálculo e devolve o documento já conferido.
+    const tools = doc.tools.map((t) => (t.nome === nome ? { ...t, [campo]: valor } : t));
     const novo = { ...doc, tools };
     setDoc(novo);
     if (sessionId) {
       try {
         const r = await salvarFerramentas(sessionId, novo, `ajuste em ${nome}`);
         setVersao(r.version);
+        if ((r as any).tools) setDoc({ ...novo, ...(r as any) });
         const lv = await listarVersoes(sessionId); setVersoes(lv.versions || []);
       } catch (e: any) { setErro(String(e.message || e)); }
     }
@@ -236,10 +235,34 @@ export default function ToolsStagePage() {
                   <input value={(detalhe.saida || []).join(", ")}
                          onChange={(e) => editarCampo(detalhe.nome, "saida",
                            e.target.value.split(",").map((x) => x.trim()).filter(Boolean))} />
-                  <label>Regra (obrigatória para determinística)</label>
-                  <textarea value={detalhe.regra} rows={3}
+                  <label>Regra em uma frase (para quem lê)</label>
+                  <textarea value={detalhe.regra} rows={2}
                             placeholder="Ex.: conferir a senha informada contra o hash guardado e devolver verdadeiro ou falso"
                             onChange={(e) => editarCampo(detalhe.nome, "regra", e.target.value)} />
+                  {detalhe.origem === "deterministica" && (
+                    <>
+                      <label>Passos do cálculo (é isto que vira código)</label>
+                      <textarea rows={8} className="passos-regra"
+                        value={JSON.stringify(detalhe.passos || [], null, 2)}
+                        placeholder={'[\n  {"tipo":"calculo","atribui":"total","expressao":"conta_valor(antibiograma, \'R\')"},\n  {"tipo":"retorno","campos":["total"]}\n]'}
+                        onChange={(e) => {
+                          try { editarCampo(detalhe.nome, "passos", JSON.parse(e.target.value || "[]")); }
+                          catch { /* enquanto o texto está incompleto, não salva */ }
+                        }} />
+                      {detalhe.problemas_regra && detalhe.problemas_regra.length > 0 ? (
+                        <ul className="problemas-regra">
+                          {detalhe.problemas_regra.map((p, i) => (
+                            <li key={i}><b>passo {p.passo}:</b> {p.motivo}</li>
+                          ))}
+                        </ul>
+                      ) : (detalhe.passos && detalhe.passos.length > 0 ? (
+                        <p className="regra-ok">Contrato conferido — esta regra vira código na geração.</p>
+                      ) : (
+                        <p className="regra-pendente">Sem passos declarados: a ferramenta vai nascer
+                          recusando quando for chamada, e o portão barra a implantação.</p>
+                      ))}
+                    </>
+                  )}
                 </div>
               ) : (
                 <div className="detalhe vazio">Selecione uma ferramenta na tabela para ver e editar o contrato.</div>

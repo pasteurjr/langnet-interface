@@ -21,6 +21,10 @@ export interface Ferramenta {
   entrada: string[];
   saida: string[];
   regra: string;
+  /** Passos do cálculo — é isto que vira código. Só a frase em `regra` não implementa nada. */
+  passos?: any[];
+  /** Problemas que o servidor achou no contrato da regra (vazio = pronta para virar código). */
+  problemas_regra?: { passo: string; motivo: string }[];
   usada_por: string[];
 }
 

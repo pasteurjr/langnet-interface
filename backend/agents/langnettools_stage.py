@@ -142,10 +142,23 @@ def propor_contratos(doc: Dict[str, Any], ats_md: str, completar) -> Dict[str, A
         "validar formato); ou 'externa' quando depende de um sistema de fora (API, serviço, "
         "laboratório) — nesse caso ela terá de ser registrada na etapa MCP.\n"
         "  regra: quando origem='deterministica', descreva a regra em UMA frase imperativa, "
-        "sem código.\n\n"
+        "sem código.\n"
+        "  passos: quando origem='deterministica', TAMBÉM declare o cálculo em passos — é o que "
+        "vira código. Sem passos a ferramenta nasce recusando quando chamada. Tipos permitidos "
+        "(regra é CÁLCULO PURO: não lê banco, não aciona sistema externo, não consulta modelo):\n"
+        '    {"tipo":"calculo","atribui":"nome","expressao":"expr"}\n'
+        '    {"tipo":"condicao","se":"expr booleana","passos":[...]}\n'
+        '    {"tipo":"laco","para_cada":"item","em":"expr de lista","passos":[...]}\n'
+        '    {"tipo":"verificacao","recusa_se":"expr","mensagem":"frase de recusa"}\n'
+        '    {"tipo":"retorno","campos":["nome1","nome2"]}   (obrigatório, no fim)\n'
+        "  Nas expressões use os nomes da `entrada` e as funções: conta_valor(json,'R'), "
+        "tamanho(x), existe(x), vazio(x), entre(x,a,b), em(x,[...]), arredonda(x,n), soma(lista,campo), "
+        "media(lista,campo), primeiro(lista), texto(x), numero(x), maiusculas(x), minusculas(x), "
+        "contem(texto,parte), hoje(), dias_entre(a,b), codigo_valido(codigo,tamanho), "
+        "confere_senha(senha,hash). Operadores: + - * /, == != < <= > >=, e / ou / nao.\n\n"
         "NUNCA proponha valores de exemplo como resultado. Responda JSON puro: "
         '{"tools": [{"nome": ..., "descricao": ..., "entrada": [...], "saida": [...], '
-        '"origem": "deterministica"|"externa", "regra": ...}]}'
+        '"origem": "deterministica"|"externa", "regra": ..., "passos": [...]}]}'
     )
     try:
         bruto = completar(prompt, "JSON puro com a chave tools",
@@ -166,12 +179,25 @@ def propor_contratos(doc: Dict[str, Any], ats_md: str, completar) -> Dict[str, A
         item["saida"] = [str(x) for x in (p.get("saida") or [])]
         item["regra"] = (p.get("regra") or "").strip()
         if origem == "deterministica" and item["regra"]:
-            # regra DECLARADA não é implementação: o módulo gerado guarda a regra e falha explícito.
-            # Fica pendente (com a regra) até o gerador emitir o cálculo — o portão da geração só
-            # barra se algum agente em execução puder chamá-la.
+            # A regra vira CÓDIGO quando vem declarada em passos e o contrato valida — o mesmo
+            # tradutor das tarefas a emite. Só a frase, sem passos, continua pendente: a ferramenta
+            # nasce recusando e o portão barra, em vez de fingir que existe.
             item["origem"] = "deterministica"
-            item["resolvida"] = False
-            item["implementacao"] = "regra declarada — sem código gerado ainda (pendente)"
+            passos = p.get("passos") if isinstance(p.get("passos"), list) else []
+            item["passos"] = passos
+            if passos:
+                from agents.langnetregras import validar_regra as _vr
+                probs = _vr(passos, item["entrada"])
+                item["problemas_regra"] = probs
+                item["resolvida"] = not probs
+                item["implementacao"] = (
+                    f"regra em {len(passos)} passo(s) — vira código na geração"
+                    if not probs else
+                    "contrato da regra com problema: " + "; ".join(x["motivo"] for x in probs[:2]))
+            else:
+                item["resolvida"] = False
+                item["implementacao"] = ("regra descrita só em texto — declare os passos do cálculo "
+                                         "para ela virar código")
         else:
             item["origem"] = "externa"
             item["resolvida"] = False
@@ -213,8 +239,9 @@ def aplicar_refino(doc: Dict[str, Any], instrucao: str, completar) -> Dict[str, 
             base = dict(antigos.get(t["nome"], {}))
             base.update(t)
             base["resolvida"] = base.get("origem") in ("biblioteca", "mcp")
-            if base.get("origem") == "deterministica":
-                base["implementacao"] = "regra declarada — sem código gerado ainda (pendente)"
+            if base.get("origem") == "deterministica" and not base.get("passos"):
+                base["implementacao"] = ("regra descrita só em texto — declare os passos do cálculo "
+                                         "para ela virar código")
             saida.append(base)
         doc["tools"] = saida
         doc["resumo"] = {

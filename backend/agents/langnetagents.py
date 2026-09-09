@@ -4609,6 +4609,7 @@ def _extract_task_blocks(tasks_yaml: str) -> List[dict]:
 
 # Manifestos do tradutor de regras (tarefa -> manifesto), preenchidos a cada geração.
 MANIFESTOS_STEPS: Dict[str, dict] = {}
+MANIFESTOS_REGRAS: Dict[str, dict] = {}
 FERRAMENTAS_RESOLVIDAS_CG: Optional[set] = None   # definido pelo fluxo antes de gerar os adapters
 
 
@@ -7537,39 +7538,62 @@ def _emit_declared_tools(tools_py: str, tools_doc: dict) -> str:
 
 
 def _emit_tools_rules_py(tools_doc: dict) -> str:
-    """Módulo ws-server/tools_rules.py — uma função por ferramenta DETERMINÍSTICA, com a
-    regra declarada na etapa Ferramentas no corpo do docstring.
+    """Módulo ws-server/tools_rules.py — uma função por ferramenta declarada como REGRA na etapa
+    Ferramentas.
 
-    O corpo real é escrito pelo LLM a partir da regra? NÃO. Aqui vai o esqueleto com a regra
-    e a checagem dos parâmetros; o que a regra manda calcular é emitido pelo gerador de
-    computação determinística quando ele reconhece o padrão, e o que ele não reconhecer falha
-    explícito — nunca devolve valor de exemplo.
+    ANTES: a regra ficava só como frase no comentário e a função nascia recusando
+    (NotImplementedError). A capacidade seguia pendente para sempre e o portão de ferramentas
+    nunca fechava.
+    AGORA: a regra é declarada no MESMO contrato de passos das tarefas e passa pelo MESMO tradutor.
+    Passo que não vira código faz a ferramenta recusar dizendo qual passo faltou — nunca inventa
+    valor. Regra sem contrato de passos continua recusando, com a frase dizendo o que falta.
     """
-    linhas = ['"""Regras determinísticas declaradas na etapa FERRAMENTAS (auto-gerado)."""',
-              "from typing import Any, Dict", ""]
-    for t in (tools_doc or {}).get("tools", []):
-        if (t.get("origem") or "").lower() != "deterministica":
-            continue
+    from agents.langnetregras import RUNTIME_PY as _RT, emitir_regra as _er, validar_regra as _vr
+    regras = [t for t in (tools_doc or {}).get("tools", [])
+              if (t.get("origem") or "").lower() == "deterministica"]
+    MANIFESTOS_REGRAS.clear()
+    cabeca = ['"""Regras determinísticas declaradas na etapa FERRAMENTAS (auto-gerado).', ""]
+    if not regras:
+        cabeca += ['Nenhuma ferramenta por regra foi declarada nesta geração."""',
+                   "from typing import Any, Dict", ""]
+        return "\n".join(cabeca)
+    cabeca += ["Cada função vem do contrato de passos da própria ferramenta, traduzido pelo mesmo",
+               'tradutor de regras que gera as tarefas."""',
+               "from typing import Any, Dict", "", _RT, ""]
+    partes = list(cabeca)
+    for t in regras:
         nome = t.get("nome")
-        entrada = [e for e in (t.get("entrada") or []) if str(e).isidentifier()]
-        args = ", ".join(f"{e}=None" for e in entrada) if entrada else "**kwargs"
-        linhas += [
+        passos = t.get("passos") if isinstance(t.get("passos"), list) else []
+        entrada = t.get("entrada") or []
+        if passos:
+            probs = _vr(passos, entrada)
+            src, man = _er(nome, entrada, passos, t.get("descricao") or "", t.get("regra") or "")
+            man["problemas_validacao"] = probs
+            MANIFESTOS_REGRAS[nome] = man
+            partes += [src, ""]
+            if man["nao_emitidos"]:
+                print(f"[CODE-GEN][REGRA-FERRAMENTA] {nome}: {len(man['nao_emitidos'])} de "
+                      f"{man['declarados']} passo(s) NÃO emitidos → a ferramenta recusa quando chamada")
+            else:
+                print(f"[CODE-GEN][REGRA-FERRAMENTA] {nome}: {man['declarados']} passo(s) emitidos")
+            continue
+        # sem contrato: recusa explícita, dizendo exatamente o que falta (nunca valor inventado)
+        args = ", ".join(f"{e}=None" for e in entrada if str(e).isidentifier()) or "**kwargs"
+        frase = (t.get("regra") or "").strip()[:120]
+        motivo = (f"{nome}: a regra foi descrita em texto (" + frase + ") mas não foi declarada em "
+                  "passos na etapa Ferramentas, então não virou cálculo. Nenhum valor foi inventado.")
+        partes += [
             f"def {nome}({args}) -> Dict[str, Any]:",
-            f'    """{t.get("descricao") or nome}',
-            "",
-            "    REGRA (declarada na etapa Ferramentas, aprovada pelo usuário):",
-            f"    {t.get('regra')}",
-            '    """',
-            "    faltando = [n for n, v in locals().items() if v is None]" if entrada else "    faltando = []",
-            "    if faltando:",
-            f'        raise ValueError("{nome}: faltam parâmetros obrigatórios: " + ", ".join(faltando))',
-            f'    raise NotImplementedError(',
-            f'        "{nome}: a regra foi declarada na etapa Ferramentas mas o gerador ainda não '
-            f'emite o cálculo. Nenhum valor foi inventado."',
-            "    )",
+            f'    """{t.get("descricao") or nome} — SEM CONTRATO DE PASSOS."""',
+            f"    raise NotImplementedError({motivo!r})",
             "",
         ]
-    return "\n".join(linhas) + "\n"
+        MANIFESTOS_REGRAS[nome] = {
+            "ferramenta": nome, "declarados": 0, "emitidos": 0, "passos": [],
+            "nao_emitidos": [{"passo": "-", "tipo": "regra",
+                              "motivo": "regra declarada só em texto, sem passos"}]}
+        print(f"[CODE-GEN][REGRA-FERRAMENTA] {nome}: regra só em texto, sem passos → recusa quando chamada")
+    return "\n".join(partes) + "\n"
 
 
 def _drop_undefined_registry_entries(tools_py: str) -> str:
@@ -11826,7 +11850,8 @@ def _portao_ferramentas(tools_doc: dict, agents_yaml_txt: str, tasks_yaml_txt: s
     relatório como "declarada sem uso" — visível, mas não bloqueia. Sem a etapa, não há portão."""
     import yaml as _y
     pend = [t for t in (tools_doc or {}).get("tools", []) if not t.get("resolvida")]
-    if not pend:
+    _regras_incompletas = {n for n, m in MANIFESTOS_REGRAS.items() if m.get("nao_emitidos")}
+    if not pend and not _regras_incompletas:
         return {"reprovado": False, "quantidade": 0, "itens": [], "sem_uso": [],
                 "descricao": "ferramentas sem implementação declarada"}
     try:
@@ -11848,11 +11873,16 @@ def _portao_ferramentas(tools_doc: dict, agents_yaml_txt: str, tasks_yaml_txt: s
             chamaveis |= {str(x) for x in (_ag.get("tools") or [])}
     bloqueiam = [t for t in pend if t["nome"] in chamaveis]
     sem_uso = [t for t in pend if t["nome"] not in chamaveis]
+    # Regra que passou na conferência da etapa mas cujo passo NÃO virou código na geração: a
+    # ferramenta existe e recusa quando chamada. Bloqueia, com o passo que faltou.
+    incompletas = [{"ferramenta": n, "motivo": "regra incompleta — " +
+                    "; ".join(f"passo {m['passo']}: {m['motivo']}" for m in (man.get("nao_emitidos") or [])[:2])}
+                   for n, man in MANIFESTOS_REGRAS.items() if man.get("nao_emitidos")]
     return {
-        "reprovado": bool(bloqueiam),
-        "quantidade": len(bloqueiam),
+        "reprovado": bool(bloqueiam) or bool(incompletas),
+        "quantidade": len(bloqueiam) + len(incompletas),
         "itens": [{"ferramenta": t["nome"], "motivo": t.get("implementacao") or "sem implementação"}
-                  for t in bloqueiam],
+                  for t in bloqueiam] + incompletas,
         "sem_uso": [{"ferramenta": t["nome"],
                      "motivo": "declarada no ATS, mas nenhum agente em execução a usa — as tarefas "
                                "viraram contrato determinístico; não bloqueia"} for t in sem_uso],

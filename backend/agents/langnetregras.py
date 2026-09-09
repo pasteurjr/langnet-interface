@@ -868,7 +868,8 @@ def _TAREFA_ATUAL() -> str:
 
 def emitir_passos(passos: List[dict], indent: str = "        ",
                   prefixo: str = "", ferramentas_resolvidas: Any = None,
-                  tarefas_do_sistema: Any = None) -> Tuple[List[str], List[dict]]:
+                  tarefas_do_sistema: Any = None,
+                  com_transacao: bool = True) -> Tuple[List[str], List[dict]]:
     """Devolve (linhas_python, manifesto). Cada passo declarado aparece no manifesto como
     emitido=True ou emitido=False com motivo — nunca desaparece."""
     linhas: List[str] = []
@@ -905,7 +906,8 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 msg = str(p.get("mensagem") or "condição não atendida")
                 linhas.append(f"{indent}# passo {n}: verificação")
                 linhas.append(f"{indent}{teste}")
-                linhas.append(f"{indent}    conn.rollback()")
+                if com_transacao:
+                    linhas.append(f"{indent}    conn.rollback()")
                 linhas.append(f"{indent}    return {{'status': 'erro', 'error': {msg!r}, "
                               f"'nao_encontrado': 'verificacao', 'passo': {n!r}}}")
             elif tipo == "calculo":
@@ -918,7 +920,8 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 linhas.append(f"{indent}if {cond}:")
                 sub, sub_m = emitir_passos(p.get("passos") or [], indent + "    ", prefixo=f"{n}.",
                                            ferramentas_resolvidas=ferramentas_resolvidas,
-                                           tarefas_do_sistema=tarefas_do_sistema)
+                                           tarefas_do_sistema=tarefas_do_sistema,
+                                           com_transacao=com_transacao)
                 linhas += sub or [f"{indent}    pass"]
                 manifesto += sub_m
             elif tipo == "laco":
@@ -929,7 +932,8 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 linhas.append(f"{indent}    _ctx[{var!r}] = _item")
                 sub, sub_m = emitir_passos(p.get("passos") or [], indent + "    ", prefixo=f"{n}.",
                                            ferramentas_resolvidas=ferramentas_resolvidas,
-                                           tarefas_do_sistema=tarefas_do_sistema)
+                                           tarefas_do_sistema=tarefas_do_sistema,
+                                           com_transacao=com_transacao)
                 linhas += sub or [f"{indent}    pass"]
                 manifesto += sub_m
             elif tipo == "externo":
@@ -1023,6 +1027,105 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
             motivo = str(e) if isinstance(e, ErroDeRegra) else f"campo obrigatório ausente: {e}"
             manifesto.append({"passo": n, "tipo": tipo, "emitido": False, "motivo": motivo})
     return linhas, manifesto
+
+
+# ────────────────── ferramenta "por regra" (etapa Ferramentas) ──────────────────
+# A etapa Ferramentas deixa o usuário dizer que uma capacidade é uma REGRA INTERNA (nem serviço
+# externo, nem biblioteca). Até aqui a regra ficava só como frase: o módulo gerado nascia com uma
+# recusa e a capacidade seguia pendente para sempre. Agora a regra é declarada no MESMO contrato de
+# passos das tarefas — e vira código pelo mesmo tradutor.
+#
+# Regra é CÁLCULO PURO: recebe os valores que a tarefa já apurou e devolve o resultado. Não lê o
+# banco, não aciona sistema externo e não consulta modelo — para isso a TAREFA tem os passos dela.
+TIPOS_DE_REGRA = ("calculo", "condicao", "laco", "verificacao", "retorno")
+
+_MOTIVO_FORA_DA_REGRA = {
+    "consulta": "ferramenta por regra não lê o banco — ponha um passo `consulta` na TAREFA e "
+                "entregue o valor pela entrada da ferramenta",
+    "escrita": "ferramenta por regra não grava — quem grava é a TAREFA, depois de receber o resultado",
+    "externo": "ferramenta por regra não aciona sistema externo — isso é origem `externa` (etapa MCP)",
+    "tarefa": "ferramenta por regra não encadeia tarefa",
+    "agente": "ferramenta por regra não consulta o modelo — julgamento é passo `agente` da TAREFA",
+}
+
+
+def validar_regra(passos: Any, entrada: Any = None) -> List[dict]:
+    """Confere o contrato de uma ferramenta por regra. Devolve a lista de problemas (vazia = ok)."""
+    problemas: List[dict] = []
+    if not isinstance(passos, list) or not passos:
+        return [_erro("-", "a regra precisa de `passos` — descreva o cálculo em passos, "
+                           "como no contrato das tarefas")]
+    for idx, p in enumerate(passos, 1):
+        tipo = str((p or {}).get("tipo") or "").lower() if isinstance(p, dict) else ""
+        if tipo in _MOTIVO_FORA_DA_REGRA:
+            problemas.append(_erro(str(idx), _MOTIVO_FORA_DA_REGRA[tipo]))
+        elif tipo not in TIPOS_DE_REGRA:
+            problemas.append(_erro(str(idx), f"tipo «{tipo or '?'}» não vale numa regra; "
+                                             f"use um de: {', '.join(TIPOS_DE_REGRA)}"))
+    if not any(isinstance(p, dict) and str(p.get("tipo")) == "retorno" for p in passos):
+        problemas.append(_erro("-", "falta o passo `retorno` dizendo quais valores a ferramenta devolve"))
+    problemas += validar_passos(passos, execution="deterministic")
+    # entradas que ninguém fornece: a ferramenta declara os parâmetros que recebe
+    if entrada is not None:
+        disp = {str(e).strip() for e in (entrada or []) if str(e).strip()}
+        obrig, _opc = entradas_do_contrato(passos)
+        fora = [e for e in obrig if e not in disp]
+        if fora:
+            problemas.append(_erro("-", f"a regra lê {', '.join(fora)}, que não está na `entrada` da "
+                                        f"ferramenta ({', '.join(sorted(disp)) or 'vazia'}) nem é "
+                                        "produzido por passo anterior"))
+    # remove duplicatas mantendo a ordem
+    vistos, unicos = set(), []
+    for pr in problemas:
+        ch = (pr["passo"], pr["motivo"])
+        if ch not in vistos:
+            vistos.add(ch); unicos.append(pr)
+    return unicos
+
+
+def emitir_regra(nome: str, entrada: Any, passos: List[dict], descricao: str = "",
+                 regra_prosa: str = "") -> Tuple[str, dict]:
+    """Função Python da ferramenta por regra + manifesto. Passo que não vira código faz a
+    ferramenta RECUSAR na chamada, dizendo qual passo faltou — nunca devolve valor inventado."""
+    params = [str(e).strip() for e in (entrada or []) if str(e).strip().isidentifier()]
+    corpo, manifesto = emitir_passos(passos, indent="        ", com_transacao=False)
+    faltando = [m for m in manifesto if not m["emitido"]]
+    assinatura = ", ".join(f"{e}=None" for e in params) if params else "**entradas"
+    semente = ("{" + ", ".join(f"{e!r}: {e}" for e in params) + "}") if params else "dict(entradas)"
+    recusa = ""
+    if faltando:
+        det = "; ".join(f"passo {m['passo']} ({m['tipo']}): {m['motivo']}" for m in faltando)
+        recusa = (f"    raise _RegraExecucao('ferramenta {nome} incompleta — ' + {det!r})\n")
+    doc = [f'    """{descricao or nome}', ""]
+    if regra_prosa:
+        doc += ["    REGRA (declarada na etapa Ferramentas, aprovada pelo usuário):",
+                f"    {regra_prosa}", ""]
+    doc += ['    Gerada do contrato de passos da própria ferramenta (tradutor de regras)."""']
+    src = (
+        f"def {nome}({assinatura}) -> Dict[str, Any]:\n"
+        + "\n".join(doc) + "\n"
+        + recusa
+        + f"    _ctx = {semente}\n"
+        "    def _v(_n):\n"
+        "        if _n in _ctx:\n"
+        "            return _ctx[_n]\n"
+        "        raise _RegraExecucao(f'valor «{_n}» não informado à ferramenta')\n"
+        "    def _rt_existe_nome(_n):\n"
+        "        return _ctx.get(_n) not in (None, '', [], {})\n"
+        "    def _rt_opcional_nome(_n):\n"
+        "        _x = _ctx.get(_n)\n"
+        "        return None if _x in ('', [], {}) else _x\n"
+        "    _result = None\n"
+        "    try:\n"
+        + "\n".join(corpo) + "\n"
+        "        return _result if _result is not None else {'status': 'sucesso'}\n"
+        "    except _RegraExecucao as _e:\n"
+        "        return {'status': 'erro', 'error': str(_e)}\n"
+    )
+    _obrig, _opc = entradas_do_contrato(passos)
+    return src, {"ferramenta": nome, "declarados": len(manifesto),
+                 "emitidos": sum(1 for m in manifesto if m["emitido"]),
+                 "nao_emitidos": faltando, "entradas": _obrig, "passos": manifesto}
 
 
 def emitir_tarefa(nome: str, passos: List[dict], traceability_comment: str = "",

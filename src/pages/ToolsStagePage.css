@@ -51,3 +51,10 @@
 .versoes li button { background: #eef2ff; color: #4338ca; border: 0; border-radius: 6px; padding: 2px 8px; cursor: pointer; font-weight: 600; font-size: 12px; }
 .versoes li span { color: #64748b; }
 @media (max-width: 1100px) { .ferramentas-corpo { grid-template-columns: 1fr; } }
+
+/* Passos do cálculo da ferramenta por regra: é o contrato que vira código. */
+.passos-regra { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 12px; }
+.problemas-regra { margin: 6px 0 0; padding-left: 18px; color: #b3261e; font-size: 12px; }
+.problemas-regra li { margin: 2px 0; }
+.regra-ok { margin: 6px 0 0; color: #1b7f3b; font-size: 12px; }
+.regra-pendente { margin: 6px 0 0; color: #8a6d00; font-size: 12px; }
