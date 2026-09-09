@@ -293,7 +293,8 @@ def get_llm(use_deepseek: bool = False):
                 claude_api_base += "/v1"      # antes acrescentava sempre e virava /v1/v1
             _cc_model = os.getenv("CLAUDE_CODE_MODEL_NAME", "claude-code")
             print(f"[LangNet] Claude Code API em {claude_api_base} — modelo={_cc_model} "
-                  f"(sem chamada de ferramenta: tarefa com ferramenta deve usar outro provedor)")
+                  f"(COM chamada de ferramenta desde 09/09/2026, medido: finish_reason=tool_calls "
+                  f"e a ferramenta executa de verdade sob CrewAI)")
             if not os.getenv("CLAUDE_CODE_VERIFY_SSL"):
                 # certificado emitido para o NOME; chamando pelo IP da rede local a conferência
                 # do nome falha — litellm/httpx respeita esta variável
@@ -302,7 +303,12 @@ def get_llm(use_deepseek: bool = False):
                 if _re_cc.match(r"^\d{1,3}(\.\d{1,3}){3}$", _h):
                     os.environ["SSL_VERIFY"] = "False"
             _llm_cache[cache_key] = LLM(
-                model=f"openai/{_cc_model}",   # prefixo openai/ = API compatível, para o litellm
+                # O prefixo "openai/" exige o litellm, que NÃO está instalado aqui (CrewAI 1.15.17
+                # usa os SDKs nativos e recusa: "LiteLLM fallback package is not installed").
+                # `custom_openai=True` força o provedor nativo da OpenAI apontando para o nosso
+                # endereço — é o que funciona neste ambiente, com chamada de ferramenta inclusive.
+                model=_cc_model,
+                custom_openai=True,
                 base_url=claude_api_base,
                 api_key=os.getenv("CLAUDE_CODE_API_KEY", ""),
                 timeout=float(os.getenv("CLAUDE_CODE_TIMEOUT", "900")),
