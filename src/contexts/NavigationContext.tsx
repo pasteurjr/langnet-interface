@@ -5,6 +5,7 @@ import React, {
   useState,
   useCallback,
   ReactNode,
+  useEffect,
 } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { MenuItem } from "../types";
@@ -130,6 +131,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
   children,
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [projectContext, setProjectContext] = useState<ProjectContext>({
     projectId: "",
@@ -148,6 +150,32 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({
     },
     []
   );
+
+  // O contexto do projeto era assumido SÓ ao clicar no cartão do projeto. Quem abrisse uma etapa
+  // pela URL — ou apenas recarregasse a página dentro dela — perdia o menu do projeto e via o
+  // menu global, sem as etapas do pipeline. Agora o endereço manda: /project/<id>/... entra no
+  // projeto sozinho, e sair dele limpa. O nome vem depois, da lista de projetos.
+  useEffect(() => {
+    const m = location.pathname.match(/^\/project\/([0-9a-fA-F-]{8,})/);
+    if (m && m[1] !== projectContext.projectId) {
+      setProjectContext({ projectId: m[1], projectName: "", isInProject: true });
+    } else if (!m && projectContext.isInProject && location.pathname !== "/") {
+      // fora de /project/... e fora da raiz (a saída explícita já navega para a raiz)
+      setProjectContext({ projectId: "", projectName: "", isInProject: false });
+    }
+  }, [location.pathname, projectContext.projectId, projectContext.isInProject]);
+
+  // Nome do projeto para o cabeçalho quando se entrou pela URL (o clique no cartão já traz).
+  useEffect(() => {
+    if (!projectContext.isInProject || projectContext.projectName) return;
+    const api = process.env.REACT_APP_API_BASE_URL || process.env.REACT_APP_API_URL || "http://localhost:8003/api";
+    fetch(`${api}/projects/${projectContext.projectId}`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem("token") || ""}` },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d && d.name) setProjectContext((c) => ({ ...c, projectName: d.name })); })
+      .catch(() => { /* nome é enfeite do cabeçalho: falhar aqui não pode quebrar a navegação */ });
+  }, [projectContext.isInProject, projectContext.projectId, projectContext.projectName]);
 
   const exitProjectContext = useCallback(() => {
     console.log("Saindo do contexto do projeto");
