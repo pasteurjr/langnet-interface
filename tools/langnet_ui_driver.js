@@ -4,7 +4,7 @@
 const { chromium } = require('/home/pasteurjr/progreact/langnet-interface/node_modules/playwright');
 const fs = require('fs');
 const BASE = 'http://localhost:3000';
-const PROJ = '9cbea119-c57b-4df1-a183-2ff68b5040e1';
+const PROJ = process.env.LANGNET_PROJ || '9cbea119-c57b-4df1-a183-2ff68b5040e1';
 const TOKEN = fs.readFileSync('/tmp/langnet_token.txt','utf8').trim();
 const OUT = '/home/pasteurjr/progreact/langnet-interface/docs/clinica-medica/langnet-ui-drive/shots';
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
