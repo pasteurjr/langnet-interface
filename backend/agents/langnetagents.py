@@ -151,8 +151,10 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     # (< read s entre tokens, mesmo no prefill de prompts grandes), então read=300s pega o
     # estol silencioso e falha ~12x mais rápido → o retry abaixo refaz a chamada.
     if _provider == "claude_code":
-        # sem fluxo não há "tempo entre pedaços": a espera é a resposta inteira
-        _read = _timeout
+        # A ponte manda um batimento a cada 10 s enquanto o modelo trabalha (medido em 09/09/2026:
+        # 8 batimentos numa geração de 71 s, maior silêncio 10 s). Então o "tempo entre pedaços"
+        # volta a valer como detector de conexão morta — com folga sobre o intervalo do batimento.
+        _read = float(_os.getenv("CLAUDE_CODE_READ_TIMEOUT", "60"))
     elif _provider == "deepseek":
         _read = float(_os.getenv("LLM_READ_TIMEOUT", "90"))
     else:
@@ -205,10 +207,12 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     import time as _time
     _txt = ""
     _last_err = None
-    # A API do Claude Code ACEITA `stream=true` mas devolve resposta VAZIA (medido: 0 pedaços).
-    # Para ela, pede-se a resposta inteira de uma vez; os demais provedores seguem em fluxo,
-    # que é o que mantém a conexão viva em geração longa.
-    _em_fluxo = (_provider != "claude_code")
+    # ANTES a ponte aceitava `stream=true` e devolvia resposta VAZIA (0 pedaços), por não falar o
+    # formato de eventos — por isso o fluxo ficava desligado para ela. Corrigido do lado dela em
+    # 09/09/2026 (formato de eventos + batimento a cada 10 s), medido aqui: o cliente consome e
+    # monta a resposta. Todos os provedores voltam a ir em fluxo, que é o que mantém a conexão
+    # viva em geração longa e permite detectar conexão morta.
+    _em_fluxo = True
     for _attempt in range(4):
         try:
             if not _em_fluxo:
