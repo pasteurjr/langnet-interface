@@ -525,14 +525,43 @@ async def execute_specification_generation(
         print(f"[SPEC GENERATION] 🔌 LLM client obtido, iniciando chamada...")
         sys.stdout.flush()
 
-        # max_tokens DINÂMICO: precisa caber no n_ctx do LLM local junto do prompt, senão o
-        # servidor aborta o stream ("openai.APIError: terminated"). Ver _safe_max_tokens.
-        _mt = _safe_max_tokens(prompt, desired=40000)
-        print(f"[SPEC GENERATION] max_tokens dinâmico = {_mt} (prompt {len(prompt)} chars)")
-        specification_document = await llm.complete_async(
-            prompt=prompt,
-            max_tokens=_mt
-        )
+        async def _completar(_p: str, max_tokens: int = 16000, **_kw) -> str:
+            """Uma chamada ao modelo, com o teto de resposta ajustado ao tamanho do pedido.
+            (o teto precisa caber no contexto do modelo local junto do prompt — ver _safe_max_tokens)"""
+            return await llm.complete_async(prompt=_p, max_tokens=_safe_max_tokens(_p, desired=max_tokens))
+
+        # GERAÇÃO EM FASES (padrão desde 09/09/2026).
+        # Antes era UMA chamada com o prompt inteiro pedindo as catorze seções de uma vez. Medido no
+        # BioByte: o modelo devolveu catorze seções com os nomes DELE, NENHUM caso de uso, e o
+        # guardião da matriz amarrou os catorze requisitos a um "UC-001" inexistente. O pedido único
+        # depende da boa vontade de quem responde; em fases, cada pedido é curto, específico e
+        # CONFERIDO. Para voltar ao caminho antigo: SPEC_EM_FASES=false no ambiente.
+        _em_fases = (os.getenv("SPEC_EM_FASES", "true").lower() != "false")
+        _relatorio_fases = None
+        if _em_fases:
+            from agents.langnetespecfases import gerar_em_fases
+            print("[SPEC GENERATION] modo EM FASES: plano → casos de uso em lotes → demais seções → montagem")
+            sys.stdout.flush()
+            specification_document, _relatorio_fases = await gerar_em_fases(
+                prompt_canonico=prompt,
+                requisitos_md=requirements_document,
+                completar=_completar,
+                titulo=f"Especificação Funcional - {request.project_id}",
+            )
+            print(f"[SPEC GENERATION] fases: {_relatorio_fases.get('chamadas')} chamada(s) | "
+                  f"casos planejados {_relatorio_fases.get('casos_planejados')} / escritos "
+                  f"{_relatorio_fases.get('casos_escritos')}")
+            for _av in (_relatorio_fases.get("avisos") or []):
+                print(f"[SPEC GENERATION] ⚠️ {_av}")
+            for _pb in (_relatorio_fases.get("problemas") or []):
+                print(f"[SPEC GENERATION] ⚠️ FALTA {_pb['o_que']}: {_pb['item']} — {_pb['motivo']}")
+            if not specification_document:
+                raise Exception("geração em fases não produziu documento — ver avisos acima")
+        else:
+            _mt = _safe_max_tokens(prompt, desired=40000)
+            print(f"[SPEC GENERATION] modo CHAMADA ÚNICA | max_tokens dinâmico = {_mt} "
+                  f"(prompt {len(prompt)} chars)")
+            specification_document = await llm.complete_async(prompt=prompt, max_tokens=_mt)
 
         print(f"[SPEC GENERATION] ✅ STEP 4 OK - LLM RETORNOU! Tamanho: {len(specification_document)} chars")
         sys.stdout.flush()
@@ -542,6 +571,8 @@ async def execute_specification_generation(
         # mapeando cada FR faltante ao UC de maior sobreposição temática. Ver
         # agents/langnettraceability.complete_matrix.
         try:
+            if _relatorio_fases is not None:
+                raise RuntimeError("modo em fases: a matriz já é construída do plano de casos de uso")
             from agents.langnettraceability import complete_matrix as _complete_matrix
             specification_document, _added = _complete_matrix(specification_document, requirements_document)
             if _added:

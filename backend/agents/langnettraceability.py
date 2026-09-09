@@ -292,6 +292,12 @@ def complete_matrix(spec_md: str, requirements_md: str):
     if not orphans:
         return spec_md, []
     ucs = _ids(spec_md, _UC)
+    if not ucs:
+        # DEFEITO CORRIGIDO (09/09/2026): sem NENHUM caso de uso no documento, o laço abaixo caía no
+        # literal 'UC-001' e escrevia uma matriz inteira apontando para um caso de uso que não
+        # existe — a rastreabilidade "fechava" em cima de nada. Agora não inventa: devolve o
+        # documento como está e o chamador vê que nada foi mapeado.
+        return spec_md, []
     # bloco de texto por UC (para medir sobreposição temática)
     uc_blocks: Dict[str, str] = {}
     parts = re.split(r'(UC-\d{2,3})', spec_md)
@@ -307,7 +313,7 @@ def complete_matrix(spec_md: str, requirements_md: str):
         m = re.search(re.escape(f) + r'\s*\|[^\|]*\|\s*([^\|]+)\|', requirements_md)
         title = m.group(1).strip() if m else f
         fw = _words(title)
-        best, best_sc = (ucs[0] if ucs else 'UC-001'), -1
+        best, best_sc = ucs[0], -1   # `ucs` nunca é vazio aqui (recusado acima)
         for uc, body in uc_blocks.items():
             sc = len(fw & _words(body))
             if sc > best_sc:
