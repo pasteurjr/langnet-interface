@@ -574,7 +574,9 @@ async def execute_specification_generation(
             if not specification_document:
                 raise Exception("geração em fases não produziu documento — ver avisos acima")
         else:
-            _mt = _safe_max_tokens(prompt, desired=40000)
+            # 65536: teto que a ponte passou a aceitar em 10/09/2026 (medido: 110 mil caracteres
+            # numa resposta). Antes de a ponte respeitar o limite, pedir mais não adiantava.
+            _mt = _safe_max_tokens(prompt, desired=int(os.getenv("SPEC_MAX_TOKENS", "65536")))
             print(f"[SPEC GENERATION] modo CHAMADA ÚNICA | max_tokens dinâmico = {_mt} "
                   f"(prompt {len(prompt)} chars)")
             specification_document = await llm.complete_async(prompt=prompt, max_tokens=_mt)
