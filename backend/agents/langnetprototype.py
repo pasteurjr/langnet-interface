@@ -415,8 +415,16 @@ def montar_prototipo(arquivos: List[Dict[str, str]], destino: Path,
 
     destino.mkdir(parents=True, exist_ok=True)
     saida_js = destino / "bundle.js"
+    # Imagens e fontes citadas pelas folhas de estilo das bibliotecas (o mapa do Leaflet aponta
+    # para .png de marcador e de camadas). Sem um leitor declarado para elas, o empacotamento
+    # PARA com "No loader is configured for .png files" e o protótipo nem monta — foi o que
+    # aconteceu quando a especificação nova trouxe uma tela de mapa. `dataurl` embute o arquivo
+    # no próprio pacote, que é o que mantém o protótipo num arquivo só.
     cmd = [esbuild, str(fonte / "src" / "index.js"), "--bundle", "--loader:.js=jsx",
-           "--loader:.jsx=jsx", f"--outfile={saida_js}",
+           "--loader:.jsx=jsx", "--loader:.png=dataurl", "--loader:.jpg=dataurl",
+           "--loader:.gif=dataurl", "--loader:.svg=dataurl", "--loader:.woff=dataurl",
+           "--loader:.woff2=dataurl", "--loader:.ttf=dataurl", "--loader:.eot=dataurl",
+           f"--outfile={saida_js}",
            # O App gerado lê process.env.REACT_APP_BACKEND_URL; sem definir o objeto inteiro,
            # o pacote quebra no navegador com "process is not defined" e a tela fica em branco.
            '--define:process={"env":{"NODE_ENV":"production"}}', "--minify"]

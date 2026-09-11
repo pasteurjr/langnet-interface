@@ -137,7 +137,9 @@ const UISpecPage: React.FC = () => {
   const [authExpired, setAuthExpired] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   // Seleção da origem (Especificação Funcional). Vazio = auto-descobrir a mais recente.
-  const [availableSpecs, setAvailableSpecs] = useState<{ id: string; version: number }[]>([]);
+  const [availableSpecs, setAvailableSpecs] = useState<
+    { id: string; version: number; nome?: string; quando?: string; tamanho?: number }[]
+  >([]);
   const [selectedSpec, setSelectedSpec] = useState<string>("");
   // AMARRAÇÃO Spec⟷Protótipo: origem (UC) da tela selecionada + edição da interação.
   const [source, setSource] = useState<ScreenSource | null>(null);
@@ -173,9 +175,20 @@ const UISpecPage: React.FC = () => {
       if (!r.ok) return;
       const d = await r.json();
       const rows = Array.isArray(d) ? d : d.sessions || d.specifications || d.results || d.items || [];
+      // Mesma correção da etapa de Modelo de Dados: a lista mostrava só o código da sessão, e com
+      // várias tentativas no projeto (inclusive as que falharam) não dava para saber qual era qual —
+      // foi assim que uma etapa nasceu da especificação errada.
       const specs = rows
-        .map((s: any) => ({ id: s.id || s.session_id, version: s.version || s.requirements_version || 1 }))
-        .filter((s: any) => s.id);
+        .filter((s: any) => !s.status || s.status === 'completed')
+        .map((s: any) => ({
+          id: s.id || s.session_id,
+          version: s.version || s.requirements_version || 1,
+          nome: s.session_name || '',
+          quando: (s.finished_at || s.started_at || '').slice(0, 16).replace('T', ' '),
+          tamanho: Number(s.doc_size || 0),
+        }))
+        .filter((s: any) => s.id)
+        .sort((a: any, b: any) => String(b.quando).localeCompare(String(a.quando)));
       setAvailableSpecs(specs);
       setSelectedSpec((prev) => prev || (specs[0] ? specs[0].id : ""));
     } catch {
@@ -301,6 +314,14 @@ const UISpecPage: React.FC = () => {
       const msg = `Tela "${d.refined_screen || selected}" atualizada`;
       setChatMessages((m) => [...m, { role: "assistant", content: msg }]);
       toast.success(msg);
+      // O protótipo mostrava a tela ANTIGA até alguém clicar de novo em "Protótipo" — quem pedia a
+      // mudança via a confirmação e o desenho velho ao lado, sem saber se tinha pegado. Agora ele é
+      // remontado sozinho e o quadro recarrega: o pedido e o resultado ficam na mesma respiração.
+      if (protoUrl) {
+        setChatMessages((m) => [...m, { role: "assistant", content: "🔄 Remontando o protótipo…" }]);
+        await gerarPrototipo();
+        setChatMessages((m) => [...m, { role: "assistant", content: "✅ Protótipo atualizado — veja ao lado." }]);
+      }
     } catch (e: any) {
       toast.error(`Falha no refino: ${e.message}`);
       setChatMessages((m) => [...m, { role: "assistant", content: `⚠️ ${e.message}` }]);
@@ -468,7 +489,9 @@ const UISpecPage: React.FC = () => {
       {availableSpecs.length === 0 && <option value="">— auto (mais recente) —</option>}
       {availableSpecs.map((s) => (
         <option key={s.id} value={s.id}>
-          📋 Spec v{s.version} ({s.id.slice(0, 8)}…)
+          {`📋 ${s.nome || `Spec v${s.version}`}`}
+          {s.quando ? ` — ${s.quando}` : ""}
+          {s.tamanho ? ` — ${Math.round(s.tamanho / 1000)} mil car.` : ""}
         </option>
       ))}
     </select>
