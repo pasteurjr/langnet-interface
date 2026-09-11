@@ -19,6 +19,7 @@ import * as documentService from '../services/documentService';
 import * as chatService from '../services/chatService';
 import {
   createSpecificationSession,
+  listSpecifications,
   getSpecification,
   updateSpecification,
   listSpecificationVersions,
@@ -93,6 +94,33 @@ const SpecificationPage: React.FC = () => {
   useEffect(() => {
     loadDocuments();
   }, [projectId]);
+
+  // Abrir a etapa passava a mostrar "Especificação não gerada" mesmo havendo especificação pronta
+  // no projeto: a página só carregava o documento se ele tivesse sido gerado NAQUELA visita. Quem
+  // voltava à etapa (ou recarregava a página) não via o próprio artefato, e o Refinar ficava sem
+  // documento em que trabalhar. Agora a etapa abre já com a última especificação concluída.
+  useEffect(() => {
+    if (!projectId || currentSessionId) return;
+    (async () => {
+      try {
+        const { sessions } = await listSpecifications(projectId, undefined, 20, 0);
+        const pronta = (sessions || [])
+          .filter((x: any) => x.status === 'completed')
+          .sort((a: any, b: any) => String(b.started_at || '').localeCompare(String(a.started_at || '')))[0];
+        if (!pronta) return;
+        const sid = (pronta as any).session_id || (pronta as any).id;
+        const doc = await getSpecification(sid);
+        const texto = (doc as any)?.specification_document || (doc as any)?.content;
+        if (!texto) return;
+        setCurrentSessionId(sid);
+        setGeneratedDocument(texto);
+        setDocumentFilename('especificacao.md');
+        loadChatHistory(sid);
+      } catch (e) {
+        console.error('não consegui abrir a última especificação do projeto:', e);
+      }
+    })();
+  }, [projectId, currentSessionId]);
 
   // Polling: Reload chat history periodically while processing
   useEffect(() => {
