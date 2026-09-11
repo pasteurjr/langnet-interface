@@ -695,7 +695,12 @@ def _split_spec_units(spec: str):
         is_interfaces = ('Interfaces do Sistema' in header) or bool(_re.match(r'^##\s*7\.', header))
         if is_use_cases and len(part) > 12000:
             # subdivide por bloco de UC (mantém intro da seção como 1º bloco)
-            subparts = _re.split(r'(?m)(?=^\*\*UC-)', part)
+            # DEFEITO CORRIGIDO (11/09/2026): o corte procurava caso de uso no formato
+            # `**UC-001**`, mas a geração em fases emite `#### UC-001:`. Sem casar, a seção
+            # INTEIRA (100 mil caracteres, os 14 casos) virava UMA unidade, o modelo não
+            # conseguia reescrevê-la com o teto de resposta, o resultado era descartado como
+            # "suspeito" e NENHUM caso de uso mudava — sem nada ser dito a quem pediu.
+            subparts = _re.split(r'(?m)(?=^(?:#{2,5}\s*|\*\*)UC-\d)', part)
             for sp in subparts:
                 if not sp.strip():
                     continue
@@ -705,6 +710,49 @@ def _split_spec_units(spec: str):
             refinavel = ('Wireframe' in part) or ('wireframe' in part) or is_interfaces
             units.append([part, refinavel])
     return units
+
+
+
+def _alvos_do_refino(instrucoes: str, units) -> set:
+    """Índices das unidades em que a instrução manda mexer.
+
+    ANTES a MESMA instrução era enviada a TODAS as unidades com croqui (15 chamadas ao modelo),
+    e cada uma decidia sozinha se aquilo era com ela. Além do desperdício, o pedido "mexa no caso
+    de uso X" chegava a todos os outros — e o que devia mudar às vezes não mudava.
+    Agora, quando a instrução NOMEIA o alvo (UC-004, "seção 7", "Interfaces do Sistema"), só ele é
+    refinado. Sem alvo declarado, mantém o comportamento antigo (todas as refináveis).
+    """
+    import re as _re
+    ucs = {u.upper() for u in _re.findall(r"\bUC-?\s?(\d{1,3})\b", instrucoes or "", _re.I)}
+    ucs = {f"UC-{int(n):03d}" for n in ucs}
+    secoes = {m for m in _re.findall(r"(?:se[çc][ãa]o|item)\s*(\d{1,2})\b", instrucoes or "", _re.I)}
+    if not ucs and not secoes:
+        return set()
+    alvos = set()
+    for i, (texto, _refinavel) in enumerate(units):
+        cabecalho = (texto.strip().splitlines() or [""])[0]
+        if any(uc in cabecalho.upper() for uc in ucs):
+            alvos.add(i)
+        m = _re.match(r"^##\s*(\d{1,2})\.", cabecalho)
+        if m and m.group(1) in secoes:
+            alvos.add(i)
+    return alvos
+
+
+def _mudou_de_verdade(original: str, refinado: str, instrucoes: str) -> tuple:
+    """(mudou, motivo). Confere se o trecho realmente mudou e, quando a instrução cita um termo
+    entre aspas ou em maiúsculas, se esse termo apareceu. Sem isso o refino "passava" devolvendo
+    o trecho igual, e ninguém ficava sabendo."""
+    import re as _re
+    if refinado.strip() == original.strip():
+        return False, "o trecho voltou igual"
+    termos = _re.findall(r'"([^"]{3,40})"', instrucoes or "")
+    for t in termos:
+        if t.lower() in refinado.lower():
+            return True, ""
+    if termos:
+        return False, f"o termo pedido não apareceu: {termos[0]!r}"
+    return True, ""
 
 
 async def _refine_specification_chunked(current_specification: str,
@@ -718,10 +766,19 @@ async def _refine_specification_chunked(current_specification: str,
     units = _split_spec_units(current_specification)
     total = len(units)
     refinaveis = sum(1 for _, r in units if r)
-    print(f"[SPEC REFINEMENT][CHUNKED] {total} unidades, {refinaveis} refináveis (com wireframe/interface)")
+    alvos = _alvos_do_refino(refinement_instructions, units)
+    if alvos:
+        print(f"[SPEC REFINEMENT][CHUNKED] {total} unidades; a instrução nomeia o alvo → "
+              f"refinando {len(alvos)}: " + ", ".join(
+                  (units[i][0].strip().splitlines() or [''])[0][:40] for i in sorted(alvos)))
+    else:
+        print(f"[SPEC REFINEMENT][CHUNKED] {total} unidades, {refinaveis} refináveis "
+              f"(instrução sem alvo declarado — vai a todas as que têm croqui/interface)")
+    relatorio = []
     out_parts = []
     for idx, (text, refinavel) in enumerate(units):
-        if not refinavel:
+        alvo = (idx in alvos) if alvos else refinavel
+        if not alvo:
             out_parts.append(text)
             continue
         first_line = text.strip().splitlines()[0] if text.strip().splitlines() else ""
@@ -752,13 +809,59 @@ REGRAS DE SAÍDA:
         if refined.startswith("```"):
             refined = _re_strip_fence(refined)
         ok = len(refined) >= max(60, int(len(text) * 0.4))
-        if ok:
+        rotulo = (text.strip().splitlines() or [""])[0][:48]
+        if not ok:
+            out_parts.append(text)
+            relatorio.append((rotulo, False, f"resposta curta demais ({len(refined)} chars)"))
+            print(f"[SPEC REFINEMENT][CHUNKED] unidade {idx} resposta curta ({len(refined)} chars) — mantendo original")
+            continue
+        mudou, motivo = _mudou_de_verdade(text, refined, refinement_instructions)
+        if not mudou:
+            # segunda e última tentativa, dizendo o que faltou — em vez de aceitar calado
+            cobranca = prompt + f"\n\nATENÇÃO: na sua resposta anterior {motivo}. Aplique a mudança pedida NESTE trecho."
+            try:
+                refined2 = ((await llm_client.complete_async(prompt=cobranca, temperature=0.5, max_tokens=8000)) or "").strip()
+                if refined2.startswith("```"):
+                    refined2 = _re_strip_fence(refined2)
+                mudou2, motivo2 = _mudou_de_verdade(text, refined2, refinement_instructions)
+                if mudou2 and len(refined2) >= max(60, int(len(text) * 0.4)):
+                    refined, mudou, motivo = refined2, True, ""
+                else:
+                    motivo = motivo2 or motivo
+            except Exception as e:  # noqa: BLE001
+                print(f"[SPEC REFINEMENT][CHUNKED] unidade {idx} recobrança falhou: {e}")
+        if mudou:
             out_parts.append(refined + ("\n\n" if not refined.endswith("\n") else ""))
+            relatorio.append((rotulo, True, f"{len(text)}→{len(refined)} chars"))
             print(f"[SPEC REFINEMENT][CHUNKED] unidade {idx} refinada ({len(text)}->{len(refined)} chars)")
         else:
             out_parts.append(text)
-            print(f"[SPEC REFINEMENT][CHUNKED] unidade {idx} refino suspeito ({len(refined)} chars) — mantendo original")
+            relatorio.append((rotulo, False, motivo))
+            print(f"[SPEC REFINEMENT][CHUNKED] unidade {idx} NÃO mudou — {motivo}")
+    globals()["_ULTIMO_RELATORIO_REFINO"] = relatorio
     return "".join(out_parts)
+
+
+_ULTIMO_RELATORIO_REFINO = []
+
+
+def _resumo_do_refino() -> str:
+    """Texto do que MUDOU e do que NÃO mudou, para a conversa da etapa.
+
+    Antes o refino podia não alterar nada (trecho grande demais para o modelo devolver, ou o
+    modelo ignorando o pedido) e a conversa dizia "concluído" do mesmo jeito. Quem pediu não
+    tinha como saber. Agora o que não mudou aparece, com o motivo.
+    """
+    rel = globals().get("_ULTIMO_RELATORIO_REFINO") or []
+    if not rel:
+        return ""
+    mudou = [r for r in rel if r[1]]
+    nao = [r for r in rel if not r[1]]
+    partes = [f"\n\n**Alterado ({len(mudou)}):**"] + [f"\n- {r[0]} — {r[2]}" for r in mudou[:12]]
+    if nao:
+        partes.append(f"\n\n**Não alterado ({len(nao)}):**")
+        partes += [f"\n- {r[0]} — {r[2]}" for r in nao[:12]]
+    return "".join(partes)
 
 
 def _re_strip_fence(s: str) -> str:
@@ -915,7 +1018,8 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
         save_specification_chat_message(
             session_id=session_id,
             sender_type='agent',
-            message_text='✅ Análise concluída. Aplicando refinamentos ao documento...',
+            message_text=('✅ Análise concluída. Aplicando refinamentos ao documento...'
+                          + _resumo_do_refino()),
             message_type='progress',
             sender_name='Agente Especificação'
         )
