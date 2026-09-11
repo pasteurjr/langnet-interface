@@ -227,6 +227,21 @@ class LLMClient:
             # ETAPA 4: Detectar truncamento
             finish_reason = response.choices[0].finish_reason
             content = response.choices[0].message.content
+            # CUSTO: o DeepSeek cobra bem menos pelo trecho inicial do pedido que ele já viu
+            # (cache de contexto). Registrar quanto veio do cache é como se confere se as
+            # chamadas em sequência estão aproveitando o mesmo começo — e é o número que diz
+            # se vale reordenar um prompt.
+            try:
+                _u = getattr(response, "usage", None)
+                _hit = getattr(_u, "prompt_cache_hit_tokens", None)
+                if _u is not None and _hit is not None:
+                    _tot = getattr(_u, "prompt_tokens", 0) or 0
+                    _pct = round(100.0 * _hit / _tot) if _tot else 0
+                    print(f"[LLM][CUSTO] entrada {_tot} tokens — {_hit} do cache ({_pct}%), "
+                          f"{getattr(_u, 'prompt_cache_miss_tokens', 0)} novos | "
+                          f"saída {getattr(_u, 'completion_tokens', 0)}")
+            except Exception:
+                pass
 
         # Rede de segurança p/ modelos de raciocínio (qwen3): remove <think>...</think> vazado.
         # Se o bloco veio truncado (sem </think>), o modelo estourou o teto raciocinando —

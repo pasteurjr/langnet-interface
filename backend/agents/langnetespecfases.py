@@ -63,6 +63,10 @@ PARTES_DO_CASO = {
     "croqui da tela": r"####\s*Wireframe",
 }
 
+# O MESMO cabeçalho em todas as chamadas: o cache de contexto do provedor casa pelo começo
+# EXATO do texto — um cabeçalho diferente já quebra o aproveitamento.
+CABECALHO_REQUISITOS = "=== DOCUMENTO DE REQUISITOS (use os nomes REAIS daqui) ===\n"
+
 Completar = Callable[..., Awaitable[str]]
 
 
@@ -131,8 +135,13 @@ async def planejar_casos_de_uso(requisitos_md: str, completar: Completar,
     """
     avisos: List[str] = []
     frs = requisitos_funcionais(requisitos_md)
+    # ORDEM IMPORTA PARA O CUSTO: o DeepSeek cobra bem menos pelo trecho INICIAL que ele já viu
+    # (cache de contexto, medido em 11/09/2026: 1.536 de 1.708 tokens vieram do cache na segunda
+    # chamada com o mesmo começo). Por isso o material GRANDE E ESTÁVEL — o documento de requisitos —
+    # vem PRIMEIRO e igual em todas as chamadas; o pedido, que muda a cada uma, vem por último.
     pedido = (
-        "Você recebe um documento de requisitos e devolve a LISTA dos casos de uso do sistema.\n\n"
+        CABECALHO_REQUISITOS + requisitos_md + "\n\n"
+        "Você recebe o documento de requisitos acima e devolve a LISTA dos casos de uso do sistema.\n\n"
         f"REQUISITOS FUNCIONAIS A COBRIR ({len(frs)}): {', '.join(frs)}\n\n"
         "Regras:\n"
         f"- pelo menos {minimo} casos de uso, numerados UC-001, UC-002, … em sequência;\n"
@@ -142,8 +151,7 @@ async def planejar_casos_de_uso(requisitos_md: str, completar: Completar,
         "- o ator é o perfil real citado nos requisitos;\n"
         "- não invente requisito que não está na lista.\n\n"
         "Responda SOMENTE um JSON, sem texto antes ou depois:\n"
-        '[{"id":"UC-001","titulo":"…","ator":"…","frs":["FR-001"]}, …]\n\n'
-        "=== DOCUMENTO DE REQUISITOS ===\n" + requisitos_md
+        '[{"id":"UC-001","titulo":"…","ator":"…","frs":["FR-001"]}, …]'
     )
     bruto = await completar(pedido, max_tokens=8000)
     try:
@@ -156,12 +164,12 @@ async def planejar_casos_de_uso(requisitos_md: str, completar: Completar,
     if faltando:
         avisos.append(f"na primeira volta ficaram sem caso de uso: {', '.join(faltando)}")
         complemento = (
+            CABECALHO_REQUISITOS + requisitos_md + "\n\n"
             "Estes requisitos funcionais ficaram SEM caso de uso na lista anterior: "
             + ", ".join(faltando) + ".\n\n"
             "Devolva SOMENTE os casos de uso que faltam para cobri-los, no mesmo formato JSON, "
             f"continuando a numeração a partir de UC-{len(plano) + 1:03d}. Não repita os que já existem.\n\n"
-            "JÁ EXISTEM: " + ", ".join(f"{p['id']} {p['titulo']}" for p in plano) + "\n\n"
-            "=== DOCUMENTO DE REQUISITOS ===\n" + requisitos_md
+            "JÁ EXISTEM: " + ", ".join(f"{p['id']} {p['titulo']}" for p in plano)
         )
         try:
             extras = [p for p in _so_json(await completar(complemento, max_tokens=6000))
@@ -213,7 +221,11 @@ async def escrever_casos_de_uso(plano: List[dict], requisitos_md: str, instrucoe
     for inicio in range(0, len(plano), por_lote):
         lote = plano[inicio:inicio + por_lote]
         alvo = ", ".join(f"{p['id']} ({p['titulo']})" for p in lote)
+        # O começo (requisitos + molde) é IGUAL em todos os lotes — é o que o cache aproveita.
+        # A lista do lote, que muda, fica no fim.
         base = (
+            CABECALHO_REQUISITOS + requisitos_md
+            + "\n\n=== MOLDE DO CASO DE USO (siga fielmente) ===\n" + instrucoes_uc + "\n\n"
             "Escreva a especificação detalhada APENAS dos casos de uso listados abaixo, no formato "
             "do molde. Nada além deles: sem introdução, sem conclusão, sem outras seções.\n\n"
             "CASOS DE USO DESTE PEDIDO:\n"
@@ -221,9 +233,7 @@ async def escrever_casos_de_uso(plano: List[dict], requisitos_md: str, instrucoe
                         f"realiza {', '.join(p['frs']) or '(ver requisitos)'}" for p in lote)
             + "\n\nCada um começa exatamente com uma linha `#### UC-XXX: Título` e traz TODAS as "
               "partes do molde: tabela de cabeçalho, Fluxo Principal, Fluxos Alternativos, "
-              "Fluxos de Exceção e Wireframe da Interface.\n\n"
-              "=== MOLDE (siga fielmente) ===\n" + instrucoes_uc
-            + "\n\n=== DOCUMENTO DE REQUISITOS (use os nomes REAIS daqui) ===\n" + requisitos_md
+              "Fluxos de Exceção e Wireframe da Interface."
         )
         texto = await completar(base, max_tokens=16000)
         partes, faltas = _separar_casos(texto, [p["id"] for p in lote])
