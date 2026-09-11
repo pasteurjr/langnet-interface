@@ -177,6 +177,14 @@ class LLMClient:
         if self.provider == "deepseek" and "reasoner" in model_to_use.lower():
             extra_params["extra_body"] = {"thinking": {"type": "enabled"}}
             print(f"[LLM] Thinking mode explicitamente ativado para {model_to_use}")
+        elif self.provider == "deepseek":
+            # Os modelos `flash` raciocinam por padrão: o raciocínio consome parte do limite de
+            # resposta e É COBRADO, sem virar conteúdo. Medido em 11/09/2026: com limite de 60
+            # tokens a resposta voltava VAZIA (110 tokens gastos só em raciocínio); com limite
+            # folgado ela vem, mas o gasto continua. Aqui a etapa quer o texto, não o raciocínio.
+            # Para ligá-lo de volta: DEEPSEEK_REASONING=true no ambiente.
+            if os.getenv("DEEPSEEK_REASONING", "false").lower() != "true":
+                extra_params["extra_body"] = {"thinking": {"type": "disabled"}}
 
         if model_override:
             print(f"[LLM] Using model override: {model_override} (default: {self.model})")
