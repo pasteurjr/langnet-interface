@@ -33,7 +33,23 @@ router = APIRouter(prefix="/specifications", tags=["specifications"])
 # Portanto max_tokens NÃO pode ser fixo: precisa caber no que sobra do contexto depois do
 # prompt. A spec (prompt ~63K chars) e o refino (prompt ~85K chars, spec+requisitos) têm
 # tamanhos MUITO diferentes — por isso calculamos dinamicamente.
-LLM_CTX_TOKENS = int(os.getenv("LLM_CTX_TOKENS", "65536"))
+def _contexto_do_provedor() -> int:
+    """Tamanho de contexto do provedor EM USO.
+
+    Antes era fixo em 65536 — o tamanho do modelo LOCAL. Passou a importar em 10/09/2026, quando a
+    ponte do Claude corrigiu o tratamento do limite de resposta: até então o limite que mandávamos
+    era ignorado, agora ele é o que o modelo lê como "escreva até aqui". Com o número do modelo
+    local, um prompt grande esmagava o limite de resposta de um modelo que tem contexto de sobra.
+    """
+    _p = (os.getenv("LLM_PROVIDER", "") or "").lower()
+    if _p == "claude_code":
+        return int(os.getenv("LLM_CTX_TOKENS", "200000"))
+    if _p == "deepseek":
+        return int(os.getenv("LLM_CTX_TOKENS", "128000"))
+    return int(os.getenv("LLM_CTX_TOKENS", "65536"))
+
+
+LLM_CTX_TOKENS = _contexto_do_provedor()
 LLM_CTX_MARGIN = int(os.getenv("LLM_CTX_MARGIN", "4096"))  # folga p/ tokens especiais/estimativa
 
 def _safe_max_tokens(prompt: str, desired: int = 40000) -> int:
