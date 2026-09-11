@@ -68,7 +68,9 @@ const DataModelPage: React.FC = () => {
   const [chatMsg, setChatMsg] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatMessage[]>([]);
-  const [availableSpecs, setAvailableSpecs] = useState<{ id: string; version: number }[]>([]);
+  const [availableSpecs, setAvailableSpecs] = useState<
+    { id: string; version: number; nome?: string; quando?: string; tamanho?: number }[]
+  >([]);
   const [selectedSpec, setSelectedSpec] = useState<string>("");
   const [instructions, setInstructions] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -122,10 +124,19 @@ const DataModelPage: React.FC = () => {
       const r = await fetch(`${API_BASE}/specifications/?project_id=${effectiveProjectId}`, { headers });
       const d = await r.json();
       const rows = Array.isArray(d) ? d : (d.sessions || d.specifications || d.results || d.items || []);
-      const list = rows.map((s: any) => ({
-        id: s.id,
-        version: s.version || s.requirements_version || 1,
-      }));
+      // A lista mostrava só o código da sessão ("Spec v1 (af633b8a…)"): com várias tentativas no
+      // projeto — inclusive as que FALHARAM — não dava para saber qual era qual. Agora traz nome,
+      // data e tamanho, e deixa de fora o que não concluiu (não serve de origem para nada).
+      const list = rows
+        .filter((s: any) => !s.status || s.status === 'completed')
+        .map((s: any) => ({
+          id: s.id,
+          version: s.version || s.requirements_version || 1,
+          nome: s.session_name || '',
+          quando: (s.finished_at || s.started_at || '').slice(0, 16).replace('T', ' '),
+          tamanho: Number(s.doc_size || 0),
+        }))
+        .sort((a: any, b: any) => String(b.quando).localeCompare(String(a.quando)));
       setAvailableSpecs(list);
       if (list.length > 0) setSelectedSpec((prev) => prev || list[0].id);
     } catch (e) {
@@ -328,7 +339,9 @@ const DataModelPage: React.FC = () => {
       {availableSpecs.length === 0 && <option value="">— nenhuma Especificação —</option>}
       {availableSpecs.map((s) => (
         <option key={s.id} value={s.id}>
-          📋 Spec v{s.version} ({s.id.slice(0, 8)}…)
+          {`📋 ${s.nome || `Spec v${s.version}`}`}
+          {s.quando ? ` — ${s.quando}` : ""}
+          {s.tamanho ? ` — ${Math.round(s.tamanho / 1000)} mil car.` : ""}
         </option>
       ))}
     </select>
