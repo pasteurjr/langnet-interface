@@ -1002,7 +1002,7 @@ Mini-linguagem das expressões: nomes (entradas e variáveis guardadas), acesso 
 conta_valor(json,'R'), tamanho(x), confere_senha(senha, hash), existe(x), entre(x,a,b), em(x,[...]),
 arredonda(x,n), hoje(), dias_entre(a,b), texto(x), numero(x), maiusculas(x), minusculas(x),
 contem(texto,parte), soma(lista,campo), media(lista,campo), primeiro(lista), vazio(x),
-codigo_valido(codigo, tamanho), hash_senha(senha) (para gravar senha_hash — senha NUNCA em claro),
+codigo_valido(codigo, tamanho), json_valido(texto), de_json(texto), hash_senha(senha) (para gravar senha_hash — senha NUNCA em claro),
 opcional(nome) (valor da entrada se veio, senão nulo — para filtros
 que podem ficar vazios: SQL "(%s IS NULL OR col >= %s)" com params ["opcional(data_inicio)","opcional(data_inicio)"]).
 Só leia nomes da lista ENTRADAS DISPONÍVEIS ou produzidos por passo anterior; nunca invente nome

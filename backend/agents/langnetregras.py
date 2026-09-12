@@ -42,7 +42,24 @@ ARGS_DE_ALVO = ("endpoint", "funcao", "função", "function", "tool", "ferrament
 # Banco de dados NÃO é ferramenta externa: no contrato, banco é `consulta`/`escrita`. Se o agente
 # embrulha o SQL numa "ferramenta de banco", o passo perde a validação de SQL/params e a
 # emissão determinística — por isso é recusado.
-FERRAMENTAS_DE_BANCO = ("database_tool", "database_query", "db_tool", "sql_tool", "database")
+FERRAMENTAS_DE_BANCO = ("database_tool", "database_query", "db_tool", "sql_tool", "database",
+                        "sql_query_tool", "sql_query", "query_tool", "db_query")
+
+
+def e_ferramenta_de_banco(nome: str) -> bool:
+    """Nome que denota acesso ao BANCO, e não uma ferramenta externa.
+
+    A lista fixa não dava conta: "sql_query_tool" não contém nenhum dos nomes dela e escapava,
+    virando pendência falsa ("registre na etapa MCP") para algo que nunca terá servidor externo.
+    Agora vale a lista OU a combinação de uma palavra de banco (sql, database, db) com uma
+    palavra de ferramenta/consulta.
+    """
+    alvo = (nome or "").strip().lower()
+    if any(b in alvo for b in FERRAMENTAS_DE_BANCO):
+        return True
+    tem_banco = any(w in alvo for w in ("sql", "database", "db_", "_db"))
+    tem_acao = any(w in alvo for w in ("tool", "query", "exec", "select", "insert", "client"))
+    return tem_banco and tem_acao
 # Ferramentas da biblioteca do gerador: SEMPRE embarcadas no app (tools_std.py), com a assinatura
 # real. Entram na lista que o agente vê e na conferência de argumentos/saída mesmo quando a etapa
 # Ferramentas não as cita — foi por não vê-las que o agente "fabricou" um token juntando textos.
@@ -89,6 +106,11 @@ FUNCOES: Dict[str, Tuple[str, int, int]] = {
     "primeiro":      ("_rt_primeiro", 1, 1),
     "vazio":         ("_rt_vazio", 1, 1),
     "codigo_valido": ("_rt_codigo_valido", 2, 3),  # codigo_valido(codigo, tamanho, segundos?)
+    # Conferir texto que veio de fora como JSON é necessidade real (resposta de serviço,
+    # arquivo importado). Sem estas duas, o agente inventava `json_valido`/`json_parse` e o
+    # contrato da ferramenta era recusado — a necessidade existia, faltava a palavra.
+    "json_valido": ("_rt_json_valido", 1, 1),      # json_valido(texto) -> verdadeiro/falso
+    "de_json": ("_rt_de_json", 1, 1),              # de_json(texto) -> objeto (recusa se inválido)
 }
 
 
@@ -1321,6 +1343,27 @@ def _rt_media(lista, campo=None):
     return (sum(vals) / len(vals)) if vals else None
 def _rt_primeiro(lista):
     l = _rt_lista(lista); return l[0] if l else None
+def _rt_json_valido(texto):
+    """Verdadeiro se o texto é um JSON legível. Objeto/lista já prontos contam como válidos."""
+    if isinstance(texto, (dict, list)):
+        return True
+    try:
+        _rt_json.loads(str(texto or ""))
+        return True
+    except Exception:
+        return False
+
+
+def _rt_de_json(texto):
+    """Texto JSON -> objeto. Texto inválido RECUSA com mensagem legível (nunca devolve meia-leitura)."""
+    if isinstance(texto, (dict, list)):
+        return texto
+    try:
+        return _rt_json.loads(str(texto or ""))
+    except Exception as e:
+        raise _RegraExecucao(f"conteúdo recebido não é um JSON válido: {e}")
+
+
 def _rt_codigo_valido(codigo, tamanho, segundos=None):
     """Código de verificação: exatamente `tamanho` dígitos. Prazo em segundos só é conferido se o
     contexto trouxer `codigo_mfa_emitido_em` (carimbo de tempo); sem ele, não se finge validade."""

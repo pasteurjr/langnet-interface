@@ -116,6 +116,25 @@ def resolver_ferramentas(binding: Dict[str, Dict[str, List[str]]],
     }
 
 
+def _e_banco(nome: str) -> bool:
+    """Ferramenta que é, na verdade, acesso ao banco (a lista vive no tradutor de regras)."""
+    try:
+        from agents.langnetregras import e_ferramenta_de_banco
+        return e_ferramenta_de_banco(nome)
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _e_chamador_generico(nome: str) -> bool:
+    """Nome genérico de chamada externa — o alvo real vai no argumento (idem)."""
+    try:
+        from agents.langnetregras import CHAMADORES_GENERICOS
+        alvo = (nome or "").strip().lower()
+        return any(c in alvo for c in CHAMADORES_GENERICOS)
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def propor_contratos(doc: Dict[str, Any], ats_md: str, completar) -> Dict[str, Any]:
     """Para cada ferramenta PENDENTE, propõe contrato e forma de implementação.
 
@@ -155,6 +174,7 @@ def propor_contratos(doc: Dict[str, Any], ats_md: str, completar) -> Dict[str, A
         "tamanho(x), existe(x), vazio(x), entre(x,a,b), em(x,[...]), arredonda(x,n), soma(lista,campo), "
         "media(lista,campo), primeiro(lista), texto(x), numero(x), maiusculas(x), minusculas(x), "
         "contem(texto,parte), hoje(), dias_entre(a,b), codigo_valido(codigo,tamanho), "
+        "json_valido(texto), de_json(texto), "
         "confere_senha(senha,hash). Operadores: + - * /, == != < <= > >=, e / ou / nao.\n\n"
         "NUNCA proponha valores de exemplo como resultado. Responda JSON puro: "
         '{"tools": [{"nome": ..., "descricao": ..., "entrada": [...], "saida": [...], '
@@ -198,6 +218,23 @@ def propor_contratos(doc: Dict[str, Any], ats_md: str, completar) -> Dict[str, A
                 item["resolvida"] = False
                 item["implementacao"] = ("regra descrita só em texto — declare os passos do cálculo "
                                          "para ela virar código")
+        elif _e_banco(item["nome"]):
+            # Banco de dados NÃO é ferramenta externa: no contrato da tarefa, ler e gravar são
+            # passos de `consulta` e `escrita`, feitos pelo programa. Ficava como pendência falsa
+            # ("registre na etapa MCP"), poluindo o inventário e o portão com algo que nunca vai
+            # ter servidor externo nenhum.
+            item["origem"] = "banco"
+            item["resolvida"] = True
+            item["implementacao"] = ("acesso a banco — vira passo de consulta/escrita na tarefa, "
+                                     "não precisa de ferramenta")
+        elif _e_chamador_generico(item["nome"]):
+            # Nome genérico de chamada ("api_call_tool"): o alvo REAL está no argumento da
+            # chamada, e costuma já estar resolvido (consultar_microbiologia, escore_risco_cox).
+            # Marcá-lo como externo criava uma pendência que ninguém consegue resolver.
+            item["origem"] = "chamador"
+            item["resolvida"] = True
+            item["implementacao"] = ("chamador genérico — o alvo real é a ferramenta citada no "
+                                     "argumento; confira se ela está resolvida acima")
         else:
             item["origem"] = "externa"
             item["resolvida"] = False
