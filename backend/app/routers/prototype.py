@@ -39,7 +39,7 @@ def _fontes(project_id: str, ui_session_id: Optional[str]):
         else:
             cur.execute("SELECT id, version, ui_spec_json, data_model_session_id "
                         "FROM ui_spec_sessions WHERE project_id=%s "
-                        "ORDER BY version DESC, created_at DESC LIMIT 1", (project_id,))
+                        "ORDER BY created_at DESC LIMIT 1", (project_id,))
         ui = cur.fetchone()
         if not ui:
             cur.close()
@@ -49,7 +49,7 @@ def _fontes(project_id: str, ui_session_id: Optional[str]):
         schema = ""
         cur.execute("SELECT schema_sql FROM data_model_sessions WHERE project_id=%s "
                     "AND schema_sql IS NOT NULL AND CHAR_LENGTH(schema_sql)>0 "
-                    "ORDER BY version DESC, created_at DESC LIMIT 1", (project_id,))
+                    "ORDER BY created_at DESC LIMIT 1", (project_id,))
         dm = cur.fetchone()
         if dm:
             schema = dm.get("schema_sql") or ""

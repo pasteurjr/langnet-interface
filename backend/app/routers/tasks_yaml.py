@@ -748,7 +748,7 @@ def _resumo_modelo_de_dados(project_id: str) -> str:
             cur = conn.cursor(dictionary=True)
             cur.execute("SELECT schema_sql FROM data_model_sessions WHERE project_id=%s "
                         "AND schema_sql IS NOT NULL AND CHAR_LENGTH(schema_sql)>0 "
-                        "ORDER BY version DESC, created_at DESC LIMIT 1", (project_id,))
+                        "ORDER BY created_at DESC LIMIT 1", (project_id,))
             row = cur.fetchone(); cur.close()
     except Exception:
         return ""
@@ -771,7 +771,7 @@ def _ui_spec_do_projeto(project_id: str) -> dict:
         with get_db_connection() as conn:
             cur = conn.cursor(dictionary=True)
             cur.execute("SELECT ui_spec_json FROM ui_spec_sessions WHERE project_id=%s "
-                        "ORDER BY version DESC, created_at DESC LIMIT 1", (project_id,))
+                        "ORDER BY created_at DESC LIMIT 1", (project_id,))
             row = cur.fetchone(); cur.close()
         ui = (row or {}).get("ui_spec_json") or "{}"
         return json.loads(ui) if isinstance(ui, str) else (ui or {})
@@ -1109,8 +1109,14 @@ def _estruturar_passos_impl(session_id: str, req: EstruturarRequest, current_use
     try:
         with get_db_connection() as conn:
             cur = conn.cursor(dictionary=True)
+            # DEFEITO CORRIGIDO (12/09/2026): ordenava por `version` ANTES da data — e a versão
+            # é contada DENTRO de cada sessão. Um modelo antigo que passou por um refino (v2)
+            # ganhava de um modelo NOVO recém-gerado (v1). No BioByte isso fez a conferência do
+            # SQL rodar contra o modelo de 01/09 (8 tabelas) em vez do de ontem (16 tabelas):
+            # 26 passos CORRETOS foram recusados com "Unknown column 'prontuario'" e afins,
+            # por colunas que existem no modelo certo. A data é que diz qual é o mais recente.
             cur.execute("SELECT schema_sql FROM data_model_sessions WHERE project_id=%s AND schema_sql IS NOT NULL "
-                        "AND CHAR_LENGTH(schema_sql)>0 ORDER BY version DESC, created_at DESC LIMIT 1", (project_id,))
+                        "AND CHAR_LENGTH(schema_sql)>0 ORDER BY created_at DESC LIMIT 1", (project_id,))
             ddl_txt = ((cur.fetchone() or {}).get("schema_sql") or ""); cur.close()
     except Exception:
         ddl_txt = ""

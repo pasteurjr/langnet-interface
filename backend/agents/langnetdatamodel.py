@@ -438,6 +438,18 @@ def _default_clause(col: Dict[str, Any]) -> str:
         return " DEFAULT CURRENT_TIMESTAMP"
     if _du == "CURRENT_DATE":
         return " DEFAULT (CURRENT_DATE)"   # MySQL exige expressão entre parênteses
+    # Booleano escrito do jeito da linguagem de programação (True/False/true/false/sim/não):
+    # numa coluna TINYINT(1) o banco RECUSA `DEFAULT 'True'` (texto em coluna numérica) e a
+    # CREATE TABLE inteira falha. Medido no BioByte em 12/09/2026: QUATRO tabelas (usuarios,
+    # microbiologias, classificacoes_nhsn e mais uma) não eram criadas por causa disto — o que
+    # derrubava a conferência de SQL das tarefas e derrubaria a instalação do aplicativo.
+    _dl = d.strip().strip("'\"").lower()
+    if _dl in ("true", "verdadeiro", "sim", "yes"):
+        return " DEFAULT 1"
+    if _dl in ("false", "falso", "nao", "não", "no"):
+        return " DEFAULT 0"
+    if _dl in ("none", "null", "nulo"):
+        return " DEFAULT NULL"
     if d.startswith("'") and d.endswith("'"):
         return " DEFAULT " + d
     if d.replace(".", "", 1).lstrip("-").isdigit():
