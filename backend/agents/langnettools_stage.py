@@ -116,6 +116,50 @@ def resolver_ferramentas(binding: Dict[str, Dict[str, List[str]]],
     }
 
 
+def _vereditar(item: Dict[str, Any]) -> None:
+    """Decide, para UMA ferramenta, se ela está resolvida e por quê — em um lugar só.
+
+    Existia em dois lugares com regras diferentes (a geração e o refino), e o refino desfazia o
+    que a geração tinha classificado. Toda mudança no inventário passa por aqui.
+    """
+    origem = (item.get("origem") or "").lower()
+    if origem in ("biblioteca", "mcp"):
+        item["resolvida"] = True
+        return
+    if origem == "banco":
+        item["resolvida"] = True
+        item["implementacao"] = ("acesso a banco — vira passo de consulta/escrita na tarefa, "
+                                 "não precisa de ferramenta")
+        return
+    if origem == "chamador":
+        item["resolvida"] = True
+        item["implementacao"] = ("chamador genérico — o alvo real é a ferramenta citada no "
+                                 "argumento; confira se ela está resolvida acima")
+        return
+    if origem == "deterministica":
+        passos = item.get("passos") if isinstance(item.get("passos"), list) else []
+        if not passos:
+            item["resolvida"] = False
+            item["problemas_regra"] = []
+            item["implementacao"] = ("regra descrita só em texto — declare os passos do cálculo "
+                                     "para ela virar código")
+            return
+        try:
+            from agents.langnetregras import validar_regra
+            probs = validar_regra(passos, item.get("entrada") or [])
+        except Exception as e:  # noqa: BLE001
+            probs = [{"passo": "-", "motivo": f"não consegui conferir a regra: {e}"}]
+        item["problemas_regra"] = probs
+        item["resolvida"] = not probs
+        item["implementacao"] = (f"regra em {len(passos)} passo(s) — vira código na geração"
+                                 if not probs else
+                                 "contrato da regra com problema: "
+                                 + "; ".join(x["motivo"] for x in probs[:2]))
+        return
+    item["resolvida"] = False
+    item.setdefault("implementacao", "precisa ser registrada na etapa MCP (sistema externo)")
+
+
 def _e_banco(nome: str) -> bool:
     """Ferramenta que é, na verdade, acesso ao banco (a lista vive no tradutor de regras)."""
     try:
@@ -199,46 +243,18 @@ def propor_contratos(doc: Dict[str, Any], ats_md: str, completar) -> Dict[str, A
         item["saida"] = [str(x) for x in (p.get("saida") or [])]
         item["regra"] = (p.get("regra") or "").strip()
         if origem == "deterministica" and item["regra"]:
-            # A regra vira CÓDIGO quando vem declarada em passos e o contrato valida — o mesmo
-            # tradutor das tarefas a emite. Só a frase, sem passos, continua pendente: a ferramenta
-            # nasce recusando e o portão barra, em vez de fingir que existe.
             item["origem"] = "deterministica"
-            passos = p.get("passos") if isinstance(p.get("passos"), list) else []
-            item["passos"] = passos
-            if passos:
-                from agents.langnetregras import validar_regra as _vr
-                probs = _vr(passos, item["entrada"])
-                item["problemas_regra"] = probs
-                item["resolvida"] = not probs
-                item["implementacao"] = (
-                    f"regra em {len(passos)} passo(s) — vira código na geração"
-                    if not probs else
-                    "contrato da regra com problema: " + "; ".join(x["motivo"] for x in probs[:2]))
-            else:
-                item["resolvida"] = False
-                item["implementacao"] = ("regra descrita só em texto — declare os passos do cálculo "
-                                         "para ela virar código")
+            item["passos"] = p.get("passos") if isinstance(p.get("passos"), list) else []
         elif _e_banco(item["nome"]):
-            # Banco de dados NÃO é ferramenta externa: no contrato da tarefa, ler e gravar são
-            # passos de `consulta` e `escrita`, feitos pelo programa. Ficava como pendência falsa
-            # ("registre na etapa MCP"), poluindo o inventário e o portão com algo que nunca vai
-            # ter servidor externo nenhum.
+            # Banco NÃO é ferramenta externa: no contrato da tarefa, ler e gravar são passos de
+            # consulta/escrita feitos pelo programa. Ficava como pendência que ninguém fecha.
             item["origem"] = "banco"
-            item["resolvida"] = True
-            item["implementacao"] = ("acesso a banco — vira passo de consulta/escrita na tarefa, "
-                                     "não precisa de ferramenta")
         elif _e_chamador_generico(item["nome"]):
-            # Nome genérico de chamada ("api_call_tool"): o alvo REAL está no argumento da
-            # chamada, e costuma já estar resolvido (consultar_microbiologia, escore_risco_cox).
-            # Marcá-lo como externo criava uma pendência que ninguém consegue resolver.
+            # Nome genérico de chamada: o alvo real vai no argumento e costuma já estar resolvido.
             item["origem"] = "chamador"
-            item["resolvida"] = True
-            item["implementacao"] = ("chamador genérico — o alvo real é a ferramenta citada no "
-                                     "argumento; confira se ela está resolvida acima")
         else:
             item["origem"] = "externa"
-            item["resolvida"] = False
-            item["implementacao"] = "precisa ser registrada na etapa MCP (sistema externo)"
+        _vereditar(item)
     doc["resumo"] = {
         "total": len(doc.get("tools", [])),
         "resolvidas": sum(1 for i in doc["tools"] if i.get("resolvida")),
@@ -275,10 +291,11 @@ def aplicar_refino(doc: Dict[str, Any], instrucao: str, completar) -> Dict[str, 
                 continue
             base = dict(antigos.get(t["nome"], {}))
             base.update(t)
-            base["resolvida"] = base.get("origem") in ("biblioteca", "mcp")
-            if base.get("origem") == "deterministica" and not base.get("passos"):
-                base["implementacao"] = ("regra descrita só em texto — declare os passos do cálculo "
-                                         "para ela virar código")
+            # O refino recalculava "resolvida" como só biblioteca/servidor externo — e com isso
+            # DESFAZIA a classificação de banco e de chamador genérico, e IGNORAVA a conferência
+            # da regra: uma regra corrigida pelo próprio refino continuava marcada como pendente,
+            # com o motivo antigo. Agora o veredito é um só, usado nos dois caminhos.
+            _vereditar(base)
             saida.append(base)
         doc["tools"] = saida
         doc["resumo"] = {

@@ -216,23 +216,9 @@ def _conferir_regras(doc: dict) -> dict:
     o contrato confere. Frase em prosa não é implementação — era assim que a interface marcava
     "resolvida" com o campo de texto preenchido, e a ferramenta nascia recusando na aplicação.
     Esta conferência é feita AQUI, no servidor, para a tela e a geração enxergarem a mesma verdade."""
-    from agents.langnetregras import validar_regra
+    from agents.langnettools_stage import _vereditar
     for t in doc.get("tools", []) or []:
-        if (t.get("origem") or "").lower() != "deterministica":
-            continue
-        passos = t.get("passos") if isinstance(t.get("passos"), list) else []
-        if not passos:
-            t["resolvida"] = False
-            t["problemas_regra"] = []
-            t["implementacao"] = ("regra descrita só em texto — declare os passos do cálculo "
-                                  "para ela virar código")
-            continue
-        probs = validar_regra(passos, t.get("entrada") or [])
-        t["problemas_regra"] = probs
-        t["resolvida"] = not probs
-        t["implementacao"] = (f"regra em {len(passos)} passo(s) — vira código na geração"
-                              if not probs else
-                              "contrato da regra com problema: " + "; ".join(x["motivo"] for x in probs[:2]))
+        _vereditar(t)
     return doc
 
 
