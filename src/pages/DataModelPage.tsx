@@ -356,7 +356,17 @@ const DataModelPage: React.FC = () => {
         fontSize: "12px",
       }}
     >
-      <strong>📋 Origem:</strong> Especificação {selectedSpec.slice(0, 8)}…
+      {/* A tarja mostrava o CÓDIGO encurtado da sessão ("af633b8a…"), que não diz nada a quem
+          olha: dava para gerar da especificação errada sem perceber. Mostra o nome, a data e o
+          tamanho — os mesmos dados da lista de escolha. */}
+      <strong>📋 Origem:</strong>{" "}
+      {(() => {
+        const o = availableSpecs.find((x) => x.id === selectedSpec);
+        if (!o) return `Especificação ${selectedSpec.slice(0, 8)}…`;
+        return `${o.nome || `Especificação v${o.version}`}`
+          + (o.quando ? ` — ${o.quando}` : "")
+          + (o.tamanho ? ` — ${Math.round(o.tamanho / 1000)} mil car.` : "");
+      })()}
     </div>
   ) : null;
 

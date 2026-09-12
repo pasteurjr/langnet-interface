@@ -506,8 +506,17 @@ const UISpecPage: React.FC = () => {
         fontSize: "12px",
       }}
     >
+      {/* Mesma correção do Modelo de Dados: o código encurtado da sessão não diz de onde o
+          artefato nasceu — e foi assim que uma etapa gerou da especificação errada. */}
       <strong>📋 Origem:</strong>{" "}
-      {selectedSpec ? `Especificação ${selectedSpec.slice(0, 8)}…` : "Especificação mais recente (auto) + Modelo de Dados"}
+      {(() => {
+        if (!selectedSpec) return "Especificação mais recente (auto) + Modelo de Dados";
+        const o = availableSpecs.find((x) => x.id === selectedSpec);
+        if (!o) return `Especificação ${selectedSpec.slice(0, 8)}…`;
+        return `${o.nome || `Especificação v${o.version}`}`
+          + (o.quando ? ` — ${o.quando}` : "")
+          + (o.tamanho ? ` — ${Math.round(o.tamanho / 1000)} mil car.` : "");
+      })()}
     </div>
   );
 
