@@ -502,6 +502,13 @@ REGRAS:
 - Preserve tudo que a instrução NÃO pediu pra mudar (id, route, demais campos).
 - Se a instrução adiciona um campo, inclua-o em `components` (com type/label/bindTo)
   E também no mockup_html.
+- A ORDEM das listas `components` e `actions` É A ORDEM EM QUE APARECEM NA TELA. Pedido de
+  POSIÇÃO ("mova para o topo", "coloque antes de X", "deixe por último", "logo abaixo de Y") se
+  cumpre MUDANDO A POSIÇÃO DO ITEM NA LISTA — e refletindo a mesma ordem no mockup_html. Medido
+  em 11/09/2026: sem esta regra o modelo acrescentava e renomeava certo, mas ignorava todo pedido
+  de reposicionamento, devolvendo a lista na ordem original e dizendo que tinha aplicado.
+- "Preservar o que não foi pedido" vale para o CONTEÚDO dos itens, não para a ordem: se a
+  instrução é sobre posição, a ordem TEM de mudar.
 - Retorne SOMENTE o objeto JSON da tela, começando com {{ e terminando com }}.
 
 ## TELA ATUAL (JSON)
