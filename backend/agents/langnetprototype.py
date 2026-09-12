@@ -245,10 +245,17 @@ def gerar_prototipo(ui_spec: dict, schema_sql: str, tasks_yaml: str,
 
     # O executor da Rede de Petri é peça do APLICATIVO (administração), não do protótipo de
     # interface. Sem removê-lo, o protótipo nem compila: o arquivo dele não é emitido aqui.
+    # E a busca do projeto no servidor do LangNet também é do aplicativo: no protótipo ela só
+    # gerava erro de origem cruzada no console (a porta 8001 nem existe aqui) — o protótipo tem
+    # de rodar SOZINHO, sem servidor nenhum atrás.
     for arq in saida:
         if arq["path"].endswith("frontend/src/App.jsx"):
             c = arq["content"]
             c = re.sub(r'(?m)^import MainExecutor from "\./components/MainExecutor";\n', "", c)
+            # tira a chamada ao servidor do LangNet (o protótipo não fala com servidor algum)
+            c = re.sub(r'(?s)\n  useEffect\(\(\) => \{\n    fetch\(`\$\{BACKEND_URL\}/api/projects`.*?\}, \[\]\);\n',
+                       '\n  // (protótipo: sem servidor — os dados vêm da semente fictícia)\n', c, count=1)
+            c = re.sub(r'(?m)^const BACKEND_URL = .*\n', '', c, count=1)
             c = re.sub(r'\{view === "admin" && \([^\n]*\)\}',
                        '{view === "admin" && (\n'
                        '          <p className="text-slate-400">Administração não faz parte do '
@@ -435,17 +442,56 @@ def montar_prototipo(arquivos: List[Dict[str, str]], destino: Path,
     if r.returncode != 0:
         return {"ok": False, "erro": (r.stderr or r.stdout or "erro ao empacotar")[-1200:]}
 
+    # ESTILO SEM INTERNET: o protótipo buscava o Tailwind num endereço da web. Fora de rede — ou
+    # numa apresentação sem internet — ele abria SEM ESTILO NENHUM, o que faz o protótipo parecer
+    # quebrado. Agora a folha é gerada aqui, a partir das classes que as telas realmente usam, e
+    # vai junto no diretório. Se a geração falhar, cai no endereço da web como antes (com aviso).
+    _estilo_local = _gerar_estilo(fonte, destino)
+    _cabeca_estilo = ('<link rel="stylesheet" href="./estilo.css">' if _estilo_local
+                      else '<script src="https://cdn.tailwindcss.com"></script>')
     (destino / "index.html").write_text(
         '<!doctype html><html lang="pt-br"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
         f'<title>{project_name} — protótipo</title>'
-        '<script src="https://cdn.tailwindcss.com"></script>'
+        + _cabeca_estilo +
         '<style>body{margin:0}</style></head><body><div id="root"></div>'
         '<script src="./bundle.js"></script></body></html>', encoding="utf-8")
 
     resumo = resumo_prototipo(arquivos)
     resumo.update({"ok": True, "erro": "", "bytes": saida_js.stat().st_size})
     return resumo
+
+
+
+def _gerar_estilo(fonte: Path, destino: Path) -> bool:
+    """Gera `estilo.css` do protótipo com o Tailwind LOCAL, varrendo as telas emitidas.
+
+    Devolve True se conseguiu. Sem isso o protótipo depende da internet para ter aparência — e
+    numa apresentação sem rede ele abre cru, parecendo quebrado.
+    """
+    tw = CACHE_FRONTEND / "node_modules" / ".bin" / "tailwindcss"
+    if not tw.exists():
+        print("[prototipo] tailwind local ausente — o estilo virá da web")
+        return False
+    try:
+        entrada = destino / "_entrada.css"
+        entrada.write_text("@tailwind base;\n@tailwind components;\n@tailwind utilities;\n",
+                           encoding="utf-8")
+        cfg = destino / "_tailwind.config.js"
+        cfg.write_text('module.exports={content:["' + str(fonte) + '/**/*.{js,jsx}"],theme:{extend:{}},plugins:[]};\n',
+                       encoding="utf-8")
+        r = subprocess.run([str(tw), "-c", str(cfg), "-i", str(entrada),
+                            "-o", str(destino / "estilo.css"), "--minify"],
+                           capture_output=True, text=True, timeout=180)
+        entrada.unlink(missing_ok=True); cfg.unlink(missing_ok=True)
+        if r.returncode != 0 or not (destino / "estilo.css").exists():
+            print(f"[prototipo] falha ao gerar o estilo local: {(r.stderr or '')[-200:]}")
+            return False
+        print(f"[prototipo] estilo local gerado: {(destino / 'estilo.css').stat().st_size} bytes")
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"[prototipo] estilo local indisponível ({e}) — usando o da web")
+        return False
 
 
 # ── Fase 5: contrato de tela ──────────────────────────────────────────────────
