@@ -2354,6 +2354,25 @@ def _conferir_e_reparar_estrutura(net: Dict[str, Any]) -> Dict[str, Any]:
             f"nenhuma): {', '.join(penduradas)}"
         )
 
+    # ── 1b. transição de controle pendurada (sem seta nenhuma) ────────────────────────────────
+    # O portão só cobrava transição de TAREFA solta e deixava passar as de controle: a revisão de
+    # 13/09/2026 achou T_fim_auth_fail sem entrada nem saída. Controle sem seta não faz nada.
+    de, para = _pontas()
+    controle_solto = [
+        tid for tid, t in transicoes.items()
+        if not t.get("task_id") and not de.get(tid) and not para.get(tid)
+    ]
+    if controle_solto:
+        net["transicoes"] = [
+            t for t in net["transicoes"] if str(t.get("id")) not in set(controle_solto)
+        ]
+        for tid in controle_solto:
+            transicoes.pop(tid, None)
+        consertos.append(
+            f"{len(controle_solto)} transição(ões) de controle pendurada(s) removida(s): "
+            f"{', '.join(controle_solto)}"
+        )
+
     # ── 2. disputa de ficha: uma posição alimentando várias transições sem guarda ──────────────
     de, para = _pontas()
     for pid in list(lugares):
@@ -2585,17 +2604,34 @@ def _declarar_origem_das_entradas(net: Dict[str, Any]) -> Dict[str, Any]:
     trocados: List[str] = []
     for pid, lugar in lugares.items():
         entradas = list((lugar.get("input_data") or {}).keys())
-        if not entradas:
-            continue
-        produtores: Dict[str, str] = {}
+        # O que chega nesta posição vindo de trás e NÃO nasce aqui: na execução cada posição junta
+        # o que as anteriores produziram e passa o pacote adiante, então o dado atravessa o meio do
+        # caminho. Sem declarar isso, quem lê a planta vê o identificador do usuário nascer no login
+        # e ser consumido seis passos depois, com as posições do meio "sem ele" — e conclui, errado,
+        # que o dado se perde. (Apontado pela revisão de 13/09/2026.)
+        de_tras: Dict[str, str] = {}
         for up in _montante(pid):
             for campo in (lugares[up].get("output_data") or {}):
-                produtores.setdefault(_chave(campo), f"{up}.{campo}")
+                de_tras.setdefault(_chave(campo), f"{up}.{campo}")
+        nasce_aqui = {_chave(c) for c in (lugar.get("output_data") or {})}
+        repassa = sorted(
+            {v.split(".", 1)[1] for k, v in de_tras.items() if k not in nasce_aqui}
+        )
+        if repassa:
+            lugar["repassa"] = repassa
+        if not entradas:
+            continue
+        vizinhos = {
+            _chave(c): f"{up}.{c}"
+            for up in anteriores.get(pid, ())
+            for c in (lugares[up].get("output_data") or {})
+        }
         origem: Dict[str, str] = {}
         for campo in entradas:
-            achado = produtores.get(_chave(campo))
+            achado = vizinhos.get(_chave(campo)) or de_tras.get(_chave(campo))
             if achado:
-                origem[campo] = achado
+                direto = _chave(campo) in vizinhos
+                origem[campo] = achado if direto else f"{achado} (repassado pelo caminho)"
                 if achado.split(".", 1)[1] != campo:
                     trocados.append(f"{pid}.{campo} ← {achado} (mesmo dado, nome diferente)")
             else:
