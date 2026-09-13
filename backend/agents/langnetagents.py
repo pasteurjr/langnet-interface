@@ -2279,11 +2279,29 @@ def _preencher_saidas_dos_lugares(net: Dict[str, Any], tasks_yaml: str) -> Dict[
             campos = [k for k in props if k not in ("type", "required")]
         return campos
 
+    def _tarefa_do_lugar(lugar: Dict[str, Any]) -> Any:
+        """Qual tarefa é a deste lugar.
+
+        O rótulo `task_name` só é colado no FIM da etapa — aqui ele ainda não existe, e por isso a
+        primeira versão desta rotina casava ZERO tarefas (medido em 13/09/2026). Reconhece também
+        pelo título do lugar ("Task <nome> pronta") e pelo identificador.
+        """
+        direto = tarefas.get(str(lugar.get("task_name") or ""))
+        if isinstance(direto, dict):
+            return direto
+        texto = f"{lugar.get('nome') or ''} {lugar.get('id') or ''}".lower()
+        candidatas = [n for n in tarefas if isinstance(tarefas.get(n), dict) and str(n).lower() in texto]
+        if len(candidatas) == 1:
+            return tarefas[candidatas[0]]
+        if candidatas:  # mais de uma: fica com o nome mais longo (o mais específico)
+            return tarefas[max(candidatas, key=len)]
+        return None
+
     preenchidos = 0
     for lugar in net.get("lugares", []) or []:
         if lugar.get("output_data"):
             continue
-        cfg = tarefas.get(str(lugar.get("task_name") or ""))
+        cfg = _tarefa_do_lugar(lugar)
         if not isinstance(cfg, dict):
             continue
         campos = _saidas_da_tarefa(cfg)
