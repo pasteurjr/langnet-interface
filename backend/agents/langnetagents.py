@@ -2229,6 +2229,150 @@ def _repair_json(s: str) -> Dict[str, Any]:
         return {}
 
 
+def _preencher_saidas_dos_lugares(net: Dict[str, Any], tasks_yaml: str) -> Dict[str, Any]:
+    """Preenche `output_data` de cada lugar com o que a TAREFA dele declara devolver.
+
+    DEFEITO QUE ISTO CORRIGE (medido em 13/09/2026, revisão da rede do BioByte): `output_data`
+    vinha VAZIO em todos os lugares — a rede encadeava as tarefas na ordem certa, mas não dizia o
+    que cada uma entrega para a próxima. Quem lê a rede não conseguia responder "o dado que esta
+    tarefa consome, quem produziu?". E o modelo não tem como adivinhar isso: já está escrito no
+    contrato da tarefa (passo `retorno`) e no esquema de saída do tasks.yaml. Aqui é só copiar.
+
+    Preenche apenas o que estiver vazio — nunca sobrescreve o que o modelo tenha declarado.
+    """
+    if not tasks_yaml:
+        return net
+    try:
+        import re
+        import yaml as _yaml
+        m = re.search(r"```(?:ya?ml)?\s*\n(.*?)\n```", tasks_yaml, re.S)
+        tarefas = _yaml.safe_load(m.group(1) if m else tasks_yaml) or {}
+    except Exception as e:  # noqa: BLE001
+        print(f"[PETRI] não consegui ler o tasks.yaml para preencher as saídas: {e}")
+        return net
+
+    def _saidas_da_tarefa(cfg: Dict[str, Any]) -> List[str]:
+        campos: List[str] = []
+        import re
+
+        def _varrer(passos: Any) -> None:
+            # O passo de retorno pode estar DENTRO de um condicional ou de um laço (é o caso da
+            # autenticação e do registro de auditoria do BioByte): varrer só o primeiro nível
+            # deixava essas tarefas sem saída declarada.
+            for passo in (passos or []):
+                if not isinstance(passo, dict):
+                    continue
+                if str(passo.get("tipo")) == "retorno":
+                    for c in (passo.get("campos") or []):
+                        nome = re.split(r"\s+como\s+", str(c))[-1].strip()
+                        nome = nome.split(".")[-1]
+                        if nome and nome not in campos:
+                            campos.append(nome)
+                for aninhado in ("passos", "senao", "passos_senao"):
+                    if passo.get(aninhado):
+                        _varrer(passo.get(aninhado))
+
+        _varrer(cfg.get("steps"))
+        if not campos:
+            esquema = cfg.get("output_schema") or {}
+            props = (esquema.get("properties") or {}) if isinstance(esquema, dict) else {}
+            campos = [k for k in props if k not in ("type", "required")]
+        return campos
+
+    preenchidos = 0
+    for lugar in net.get("lugares", []) or []:
+        if lugar.get("output_data"):
+            continue
+        cfg = tarefas.get(str(lugar.get("task_name") or ""))
+        if not isinstance(cfg, dict):
+            continue
+        campos = _saidas_da_tarefa(cfg)
+        if campos:
+            lugar["output_data"] = {c: "" for c in campos}
+            preenchidos += 1
+    if preenchidos:
+        print(f"[PETRI] saída declarada em {preenchidos} lugar(es), a partir do contrato da tarefa")
+    return net
+
+
+
+def _declarar_origem_das_entradas(net: Dict[str, Any]) -> Dict[str, Any]:
+    """Diz, para CADA entrada de cada lugar, DE ONDE o dado vem.
+
+    A revisão de 13/09/2026 cobrou exatamente isto: "as informações de entrada de um lugar estão
+    sendo fornecidas corretamente pela saída?". Antes não havia como responder — a rede encadeava
+    as tarefas mas não dizia quem produz o que cada uma consome.
+
+    Para cada campo de entrada procura um produtor entre os lugares A MONTANTE (seguindo os arcos,
+    lugar → transição → lugar). Casa por nome igual e também por nome REORDENADO — `alerta_id` e
+    `id_alerta` são o mesmo dado escrito de dois jeitos, e essa troca passava batida. O que não tem
+    produtor fica marcado como entrada externa (tela/operador/sessão), para o revisor julgar se é
+    mesmo digitada por alguém ou se é um encaixe que ficou solto.
+    """
+    import re
+    lugares = {str(l.get("id")): l for l in (net.get("lugares") or []) if isinstance(l, dict)}
+    arcos = net.get("arcos") or net.get("arestas") or []
+    saindo: Dict[str, set] = {}
+    for a in arcos:
+        if not isinstance(a, dict):
+            continue
+        o = str(a.get("origem") or a.get("source") or a.get("from") or "")
+        d = str(a.get("destino") or a.get("target") or a.get("to") or "")
+        if o and d:
+            saindo.setdefault(o, set()).add(d)
+    # vizinho de lugar para lugar (atravessando a transição do meio)
+    anteriores: Dict[str, set] = {}
+    for o, destinos in saindo.items():
+        if o not in lugares:
+            continue
+        for t in destinos:
+            for d in saindo.get(t, ()):  # noqa: B007
+                if d in lugares:
+                    anteriores.setdefault(d, set()).add(o)
+
+    def _montante(pid: str) -> set:
+        vistos: set = set()
+        fila = list(anteriores.get(pid, ()))
+        while fila:
+            x = fila.pop()
+            if x in vistos:
+                continue
+            vistos.add(x)
+            fila.extend(anteriores.get(x, ()))
+        return vistos
+
+    def _chave(nome: str) -> str:
+        return "_".join(sorted(re.split(r"[^a-z0-9]+", str(nome).lower()) or []))
+
+    soltas: List[str] = []
+    trocados: List[str] = []
+    for pid, lugar in lugares.items():
+        entradas = list((lugar.get("input_data") or {}).keys())
+        if not entradas:
+            continue
+        produtores: Dict[str, str] = {}
+        for up in _montante(pid):
+            for campo in (lugares[up].get("output_data") or {}):
+                produtores.setdefault(_chave(campo), f"{up}.{campo}")
+        origem: Dict[str, str] = {}
+        for campo in entradas:
+            achado = produtores.get(_chave(campo))
+            if achado:
+                origem[campo] = achado
+                if achado.split(".", 1)[1] != campo:
+                    trocados.append(f"{pid}.{campo} ← {achado} (mesmo dado, nome diferente)")
+            else:
+                origem[campo] = "entrada externa (tela/operador/sessão)"
+                soltas.append(f"{pid}.{campo}")
+        lugar["origem_das_entradas"] = origem
+    if trocados:
+        print("[PETRI] entradas ligadas apesar do nome trocado: " + "; ".join(trocados))
+    print(
+        f"[PETRI] origem declarada; {len(soltas)} entrada(s) sem produtor na rede "
+        f"(a conferir se são digitadas): {', '.join(soltas[:12])}"
+    )
+    return net
+
 def _enforce_bipartite(net: Dict[str, Any]) -> Dict[str, Any]:
     """Garante que a Rede de Petri seja um GRAFO BIPARTIDO (regra fundamental de Petri):
     arco só liga lugar↔transição. NUNCA transição→transição nem lugar→lugar.
@@ -2363,6 +2507,10 @@ def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNe
     adapted = _adapt_petri_net(parsed if isinstance(parsed, dict) else {})
     # Reparo determinístico de BIPARTIÇÃO (regra topológica de Petri) antes de validar/salvar.
     adapted = _enforce_bipartite(adapted)
+    # O que cada lugar ENTREGA para os seguintes, tirado do contrato da própria tarefa.
+    adapted = _preencher_saidas_dos_lugares(adapted, state.get("tasks_yaml") or "")
+    # De onde vem cada entrada: de um lugar anterior, ou de fora (tela/operador).
+    adapted = _declarar_origem_das_entradas(adapted)
     print(
         f"[PETRI OUT] adapted: lugares={len(adapted.get('lugares', []))} "
         f"transicoes={len(adapted.get('transicoes', []))} "

@@ -256,6 +256,10 @@ async def generate_petri_net(
     state["agents_data"] = agents_list
     state["tasks_data"] = tasks_list
     state["dependencies"] = {"flow_document_md": flow_document} if flow_document else {}
+    # O TEXTO do contrato das tarefas, além da lista fatiada: é nele que está escrito o que cada
+    # tarefa DEVOLVE (passo de retorno / esquema de saída). Sem isso a rede sai sem declarar o que
+    # um lugar entrega para os seguintes — defeito grave apontado na revisão de 13/09/2026.
+    state["tasks_yaml"] = tasks_yaml_content
     # Usa o provider configurado (LLM_PROVIDER, ex.: lmstudio). NÃO forçar DeepSeek cloud —
     # regra do projeto: nunca usar DeepSeek cloud. use_deepseek=True causava timeout de 900s
     # e violava a restrição. Com False, get_llm respeita LLM_PROVIDER=lmstudio.
