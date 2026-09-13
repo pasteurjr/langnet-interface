@@ -191,10 +191,13 @@ const TasksYamlHistoryModal: React.FC<TasksYamlHistoryModalProps> = ({
   };
 
   const handleVersionClick = (version: number) => {
+    // Avisar as DUAS coisas ao mesmo tempo fazia os dois avisos correrem juntos e brigarem: o de
+    // sessão zera a versão escolhida, e quem terminasse por último ganhava. Resultado (13/09/2026):
+    // a versão aparecia carregada na tela mas a página achava que nenhuma versão estava escolhida,
+    // e o botão de tornar vigente ficava desabilitado para sempre. Escolher versão avisa só a versão.
     if (onSelectVersion && selectedSessionId) {
       onSelectVersion(selectedSessionId, version);
-    }
-    if (onSelectSession && selectedSessionId) {
+    } else if (onSelectSession && selectedSessionId) {
       onSelectSession(selectedSessionId, selectedSessionName);
     }
     onClose();

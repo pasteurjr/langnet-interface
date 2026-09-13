@@ -772,7 +772,9 @@ async def restore_tasks_yaml_version(session_id: str, version: int):
         "version": nova,
         "tasks_yaml_content": conteudo,
         "created_by": None,
-        "change_type": "restore",
+        # A coluna aceita uma lista fechada de tipos e 'restore' não está nela; a restauração é
+        # uma edição deliberada do usuário sobre o documento vigente.
+        "change_type": "manual_edit",
         "change_description": f"restaurada a versão {version}",
         "doc_size": len(conteudo),
     })

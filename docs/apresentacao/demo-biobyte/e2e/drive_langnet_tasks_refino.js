@@ -61,6 +61,16 @@ const shot=async(p,tag)=>{const f=`${OUT}/${N}-langnet-${tag}.png`;await p.scree
   await shot(p,'tasks-versao-carregada');
   const texto = await p.evaluate(()=>document.body.innerText);
   console.log('estado:', texto.replace(/\n+/g,' | ').slice(0,300));
+  // Nesta etapa o miolo é largo e a conversa começa RECOLHIDA — é preciso abrir pelo botão
+  // "Refinar com o agente", senão a caixa de mensagem simplesmente não existe na página.
+  const abrirChat = p.getByRole('button', { name: /Refinar com o agente/i }).first();
+  if (await abrirChat.count()) {
+    await abrirChat.click({ timeout: 12000 }).catch(() => {});
+    await sleep(2500);
+    console.log('conversa aberta');
+  } else {
+    console.log('(botão de abrir a conversa não achado — talvez já esteja aberta)');
+  }
   // A conversa é a caixa de mensagem do painel do meio.
   const caixa = p.getByPlaceholder(/Digite sua mensagem/i).first();
   if (!await caixa.count()) { console.log('!! caixa da conversa não achada'); await shot(p,'tasks-sem-caixa'); await b.close(); return; }
