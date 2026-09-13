@@ -450,6 +450,48 @@ async def refine_tasks_yaml(
     }
 
 
+
+# ═══════════════════════════════════════════════════════════
+# REFINO CIRÚRGICO — só as tarefas citadas no pedido
+# ═══════════════════════════════════════════════════════════
+
+def _blocos_de_tarefa(texto: str) -> dict:
+    """Recorta o texto em blocos por tarefa (a chave de primeiro nível e tudo que vem abaixo)."""
+    import re as _re
+    corpo = texto
+    cerca = _re.search(r"```(?:ya?ml)?\s*\n(.*?)\n```", texto, _re.S)
+    if cerca:
+        corpo = cerca.group(1)
+    pontos = [(m.start(), m.group(1)) for m in _re.finditer(r"(?m)^([a-z][a-z0-9_]*):\s*$", corpo)]
+    blocos = {}
+    for i, (ini, nome) in enumerate(pontos):
+        fim = pontos[i + 1][0] if i + 1 < len(pontos) else len(corpo)
+        blocos[nome] = corpo[ini:fim]
+    return blocos
+
+
+def _yaml_valido(texto: str):
+    """(ok, erro) — o texto é YAML que abre? Evita gravar documento cortado no meio."""
+    import re as _re
+    import yaml as _yaml
+    corpo = texto
+    cerca = _re.search(r"```(?:ya?ml)?\s*\n(.*?)\n```", texto, _re.S)
+    if cerca:
+        corpo = cerca.group(1)
+    try:
+        d = _yaml.safe_load(corpo)
+        if not isinstance(d, dict) or not d:
+            return False, "o conteúdo não é um mapa de tarefas"
+        return True, ""
+    except Exception as e:  # noqa: BLE001
+        return False, str(e).split("\n")[0][:200]
+
+
+def _tarefas_citadas(pedido: str, blocos: dict) -> list:
+    """Quais tarefas o pedido menciona pelo nome."""
+    baixo = (pedido or "").lower()
+    return [n for n in blocos if n.lower() in baixo]
+
 async def execute_tasks_yaml_refinement(session_id: str, user_message: str):
     """
     Background: Refina tasks.yaml com contexto completo
@@ -509,8 +551,72 @@ async def execute_tasks_yaml_refinement(session_id: str, user_message: str):
             "message_type": "progress"
         })
 
-        # 6. CONSTRUIR PROMPT DE REFINAMENTO
-        refinement_prompt = f"""# REFINAMENTO DE TASKS.YAML CREWAI
+        # 6. REFINO CIRÚRGICO — só as tarefas citadas no pedido.
+        #
+        # DEFEITO QUE ISTO CORRIGE (13/09/2026): o refino mandava REESCREVER O DOCUMENTO INTEIRO
+        # com teto de 16 mil tokens. O contrato do BioByte tem 93 mil caracteres (~30 mil tokens):
+        # a resposta vinha CORTADA no meio de uma frase, e era gravada assim, como nova versão,
+        # com a mensagem "refinado com sucesso". O contrato de passos das 14 tarefas — o que impede
+        # a lógica de sumir — ia junto. Agora reescreve-se só o que foi pedido, e confere-se antes
+        # de gravar.
+        blocos = _blocos_de_tarefa(current_yaml)
+        alvos = _tarefas_citadas(user_message, blocos)
+        start_time = time.time()
+        falhas = []
+
+        if alvos and len(alvos) < len(blocos):
+            print(f"[TASKS_YAML_REFINE] 🎯 cirúrgico em {len(alvos)} de {len(blocos)} tarefas: {', '.join(alvos)}")
+            refined_yaml = current_yaml
+            for nome in alvos:
+                pedido_tarefa = f"""# REFINAMENTO DE UMA TAREFA DO TASKS.YAML
+
+Abaixo está UMA tarefa do arquivo de tarefas. Aplique NELA a parte do pedido que lhe diz respeito.
+
+## TAREFA ATUAL
+
+```yaml
+{blocos[nome]}
+```
+
+## PEDIDO DO USUÁRIO (aplique só a parte que é desta tarefa)
+
+{user_message}
+
+## REGRAS
+
+1. Devolva a tarefa COMPLETA, do nome dela até o fim, em YAML válido.
+2. NÃO mude o nome da tarefa nem remova campos existentes (traceability, execution, agent,
+   description, expected_output, steps). Se ela tem `steps:`, devolva os passos INTEIROS.
+3. Mexa APENAS no que o pedido determina. O resto fica idêntico, caractere por caractere.
+4. Sem preâmbulo, sem explicação, sem cerca de código. Só o YAML da tarefa.
+"""
+                bloco_novo = await get_llm_response_async(
+                    prompt=pedido_tarefa,
+                    system="Você é um especialista em CrewAI e configuração de tarefas.",
+                    temperature=0.2,
+                    max_tokens=16000,
+                )
+                import re as _re
+                _c = _re.search(r"```(?:ya?ml)?\s*\n(.*?)\n```", bloco_novo or "", _re.S)
+                bloco_novo = (_c.group(1) if _c else (bloco_novo or "")).strip("\n")
+                ok, erro = _yaml_valido(bloco_novo)
+                tinha_passos = "steps:" in blocos[nome]
+                if not ok:
+                    falhas.append(f"{nome}: resposta não é YAML válido ({erro})")
+                    continue
+                if tinha_passos and "steps:" not in bloco_novo:
+                    falhas.append(f"{nome}: a resposta perdeu o contrato de passos — descartada")
+                    continue
+                if not bloco_novo.lstrip().startswith(f"{nome}:"):
+                    falhas.append(f"{nome}: a resposta não começa pela própria tarefa — descartada")
+                    continue
+                refined_yaml = refined_yaml.replace(blocos[nome], bloco_novo + "\n")
+                print(f"[TASKS_YAML_REFINE]   ✓ {nome}: {len(blocos[nome])} → {len(bloco_novo)} caracteres")
+        else:
+            # Pedido que não nomeia tarefa: reescreve tudo, mas com teto proporcional ao tamanho.
+            teto = max(16000, min(60000, int(len(current_yaml) / 2.5) + 4000))
+            print(f"[TASKS_YAML_REFINE] documento inteiro, teto de {teto} tokens para {len(current_yaml)} caracteres")
+            refinement_prompt = f"""# REFINAMENTO DE TASKS.YAML CREWAI
 
 Você é um especialista em CrewAI e configuração de tarefas.
 
@@ -519,8 +625,6 @@ Você é um especialista em CrewAI e configuração de tarefas.
 {current_yaml}
 
 ## ESPECIFICAÇÃO DE AGENTES/TAREFAS (REFERÊNCIA - NÃO REPRODUZA)
-
-⚠️ **IMPORTANTE**: Use apenas como CONTEXTO. NÃO reproduza este documento.
 
 {agent_task_spec_document[:15000] if agent_task_spec_document else "Não disponível"}
 
@@ -532,44 +636,39 @@ Você é um especialista em CrewAI e configuração de tarefas.
 
 ## INSTRUÇÕES CRÍTICAS
 
-1. **Mantenha a estrutura**: Preserve EXATAMENTE a estrutura YAML existente
-2. **Mantenha IDs de tasks**: NÃO altere nomes de tarefas já definidas
-3. **Aplique APENAS as mudanças solicitadas**: NÃO faça modificações não pedidas
-4. **Seja CIRÚRGICO**: Modifique APENAS o que foi solicitado, mantendo todo o resto IDÊNTICO
-5. **Formato YAML válido**: Use `>` para textos multiline, identação de 2 espaços
-6. **Expected_output**: SEMPRE textual (não JSON literal)
-7. **NÃO EXPANDA**: NÃO adicione explicações extras ou tarefas não solicitadas
-8. **TAMANHO**: O YAML refinado deve ter tamanho SIMILAR ao original (~{len(current_yaml)} caracteres)
-
-⚠️ **CRÍTICO**:
-- NÃO reproduza a especificação de agentes/tarefas
-- NÃO adicione comentários YAML desnecessários
-- NÃO expanda descrições desnecessariamente
-- Seja CONCISO e OBJETIVO
-
-## OUTPUT
-
-Retorne APENAS o tasks.yaml COMPLETO com as modificações aplicadas.
-NÃO adicione preâmbulos, explicações ou conclusões.
-
-Gere agora o tasks.yaml refinado:
+1. Preserve a estrutura YAML existente e os nomes das tarefas.
+2. Aplique APENAS as mudanças pedidas; o resto fica idêntico.
+3. Se uma tarefa tem `steps:`, devolva os passos INTEIROS.
+4. Retorne o tasks.yaml COMPLETO, sem preâmbulo nem explicação.
 """
-
-        # 7. CHAMAR LLM ASSÍNCRONO
-        start_time = time.time()
-
-        print(f"[TASKS_YAML_REFINE] 📝 Refinando YAML: {len(user_message)} chars de solicitação")
-
-        refined_yaml = await get_llm_response_async(
-            prompt=refinement_prompt,
-            system="Você é um especialista em CrewAI e configuração de tarefas.",
-            temperature=0.3,
-            max_tokens=16000
-        )
+            refined_yaml = await get_llm_response_async(
+                prompt=refinement_prompt,
+                system="Você é um especialista em CrewAI e configuração de tarefas.",
+                temperature=0.3,
+                max_tokens=teto,
+            )
 
         generation_time_ms = int((time.time() - start_time) * 1000)
+        print(f"[TASKS_YAML_REFINE] ✅ {len(refined_yaml)} chars em {generation_time_ms/1000:.1f}s")
 
-        print(f"[TASKS_YAML_REFINE] ✅ LLM retornou: {len(refined_yaml)} chars em {generation_time_ms/1000:.1f}s")
+        # 7. PORTÃO: documento cortado ou quebrado NÃO é gravado.
+        ok, erro = _yaml_valido(refined_yaml)
+        if not ok:
+            raise Exception(
+                f"o refino devolveu documento inválido ({erro}) — a versão anterior foi mantida"
+            )
+        antes, depois = len(_blocos_de_tarefa(current_yaml)), len(_blocos_de_tarefa(refined_yaml))
+        if depois < antes:
+            raise Exception(
+                f"o refino devolveu {depois} tarefas e o documento tinha {antes} — "
+                "a versão anterior foi mantida"
+            )
+        passos_antes = current_yaml.count("steps:")
+        if passos_antes and refined_yaml.count("steps:") < passos_antes:
+            raise Exception(
+                f"o refino perdeu contrato de passos ({refined_yaml.count('steps:')} de "
+                f"{passos_antes}) — a versão anterior foi mantida"
+            )
 
         # 8. CONTAR TASKS
         task_matches = re.findall(r'^[a-z_]+:', refined_yaml, re.MULTILINE)
@@ -606,7 +705,11 @@ Gere agora o tasks.yaml refinado:
         save_tasks_yaml_chat_message({
             "session_id": session_id,
             "sender_type": "agent",
-            "message_text": f"✅ YAML refinado com sucesso!\n\n📊 {total_tasks} tarefas.\n📌 Versão {new_version} criada.",
+            "message_text": (
+                f"✅ YAML refinado com sucesso!\n\n📊 {total_tasks} tarefas.\n"
+                f"📌 Versão {new_version} criada."
+                + ("\n\n⚠️ O que NÃO foi aplicado:\n- " + "\n- ".join(falhas) if falhas else "")
+            ),
             "message_type": "result"
         })
 
@@ -620,6 +723,66 @@ Gere agora o tasks.yaml refinado:
             "status": "failed",
             "finished_at": datetime.now()
         })
+        # O erro precisa APARECER na conversa. Antes ele só ia para o registro do servidor e a
+        # tela ficava girando — quem pediu a correção não sabia que ela tinha sido recusada.
+        try:
+            save_tasks_yaml_chat_message({
+                "session_id": session_id,
+                "sender_type": "agent",
+                "message_text": f"❌ O refinamento NÃO foi aplicado: {str(e)}",
+                "message_type": "result",
+            })
+        except Exception:  # noqa: BLE001
+            pass
+
+
+# ═══════════════════════════════════════════════════════════
+# RESTAURAR VERSÃO
+# ═══════════════════════════════════════════════════════════
+
+@router.post("/{session_id}/restore/{version}")
+async def restore_tasks_yaml_version(session_id: str, version: int):
+    """Torna VIGENTE uma versão do histórico.
+
+    Antes disto, escolher uma versão no histórico só trocava o que aparecia na tela: o conteúdo
+    vigente continuava sendo o da última alteração, e o refino seguinte partia dele. Quando um
+    refino estragava o documento (13/09/2026: resposta cortada gravada como boa), não havia como
+    voltar pela interface. A etapa da Rede de Petri já tinha isso; esta não.
+    """
+    session = get_tasks_yaml_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    versoes = get_tasks_yaml_versions(session_id) or []
+    alvo = next((v for v in versoes if int(v.get("version") or 0) == int(version)), None)
+    if not alvo or not alvo.get("tasks_yaml_content"):
+        raise HTTPException(status_code=404, detail=f"Versão {version} não encontrada")
+    conteudo = alvo["tasks_yaml_content"]
+    ok, erro = _yaml_valido(conteudo)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"A versão {version} está quebrada ({erro})")
+    nova = max([int(v.get("version") or 0) for v in versoes]) + 1
+    update_tasks_yaml_session(session_id, {
+        "tasks_yaml_content": conteudo,
+        "total_tasks": len(_blocos_de_tarefa(conteudo)),
+        "status": "completed",
+        "finished_at": datetime.now(),
+    })
+    create_tasks_yaml_version({
+        "session_id": session_id,
+        "version": nova,
+        "tasks_yaml_content": conteudo,
+        "created_by": None,
+        "change_type": "restore",
+        "change_description": f"restaurada a versão {version}",
+        "doc_size": len(conteudo),
+    })
+    save_tasks_yaml_chat_message({
+        "session_id": session_id,
+        "sender_type": "agent",
+        "message_text": f"♻️ Versão {version} restaurada como vigente (gravada como versão {nova}).",
+        "message_type": "result",
+    })
+    return {"status": "restored", "de": version, "nova_versao": nova, "tamanho": len(conteudo)}
 
 
 # ═══════════════════════════════════════════════════════════

@@ -652,10 +652,39 @@ const TasksYamlTab: React.FC<TasksYamlTabProps> = ({ projectId, tabSwitcher }) =
     setEstruturando(false);
   };
 
+  const [restaurando, setRestaurando] = useState(false);
+  const handleRestaurar = async () => {
+    if (!currentSessionId || !currentLoadedVersion) return;
+    setRestaurando(true);
+    try {
+      const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+      const token = localStorage.getItem('accessToken') || localStorage.getItem('token') || '';
+      const r = await fetch(`${API_BASE_URL}/tasks-yaml/${currentSessionId}/restore/${currentLoadedVersion}`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'falhou');
+      const d = await r.json();
+      toast.success(`Versão ${d.de} agora é a vigente (gravada como v${d.nova_versao}).`);
+    } catch (e: any) {
+      toast.error(`Não deu para restaurar: ${String(e.message || e)}`);
+    }
+    setRestaurando(false);
+  };
+
   // ---- Controles de configuração específicos (alternador de abas + opções) ----
   const configExtras = (
     <>
       <div className="config-group" style={{ marginBottom: 10 }}>
+        {/* Carregar uma versão do histórico só trocava o que aparece na tela: o conteúdo vigente
+            continuava sendo o da última alteração, e o refino seguinte partia dele. Este botão
+            torna vigente a versão carregada — é como se volta de um refino que estragou. */}
+        <button
+          className="btn-requirements-compact"
+          disabled={!currentSessionId || !currentLoadedVersion || restaurando}
+          onClick={handleRestaurar}
+          title="Torna vigente a versão carregada do histórico (o refino seguinte parte dela)"
+        >
+          {restaurando ? '⏳ Restaurando…' : `♻️ Tornar vigente${currentLoadedVersion ? ` (v${currentLoadedVersion})` : ''}`}
+        </button>
         <button
           className="btn-requirements-compact"
           disabled={!currentSessionId || estruturando}
