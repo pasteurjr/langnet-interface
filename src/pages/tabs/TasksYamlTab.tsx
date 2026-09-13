@@ -149,7 +149,11 @@ const TasksYamlTab: React.FC<TasksYamlTabProps> = ({ projectId, tabSwitcher }) =
         throw new Error('Falha ao carregar versões');
       }
 
-      const versions = await response.json();
+      // O serviço devolve { versions: [...], total: N } — a página tratava como se fosse a lista
+      // direta e o .find estourava: clicar numa versão do histórico SEMPRE dava "Erro ao carregar
+      // versão" (achado em 13/09/2026 ao refinar o contrato pela interface). Aceita as duas formas.
+      const payload = await response.json();
+      const versions = Array.isArray(payload) ? payload : (payload?.versions || []);
 
       // Buscar a versão solicitada
       const versionData = versions.find((v: any) => v.version === version);

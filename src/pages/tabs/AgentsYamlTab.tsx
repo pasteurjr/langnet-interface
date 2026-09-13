@@ -146,7 +146,10 @@ const AgentsYamlTab: React.FC<AgentsYamlTabProps> = ({ projectId, tabSwitcher })
         throw new Error('Falha ao carregar versões');
       }
 
-      const versions = await response.json();
+      // Mesmo defeito da aba de tarefas: o serviço devolve { versions: [...], total: N } e a
+      // página tratava como lista direta, estourando no .find. Aceita as duas formas.
+      const payload = await response.json();
+      const versions = Array.isArray(payload) ? payload : (payload?.versions || []);
 
       // Buscar a versão solicitada
       const versionData = versions.find((v: any) => v.version === version);
