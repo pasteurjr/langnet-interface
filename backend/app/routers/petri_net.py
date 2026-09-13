@@ -340,7 +340,16 @@ async def generate_petri_net(
         sources,
     )
 
-    return {"petri_net": petri_net}
+    # O portão da estrutura já consertou o que era mecânico. O que sobrou NÃO tem conserto
+    # automático (transição de tarefa solta, fim inalcançável, tarefa fora do fluxo) e a etapa
+    # AVISA em vez de entregar rede quebrada em silêncio — foi assim que a rede de 01/09 passou
+    # quinze dias parecendo boa.
+    conferencia = petri_net.get("conferencia_estrutural") or {} if isinstance(petri_net, dict) else {}
+    return {
+        "petri_net": petri_net,
+        "conferencia_estrutural": conferencia,
+        "pronta_para_codigo": not conferencia.get("pendencias"),
+    }
 
 
 @router.get("/{project_id}")

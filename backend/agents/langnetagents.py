@@ -2303,6 +2303,155 @@ def _campos_de_saida_da_tarefa(cfg: dict) -> list:
     return campos
 
 
+
+def _conferir_e_reparar_estrutura(net: Dict[str, Any]) -> Dict[str, Any]:
+    """Portão da Rede de Petri: confere a estrutura e conserta o que é mecânico.
+
+    POR QUE ISTO EXISTE (medido em 13/09/2026): a rede é redesenhada do zero a cada geração e a
+    qualidade varia por rodada — três gerações seguidas deram três conjuntos diferentes de defeito
+    (2 transições soltas e 7 disputas de ficha numa; 0 e 1 na seguinte, mas 11 posições penduradas).
+    Era a única etapa do pipeline sem portão. Instrução reduz; portão garante.
+
+    Conserta:
+      1. posição pendurada (sem seta nenhuma) — remove, porque é sobra de desenho, não fluxo;
+      2. disputa de ficha — uma ficha é consumida por UMA transição; se a posição alimenta várias
+         sem guarda, insere bifurcação (uma ficha por ramo);
+      3. ramo que morre — posição sem seta de saída passa a desaguar no fim.
+    Registra em `conferencia_estrutural` o que consertou e o que NÃO tem conserto mecânico
+    (transição de tarefa sem seta, fim inalcançável), para a etapa recusar em vez de salvar quebrada.
+    """
+    if not isinstance(net, dict):
+        return net
+    lugares = {str(l.get("id")): l for l in (net.get("lugares") or []) if isinstance(l, dict)}
+    transicoes = {str(t.get("id")): t for t in (net.get("transicoes") or []) if isinstance(t, dict)}
+    arcos = net.get("arcos") if isinstance(net.get("arcos"), list) else []
+    consertos: List[str] = []
+    pendencias: List[str] = []
+
+    def _pontas():
+        de: Dict[str, List[str]] = {}
+        para: Dict[str, List[str]] = {}
+        for a in arcos:
+            if not isinstance(a, dict):
+                continue
+            o, d = str(a.get("origem") or ""), str(a.get("destino") or "")
+            de.setdefault(o, []).append(d)
+            para.setdefault(d, []).append(o)
+        return de, para
+
+    # ── 1. posição pendurada: nenhuma seta entrando nem saindo ────────────────────────────────
+    de, para = _pontas()
+    penduradas = [
+        pid for pid in lugares
+        if not de.get(pid) and not para.get(pid) and pid not in ("P0",)
+    ]
+    if penduradas:
+        net["lugares"] = [l for l in net["lugares"] if str(l.get("id")) not in set(penduradas)]
+        for pid in penduradas:
+            lugares.pop(pid, None)
+        consertos.append(
+            f"{len(penduradas)} posição(ões) pendurada(s) removida(s) (sobra de desenho, sem seta "
+            f"nenhuma): {', '.join(penduradas)}"
+        )
+
+    # ── 2. disputa de ficha: uma posição alimentando várias transições sem guarda ──────────────
+    de, para = _pontas()
+    for pid in list(lugares):
+        consumidoras = [d for d in de.get(pid, []) if d in transicoes]
+        if len(consumidoras) < 2:
+            continue
+        com_guarda = [t for t in consumidoras if str(transicoes[t].get("guard") or "").strip()]
+        if len(com_guarda) == len(consumidoras):
+            continue  # decisão exclusiva: cada ramo tem a sua condição, é legítimo
+        tf = f"T_bifurca_{pid}"
+        if tf in transicoes:
+            pendencias.append(f"{pid} disputa ficha e já tem bifurcação {tf} — conferir à mão")
+            continue
+        transicoes[tf] = {
+            "id": tf, "nome": f"Bifurca {pid}", "guard": "", "prioridade": 1,
+            "agente_id": None, "task_id": None,
+        }
+        net["transicoes"].append(transicoes[tf])
+        arcos[:] = [
+            a for a in arcos
+            if not (isinstance(a, dict) and str(a.get("origem")) == pid
+                    and str(a.get("destino")) in consumidoras)
+        ]
+        arcos.append({"origem": pid, "destino": tf, "peso": 1})
+        for t in consumidoras:
+            novo_lugar = f"{pid}_para_{t.replace('T_', '')}"
+            lugares[novo_lugar] = {
+                "id": novo_lugar, "nome": f"Ficha para {t}", "tokens": 0,
+                "input_data": {}, "output_data": {}, "agentId": None, "logica": "",
+            }
+            net["lugares"].append(lugares[novo_lugar])
+            arcos.append({"origem": tf, "destino": novo_lugar, "peso": 1})
+            arcos.append({"origem": novo_lugar, "destino": t, "peso": 1})
+        consertos.append(
+            f"{pid} alimentava {len(consumidoras)} transições disputando a mesma ficha "
+            f"({', '.join(consumidoras)}) — bifurcação inserida, uma ficha por ramo"
+        )
+
+    # ── 3. ramo que morre: posição sem seta de saída (e não é o fim) ───────────────────────────
+    de, para = _pontas()
+    fim = next((pid for pid in lugares if pid == "P_fim"), None)
+    if fim:
+        mortas = [pid for pid in lugares if pid != fim and not de.get(pid)]
+        for pid in mortas:
+            tf = f"T_fim_{pid.replace('P_', '')}"
+            if tf not in transicoes:
+                transicoes[tf] = {
+                    "id": tf, "nome": f"Conclui {pid}", "guard": "", "prioridade": 1,
+                    "agente_id": None, "task_id": None,
+                }
+                net["transicoes"].append(transicoes[tf])
+            arcos.append({"origem": pid, "destino": tf, "peso": 1})
+            arcos.append({"origem": tf, "destino": fim, "peso": 1})
+        if mortas:
+            consertos.append(
+                f"{len(mortas)} ramo(s) morria(m) sem chegar ao fim — ligado(s) ao fim do fluxo: "
+                f"{', '.join(mortas)}"
+            )
+    else:
+        pendencias.append("a rede não tem posição de fim (P_fim)")
+
+    # ── 4. o que não tem conserto mecânico ────────────────────────────────────────────────────
+    de, para = _pontas()
+    for tid, t in transicoes.items():
+        if not t.get("task_id"):
+            continue
+        if not para.get(tid) or not de.get(tid):
+            pendencias.append(f"transição de tarefa {tid} está solta (falta seta de entrada ou de saída)")
+    # o fim é alcançável saindo da ficha inicial?
+    if fim:
+        vistos, fila = set(), ["P0"] if "P0" in lugares else list(lugares)[:1]
+        while fila:
+            x = fila.pop()
+            if x in vistos:
+                continue
+            vistos.add(x)
+            fila.extend(de.get(x, []))
+        if fim not in vistos:
+            pendencias.append("o fim do fluxo não é alcançável a partir da ficha inicial")
+        soltas_tarefa = [
+            tid for tid, t in transicoes.items() if t.get("task_id") and tid not in vistos
+        ]
+        if soltas_tarefa:
+            pendencias.append(
+                f"{len(soltas_tarefa)} tarefa(s) não é(são) alcançada(s) pelo fluxo: "
+                f"{', '.join(soltas_tarefa[:6])}"
+            )
+
+    net["arcos"] = arcos
+    net["conferencia_estrutural"] = {"consertos": consertos, "pendencias": pendencias}
+    for linha in consertos:
+        print(f"[PETRI PORTÃO] consertado: {linha}")
+    for linha in pendencias:
+        print(f"[PETRI PORTÃO] SEM CONSERTO MECÂNICO: {linha}")
+    if not consertos and not pendencias:
+        print("[PETRI PORTÃO] estrutura passou sem reparo")
+    return net
+
 def _preencher_dados_dos_lugares(net: Dict[str, Any], tasks_yaml: str) -> Dict[str, Any]:
     """Diz, em cada posição da rede, o que ENTRA nela e o que ela ENTREGA — pelos arcos.
 
@@ -2595,6 +2744,8 @@ def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNe
     adapted = _adapt_petri_net(parsed if isinstance(parsed, dict) else {})
     # Reparo determinístico de BIPARTIÇÃO (regra topológica de Petri) antes de validar/salvar.
     adapted = _enforce_bipartite(adapted)
+    # Portão da estrutura: conserta o que é mecânico e registra o que não tem conserto.
+    adapted = _conferir_e_reparar_estrutura(adapted)
     # O que cada lugar ENTREGA para os seguintes, tirado do contrato da própria tarefa.
     adapted = _preencher_dados_dos_lugares(adapted, state.get("tasks_yaml") or "")
     # De onde vem cada entrada: de um lugar anterior, ou de fora (tela/operador).
@@ -9643,6 +9794,18 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         # (ex.: `Union` sem import em tools_std.py) não derruba o servidor — só esvazia o registro
         # de ferramentas em silêncio, e a tarefa recusa em runtime com "ferramenta não disponível".
         state["portoes"]["modulos"] = _portao_modulos(files)
+        # REDE: a planta do fluxo vai dentro do pacote. Se ela tem pendência que o portão da etapa
+        # não conseguiu consertar (transição de tarefa solta, fim inalcançável, tarefa fora do
+        # fluxo), o pacote sai com a planta quebrada. Agora isso reprova a geração.
+        _rede = state.get("petri_net_data") or {}
+        _pend_rede = ((_rede.get("conferencia_estrutural") or {}).get("pendencias") or []
+                      if isinstance(_rede, dict) else [])
+        state["portoes"]["rede"] = {
+            "reprovado": bool(_pend_rede),
+            "quantidade": len(_pend_rede),
+            "itens": _pend_rede[:40],
+            "descricao": "defeitos da rede de fluxo sem conserto mecânico",
+        }
         state["portoes"]["reprovado"] = any(v.get("reprovado") for v in state["portoes"].values()
                                             if isinstance(v, dict))
         _rep = [k for k, v in state["portoes"].items()
