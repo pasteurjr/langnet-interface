@@ -377,3 +377,18 @@ Protocolo: OKF — padrão (nosso) · MCP · A2A · ACP · ANP  (mock por ora)
 **PRODUÇÃO:** mostrar o contador "3 de 3 selecionados" antes de liberar o botão — é a etapa recusando gerar com origem incompleta.
 **TELA:** 1476-langnet-seq-modal-origem.png, 1477-langnet-seq-origem-escolhida.png, 1479-langnet-seq-pronto.png
 **NOTA PRODUÇÃO (honestidade):** a etapa grava a proveniência de três das quatro origens — especificação, agentes-e-tarefas e tarefas — mas **não** grava o arquivo de agentes, porque o modal não o pede. É uma lacuna conhecida de rastreabilidade; vale dizer no vídeo em vez de omitir.
+
+## Cena 51 — Etapa 9: a Rede de Petri (e o que ela precisava declarar)
+**NARRAÇÃO:** Esta é a planta do fluxo: posições, transições e as setas entre elas. Dezessete posições, vinte e uma transições, quarenta e quatro setas. Mas a planta sozinha não responde a pergunta que importa: **o dado que uma tarefa consome, quem foi que produziu?** Na primeira versão, nenhuma posição dizia o que entregava — o campo de saída estava vazio nas dezessete. Agora cada posição declara o que entrega e de onde vem cada coisa que ela consome, lido do contrato da própria tarefa. Quando um dado não tem produtor, ele fica marcado como "entrada externa" — e é isso que se manda o revisor julgar.
+**PRODUÇÃO:** mostrar uma posição aberta com as duas listas — o que consome e o que entrega — e a origem apontando a posição anterior.
+**TELA:** 1516-langnet-petri-pronta.png
+
+## Cena 52 — A revisão da rede: o que o modelo achou quando pôde enxergar
+**NARRAÇÃO:** Com os dados declarados, a revisão deixou de ser genérica. Ela achou, entre outras coisas: duas transições **soltas na rede** — autenticação e ciclo de vigilância existem como tarefa mas não estão ligadas a nada; o **login não entrega quem entrou** — onze tarefas pedem o identificador do usuário e ninguém o produz; o escore externo entrega um conjunto de campos e o cálculo pede outro nome; a recomendação de tratamento pede o resultado da classificação com um nome que ninguém usa; e há **disputa de ficha** — uma posição com uma ficha só alimentando três transições, o que trava os ramos que deveriam correr em paralelo. O veredito foi direto: a rede ainda não está pronta para virar código.
+**PRODUÇÃO:** cartela com três achados e o veredito em uma linha. O relatório inteiro está em docs/revisao-petri/revisao-petri-biobyte-20260913.md.
+**TELA:** 1517-langnet-petri-revisao.png
+**NOTA PRODUÇÃO (honestidade):** duas destas correções são do **contrato das tarefas**, não da rede — o login que não declara quem entrou, e os nomes que não casam entre quem entrega e quem consome. Vale dizer no vídeo: a rede está apontando defeito de etapa anterior, que é exatamente para isso que ela serve.
+
+## Cena 52.1 — Um erro meu, pego pela própria revisão
+**NARRAÇÃO:** Vale mostrar o caminho, não só o resultado. Na primeira tentativa eu escrevi a entrega de cada tarefa **uma casa antes** do lugar certo: a posição que antecede uma transição é "tarefa pronta para rodar" e carrega o que a tarefa **precisa**, não o que ela **produz**. A revisão pegou a inversão, transição por transição. A regra passou a ser topológica e não depende de nome nenhum: o que uma posição entrega é o que a transição que aponta para ela produz.
+**PRODUÇÃO:** diagrama de três caixas — posição, transição, posição — com as setas e os rótulos "precisa" e "entrega".
