@@ -297,3 +297,77 @@ Protocolo: OKF — padrão (nosso) · MCP · A2A · ACP · ANP  (mock por ora)
 **PRODUÇÃO:** cartela com as duas linhas "falha induzida → o que o caso de uso exige → o que o sistema fez"; depois a seção 8.5 do relatório. Rótulo: "TESTE DE FALHA EXTERNA · DEFEITO CONFIRMADO · CORREÇÃO AGUARDA REGENERAÇÃO".
 **TELA:** (documento) docs/apresentacao/demo-biobyte/VALIDACAO-SISTEMA-biobyte.pdf, seção 8.5; 1229-langnet-mcp-email-descoberto.png, 1231-langnet-mcp-email-atribuido.png (canal de e-mail registrado e atribuído — seção 8.6)
 **NOTA PRODUÇÃO:** simulador com modo falha em mcp/biobyte_mcp_server.py (arquivo /tmp/biobyte_mcp_falha.json); runner e2e/run_test_cases.py induz por caso. Canal de e-mail: mcp/biobyte_email_mcp_server.py (:9121) + caixa postal SMTP local (:1025).
+
+---
+
+# RODADA 4 — a cascata inteira regerada, com o modelo trocado pela interface (11–12/09/2026)
+
+> Esta rodada refaz o BioByte do zero a partir dos mesmos requisitos, e é a primeira em que o
+> pipeline roda de ponta a ponta com um modelo escolhido na tela, não no arquivo de configuração.
+> O fio condutor de todas as cenas é **uma correção do usuário atravessando o pipeline**.
+
+## Cena 36 — O modelo da aplicação vira decisão de projeto
+**NARRAÇÃO:** Antes de começar, uma coisa mudou de lugar. Qual modelo de linguagem a *aplicação gerada* vai usar deixou de ser um detalhe do arquivo de configuração da máquina e passou a ser decisão do projeto, aqui na tela. Quatro opções: o Claude pela nossa própria interface, sem custo por token; o DeepSeek, na nuvem; o modelo local; e a OpenAI. Cada uma diz o que implica — a local avisa que depende da máquina estar ligada. A escolha entra no pacote gerado, e as outras ficam escritas lá, comentadas: trocar depois é uma linha. E repare no que **não** está aqui: a chave do provedor. Ela vai em branco no pacote, para ser preenchida na máquina onde a aplicação for instalada. Segredo não viaja no código gerado.
+**PRODUÇÃO:** mostrar a troca ao vivo entre Claude e DeepSeek, e a tarja da chave.
+**TELA:** 1306-langnet-config-projeto-modelo.png, 1307-langnet-config-projeto-deepseek.png, 1308-langnet-config-projeto-claude.png
+
+## Cena 37 — Etapa 2 refeita: a Especificação nasce de uma VERSÃO dos requisitos
+**NARRAÇÃO:** A etapa exige escolher de onde a especificação nasce — e não basta dizer "os requisitos": é preciso escolher **qual versão**. Três cliques de propósito: o documento, a lista de versões, a versão. É a rastreabilidade começando aqui, e ela vai valer até o banco de dados, no fim desta rodada.
+**TELA:** 1324-langnet-spec-antes.png, 1325-langnet-spec-origem-modal.png, 1326-langnet-spec-origem-versoes.png
+
+## Cena 38 — Por que a especificação passou a ser escrita em partes
+**NARRAÇÃO:** Esta etapa pedia as catorze seções numa tacada só — incluindo "no mínimo dez casos de uso completamente detalhados". O pedido estava escrito certo. **Mandar não basta:** medido nesta rodada, o modelo devolveu catorze seções com os nomes dele, sem nenhuma seção de casos de uso e sem um único caso escrito — vinte mil caracteres. E o guardião da rastreabilidade então amarrou os catorze requisitos a um caso de uso que não existia em lugar nenhum. A matriz fechava em cima de nada. Agora a etapa trabalha em partes: primeiro pede a **lista** dos casos de uso e confere se todo requisito ganhou um; depois escreve os casos **em lotes de três**, conferindo em cada um as cinco partes obrigatórias; depois as demais seções, já sabendo quais casos existem; e por fim **o programa monta** o documento na ordem fixa e constrói a matriz da lista — nunca por aproximação. Resultado com o mesmo modelo: de zero para catorze casos de uso completos, cento e quarenta e oito mil caracteres. Sete chamadas, todas por dentro: da tela, é o mesmo botão de sempre.
+**PRODUÇÃO:** cartela comparando "uma chamada: 20 mil caracteres, 0 casos de uso" × "em partes: 148 mil, 14 casos".
+**TELA:** 1329-langnet-spec-pronta.png
+
+## Cena 39 — A correção do usuário entra na especificação
+**NARRAÇÃO:** Aqui começa o fio que amarra o resto do vídeo. O índice APACHE dois — a medida de gravidade do paciente em UTI — não está nos requisitos, e o sistema não o inventou: comportamento correto. Mas ele é um fator de peso no cálculo de risco. Então eu peço, pela conversa da etapa: acrescente o APACHE dois no caso de uso do escore de Cox — no croqui da tela, na tabela de covariáveis e no fluxo. Olhe o croqui antes. E depois.
+**PRODUÇÃO:** ligar visualmente o "antes" e o "depois" do croqui; destacar a linha `APACHE II (0-71): [ 18 ]`.
+**TELA:** 1358-langnet-spec-croqui-cox-antes.png, 1359-langnet-spec-refino-digitado.png, 1361-langnet-spec-refino-pronto.png
+
+## Cena 40 — Etapa 3: o Modelo de Dados recebe a correção
+**NARRAÇÃO:** O modelo de dados nasce da especificação — e a tarja diz de qual, pelo nome e pela data. Catorze tabelas. E lá dentro, na tabela de escores de risco, ao lado de tempo de cateter e sítio de inserção: a coluna APACHE dois. Ninguém escreveu essa coluna. Ela veio da frase que eu digitei na etapa anterior.
+**PRODUÇÃO:** destacar `apache_ii INTEGER` no DDL.
+**TELA:** 1450-langnet-dm-origem-escolhida.png, 1452-langnet-dm-pronto.png
+
+## Cena 41 — Etapa 4: catorze telas, e o APACHE dois em treze delas
+**NARRAÇÃO:** As telas nascem dos casos de uso e do modelo de dados. Catorze telas — e o APACHE dois aparece em treze. A correção já atravessou três etapas sem ninguém reescrever nada.
+**TELA:** 1372-langnet-uispec-origem-escolhida.png, 1374-langnet-uispec-telas-prontas.png
+
+## Cena 42 — O protótipo não é uma maquete: é o aplicativo
+**NARRAÇÃO:** Isto que está rodando no quadro **não é um desenho do aplicativo — é o aplicativo**, com a fonte de dados trocada. A mesma linha de montagem que gera as telas do sistema final gera estas; de todos os arquivos, **exatamente um** muda: o que busca os dados. No sistema real ele fala com o servidor de agentes; aqui ele responde de uma semente fictícia derivada do modelo de dados. Por isso, se a tela estiver errada aqui, vai estar errada no aplicativo — é o mesmo código. Vinte e duas telas navegáveis.
+**PRODUÇÃO:** navegar entre módulos dentro do quadro.
+**TELA:** 1377-langnet-proto-montado-telas-novas.png, 1378-langnet-proto-tela-escore-cox.png
+
+## Cena 43 — Apontar, pedir, ver
+**NARRAÇÃO:** Não é preciso descrever qual campo eu quero mudar. Eu **aponto** no protótipo, e a etapa passa a mostrar o alvo: o campo e a tela. Aí eu peço a mudança em português. O agente ajusta a tela, o protótipo é **remontado sozinho**, e o quadro recarrega. Pedido e resultado na mesma respiração. Acrescentei um campo "Unidade de internação" abaixo do e-mail: entrou no lugar certo. Renomeei o botão para "Calcular agora": mudou. Mandei mover um campo para o topo — e aqui houve uma descoberta: **não mudava**. A estrutura da tela sempre permitiu, porque é uma lista ordenada; o que faltava era o agente saber que a ordem da lista é a ordem na tela. Corrigido, o mesmo pedido passou.
+**PRODUÇÃO:** sequência: apontar → tarja do alvo → digitar → conversa com "Remontando o protótipo…" → resultado.
+**TELA:** 1385-langnet-apontar-ligado.png, 1386-langnet-apontar-componente-escolhido.png, 1388-langnet-apontar-depois.png, 1391-langnet-mudanca-campo-novo.png
+
+## Cena 44 — O protótipo sai da ferramenta e vai sozinho
+**NARRAÇÃO:** E ele não vive preso aqui dentro. São quatro arquivos numa pasta: dá para copiar, mandar para um cliente, abrir em qualquer lugar. Aqui está ele servido isolado, sem o LangNet no meio — estilizado, navegável, sem um único erro. Repare no botão: "Calcular agora". É o nome que eu pedi na conversa, minutos antes, chegando ao protótipo que roda solto.
+**PRODUÇÃO:** mostrar a pasta (4 arquivos) e o navegador num endereço que não é o do LangNet.
+**TELA:** 1389-prototipo-rodando-sozinho.png, 1390-prototipo-sozinho-navegando.png
+
+## Cena 45 — Etapa 5: Agentes e Tarefas
+**NARRAÇÃO:** Quem faz o quê. Nove módulos, catorze agentes, quinze tarefas, com matriz de rastreabilidade e grafo de dependências. As duas integrações externas aparecem citadas pelo nome. E o APACHE dois chega aqui também — quarta etapa seguida.
+**TELA:** 1407-langnet-ats-origem-escolhida.png, 1409-langnet-ats-pronto.png
+
+## Cena 46 — Etapa 6: Ferramentas — quem implementa cada capacidade
+**NARRAÇÃO:** Antes desta etapa existir, a planilha de tarefas dizia "use o gerador de relatórios" e ninguém nunca dizia o que era isso — o modelo escrevia um corpo de mentira e o sistema nascia com uma função que não fazia nada. Aqui cada capacidade ganha dono: servidor externo, biblioteca do gerador, acesso a banco, ou regra própria escrita em passos. Oito de oito resolvidas. E o que não tem dono **trava a implantação** — não vira valor inventado.
+**PRODUÇÃO:** mostrar a coluna de origem e a contagem 8/8.
+**TELA:** 1422-langnet-ferramentas-inventario.png
+
+## Cena 47 — Etapa 7: os arquivos de configuração dos agentes
+**NARRAÇÃO:** Catorze agentes, quinze tarefas — e todas as quinze apontam para um agente que existe. Zero órfãs.
+**TELA:** 1436-langnet-yaml-agents-pronto.png, 1441-langnet-yaml-tasks-pronto.png
+
+## Cena 48 — A prosa da tarefa vira contrato conferido
+**NARRAÇÃO:** Este é o passo que fecha o buraco por onde a lógica sumia. A descrição da tarefa, escrita em português, vira uma **receita numerada**: consultas, cálculos, condições, verificações, escritas, acionamentos externos. E cada passo é **conferido antes de virar código** — inclusive o SQL, que é testado contra o modelo de dados de verdade. Cento e setenta e quatro passos nas quinze tarefas: quarenta condições, trinta e cinco consultas, trinta e cinco cálculos, vinte e cinco verificações. Um único passo não passou na conferência, e ele aparece marcado, com o motivo — não some.
+**PRODUÇÃO:** cartela com a composição dos 174 passos; destacar "1 de 174 não validado".
+**TELA:** 1453-langnet-yaml-passos-estruturados.png
+**NOTA PRODUÇÃO:** dois defeitos foram achados aqui e valem uma cena própria se houver tempo — ver Cena 49.
+
+## Cena 49 — O que a conferência revelou (e por que isso importa)
+**NARRAÇÃO:** Na primeira passagem, cinquenta e oito passos não validaram. Nenhum era erro do modelo. **Primeiro:** a conferência do SQL estava rodando contra o modelo de dados **errado** — a busca ordenava pela versão antes da data, e um modelo antigo que passou por um refino ganhava de um modelo novo recém-gerado. Vinte e seis passos corretos recusados por colunas que existiam. **Segundo, e mais grave:** o modelo de dados emitia valores lógicos do jeito da linguagem de programação — `DEFAULT 'True'`, entre aspas, numa coluna numérica. O banco recusa, e **a criação da tabela inteira falha, em silêncio**. Quatro tabelas do sistema não existiam — inclusive a de usuários. Isso não quebrava só a conferência: **a aplicação não subiria**. Corrigidos os dois: catorze tabelas declaradas, catorze criadas; e os passos não validados caíram de cinquenta e oito para um.
+**PRODUÇÃO:** cartela em dois degraus — "58 → 20 → 1" — e a linha do DDL antes/depois.
