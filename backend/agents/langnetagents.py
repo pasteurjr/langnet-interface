@@ -2461,6 +2461,12 @@ def _conferir_e_reparar_estrutura(net: Dict[str, Any]) -> Dict[str, Any]:
                 f"{', '.join(soltas_tarefa[:6])}"
             )
 
+    # Marca as transições que são COSTURA da rede (início, bifurcação, junção, fim) e não tarefa.
+    # Sem essa marca a revisão acusa toda rodada que "T_start não existe no tasks.yaml" — e está
+    # certa em perguntar: nada na rede dizia que aquilo é controle.
+    for tid, t in transicoes.items():
+        t["tipo"] = "tarefa" if t.get("task_id") else "controle"
+
     net["arcos"] = arcos
     net["conferencia_estrutural"] = {"consertos": consertos, "pendencias": pendencias}
     for linha in consertos:

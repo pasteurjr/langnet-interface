@@ -1177,6 +1177,19 @@ design_petri_net:
        tasks, com exatidao. Seu trabalho e o DESENHO — quem vem antes de quem, o que corre em
        paralelo, onde bifurca e onde sincroniza.
 
+    7.4 🔴 TAREFA CONDICIONAL PRECISA DE GUARDA:
+       Se o contrato da task diz que ela SO acontece em certo caso ("notificar somente quando for
+       multirresistente", "exportar so se houver registros"), a transicao dela precisa da GUARDA
+       com essa condicao. Sem guarda ela dispara sempre — e o sistema notifica caso que nao devia.
+       Escreva a condicao em cima de um campo que alguma task ANTERIOR entrega
+       (ex.: guard "input.multirresistente === true").
+
+    7.5 🔴 TAREFA ORQUESTRADORA FICA NO FIM:
+       Uma task que representa o CICLO INTEIRO (nome do tipo executar_ciclo, processar_tudo) nao
+       pode correr em paralelo com as etapas que ela orquestra: ela concluiria o ciclo antes de as
+       etapas terminarem. Coloque-a DEPOIS da sincronizacao de todos os ramos, ou nao a inclua no
+       mesmo fluxo.
+
     8. Cada lugar associado a uma task DEVE incluir o campo "logica" com placeholder JavaScript de execução assíncrona, no padrão:
        "logica": "const output = utils.clone(input); output.task_name = '<nome_task>'; await new Promise(r => setTimeout(r, 100)); return output;"
        (O backend substitui esse placeholder por código real de WebSocket. O importante é registrar o nome da task.)
@@ -1241,6 +1254,8 @@ design_petri_net:
           consumido por outra transição (7.2)?
     - [ ] 🔴 TRANSIÇÃO MORTA: toda transição tem ao menos uma seta entrando E uma saindo (regra 9)?
     - [ ] 🔴 As setas respeitam as listas "consome"/"entrega" das tasks (7.3)?
+    - [ ] 🔴 Toda task que só acontece em certo caso tem GUARDA na transição dela (7.4)?
+    - [ ] 🔴 A task que orquestra o ciclo está DEPOIS da sincronização dos ramos (7.5)?
     - [ ] Toda transição tem ≥1 arco de entrada E ≥1 arco de saída? (exceto T_start saindo de P0)
     - [ ] Nenhuma transição tem mais que 3 saídas paralelas?
     - [ ] Para cada dependência declarada em dependencies, existe um caminho P_A → T → P_B no grafo?
