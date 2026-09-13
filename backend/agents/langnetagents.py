@@ -2229,89 +2229,159 @@ def _repair_json(s: str) -> Dict[str, Any]:
         return {}
 
 
-def _preencher_saidas_dos_lugares(net: Dict[str, Any], tasks_yaml: str) -> Dict[str, Any]:
-    """Preenche `output_data` de cada lugar com o que a TAREFA dele declara devolver.
+def _campos_de_entrada_da_tarefa(cfg: dict) -> list:
+    """As entradas que a tarefa DECLARA.
 
-    DEFEITO QUE ISTO CORRIGE (medido em 13/09/2026, revisão da rede do BioByte): `output_data`
-    vinha VAZIO em todos os lugares — a rede encadeava as tarefas na ordem certa, mas não dizia o
-    que cada uma entrega para a próxima. Quem lê a rede não conseguia responder "o dado que esta
-    tarefa consome, quem produziu?". E o modelo não tem como adivinhar isso: já está escrito no
-    contrato da tarefa (passo `retorno`) e no esquema de saída do tasks.yaml. Aqui é só copiar.
+    O contrato não tem campo próprio para isso: vem escrito no texto da tarefa, e cada tarefa
+    escreve de um jeito. Os quatro jeitos encontrados no BioByte (13/09/2026):
+        Input data format:        Input:                    Input: {id_usuario} (UUID) e
+          - id_caso: UUID           id_paciente: UUID…         {periodo_dias} (enum: 7, 30…)
+        Input format: {id_caso: UUID, registros: List[{microrganismo, antibiograma: …}]}
+    Lê os quatro. No último, pega só o primeiro nível — `microrganismo` está DENTRO da lista de
+    registros, não é entrada da tarefa.
+    """
+    import re as _re
+    texto = str(cfg.get("description") or "")
+    m = _re.search(
+        r"(?is)\b(?:input(?:\s*data)?(?:\s*format)?|dados\s+de\s+entrada|entradas)\s*:"
+        r"(.*?)(?:\n\s*\n|\n\s*(?:process|passos|output|retorno|regras)\b|$)",
+        texto,
+    )
+    if not m:
+        return []
+    bloco = m.group(1)
+    campos: list = []
+    # menção solta entre chaves: "{periodo_dias} (enum: …)"
+    for nome in _re.findall(r"\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}", bloco):
+        if nome not in campos:
+            campos.append(nome)
+    # "campo:" no primeiro nível — nem dentro de lista, nem dentro de mapa aninhado
+    for g in _re.finditer(r"([A-Za-z_][A-Za-z0-9_]*)\s*:", bloco):
+        antes = bloco[: g.start()]
+        if antes.count("[") - antes.count("]") > 0:
+            continue  # está dentro de uma lista
+        if antes.count("{") - antes.count("}") > 1:
+            continue  # está dentro de um mapa aninhado
+        # Vale se o campo abre a linha dele (lista indentada) ou vem depois de { , - * :
+        na_linha = antes.rsplit("\n", 1)[-1]
+        anterior = na_linha.rstrip()[-1:]
+        if anterior not in ("", "{", ",", "-", "*", ":"):
+            continue  # é texto corrido, não um campo
+        if g.group(1) not in campos:
+            campos.append(g.group(1))
+    return campos
 
-    Preenche apenas o que estiver vazio — nunca sobrescreve o que o modelo tenha declarado.
+
+def _campos_de_saida_da_tarefa(cfg: dict) -> list:
+    """O que a tarefa DECLARA entregar: os campos do passo de retorno, ou o esquema de saída.
+
+    O passo de retorno pode estar DENTRO de um condicional ou de um laço (é o caso da autenticação
+    e do registro de auditoria do BioByte): varrer só o primeiro nível deixava essas tarefas sem
+    saída declarada.
+    """
+    import re as _re
+    campos = []
+
+    def _varrer(passos):
+        for passo in (passos or []):
+            if not isinstance(passo, dict):
+                continue
+            if str(passo.get("tipo")) == "retorno":
+                for c in (passo.get("campos") or []):
+                    nome = _re.split(r"\s+como\s+", str(c))[-1].strip().split(".")[-1]
+                    if nome and nome not in campos:
+                        campos.append(nome)
+            for aninhado in ("passos", "senao", "passos_senao"):
+                if passo.get(aninhado):
+                    _varrer(passo.get(aninhado))
+
+    _varrer(cfg.get("steps"))
+    if not campos:
+        esquema = cfg.get("output_schema") or {}
+        props = (esquema.get("properties") or {}) if isinstance(esquema, dict) else {}
+        campos = [k for k in props if k not in ("type", "required")]
+    return campos
+
+
+def _preencher_dados_dos_lugares(net: Dict[str, Any], tasks_yaml: str) -> Dict[str, Any]:
+    """Diz, em cada posição da rede, o que ENTRA nela e o que ela ENTREGA — pelos arcos.
+
+    DEFEITO QUE ISTO CORRIGE (revisão de 13/09/2026): nenhuma posição declarava o que entregava
+    (`output_data` vazio nas 17), então não havia como responder se a entrada de um passo é
+    fornecida pela saída do anterior. Numa segunda tentativa eu escrevi a entrega uma casa ANTES
+    do lugar certo — a posição anterior a uma transição é "tarefa pronta para rodar" e carrega o que
+    a tarefa PRECISA, não o que ela produz; a revisão pegou a inversão.
+
+    A regra correta é topológica e não depende de nome: o que uma posição ENTREGA é o que a
+    transição que APONTA para ela produz; o que ENTRA nela é o que a transição que ela ALIMENTA
+    consome. Ambos vêm do contrato da tarefa, não de adivinhação.
     """
     if not tasks_yaml:
+        print("[PETRI] sem o contrato das tarefas: entradas e saídas ficam como o modelo escreveu")
         return net
     try:
         import re
         import yaml as _yaml
         m = re.search(r"```(?:ya?ml)?\s*\n(.*?)\n```", tasks_yaml, re.S)
         tarefas = _yaml.safe_load(m.group(1) if m else tasks_yaml) or {}
+        if not isinstance(tarefas, dict):
+            raise ValueError("o contrato não é um mapa de tarefas")
     except Exception as e:  # noqa: BLE001
-        print(f"[PETRI] não consegui ler o tasks.yaml para preencher as saídas: {e}")
+        print(f"[PETRI] não consegui ler o contrato das tarefas: {e}")
         return net
 
-    def _saidas_da_tarefa(cfg: Dict[str, Any]) -> List[str]:
-        campos: List[str] = []
-        import re
-
-        def _varrer(passos: Any) -> None:
-            # O passo de retorno pode estar DENTRO de um condicional ou de um laço (é o caso da
-            # autenticação e do registro de auditoria do BioByte): varrer só o primeiro nível
-            # deixava essas tarefas sem saída declarada.
-            for passo in (passos or []):
-                if not isinstance(passo, dict):
-                    continue
-                if str(passo.get("tipo")) == "retorno":
-                    for c in (passo.get("campos") or []):
-                        nome = re.split(r"\s+como\s+", str(c))[-1].strip()
-                        nome = nome.split(".")[-1]
-                        if nome and nome not in campos:
-                            campos.append(nome)
-                for aninhado in ("passos", "senao", "passos_senao"):
-                    if passo.get(aninhado):
-                        _varrer(passo.get(aninhado))
-
-        _varrer(cfg.get("steps"))
-        if not campos:
-            esquema = cfg.get("output_schema") or {}
-            props = (esquema.get("properties") or {}) if isinstance(esquema, dict) else {}
-            campos = [k for k in props if k not in ("type", "required")]
-        return campos
-
-    def _tarefa_do_lugar(lugar: Dict[str, Any]) -> Any:
-        """Qual tarefa é a deste lugar.
-
-        O rótulo `task_name` só é colado no FIM da etapa — aqui ele ainda não existe, e por isso a
-        primeira versão desta rotina casava ZERO tarefas (medido em 13/09/2026). Reconhece também
-        pelo título do lugar ("Task <nome> pronta") e pelo identificador.
-        """
-        direto = tarefas.get(str(lugar.get("task_name") or ""))
-        if isinstance(direto, dict):
-            return direto
-        texto = f"{lugar.get('nome') or ''} {lugar.get('id') or ''}".lower()
-        candidatas = [n for n in tarefas if isinstance(tarefas.get(n), dict) and str(n).lower() in texto]
-        if len(candidatas) == 1:
-            return tarefas[candidatas[0]]
-        if candidatas:  # mais de uma: fica com o nome mais longo (o mais específico)
-            return tarefas[max(candidatas, key=len)]
-        return None
-
-    preenchidos = 0
-    for lugar in net.get("lugares", []) or []:
-        if lugar.get("output_data"):
+    lugares = {str(l.get("id")): l for l in (net.get("lugares") or []) if isinstance(l, dict)}
+    tarefa_da_transicao = {}
+    for t in (net.get("transicoes") or []):
+        if not isinstance(t, dict):
             continue
-        cfg = _tarefa_do_lugar(lugar)
-        if not isinstance(cfg, dict):
+        nome = str(t.get("task_id") or t.get("task_name") or "")
+        if nome in tarefas and isinstance(tarefas[nome], dict):
+            tarefa_da_transicao[str(t.get("id"))] = nome
+
+    entra: Dict[str, list] = {}
+    entrega: Dict[str, list] = {}
+    for a in (net.get("arcos") or net.get("arestas") or []):
+        if not isinstance(a, dict):
             continue
-        campos = _saidas_da_tarefa(cfg)
-        if campos:
-            lugar["output_data"] = {c: "" for c in campos}
-            preenchidos += 1
-    if preenchidos:
-        print(f"[PETRI] saída declarada em {preenchidos} lugar(es), a partir do contrato da tarefa")
+        o = str(a.get("origem") or a.get("source") or a.get("from") or "")
+        d = str(a.get("destino") or a.get("target") or a.get("to") or "")
+        if o in tarefa_da_transicao and d in lugares:          # transição -> lugar: o que ela entrega
+            for c in _campos_de_saida_da_tarefa(tarefas[tarefa_da_transicao[o]]):
+                entrega.setdefault(d, []).append(c)
+        elif o in lugares and d in tarefa_da_transicao:        # lugar -> transição: o que ela consome
+            for c in _campos_de_entrada_da_tarefa(tarefas[tarefa_da_transicao[d]]):
+                entra.setdefault(o, []).append(c)
+
+    def _misturar(atual: Any, declarado: list) -> Dict[str, Any]:
+        # O declarado no contrato manda; o que o modelo escreveu e o contrato não prevê é mantido,
+        # para nada desaparecer sem aviso.
+        base = dict(atual) if isinstance(atual, dict) else {}
+        saida: Dict[str, Any] = {}
+        for c in declarado:
+            if c not in saida:
+                saida[c] = base.get(c, "")
+        for c, v in base.items():
+            saida.setdefault(c, v)
+        return saida
+
+    n_entra = n_entrega = 0
+    for pid, lugar in lugares.items():
+        if entra.get(pid):
+            antes = dict(lugar.get("input_data") or {})
+            lugar["input_data"] = _misturar(antes, entra[pid])
+            if list(lugar["input_data"]) != list(antes):
+                n_entra += 1
+        if entrega.get(pid):
+            antes = dict(lugar.get("output_data") or {})
+            lugar["output_data"] = _misturar(antes, entrega[pid])
+            if list(lugar["output_data"]) != list(antes):
+                n_entrega += 1
+    print(
+        f"[PETRI] pelo contrato das tarefas: {n_entrega} posição(ões) passaram a declarar o que "
+        f"entregam e {n_entra} o que consomem (de {len(lugares)})"
+    )
     return net
-
 
 
 def _declarar_origem_das_entradas(net: Dict[str, Any]) -> Dict[str, Any]:
@@ -2526,7 +2596,7 @@ def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNe
     # Reparo determinístico de BIPARTIÇÃO (regra topológica de Petri) antes de validar/salvar.
     adapted = _enforce_bipartite(adapted)
     # O que cada lugar ENTREGA para os seguintes, tirado do contrato da própria tarefa.
-    adapted = _preencher_saidas_dos_lugares(adapted, state.get("tasks_yaml") or "")
+    adapted = _preencher_dados_dos_lugares(adapted, state.get("tasks_yaml") or "")
     # De onde vem cada entrada: de um lugar anterior, ou de fora (tela/operador).
     adapted = _declarar_origem_das_entradas(adapted)
     print(
