@@ -1140,6 +1140,43 @@ design_petri_net:
           P_decisao → T_artigo    (guard: "input.tipo === 'artigo'")    → P_Y
        NÃO use 1 transição com múltiplas saídas pra branching — isso é paralelismo, dispara todas.
 
+    7.1 🔴 DISPUTA DE FICHA (o erro mais comum — leia com atenção):
+       Uma ficha em um lugar e CONSUMIDA por UMA transicao. Se um lugar P alimenta DUAS ou mais
+       transicoes que ambas DEVEM disparar, elas disputam a mesma ficha: uma dispara, as outras
+       ficam travadas para sempre. Isso NAO e paralelismo — e um bloqueio.
+         ERRADO (as duas devem rodar, mas brigam pela mesma ficha):
+           P_exame -> T_classificar
+           P_exame -> T_detectar_resistencia
+         CERTO (bifurcacao: uma transicao produz DUAS fichas, uma para cada ramo):
+           P_exame -> T_bifurca_exame
+           T_bifurca_exame -> P_para_classificar
+           T_bifurca_exame -> P_para_detectar
+           P_para_classificar -> T_classificar
+           P_para_detectar    -> T_detectar_resistencia
+       Um lugar so pode alimentar mais de uma transicao quando for DECISAO EXCLUSIVA (regra 7):
+       cada transicao com guard proprio e os guards se excluindo. Sem guard = disputa = erro.
+
+    7.2 🔴 JUNCAO SO EM LUGAR DE CONCLUSAO:
+       A transicao de juncao precisa das fichas de todos os ramos AO MESMO TEMPO. Se voce
+       sincroniza num lugar que JA E CONSUMIDO por outra transicao, a ficha vai embora antes e a
+       juncao nunca dispara.
+         ERRADO: T_junta le P_classificar e P_detectar, que tambem alimentam as tarefas seguintes.
+         CERTO:  cada ramo termina num lugar PROPRIO de conclusao (P_classificar_ok,
+                 P_detectar_ok), que nao alimenta mais ninguem, e a juncao le esses.
+       Antes de fechar a rede, para CADA transicao de juncao: confira que nenhum dos lugares de
+       entrada dela e consumido por outra transicao.
+
+    7.3 ONDE OS DADOS MORAM (para voce desenhar as setas certas):
+       O lugar ANTES de uma transicao de execucao carrega o que a task PRECISA; o lugar DEPOIS
+       dela carrega o que a task ENTREGA. Cada task em tasks_json vem com duas listas prontas:
+       "consome" e "entrega". Use-as para decidir as setas: se a task B consome um campo que a
+       task A entrega, entao A vem antes de B no caminho das setas. Se um campo que B consome nao
+       e entregue por NENHUMA task anterior, entao ou ele e digitado pelo operador na tela (e ai
+       B pode vir logo no inicio), ou o desenho esta errado.
+       NAO preencha "input_data"/"output_data": o programa preenche isso a partir do contrato das
+       tasks, com exatidao. Seu trabalho e o DESENHO — quem vem antes de quem, o que corre em
+       paralelo, onde bifurca e onde sincroniza.
+
     8. Cada lugar associado a uma task DEVE incluir o campo "logica" com placeholder JavaScript de execução assíncrona, no padrão:
        "logica": "const output = utils.clone(input); output.task_name = '<nome_task>'; await new Promise(r => setTimeout(r, 100)); return output;"
        (O backend substitui esse placeholder por código real de WebSocket. O importante é registrar o nome da task.)
@@ -1198,6 +1235,12 @@ design_petri_net:
     - [ ] 🔴 CONTEI as tasks em tasks_json? Existe transição de execução para CADA UMA (nome contém task_name + task_id preenchido)?
     - [ ] 🔴 Cada transição de execução tem agente_id preenchido (não null)?
     - [ ] 🔴 Cada agente listado em "agentes" é referenciado por PELO MENOS 1 transição?
+    - [ ] 🔴 DISPUTA DE FICHA: percorri os lugares e, para cada um que alimenta 2+ transições,
+          ou os guards se excluem (decisão), ou eu troquei por uma transição de bifurcação (7.1)?
+    - [ ] 🔴 JUNÇÃO: para cada transição de junção, nenhum dos lugares de entrada dela é
+          consumido por outra transição (7.2)?
+    - [ ] 🔴 TRANSIÇÃO MORTA: toda transição tem ao menos uma seta entrando E uma saindo (regra 9)?
+    - [ ] 🔴 As setas respeitam as listas "consome"/"entrega" das tasks (7.3)?
     - [ ] Toda transição tem ≥1 arco de entrada E ≥1 arco de saída? (exceto T_start saindo de P0)
     - [ ] Nenhuma transição tem mais que 3 saídas paralelas?
     - [ ] Para cada dependência declarada em dependencies, existe um caminho P_A → T → P_B no grafo?

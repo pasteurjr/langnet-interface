@@ -186,15 +186,29 @@ def _parse_tasks_yaml(content: str) -> list:
         return []
     if not isinstance(parsed, dict):
         return []
-    return [
-        {
-            "id": key,
-            "description": (val.get("description") if isinstance(val, dict) else "") or "",
-            "expected_output": (val.get("expected_output") if isinstance(val, dict) else "") or "",
-            "agent": (val.get("agent") if isinstance(val, dict) else "") or "",
-        }
-        for key, val in parsed.items()
-    ]
+    # O que cada tarefa CONSOME e ENTREGA, lido do contrato dela. Antes o modelo recebia só a
+    # prosa e tinha de adivinhar no texto quem alimenta quem — e errava o desenho (13/09/2026:
+    # 7 posições com disputa de ficha, junção apoiada em posição já consumida). Isto é fato
+    # apurável, não opinião: o programa apura e entrega pronto; o modelo decide o DESENHO.
+    from agents.langnetagents import (
+        _campos_de_entrada_da_tarefa,
+        _campos_de_saida_da_tarefa,
+    )
+
+    saida = []
+    for key, val in parsed.items():
+        cfg = val if isinstance(val, dict) else {}
+        saida.append(
+            {
+                "id": key,
+                "description": cfg.get("description") or "",
+                "expected_output": cfg.get("expected_output") or "",
+                "agent": cfg.get("agent") or "",
+                "consome": _campos_de_entrada_da_tarefa(cfg),
+                "entrega": _campos_de_saida_da_tarefa(cfg),
+            }
+        )
+    return saida
 
 
 # ═══════════════════════════════════════════════════════════
