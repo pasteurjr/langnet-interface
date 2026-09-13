@@ -262,7 +262,13 @@ async def generate_petri_net(
     state["use_deepseek"] = False
 
     try:
-        result_state = execute_task_with_context("design_petri_net", state)
+        # O motor de agentes é SÍNCRONO e bloqueante. Chamá-lo direto daqui — que é uma função
+        # assíncrona — fazia o CrewAI recusar: "Agent execution was invoked synchronously from
+        # within a running event loop". Medido em 13/09/2026: a geração da rede devolvia 502 e a
+        # etapa seguia exibindo a rede ANTIGA como se tivesse dado certo. Rodar numa thread é o
+        # que as demais etapas já fazem.
+        import asyncio as _aio
+        result_state = await _aio.to_thread(execute_task_with_context, "design_petri_net", state)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=500,
@@ -340,10 +346,28 @@ def review_petri_net_ep(
     data = get_project_data(project_id)
     if not data:
         return {"suggestions": "Não há Rede de Petri para revisar. Gere a rede primeiro."}
+    # A revisão olhava SÓ a rede — então não tinha como dizer se uma transição chama uma tarefa
+    # que EXISTE, se o agente que a executa é o dono dela, nem se o dado que um lugar consome foi
+    # produzido antes. Agora ela recebe também o tasks.yaml e o agents.yaml do projeto.
+    tasks_yaml = agents_yaml = ""
+    try:
+        from app.database import get_db_connection as _gc
+        with _gc() as _c:
+            _cur = _c.cursor(dictionary=True)
+            _cur.execute("SELECT tasks_yaml_content FROM tasks_yaml_sessions WHERE project_id=%s "
+                         "AND CHAR_LENGTH(tasks_yaml_content)>0 ORDER BY started_at DESC LIMIT 1", (project_id,))
+            tasks_yaml = ((_cur.fetchone() or {}).get("tasks_yaml_content") or "")
+            _cur.execute("SELECT agents_yaml_content FROM agents_yaml_sessions WHERE project_id=%s "
+                         "AND CHAR_LENGTH(agents_yaml_content)>0 ORDER BY started_at DESC LIMIT 1", (project_id,))
+            agents_yaml = ((_cur.fetchone() or {}).get("agents_yaml_content") or "")
+            _cur.close()
+    except Exception as _e:  # noqa: BLE001
+        print(f"[PETRI][REVISÃO] não consegui carregar os YAML (revisão seguirá sem eles): {_e}")
     try:
         import json as _json
         from agents.langnetdatamodel import review_petri_net
-        suggestions = review_petri_net(_json.dumps(data, ensure_ascii=False))
+        suggestions = review_petri_net(_json.dumps(data, ensure_ascii=False),
+                                       tasks_yaml=tasks_yaml, agents_yaml=agents_yaml)
     except Exception as e:  # noqa: BLE001
         suggestions = f"Não foi possível gerar sugestões automáticas no momento ({e})."
     return {"suggestions": suggestions}

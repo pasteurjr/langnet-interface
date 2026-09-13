@@ -1142,31 +1142,119 @@ Retorne SOMENTE o YAML final (completo, com tudo que já existia + a mudança)."
         raise RuntimeError(f"YAML refinado inválido: {e}")
 
 
-def review_petri_net(petri_json: str) -> str:
-    """Usa o LLM para revisar a Rede de Petri (NÃO modifica nada). Analisa corretude
-    do workflow: deadlocks/lugares inalcançáveis, transições sem entrada ou saída,
-    cobertura das tasks/agentes, marcação inicial/final, e boas práticas. Robusto a falha."""
+def _tarefas_e_donos(tasks_yaml: str) -> str:
+    """Lista `tarefa -> agente dono` a partir do tasks.yaml, sem as receitas de passos.
+
+    O arquivo inteiro não cabe no pedido de revisão (48 mil caracteres no BioByte, 71% deles em
+    passos), e cortá-lo fazia a revisão acusar como inexistentes tarefas que existiam. Para
+    conferir NOME e DONO, esta lista basta.
+    """
     try:
-        snippet = (petri_json or "").strip()[:22000]
-        if not snippet:
+        import yaml as _yaml
+        texto = tasks_yaml or ""
+        m = re.search(r"```(?:ya?ml)?\s*\n(.*?)\n```", texto, re.S)
+        d = _yaml.safe_load(m.group(1) if m else texto) or {}
+        linhas = []
+        for nome, cfg in d.items():
+            if not isinstance(cfg, dict):
+                continue
+            dono = cfg.get("agent") or cfg.get("agent_id") or "(sem agente)"
+            natureza = cfg.get("execution") or "deterministic"
+            linhas.append(f"- {nome} -> agente: {dono} | natureza: {natureza}")
+        return "\n".join(linhas) if linhas else "(não consegui ler as tarefas)"
+    except Exception as e:  # noqa: BLE001
+        return f"(não consegui ler as tarefas: {e})"
+
+
+def _sem_logica_de_execucao(petri_json: str) -> str:
+    """A rede sem os blocos de código JavaScript dos lugares — o que sobra é a ESTRUTURA.
+
+    É essa parte que a revisão precisa ver por inteiro (lugares, transições, arcos, agentes,
+    marcação). O código de execução vai como um resumo de uma linha, só para o revisor saber que
+    existe. Se algo falhar aqui, devolve o original cortado — nunca deixa a revisão sem entrada.
+    """
+    try:
+        d = json.loads(petri_json)
+    except Exception:
+        return (petri_json or "")[:40000]
+    try:
+        for lugar in d.get("lugares", []) or []:
+            codigo = str(lugar.get("logica") or "")
+            if codigo:
+                lugar["logica"] = f"(código de execução omitido — {len(codigo)} caracteres)"
+        for t in d.get("transicoes", []) or []:
+            if t.get("logica"):
+                t["logica"] = "(código de execução omitido)"
+        return json.dumps(d, ensure_ascii=False)[:40000]
+    except Exception:
+        return (petri_json or "")[:40000]
+
+
+def review_petri_net(petri_json: str, tasks_yaml: str = "", agents_yaml: str = "") -> str:
+    """Revisão CRÍTICA da Rede de Petri pelo agente (não modifica nada).
+
+    Antes ela via só a rede, e por isso não conseguia responder as perguntas que mais importam:
+    a transição chama uma tarefa que EXISTE? o agente que a executa é o dono dela? o dado que um
+    lugar consome foi produzido por alguma transição anterior? Agora recebe também o tasks.yaml e
+    o agents.yaml, e a resposta vem separada em ACHADOS (com gravidade) e CONFERÊNCIAS QUE PASSARAM
+    — para o revisor humano ver o que foi olhado, não só o que deu errado.
+    """
+    try:
+        if not (petri_json or "").strip():
             return "Não há Rede de Petri para revisar."
+        # A rede era CORTADA em 22 mil caracteres — e 71% do tamanho dela é o código JavaScript de
+        # execução de cada lugar, que não tem nada a ver com revisar estrutura. Resultado medido em
+        # 13/09/2026: o corte comia TODAS as transições e arcos, e o revisor — honestamente —
+        # respondia "o JSON está truncado" e ainda assim apontava tarefas "faltando" que existiam.
+        # Agora tira-se a lógica e manda-se a ESTRUTURA INTEIRA: 64 mil caracteres viram 17 mil.
+        snippet = _sem_logica_de_execucao(petri_json)
+        contexto = ""
+        if tasks_yaml:
+            # O tasks.yaml era cortado em 24 mil caracteres — e o do BioByte tem 48 mil, porque
+            # cada tarefa carrega a receita de passos. A revisão via metade das tarefas e acusava
+            # como "inexistentes" transições que estavam certas. Aqui interessa o NOME da tarefa e
+            # o AGENTE dono; os passos não. Manda-se só isso, e cabe inteiro.
+            contexto += ("\n\n=== TAREFAS DO SISTEMA (nome -> agente dono; são os nomes VÁLIDOS "
+                         "de transição) ===\n" + _tarefas_e_donos(tasks_yaml))
+        if agents_yaml:
+            contexto += ("\n\n=== AGENTES DO SISTEMA (agents.yaml) ===\n```yaml\n"
+                         + agents_yaml[:10000] + "\n```")
         prompt = (
-            "Você é um especialista em Redes de Petri e modelagem de workflows de sistemas "
-            "multi-agente. Abaixo está uma Rede de Petri (JSON com lugares, transições, arcos "
-            "e agentes). Analise criticamente e liste sugestões objetivas: possíveis DEADLOCKS "
-            "ou lugares inalcançáveis, transições sem arco de entrada ou de saída, marcação "
-            "inicial/final coerente (início e fim do fluxo), COBERTURA (toda task/agente do "
-            "sistema aparece como transição?), paralelismo/sincronização adequados, e boas "
-            "práticas de nomeação. NÃO reescreva a rede — apenas recomende. Responda em "
-            "português, em tópicos.\n\n"
-            "REDE DE PETRI (JSON):\n```json\n" + snippet + "\n```\n"
+            "Você é especialista em Redes de Petri e em workflows de sistemas multi-agente. "
+            "Revise CRITICAMENTE a rede abaixo. Não reescreva a rede — aponte.\n\n"
+            "CONFIRA, NESTA ORDEM:\n"
+            "1. NOMES: cada transição corresponde a uma tarefa que EXISTE no tasks.yaml? "
+            "Liste transição por transição as que NÃO existem, e as tarefas do tasks.yaml que "
+            "nenhuma transição realiza.\n"
+            "2. DONO: o agente associado a cada transição é o mesmo que o tasks.yaml dá como "
+            "responsável por aquela tarefa? Aponte as divergências pelo nome.\n"
+            "3. FLUXO DE DADOS: para cada transição, o que ela LÊ (dados de entrada do lugar que a "
+            "alimenta) foi PRODUZIDO por alguma transição anterior, ou vem da tela/contexto do "
+            "usuário? Aponte todo dado consumido que ninguém produz antes — é aí que o sistema "
+            "quebra em execução.\n"
+            "4. ESTRUTURA: impasses, lugares inalcançáveis, transição sem arco de entrada ou de "
+            "saída, bipartição (lugar liga a transição e vice-versa, NUNCA lugar-lugar ou "
+            "transição-transição).\n"
+            "5. MARCAÇÃO: há início claro (lugar com ficha inicial) e fim alcançável?\n"
+            "6. PARALELISMO: o que corre em paralelo pode mesmo correr, e o que precisa de "
+            "sincronização a tem?\n\n"
+            "FORMATO DA RESPOSTA (em português):\n"
+            "## Achados\n"
+            "Para cada um: **[GRAVE|MÉDIO|LEVE]** _onde_ — o que está errado — o que fazer.\n"
+            "Se não houver achado numa categoria, não invente.\n"
+            "## Conferências que passaram\n"
+            "Uma linha por item conferido que está correto (para o revisor saber o que foi olhado).\n"
+            "## Veredito\n"
+            "Uma frase: a rede está pronta para gerar código, ou o que falta antes.\n\n"
+            "REDE DE PETRI (JSON):\n```json\n" + snippet + "\n```" + contexto + "\n"
         )
         out = _call_llm(prompt)
         return (out or "").strip() or "O agente não retornou sugestões."
     except Exception as e:
         return (
             f"Não foi possível gerar sugestões automáticas no momento ({e}). "
-            "Revise manualmente: deadlocks, alcançabilidade, cobertura de tasks e marcação inicial/final."
+            "Revise manualmente: nomes das transições contra o tasks.yaml, dado consumido sem "
+            "produtor, impasses, alcançabilidade e marcação inicial/final."
         )
 
 
