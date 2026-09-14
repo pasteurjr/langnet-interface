@@ -4528,6 +4528,52 @@ def _detect_extra_packages(tools_py: str) -> List[str]:
     return extras
 
 
+
+def _tirar_nomes_indefinidos(codigo: str) -> tuple:
+    """Tira do código os nomes que ele USA e nunca DEFINE, e diz quais foram.
+
+    DEFEITO QUE ISTO CORRIGE (13/09/2026): o arquivo de ferramentas do aplicativo saiu citando
+    `ApiCallTool`, uma classe que ninguém define. O módulo inteiro deixa de carregar — e, com ele,
+    TODAS as ferramentas do aplicativo, em silêncio: a tarefa só recusa depois, em execução, com
+    "ferramenta não disponível". Aqui a citação órfã é removida do registro e devolvida na lista,
+    para o portão de ferramentas mostrar a capacidade como pendente em vez de o app quebrar inteiro.
+    """
+    import ast as _ast
+    import builtins as _bi
+    try:
+        arvore = _ast.parse(codigo)
+    except SyntaxError:
+        return codigo, []
+    definidos = set(dir(_bi))
+    for no in _ast.walk(arvore):
+        if isinstance(no, (_ast.FunctionDef, _ast.AsyncFunctionDef, _ast.ClassDef)):
+            definidos.add(no.name)
+        elif isinstance(no, _ast.Name) and isinstance(no.ctx, _ast.Store):
+            definidos.add(no.id)
+        elif isinstance(no, (_ast.Import, _ast.ImportFrom)):
+            for a in no.names:
+                definidos.add((a.asname or a.name).split(".")[0])
+        elif isinstance(no, (_ast.arg,)):
+            definidos.add(no.arg)
+    usados_orfaos = {
+        no.id for no in _ast.walk(arvore)
+        if isinstance(no, _ast.Name) and isinstance(no.ctx, _ast.Load) and no.id not in definidos
+    }
+    if not usados_orfaos:
+        return codigo, []
+    import re as _re
+    saida = []
+    removidos = set()
+    for linha in codigo.split("\n"):
+        orfao = next((n for n in usados_orfaos if _re.search(rf"\b{_re.escape(n)}\b", linha)), None)
+        # Só remove a LINHA quando ela é uma entrada de registro (chave: Valor() ou "nome",) —
+        # apagar uma linha de lógica seria pior que o problema.
+        if orfao and _re.match(r"^\s*(?:[\"\']?[\w.]+[\"\']?\s*:\s*)?[\w.]*" + _re.escape(orfao) + r"\b.*,\s*$", linha):
+            removidos.add(orfao)
+            continue
+        saida.append(linha)
+    return "\n".join(saida), sorted(removidos)
+
 def _empty_tools_py(detected: List[str]) -> str:
     return f'''"""Tools customizadas detectadas: {", ".join(detected) or "nenhuma"}.
 
@@ -9658,6 +9704,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     else:
         print("[CODE-GEN][FERRAMENTAS] etapa não executada para este projeto — as ferramentas "
               "vêm como o modelo escreveu (podem conter implementação de mentira)")
+    tools_py, _orfaos = _tirar_nomes_indefinidos(tools_py)
+    if _orfaos:
+        print(f"[CODE-GEN] ferramenta citada e nunca definida, tirada do registro: {', '.join(_orfaos)}")
+        state.setdefault("ferramentas_orfas", []).extend(_orfaos)
     add("ws-server/tools.py", tools_py if tools_py.endswith("\n") else tools_py + "\n")
     add("ws-server/tools_std.py", _generate_tools_std_py())
     add("ws-server/tools_ext.py", _generate_tools_ext_py())
@@ -11722,7 +11772,11 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
     actions = screen.get("actions", []) or []
 
     # Campos que viram estado do form (input controlado)
-    input_types = {"text", "textarea", "number", "date", "select", "multiselect", "checkbox"}
+    # `rich-text` e `radio` faltavam aqui: a Especificação de Interface os declarava e o emissor,
+    # que descarta calado o que não sabe desenhar, jogava fora (medido em 13/09/2026: o texto de
+    # avisos do monitor, a justificativa do tratamento e a escolha de formato do relatório).
+    input_types = {"text", "textarea", "number", "date", "select", "multiselect", "checkbox",
+                   "rich-text", "richtext", "radio"}
     fields = [c for c in components if c.get("type") in input_types and c.get("field")]
     readonly = [c for c in components if c.get("type") == "readonly" or c.get("type") == "table"]
 
@@ -11828,7 +11882,7 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
         f = c["field"]
         label = c.get("label", f)
         t = c.get("type")
-        wide = ' className="md:col-span-2"' if t == "textarea" else ""
+        wide = ' className="md:col-span-2"' if t in ("textarea", "rich-text", "richtext") else ""
         if _norm_field(f) in fk_by_field:
             ref = fk_by_field[_norm_field(f)]
             fk_used.append((f, ref))
@@ -11836,8 +11890,20 @@ def _react_component_for_screen(screen: dict, comp_name: str, task_fields: Optio
                     '<option value="">Selecione…</option>'
                     f'{{(fkOpts[{json.dumps(f)}] || []).map((o) => <option key={{o.id}} value={{o.id}}>{{o.nome || o.name || o.titulo || o.descricao || o.id}}</option>)}}'
                     '</select>')
-        elif t == "textarea":
-            ctrl = f'<textarea className="{INPUT_CLS}" rows={{2}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+        elif t in ("textarea", "rich-text", "richtext"):
+            _linhas = 6 if t != "textarea" else 2
+            ctrl = f'<textarea className="{INPUT_CLS}" rows={{{_linhas}}} value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
+        elif t == "radio":
+            _ops = [str(o) for o in (c.get("options") or c.get("opcoes") or [])] or ["Sim", "Não"]
+            _botoes = "".join(
+                f'<label className="mr-4 inline-flex items-center gap-1">'
+                f'<input type="radio" name={json.dumps(f)} value={json.dumps(o)} '
+                f'checked={{form[{json.dumps(f)}] === {json.dumps(o)}}} '
+                f'onChange={{() => set({json.dumps(f)}, {json.dumps(o)})}} />'
+                f'<span>{o}</span></label>'
+                for o in _ops
+            )
+            ctrl = f'<div className="py-1">{_botoes}</div>'
         elif t == "multiselect":
             ctrl = f'<input className="{INPUT_CLS}" placeholder="separe por vírgula" value={{form[{json.dumps(f)}]}} onChange={{(e) => set({json.dumps(f)}, e.target.value)}} />'
         elif t == "number":
