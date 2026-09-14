@@ -10736,6 +10736,23 @@ def _template_current_attendance() -> str:
         '  try { localStorage.setItem(KEY, JSON.stringify(next)); } catch (e) {}\n'
         '  return next;\n'
         '}\n\n'
+        'export function comApelidos(dados) {\n'
+        '  // O contrato das tarefas escreve o MESMO dado de dois jeitos: id_usuario e usuario_id,\n'
+        '  // id_caso e caso_id, periodo e periodo_dias. Uma tarefa pede de um jeito, a anterior\n'
+        '  // entregou do outro, e a tela recusava por "campo obrigatorio ausente" tendo o dado em\n'
+        '  // maos. Aqui o mesmo valor viaja com as duas grafias.\n'
+        '  const saida = { ...(dados || {}) };\n'
+        '  for (const [k, v] of Object.entries(dados || {})) {\n'
+        '    if (v == null || v === "") continue;\n'
+        '    let gemeo = null;\n'
+        '    if (/^id_/.test(k)) gemeo = k.replace(/^id_/, "") + "_id";\n'
+        '    else if (/_id$/.test(k)) gemeo = "id_" + k.replace(/_id$/, "");\n'
+        '    else if (/_dias$/.test(k)) gemeo = k.replace(/_dias$/, "");\n'
+        '    else if (k === "periodo") gemeo = "periodo_dias";\n'
+        '    if (gemeo && saida[gemeo] == null) saida[gemeo] = v;\n'
+        '  }\n'
+        '  return saida;\n'
+        '}\n\n'
         'export function clearCarry() {\n'
         '  try { localStorage.removeItem(KEY); } catch (e) {}\n'
         '}\n'
@@ -11278,7 +11295,7 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
                # Contexto compartilhado entre telas (atendimento/caso corrente): a tela rica HERDA
                # (usuario_id do login, caso_id/paciente_id do caso aberto) e GRAVA DE VOLTA o que
                # produz — espelho, na interface, do carry-forward da cadeia Petri.
-               'import { getCarry, setCarry } from "./currentAttendance";']
+               'import { getCarry, setCarry, comApelidos } from "./currentAttendance";']
     if has_map:
         imports += ['import L from "leaflet";', 'import "leaflet/dist/leaflet.css";',
                     'import "leaflet-draw";', 'import "leaflet-draw/dist/leaflet.draw.css";']
@@ -11334,7 +11351,7 @@ __EFFECT__  async function submit() { return executarTarefa("__TARGET__"); }
   async function executarTarefa(tarefa) {
     setBusy(true); setErr(""); setResult(null);
     try {
-      const input = { ...getCarry(), ...form };   // contexto herdado + campos da tela
+      const input = comApelidos({ ...getCarry(), ...form });   // contexto herdado + campos da tela, com as duas grafias
 __GEOMSUBMIT__      if (!tarefa) { setErr("Ação não vinculada a uma tarefa do sistema."); setBusy(false); return; }
       const r = await runTask(tarefa, input);
       setResult(r);

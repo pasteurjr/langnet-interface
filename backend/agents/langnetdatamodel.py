@@ -257,7 +257,12 @@ Verifique:
 3. Nomes seguem convenção snake_case
 4. Todas as tabelas têm PK
 5. Tipos são apropriados (VARCHAR com tamanho, DECIMAL com escala)
-6. Constraints NOT NULL onde necessário
+6. Constraints NOT NULL onde necessário. E DIMENSIONE PENSANDO NO QUE VEM DE FORA: coluna que
+   recebe valor de serviço externo (nome/versão de modelo, identificador do sistema de origem,
+   mensagem devolvida, faixa ou intervalo) precisa de pelo menos 120 caracteres — uma coluna de 20
+   para um texto de 24 faz a gravação inteira falhar. E NÃO marque como obrigatório o que o serviço
+   externo pode não devolver (ex.: intervalo de confiança): se a integração não garante, a coluna
+   aceita vazio.
 
 Retorne SOMENTE JSON:
 {{
@@ -428,6 +433,28 @@ def _default_clause(col: Dict[str, Any]) -> str:
             return " DEFAULT CURRENT_TIMESTAMP"
         if not col.get("nullable", True) and is_bool_flag:
             return " DEFAULT 0"
+        # Coluna OBRIGATORIA e SEM valor padrao: qualquer gravacao que nao a informe e recusada
+        # pelo banco com "Field X doesn't have a default value" — e a tarefa inteira falha, mesmo
+        # tendo feito o trabalho. Medido no BioByte em 14/09/2026: derrubou a auditoria (hash
+        # anterior e atual), a classificacao NHSN e o tratamento (seis colunas, inclusive a
+        # reducao de risco, que so existe DEPOIS do calculo).
+        #
+        # Chave e chave estrangeira continuam sem padrao de proposito: um identificador inventado
+        # seria pior que o erro. Para o resto, damos um padrao vazio do tipo certo — a tarefa
+        # continua gravando o valor real quando o tem, e deixa de quebrar quando nao tem.
+        if not col.get("nullable", True):
+            e_chave = bool(col.get("primary_key") or col.get("pk") or col.get("foreign_key")
+                           or col.get("references") or name == "id" or name.endswith("_id"))
+            if not e_chave:
+                base = typ.split("(")[0]
+                if base in ("VARCHAR", "CHAR"):
+                    return " DEFAULT ''"
+                if base.endswith("TEXT"):
+                    # TEXT so aceita padrao entre parenteses (MariaDB 10.2+/MySQL 8.0.13+).
+                    return " DEFAULT ('')"
+                if base in ("INT", "INTEGER", "BIGINT", "SMALLINT", "TINYINT", "DECIMAL",
+                            "NUMERIC", "FLOAT", "DOUBLE"):
+                    return " DEFAULT 0"
         return ""
     d = str(d).strip()
     if d in ("uuid_generate_v4()", "gen_random_uuid()", "(UUID())", "UUID()"):
