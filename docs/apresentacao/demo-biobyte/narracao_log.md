@@ -392,3 +392,21 @@ Protocolo: OKF — padrão (nosso) · MCP · A2A · ACP · ANP  (mock por ora)
 ## Cena 52.1 — Um erro meu, pego pela própria revisão
 **NARRAÇÃO:** Vale mostrar o caminho, não só o resultado. Na primeira tentativa eu escrevi a entrega de cada tarefa **uma casa antes** do lugar certo: a posição que antecede uma transição é "tarefa pronta para rodar" e carrega o que a tarefa **precisa**, não o que ela **produz**. A revisão pegou a inversão, transição por transição. A regra passou a ser topológica e não depende de nome nenhum: o que uma posição entrega é o que a transição que aponta para ela produz.
 **PRODUÇÃO:** diagrama de três caixas — posição, transição, posição — com as setas e os rótulos "precisa" e "entrega".
+
+## Cena 53 — Etapa 10: Casos de Teste e Validação
+**NARRAÇÃO:** Antes de gerar uma linha de código, o sistema escreve as provas. Cento e cinquenta e seis casos de teste cobrindo os catorze casos de uso — cada um com o que entra, o que se espera e qual regra de negócio está sendo cobrada. Não é uma lista de intenções: é o gabarito contra o qual o aplicativo vai ser conferido depois.
+**PRODUÇÃO:** mostrar a contagem 156/14 e abrir um caso mostrando entrada, saída esperada e a regra citada.
+**TELA:** 1602-langnet-casos-teste-gerados.png
+
+## Cena 54 — Etapa 11: Geração de Código com quatro portões e um novo
+**NARRAÇÃO:** Cento e cinco arquivos. Mas o que importa nesta tela não é o número: é a faixa de portões embaixo. Cinco conferências rodam **antes** de o pacote existir. A lógica das tarefas virou código? As ferramentas têm dono? A tela desenha o que a especificação declarou? Os módulos do servidor carregam? E — novo de hoje — a planta do fluxo está íntegra? Quando qualquer uma reprova, aparece **o que** reprovou, com nome e motivo. Nada sai calado.
+**PRODUÇÃO:** enquadrar a faixa dos cinco portões com os números; destacar que "rede de fluxo" e "ferramentas" estão verdes.
+**TELA:** 1633-langnet-geracao-concluida.png
+
+## Cena 55 — O portão pegando a tarefa que prometia o que não entregava
+**NARRAÇÃO:** Este é o portão trabalhando de verdade. A revisão da rede tinha pedido que duas tarefas passassem a declarar o que auditam. O agente aplicou — e prometeu três campos que nenhum passo dela criava. O portão de tela percebeu na geração seguinte: "a tarefa exige esta entrada e a tela não a envia", seis vezes. Uma frase para o agente, dezoito segundos, e as seis sumiram. É o ciclo inteiro: a rede aponta o contrato, o contrato corrige, o portão confere, e o vídeo mostra os três acontecendo.
+**PRODUÇÃO:** cartela com "11 → 7 → 5" e o tempo de cada correção (18s, 24s, 35s).
+
+## Cena 55.1 — O que ainda reprova, dito na cara
+**NARRAÇÃO:** Três portões seguem reprovando, e é honesto mostrar. Um passo de uma tarefa não virou código — o mesmo de sempre, marcado e visível. Quatro campos declarados na especificação de interface não são desenhados, porque essas telas são montadas por um caminho do gerador que ainda não conhece esses tipos de campo. E o arquivo de ferramentas do aplicativo, que hoje é **escrito pelo modelo**, erra de um jeito diferente a cada geração: classe citada e não definida, registro antes da classe, sufixo trocado no esquema, importação no lugar errado. Cinco desses foram corrigidos no gerador hoje; a sexta geração trouxe outro.
+**NOTA PRODUÇÃO (e é a lição da etapa):** a conclusão não é "faltou corrigir mais um". É que esse arquivo **não deveria ser escrito pelo modelo**: a etapa de Ferramentas já resolveu quem implementa cada capacidade, oito de oito, e o arquivo deveria ser emitido pelo programa a partir desse inventário — determinístico, como já se faz com o modelo de dados. Enquanto não for, o portão é o goleiro. Vale dizer isso no vídeo: é a diferença entre um gerador que tenta adivinhar e um que conhece o que já decidiu.
