@@ -4531,6 +4531,32 @@ def _detect_extra_packages(tools_py: str) -> List[str]:
 
 
 
+
+def _futuro_no_topo(codigo: str) -> str:
+    """Leva a linha de importacao do futuro para o topo do arquivo.
+
+    Python exige essa linha ANTES de qualquer codigo. O arquivo escrito pelo modelo a trazia no
+    meio; enquanto havia erro de nome isso nem aparecia, e ao consertar a ordem virou SyntaxError.
+    Preserva a docstring do modulo, que tambem tem de vir antes.
+    """
+    import re as _re
+    linhas = codigo.split(chr(10))
+    futuras = [l for l in linhas if _re.match(r"\s*from\s+__future__\s+import\s", l)]
+    if not futuras:
+        return codigo
+    resto = [l for l in linhas if l not in futuras]
+    inicio = 0
+    if resto:
+        primeira = resto[0].lstrip()
+        for aspas in (chr(34) * 3, chr(39) * 3):
+            if primeira.startswith(aspas):
+                if primeira.count(aspas) >= 2:
+                    inicio = 1
+                else:
+                    inicio = next((i for i, l in enumerate(resto[1:], 1) if aspas in l), 0) + 1
+                break
+    return chr(10).join(resto[:inicio] + [l.strip() for l in dict.fromkeys(futuras)] + resto[inicio:])
+
 def _ordenar_registros_de_ferramenta(codigo: str, _passes: int = 6) -> tuple:
     """Repete o reparo até a ordem parar de mudar: mover uma classe para o fim pode deixar o
     registro que a usa para trás, e aí é preciso mover o registro também."""
@@ -9791,6 +9817,7 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     else:
         print("[CODE-GEN][FERRAMENTAS] etapa não executada para este projeto — as ferramentas "
               "vêm como o modelo escreveu (podem conter implementação de mentira)")
+    tools_py = _futuro_no_topo(tools_py)
     tools_py, _reordenados = _ordenar_registros_de_ferramenta(tools_py)
     if _reordenados:
         print(f"[CODE-GEN] registro usava classe definida mais abaixo, movido para o fim: {', '.join(_reordenados)}")
