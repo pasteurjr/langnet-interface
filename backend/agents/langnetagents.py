@@ -4557,6 +4557,73 @@ def _futuro_no_topo(codigo: str) -> str:
                 break
     return chr(10).join(resto[:inicio] + [l.strip() for l in dict.fromkeys(futuras)] + resto[inicio:])
 
+
+def _garantir_que_carrega(codigo: str, nome_modulo: str = "tools") -> tuple:
+    """Importa o arquivo de verdade e repara ate ele carregar. Devolve (codigo, o_que_foi_feito).
+
+    POR QUE (medido em 13/09/2026): o arquivo de ferramentas do aplicativo e escrito pelo modelo e
+    erra de um jeito DIFERENTE a cada geracao — classe citada e nao definida, registro antes da
+    classe, sufixo trocado no esquema, importacao do futuro no meio do arquivo, ferramenta padrao
+    sem import. Consertei cinco desses um a um e a sexta geracao trouxe outro. Remendo por sintoma
+    nao termina: o certo e IMPORTAR e so parar quando carregar.
+
+    O que nao tiver conserto vira uma classe que RECUSA em voz alta ao ser usada — a capacidade
+    aparece como pendente em vez de o modulo inteiro (e com ele TODAS as ferramentas) sumir.
+    """
+    import os as _os
+    import subprocess as _sp
+    import sys as _sys
+    import tempfile as _tf
+    import re as _re
+
+    feitos = []
+    for _ in range(8):
+        with _tf.TemporaryDirectory() as tmp:
+            with open(_os.path.join(tmp, f"{nome_modulo}.py"), "w", encoding="utf-8") as fh:
+                fh.write(codigo)
+            # os modulos vizinhos que o arquivo costuma citar existem no pacote gerado
+            for viz in ("tools_std", "mcp_tools", "adapters", "database"):
+                cam = _os.path.join(tmp, f"{viz}.py")
+                if not _os.path.exists(cam):
+                    with open(cam, "w", encoding="utf-8") as fh:
+                        fh.write("def __getattr__(n):\n    raise AttributeError(n)\n")
+            env = dict(_os.environ, PYTHONPATH=tmp)
+            r = _sp.run([_sys.executable, "-c", f"import {nome_modulo}"], cwd=tmp, env=env,
+                        capture_output=True, text=True, timeout=90)
+        if r.returncode == 0:
+            return codigo, feitos
+        erro = (r.stderr or "").strip().split(chr(10))[-1]
+        m = _re.search(r"name '([A-Za-z_][A-Za-z0-9_]*)' is not defined", erro)
+        if m:
+            faltante = m.group(1)
+            stub = (
+                f"class {faltante}:  # capacidade sem implementacao: recusa em voz alta\n"
+                f"    def __init__(self, *a, **k):\n"
+                f"        pass\n"
+                f"    def _run(self, *a, **k):\n"
+                f"        raise NotImplementedError(\n"
+                f"            'A capacidade {faltante} nao foi implementada nesta geracao. '\n"
+                f"            'Resolva o dono dela na etapa de Ferramentas e gere de novo.')\n"
+                f"    run = _run\n"
+                f"    __call__ = _run\n\n"
+            )
+            codigo = _futuro_no_topo(stub + codigo)
+            feitos.append(f"{faltante}: sem implementacao, recusa ao ser usada")
+            continue
+        if "from __future__" in erro:
+            codigo = _futuro_no_topo(codigo)
+            feitos.append("importacao do futuro levada para o topo")
+            continue
+        m2 = _re.search(r"cannot import name '([A-Za-z_][A-Za-z0-9_]*)'", erro)
+        if m2:
+            alvo = m2.group(1)
+            codigo = _re.sub(rf"(?m)^from\s+\S+\s+import\s+.*\b{_re.escape(alvo)}\b.*$", "", codigo)
+            feitos.append(f"import quebrado removido: {alvo}")
+            continue
+        feitos.append(f"nao consegui reparar: {erro[:120]}")
+        break
+    return codigo, feitos
+
 def _ordenar_registros_de_ferramenta(codigo: str, _passes: int = 6) -> tuple:
     """Repete o reparo até a ordem parar de mudar: mover uma classe para o fim pode deixar o
     registro que a usa para trás, e aí é preciso mover o registro também."""
@@ -9867,6 +9934,11 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     if _anotados:
         print(f"[CODE-GEN] atributo de ferramenta sem tipo, anotado: {', '.join(_anotados)}")
     tools_py, _orfaos = _tirar_nomes_indefinidos(tools_py)
+    tools_py, _reparos_import = _garantir_que_carrega(tools_py)
+    for _r in _reparos_import:
+        print(f'[CODE-GEN] ferramentas: {_r}')
+    if _reparos_import:
+        state.setdefault('ferramentas_sem_implementacao', []).extend(_reparos_import)
     if _orfaos:
         print(f"[CODE-GEN] ferramenta citada e nunca definida, tirada do registro: {', '.join(_orfaos)}")
         state.setdefault("ferramentas_orfas", []).extend(_orfaos)
@@ -11650,6 +11722,18 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
                 item["ref"] = c["refEntity"]        # P3: dropdown da entidade referenciada
                 fk_used.append(c["field"])
             inp.append(item)
+    # REDE DE SEGURANCA: campo declarado na Especificacao de Interface que nao caiu em nenhuma das
+    # listas acima (tipo que este molde nao conhece, como texto rico ou escolha unica) aparecia
+    # apenas numa lista interna de metadados — ou seja, declarado e NAO desenhado (medido em
+    # 13/09/2026: avisos do monitor, justificativa do tratamento, formato do relatorio). Aqui ele
+    # vira bloco de leitura, para nunca sumir calado.
+    _ja = {x["key"] for x in inp} | {x["key"] for x in saidas} | {x["key"] for x in kpis}
+    for c in (screen.get("components") or []):
+        _f = c.get("field")
+        if _f and _f not in _ja and (c.get("type") or "") not in ("table", "chart", "grid", "list"):
+            saidas.append({"key": _f, "label": c.get("label", _humanize(_f))})
+            _ja.add(_f)
+
     explicit_dashboard = screen.get("layout") == "dashboard" or screen.get("kind") == "dashboard"
     # F1: tela agêntica INTERATIVA (tem ação de task) → formato ENTRADA → AÇÃO → RESULTADO.
     # O ui_spec às vezes marca os campos de ENTRADA como readonly (ex.: Triagem: queixa/pressão);
