@@ -47,32 +47,32 @@ def s4(prs):
     s=slide(prs,1,"Transformer: a caixa que sustenta o restante","Bloco 1 · LLMs")
     D.cards(s,1,[("tokens", "texto quebrado em unidades processáveis"),("atenção", "cada posição decide de quais outras posições precisa"),("decoder-only", "o modelo prevê o próximo token"),("engenharia", "contexto, custo, latência e qualidade nascem dessa caixa")],y=2.0,size=17.5)
     note(s,"Explique apenas o necessário para conectar atenção, janela de contexto e custo.")
-    reg(4,1,"Transformer",4.5,"Fundamento técnico, sem transformar a palestra em curso de arquitetura.")
+    reg(4,1,"Transformer",4.0,"Fundamento técnico, sem transformar a palestra em curso de arquitetura.")
 
 def s5(prs):
     s=slide(prs,1,"Inferência também é engenharia","Bloco 1 · LLMs")
     codebox(s,'response = model.generate(\n    prompt=context + request,\n    temperature=0.0,\n    response_format=NHSNClassification\n)',w=7.0,h=2.6,fs=15)
     D.cards(s,1,[("temperatura baixa", "extração e código mais determinísticos"),("prefix caching", "reaproveita texto comum e reduz custo"),("modelo local/API", "decisão depende de privacidade, latência e operação")],x=8.15,y=2.15,w=4.2,size=14.5)
     note(s,"Conecte ao DeepSeek e ao controle de custo usado no trabalho real; confirme números no ensaio.")
-    reg(5,1,"Inferência",4.0,"Mostre que o modelo é uma peça configurada, não uma caixa mágica.")
+    reg(5,1,"Inferência",3.5,"Mostre que o modelo é uma peça configurada, não uma caixa mágica.")
 
 def s6(prs):
     s=slide(prs,1,"Modelos abertos, APIs e contexto","Bloco 1 · LLMs")
     D.table(s,1,["Decisão","Pergunta de engenharia","Efeito"],[["Modelo","local, API ou híbrido?","privacidade e dependência"],["Contexto","o que entra na janela?","custo e qualidade"],["Saída","texto livre ou schema?","verificabilidade"],["Adaptação","prompt, RAG ou fine-tuning?","manutenção"]],x=.8,y=2.05,w=11.7,fsize=15)
     D.callout(s,1,[("Regra: ",{"size":18,"bold":True,"color":D.FAM['sky'][0]}),("não escolha o modelo antes de definir a avaliação.",{"size":18,"color":D.INK})],y=5.5,h=.85)
-    reg(6,1,"Decisões",5.5,"Resuma modelos sem transformar a palestra em ranking volátil.")
+    reg(6,1,"Decisões",4.5,"Resuma modelos sem transformar a palestra em ranking volátil.")
 
 def s7(prs):
     s=slide(prs,2,"Contexto, RAG e evidência","Bloco 2 · Contexto e ferramentas")
     D._txt(s,.8,2.05,11.7,1.0,[[("documento clínico → recuperação → critério NHSN → classificação com evidência",{"size":26,"bold":True,"color":D.FAM['teal'][0]})]],align=PP_ALIGN.CENTER,anchor=MSO_ANCHOR.MIDDLE)
     D.cards(s,2,[("RAG", "recupera a regra relevante, não um volume indiscriminado"),("evidência", "todo booleano precisa apontar para o trecho que o justifica"),("falha", "ausência de evidência é diferente de serviço indisponível")],y=3.6,size=17)
-    reg(7,2,"RAG",4.0,"Use ICSAC/NHSN como exemplo de recuperação semântica com evidência.")
+    reg(7,2,"RAG",3.5,"Use ICSAC/NHSN como exemplo de recuperação semântica com evidência.")
 
 def s8(prs):
     s=slide(prs,2,"Saída estruturada como contrato","Bloco 2 · Contexto e ferramentas")
     codebox(s,'class NHSNClassification(BaseModel):\n    classification: Literal["confirmed", "discarded", "pending"]\n    evidence: list[str]\n    justification: str\n    confidence: float',w=8.2,h=3.0,fs=14)
     D.cards(s,2,[("não pedir", "“dê um parecer”"),("pedir", "classificação + evidência + justificativa + confiança")],x=9.3,y=2.25,w=3.1,size=14.5)
-    reg(8,2,"Schema",4.0,"O schema cria uma fronteira verificável entre modelo e sistema.")
+    reg(8,2,"Schema",3.5,"O schema cria uma fronteira verificável entre modelo e sistema.")
 
 def s9(prs):
     s=slide(prs,2,"MCP: a ferramenta tem contrato","Bloco 2 · Contexto e ferramentas")
@@ -110,26 +110,26 @@ def s14(prs):
     codebox(s,'chain = (\n    prompt\n    | llm.with_structured_output(NHSNClassification)\n)\nresult = chain.invoke({\n    "patient": patient,\n    "microbiology": microbiology,\n    "criteria": icsac_criteria\n})',w=8.5,h=3.5,fs=14)
     D.cards(s,4,[("controla", "composição de componentes"),("não resolve sozinho", "durabilidade e governança"),("BioByte", "retriever + modelo + schema")],x=9.5,y=2.25,w=2.8,size=13.7)
     D.callout(s,4,[("EXEMPLO DIDÁTICO — ",{"size":14,"bold":True,"color":D.WARN}),("não é afirmação de que esta chamada isolada seja o runtime completo.",{"size":14,"color":D.INK})],y=6.0,h=.55)
-    reg(14,4,"LangChain",3.0,"Mostre composição e saída estruturada.")
+    reg(14,4,"LangChain",2.5,"Mostre composição e saída estruturada.")
 
 def s15(prs):
     s=slide(prs,4,"LangGraph no UC-004","Bloco 4 · Frameworks")
     codebox(s,'graph.add_node("consultar_microbiologia", fetch_microbiology)\ngraph.add_node("classificar_icsac", classify_case)\ngraph.add_node("validar_evidencias", validate_evidence)\ngraph.add_node("aprovar", human_review)\n\ngraph.add_edge("consultar_microbiologia", "classificar_icsac")\ngraph.add_edge("classificar_icsac", "validar_evidencias")\ngraph.add_edge("validar_evidencias", "aprovar")',w=8.5,h=3.8,fs=13.5)
     D.cards(s,4,[("controla", "estado e transições"),("ganho", "checkpoint e interrupção humana"),("BioByte", "classificação não sai sem revisão")],x=9.5,y=2.35,w=2.8,size=13.7)
-    reg(15,4,"LangGraph",3.5,"Mostre o valor do estado explícito e do human-in-the-loop.")
+    reg(15,4,"LangGraph",3.0,"Mostre o valor do estado explícito e do human-in-the-loop.")
 
 def s16(prs):
     s=slide(prs,4,"CrewAI: agente e tarefa do BioByte","Bloco 4 · Frameworks")
     codebox(s,'nhsn_classifier_agent:\n  role: Especialista em classificação de ICSAC\n  goal: Classificar casos segundo NHSN com evidências\n\nclassify_case_nhsn:\n  agent: nhsn_classifier_agent\n  execution: agent\n  traceability: {uc: UC-004, fr: [FR-003]}\n  expected_output: classificação + evidências + justificativa',w=8.8,h=3.8,fs=13.5)
     D.cards(s,4,[("modelo mental", "organização por papéis"),("valor", "role, goal, task e expected_output"),("limite", "backstory não substitui contrato")],x=9.8,y=2.25,w=2.5,size=13.2)
     D.callout(s,4,[("EXEMPLO BASEADO NO CONTRATO DO BIOBYTE — ",{"size":13,"bold":True,"color":D.WARN}),("validar no artefato gerado antes de chamar de execução real.",{"size":13,"color":D.INK})],y=6.0,h=.55)
-    reg(16,4,"CrewAI",4.0,"Este é o trecho que responde diretamente ao pedido de mostrar agent e task.")
+    reg(16,4,"CrewAI",3.5,"Este é o trecho que responde diretamente ao pedido de mostrar agent e task.")
 
 def s17(prs):
     s=slide(prs,4,"AutoGen/AG2: classificador, revisor e humano","Bloco 4 · Frameworks")
     codebox(s,'classifier = AssistantAgent(\n  name="nhsn_classifier",\n  system_message="Classifique e cite evidências."\n)\nreviewer = AssistantAgent(\n  name="evidence_reviewer",\n  system_message="Verifique a justificativa."\n)\n\nteam = GroupChat([classifier, reviewer, human])',w=8.5,h=3.5,fs=14)
     D.cards(s,4,[("forte", "exploração e revisão conversacional"),("risco", "divergência, repetição e custo"),("controle", "limite de turnos e aprovação explícita")],x=9.5,y=2.35,w=2.8,size=13.4)
-    reg(17,4,"AutoGen",3.0,"Mostre o padrão conversacional, sem sugerir que ele é automaticamente o runtime do BioByte.")
+    reg(17,4,"AutoGen",2.5,"Mostre o padrão conversacional, sem sugerir que ele é automaticamente o runtime do BioByte.")
 
 def s18(prs):
     s=slide(prs,4,"Mesmo caso, diferentes controles","Bloco 4 · Comparação")
@@ -206,35 +206,35 @@ def s30(prs):
     s=slide(prs,7,"O que é real e o que é demonstração didática","Bloco 7 · Prova")
     D.table(s,7,["Real no pipeline","Exemplo comparativo"],[["spec, agents/tasks, UI, Petri, código e testes BioByte","LangChain isolado"],["execução LangNet e interface","LangGraph conceitual"],["WebSocket, ferramentas e gates","CrewAI/AutoGen como alternativas"],["vídeo e rastreabilidade","trechos para explicar abstrações"]],x=.8,y=2.2,w=11.7,fsize=15)
     D.callout(s,7,[("Honestidade técnica: ",{"size":17,"bold":True,"color":D.FAM['rose'][0]}),("um exemplo de código não prova que aquela tecnologia foi usada na execução real.",{"size":17,"color":D.INK})],y=5.7,h=.8)
-    reg(30,7,"Honestidade",2.0,"Evite a confusão entre alternativa didática e runtime efetivo.")
+    reg(30,7,"Honestidade",1.5,"Evite a confusão entre alternativa didática e runtime efetivo.")
 
 def s31(prs):
     s=slide(prs,7,"Demonstração: da especificação ao BioByte","Bloco 7 · Prova")
     D.cards(s,7,[("1", "documento de requisitos e especificação"),("2", "agentes, tarefas e UI Spec"),("3", "Rede de Petri e execução"),("4", "interface, evidência, alerta e relatório"),("5", "teste, falha real e correção"),("6", "gate de rastreabilidade")],y=2.0,size=17)
     D.callout(s,7,[("Vídeo: ",{"size":18,"bold":True,"color":D.FAM['rose'][0]}),("deixar a especificação e o gate visíveis tempo suficiente para leitura.",{"size":18,"color":D.INK})],y=5.85,h=.75)
-    reg(31,7,"Vídeo",4.0,"O vídeo prova o arco completo; não inserir apenas uma tela bonita do protótipo.")
+    reg(31,7,"Vídeo",12.0,"Vídeo de aproximadamente 12 minutos, incluído nos 120 minutos totais. Deve provar o arco completo; não inserir apenas uma tela bonita do protótipo.")
 
 def s32(prs):
     s=slide(prs,7,"O que a demonstração precisa provar","Bloco 7 · Prova")
     D.cards(s,7,[("fonte", "a aplicação começa em uma especificação"),("execução", "as tarefas realmente rodam e atualizam estados"),("produto", "há interface, dados e resultado"),("controle", "falha e recuperação são visíveis"),("rastro", "requisito → task → código → teste")],y=2.0,size=17)
-    reg(32,7,"Critério da demo",2.0,"Use estes cinco critérios para revisar o vídeo antes da palestra.")
+    reg(32,7,"Critério da demo",1.5,"Comentário técnico após o vídeo: use estes critérios para revisar o que foi demonstrado.")
 
 def s33(prs):
     s=slide(prs,7,"Conclusões","Bloco 7 · Fechamento")
     D.cards(s,7,[("1", "modelos são capacidade; método é engenharia"),("2", "agentes sem gates propagam erro"),("3", "a especificação torna o código gerado rastreável"),("4", "BioByte mostra tecnologia aplicada a um problema real")],y=2.0,size=19)
     D.callout(s,7,[("Recomendação: ",{"size":18,"bold":True,"color":D.FAM['rose'][0]}),("defina primeiro o conjunto de avaliação e o contrato de saída.",{"size":18,"color":D.INK})],y=5.6,h=.8)
-    reg(33,7,"Conclusões",2.0,"Retome a tese e deixe uma ação prática.")
+    reg(33,7,"Conclusões",1.5,"Retome a tese e deixe uma ação prática.")
 
 def s34(prs):
     s=slide(prs,7,"Referências e materiais de apoio","Bloco 7 · Fechamento")
     D.cards(s,7,[("BioByte", "requisitos, casos de uso, agentes, tarefas, UI e validação"),("Tecnologias", "LangChain, LangGraph, CrewAI, AutoGen/AG2, MCP"),("Método", "SDD, rastreabilidade, gates e Redes de Petri"),("Ambientes", "Claude Code, Codex e execução pela interface")],y=2.0,size=17)
-    reg(34,7,"Referências",1.0,"Apresente os materiais e indique que os detalhes ficam nos slides de backup.")
+    reg(34,7,"Referências",0.5,"Apresente os materiais e indique que os detalhes ficam nos slides de backup.")
 
 def s35(prs):
     s=slide(prs,7,"Perguntas","Bloco 7 · Fechamento")
     D._txt(s,.8,2.4,11.7,1.0,[[ ("Perguntas e discussão",{"size":34,"bold":True,"color":D.FAM['rose'][0]}) ]],align=PP_ALIGN.CENTER)
     D._txt(s,.8,4.0,11.7,1.0,[[ ("BioByte · SDD · agentes · frameworks · LangNet",{"size":21,"color":D.INK}) ]],align=PP_ALIGN.CENTER)
-    reg(35,7,"Perguntas",6.0,"Reserve tempo para perguntas técnicas. Use os slides de backup conforme a direção da conversa.")
+    reg(35,7,"Perguntas",5.0,"Reserve cinco minutos para perguntas técnicas. Use os slides de backup conforme a direção da conversa.")
 
 def s36(prs):
     s=slide(prs,7,"Backup: tecnologias e detalhes","Bloco 7 · Backup")
