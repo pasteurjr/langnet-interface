@@ -4529,6 +4529,29 @@ def _detect_extra_packages(tools_py: str) -> List[str]:
 
 
 
+
+def _anotar_atributos_de_ferramenta(codigo: str) -> tuple:
+    """Põe o tipo nos atributos `name` e `description` das classes de ferramenta.
+
+    DEFEITO QUE ISTO CORRIGE (13/09/2026): o arquivo de ferramentas escrito pelo modelo declarava
+    `name = "..."` sem dizer o tipo. O CrewAI valida essas classes e RECUSA atributo sem tipo
+    ("A non-annotated attribute was detected"), o módulo inteiro deixa de carregar e o aplicativo
+    fica sem nenhuma ferramenta — em silêncio, até a primeira execução.
+    """
+    import re as _re
+    corrigidos = []
+
+    def _troca(m):
+        corrigidos.append(m.group(2))
+        return f"{m.group(1)}{m.group(2)}: str = {m.group(3)}"
+
+    novo = _re.sub(
+        r"(?m)^(\s{4})(name|description)\s*=\s*(['\"(])",   # só o corpo da classe, não variável local
+        _troca,
+        codigo,
+    )
+    return novo, sorted(set(corrigidos))
+
 def _tirar_nomes_indefinidos(codigo: str) -> tuple:
     """Tira do código os nomes que ele USA e nunca DEFINE, e diz quais foram.
 
@@ -9704,6 +9727,9 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     else:
         print("[CODE-GEN][FERRAMENTAS] etapa não executada para este projeto — as ferramentas "
               "vêm como o modelo escreveu (podem conter implementação de mentira)")
+    tools_py, _anotados = _anotar_atributos_de_ferramenta(tools_py)
+    if _anotados:
+        print(f"[CODE-GEN] atributo de ferramenta sem tipo, anotado: {', '.join(_anotados)}")
     tools_py, _orfaos = _tirar_nomes_indefinidos(tools_py)
     if _orfaos:
         print(f"[CODE-GEN] ferramenta citada e nunca definida, tirada do registro: {', '.join(_orfaos)}")
@@ -10054,7 +10080,8 @@ def _classify_screen(screen: dict, entity_exists: bool) -> str:
     name = (screen.get("name", "") + " " + screen.get("id", "")).lower()
     layout = screen.get("layout", "form")
     comps = screen.get("components") or []
-    editable = any(c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea")
+    editable = any(c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea",
+                                     "rich-text", "richtext", "radio")
                    for c in comps)
     readonly = any(c.get("type") == "readonly" for c in comps)
     if any(k in name for k in ("relat", "export")):
@@ -11480,7 +11507,8 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
                 saidas.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
             else:
                 kpis.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
-        elif c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea") and c.get("field"):
+        elif c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea",
+                               "rich-text", "richtext", "radio") and c.get("field"):
             item = {"key": c["field"], "label": c.get("label", _humanize(c["field"]))}
             if c.get("type") == "select" and c.get("refEntity"):
                 item["ref"] = c["refEntity"]        # P3: dropdown da entidade referenciada
