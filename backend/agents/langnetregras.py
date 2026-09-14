@@ -350,7 +350,11 @@ def entradas_do_contrato(passos: List[dict]) -> Tuple[List[str], List[str]]:
     opc: List[str] = []
     produzidos: set = set()
 
-    def _varre(lista):
+    def _varre(lista, dentro_de_ramo: bool = False):
+        # Nome usado SO dentro de um ramo condicional (ou de um laco) nao e obrigatorio: o
+        # ramo pode nao acontecer. Medido no BioByte em 14/09/2026 — a classificacao NHSN
+        # exigia `classificacao_sobrescrita` e `observacao_medico` mesmo quando NAO havia
+        # sobrescrita, e a tarefa recusava antes de comecar.
         for p in lista or []:
             if not isinstance(p, dict):
                 continue
@@ -368,7 +372,9 @@ def entradas_do_contrato(passos: List[dict]) -> Tuple[List[str], List[str]]:
                         continue                       # campo de um valor
                     if t[1] in produzidos or t[1] in ("verdadeiro", "falso", "nulo"):
                         continue
-                    tolerado = i >= 2 and toks[i - 1][1] == "(" and toks[i - 2][1] in ("existe", "opcional")
+                    tolerado = (dentro_de_ramo
+                                or (i >= 2 and toks[i - 1][1] == "("
+                                    and toks[i - 2][1] in ("existe", "opcional")))
                     (opc if tolerado else obrig).append(t[1])
             for k in ("guarda_em", "atribui", "para_cada", "guarda_id_em"):
                 if p.get(k):
@@ -380,7 +386,11 @@ def entradas_do_contrato(passos: List[dict]) -> Tuple[List[str], List[str]]:
             for _, destino in (p.get("mapeia") or {}).items():
                 produzidos.add(str(destino))
             if isinstance(p.get("passos"), list):
-                _varre(p["passos"])
+                _ramo = dentro_de_ramo or str(p.get("tipo")) in ("condicao", "laco")
+                _varre(p["passos"], _ramo)
+            for _chave_ramo in ("senao", "passos_senao"):
+                if isinstance(p.get(_chave_ramo), list):
+                    _varre(p[_chave_ramo], True)
     _varre(passos)
     obrig_u = sorted(set(obrig))
     opc_u = sorted(set(opc) - set(obrig))
