@@ -4675,6 +4675,33 @@ def _tirar_nomes_indefinidos(codigo: str) -> tuple:
     if not usados_orfaos:
         return codigo, []
     import re as _re
+
+    # Antes de remover: o nome orfao costuma ser a MESMA classe com outro sufixo
+    # (ConsultarMicrobiologiaInput x ConsultarMicrobiologiaSchema). Nesse caso e so apontar para a
+    # que existe, em vez de jogar a ferramenta fora.
+    _sufixos = ("Input", "Schema", "Args", "Params", "Model")
+
+    def _raiz(n: str) -> str:
+        for suf in _sufixos:
+            if n.endswith(suf):
+                return n[: -len(suf)]
+        return n
+
+    definidos_por_raiz = {}
+    for no in _ast.walk(arvore):
+        if isinstance(no, _ast.ClassDef):
+            definidos_por_raiz.setdefault(_raiz(no.name), no.name)
+    renomeados = []
+    for orfao in sorted(usados_orfaos):
+        alvo = definidos_por_raiz.get(_raiz(orfao))
+        if alvo and alvo != orfao:
+            codigo = _re.sub(rf"\b{_re.escape(orfao)}\b", alvo, codigo)
+            renomeados.append(f"{orfao}->{alvo}")
+    if renomeados:
+        usados_orfaos = {n for n in usados_orfaos if not any(r.startswith(n + "->") for r in renomeados)}
+        if not usados_orfaos:
+            return codigo, renomeados
+
     saida = []
     removidos = set()
     for linha in codigo.split("\n"):
