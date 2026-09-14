@@ -4577,12 +4577,13 @@ def _garantir_que_carrega(codigo: str, nome_modulo: str = "tools") -> tuple:
     import re as _re
 
     feitos = []
-    for _ in range(8):
+    _vizinhos_extra = set()
+    for _ in range(12):
         with _tf.TemporaryDirectory() as tmp:
             with open(_os.path.join(tmp, f"{nome_modulo}.py"), "w", encoding="utf-8") as fh:
                 fh.write(codigo)
             # os modulos vizinhos que o arquivo costuma citar existem no pacote gerado
-            for viz in ("tools_std", "mcp_tools", "adapters", "database"):
+            for viz in {"tools_std", "mcp_tools", "adapters", "database"} | _vizinhos_extra:
                 cam = _os.path.join(tmp, f"{viz}.py")
                 if not _os.path.exists(cam):
                     with open(cam, "w", encoding="utf-8") as fh:
@@ -4593,6 +4594,12 @@ def _garantir_que_carrega(codigo: str, nome_modulo: str = "tools") -> tuple:
         if r.returncode == 0:
             return codigo, feitos
         erro = (r.stderr or "").strip().split(chr(10))[-1]
+        # Modulo vizinho que so existe no pacote final: cria um substituto no teste e tenta de
+        # novo. Sem isto o laco abortava ANTES de chegar ao defeito de verdade do arquivo.
+        mm = _re.search(r"No module named '([A-Za-z_][A-Za-z0-9_.]*)'", erro)
+        if mm:
+            _vizinhos_extra.add(mm.group(1).split(".")[0])
+            continue
         m = _re.search(r"name '([A-Za-z_][A-Za-z0-9_]*)' is not defined", erro)
         if m:
             faltante = m.group(1)
