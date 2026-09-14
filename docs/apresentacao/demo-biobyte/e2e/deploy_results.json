@@ -1,8 +1,8 @@
 {
  "portas": [
-  "5002",
-  "8001",
-  "3002"
+  "5003",
+  "8002",
+  "3003"
  ],
- "resumo": "IMPLANTAÇÃO ATUAL\nNO AR\niniciada 14/09/2026, 14:25:25 · 0s\n⏹ Parar\nOnde o sistema ficou disponível\nservidor de agentes (WebSocket)\tporta 5002\tws://localhost:5002\nAPI do sistema (FastAPI)\tporta 8001\thttp://localhost:8001\ninterface do sistema (React)\tporta 3002\thttp://localhost:3002\nRegistro da implantação (426 linhas)\n[frontend]   Line 4:42:      'PieChart' is defined but never used                 no-unused-vars\n[frontend]   Line 4:52:      'Pie' is defined but never used                      no-unused-vars\n[frontend]   Line 4:57:      'Cell' is defined but never used                     no-unused-vars\n[frontend]   Line 116:9:     'chartData' is assigned a value but never used       no-unused-vars\n[frontend]   Line 162:9:     'marcado' is assigned a value but never used         no-unused-vars\n[frontend]   Line 176:9:     'linhas' is assigned a value but never used          no-unused-vars"
+ "resumo": "IMPLANTAÇÃO ATUAL\nNO AR\niniciada 14/09/2026, 15:55:01 · 0s\n⏹ Parar\nOnde o sistema ficou disponível\nservidor de agentes (WebSocket)\tporta 5003\tws://localhost:5003\nAPI do sistema (FastAPI)\tporta 8002\thttp://localhost:8002\ninterface do sistema (React)\tporta 3003\thttp://localhost:3003\nRegistro da implantação (427 linhas)\n[frontend]   Line 4:42:      'PieChart' is defined but never used                 no-unused-vars\n[frontend]   Line 4:52:      'Pie' is defined but never used                      no-unused-vars\n[frontend]   Line 4:57:      'Cell' is defined but never used                     no-unused-vars\n[frontend]   Line 116:9:     'chartData' is assigned a value but never used       no-unused-vars\n[frontend]   Line 162:9:     'marcado' is assigned a value but never used         no-unused-vars\n[frontend]   Line 176:9:     'linhas' is assigned a value but never used          no-unused-vars"
 }

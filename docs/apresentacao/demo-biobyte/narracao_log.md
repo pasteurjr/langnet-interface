@@ -407,6 +407,37 @@ Protocolo: OKF — padrão (nosso) · MCP · A2A · ACP · ANP  (mock por ora)
 **NARRAÇÃO:** Este é o portão trabalhando de verdade. A revisão da rede tinha pedido que duas tarefas passassem a declarar o que auditam. O agente aplicou — e prometeu três campos que nenhum passo dela criava. O portão de tela percebeu na geração seguinte: "a tarefa exige esta entrada e a tela não a envia", seis vezes. Uma frase para o agente, dezoito segundos, e as seis sumiram. É o ciclo inteiro: a rede aponta o contrato, o contrato corrige, o portão confere, e o vídeo mostra os três acontecendo.
 **PRODUÇÃO:** cartela com "11 → 7 → 5" e o tempo de cada correção (18s, 24s, 35s).
 
-## Cena 55.1 — O que ainda reprova, dito na cara
-**NARRAÇÃO:** Três portões seguem reprovando, e é honesto mostrar. Um passo de uma tarefa não virou código — o mesmo de sempre, marcado e visível. Quatro campos declarados na especificação de interface não são desenhados, porque essas telas são montadas por um caminho do gerador que ainda não conhece esses tipos de campo. E o arquivo de ferramentas do aplicativo, que hoje é **escrito pelo modelo**, erra de um jeito diferente a cada geração: classe citada e não definida, registro antes da classe, sufixo trocado no esquema, importação no lugar errado. Cinco desses foram corrigidos no gerador hoje; a sexta geração trouxe outro.
-**NOTA PRODUÇÃO (e é a lição da etapa):** a conclusão não é "faltou corrigir mais um". É que esse arquivo **não deveria ser escrito pelo modelo**: a etapa de Ferramentas já resolveu quem implementa cada capacidade, oito de oito, e o arquivo deveria ser emitido pelo programa a partir desse inventário — determinístico, como já se faz com o modelo de dados. Enquanto não for, o portão é o goleiro. Vale dizer isso no vídeo: é a diferença entre um gerador que tenta adivinhar e um que conhece o que já decidiu.
+## Cena 55.1 — Os portões reprovando, e o que isso obrigou a corrigir
+**NARRAÇÃO:** Na primeira geração, três dos cinco portões reprovaram. Um passo de tarefa não virou código. Onze campos declarados na interface não foram desenhados. E o arquivo de ferramentas do aplicativo não carregava — o que derruba **todas** as ferramentas de uma vez, em silêncio. A implantação **recusou subir**, com a frase que ela mesma emite: "implantar assim sobe um sistema com lacuna conhecida".
+**PRODUÇÃO:** mostrar a faixa dos portões com os três vermelhos e, ao lado, a recusa da implantação.
+**TELA:** 1633-langnet-geracao-concluida.png
+
+## Cena 56 — Por que o arquivo de ferramentas errava toda vez (e o que mudou)
+**NARRAÇÃO:** Esse arquivo é escrito pelo modelo, e a cada geração ele errava de um jeito diferente: classe citada e nunca definida, registro usando classe que só aparece mais abaixo, nome do esquema com sufixo trocado, importação obrigatória no meio do arquivo. Corrigimos cinco desses, um a um — e a sexta geração trouxe outro. A lição não foi "faltou mais um conserto": foi que **remendo por sintoma não termina**. Agora o gerador **importa o arquivo de verdade e conserta até ele carregar**; o que não tem conserto vira uma ferramenta que **recusa em voz alta** quando alguém tenta usá-la, com a capacidade marcada como pendente. Nunca mais o aplicativo fica mudo sem ferramenta nenhuma.
+**PRODUÇÃO:** cartela com os cinco sintomas em sequência e a frase "o laço substitui o remendo".
+
+## Cena 57 — Os cinco portões verdes
+**NARRAÇÃO:** Lógica das tarefas: zero pendências. Ferramentas: zero. Contrato de tela: zero. Módulos do servidor: zero. Rede de fluxo: zero. **Geração aprovada.** Cento e cinco arquivos.
+**PRODUÇÃO:** a faixa inteira verde, em tela cheia, sem narração por dois segundos.
+
+## Cena 58 — A implantação sobe sozinha
+**NARRAÇÃO:** Mesmo botão de antes, mesma tela. Da outra vez ela recusou. Agora sobe: três serviços no ar — a interface do aplicativo, o servidor de tarefas e a porta de serviço. E, novo de hoje, a implantação **prepara o banco**: criou as catorze tabelas do modelo atual. As oito tabelas antigas, de uma implantação anterior, foram **mantidas** — o sistema não apaga dado de ninguém; ele relata o que encontrou e deixa a decisão com quem opera.
+**PRODUÇÃO:** o registro da implantação mostrando as tabelas criadas e as mantidas.
+**TELA:** 1864-langnet-implantacao-no-ar.png, 1865-langnet-implantacao-registro.png
+
+## Cena 59 — O aplicativo, por dentro
+**NARRAÇÃO:** Quarenta e três telas, zero erro de console. O menu sai organizado por área — atendimento, relatórios, integrações, cadastros — e não como uma lista de tabelas. O cadastro de casos mostra o registro real: um de um, caso ativo, com ver, editar e excluir. A tela de login pede o que um login de hospital pede: e-mail institucional, senha, código de seis dígitos, unidade de internação.
+**TELA:** 1810-app-home.png, 1900-app--caso.png
+
+## Cena 60 — A cadeia clínica rodando de verdade
+**NARRAÇÃO:** Seis tarefas executadas contra banco real e serviço externo. O painel devolve um caso ativo. O escore de risco é calculado **pelo serviço externo de Cox**: zero vírgula quinze, faixa baixa, com o nome do modelo. A classificação NHSN devolve confirmado, critério ICSAC, versão 2024. E o tratamento vem com justificativa escrita pelo agente, citando o resultado do NHSN.
+**PRODUÇÃO:** terminal com as respostas, uma por vez, legenda grande.
+
+## Cena 61 — As duas recusas que provam que não há mentira
+**NARRAÇÃO:** Esta é a cena mais importante do vídeo, e ela é sobre o sistema **se recusando a fingir**. Primeiro: pedimos para detectar multirresistência num caso **sem antibiograma**. Ele respondeu **não multirresistente, zero classes resistentes** — em vez de inventar um alerta. Depois lançamos quatro classes resistentes de verdade: aí ele **detectou** e disparou a notificação. E a notificação parou, dizendo: "SMTP não configurado. Defina as variáveis. **Sem mock.**" Terceiro: pedimos a recomendação de tratamento antes de classificar o caso, e ele recusou com "sem classificação NHSN" — que é a regra de negócio, não um erro técnico.
+**PRODUÇÃO:** as três recusas em sequência, cada uma com a frase na tela.
+
+## Cena 62 — O que aparece quando o sistema é executado
+**NARRAÇÃO:** Rodar encontra o que ler não encontra. Oito defeitos apareceram só porque o sistema foi executado. Três deles têm a mesma raiz e valem ser ditos: o modelo de dados dimensionou uma coluna com vinte caracteres, e o serviço externo devolve vinte e quatro; marcou como obrigatório um intervalo de confiança que a integração **não entrega**; e deixou colunas de auditoria sem valor padrão. Nenhum deles é erro do modelo de linguagem — todos são o modelo de dados sendo desenhado **sem olhar o que as integrações realmente devolvem**. É a próxima correção do gerador, e está escrita.
+**PRODUÇÃO:** cartela com os três, lado a lado: o que a tabela esperava × o que o serviço devolveu.
+**NOTA PRODUÇÃO (honestidade):** duas lacunas conhecidas ficam de fora da demonstração e devem ser ditas: a sessão do usuário não chega às telas agênticas (o painel recusa pedindo quem está logado) e a estimativa de redução de risco ainda falha no serviço externo.

@@ -1,6 +1,6 @@
 import asyncio, json, time, websockets, sys
 async def run(name, inp, timeout=60):
-    async with websockets.connect("ws://localhost:5002", max_size=None, open_timeout=10) as ws:
+    async with websockets.connect("ws://localhost:5003", max_size=None, open_timeout=10) as ws:
         try:
             await asyncio.wait_for(ws.recv(), timeout=2)
         except Exception:
