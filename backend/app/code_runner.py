@@ -595,6 +595,9 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
             run.work_dir = ws_dir
         _write_deploy_env(run)
 
+        # 1.5) Prepara o banco do aplicativo: cria as tabelas do pacote que ainda nao existem.
+        _preparar_banco(run, files)
+
         # 2) Checa deps faltantes (sem instalar nada ainda)
         req_file = run.work_dir / "requirements.txt"
         if req_file.exists():
@@ -709,6 +712,74 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
         run.append_line(f"[runner] ERROR: {exc}")
         run.broadcast_status()
 
+
+
+def _preparar_banco(run, files) -> None:
+    """Cria no banco do aplicativo as tabelas que o pacote declara e que ainda nao existem.
+
+    POR QUE (medido em 14/09/2026): a implantacao subia os servicos e parava ai. O banco do BioByte
+    tinha 8 tabelas de uma implantacao ANTIGA, com nomes no plural, enquanto o modelo de dados atual
+    traz 14 no singular. Resultado: o aplicativo abria, as telas apareciam vazias e a primeira
+    tarefa falhava com "a tabela caso nao existe". Implantar sem preparar o banco nao e implantar.
+
+    NUNCA apaga nem altera tabela existente: cria so o que falta e RELATA o que encontrou diferente,
+    para a decisao de mexer em dado que ja existe ser de quem opera, nunca do programa.
+    """
+    import re as _re
+    ddl = next((f.get("content") or "" for f in (files or [])
+                if str(f.get("path", "")).endswith("schema.sql")), "")
+    if not ddl.strip():
+        run.append_line("[banco] o pacote nao traz esquema (db/schema.sql) — nada a preparar")
+        return
+    cfg = dict(run.env_config or {})
+    host = cfg.get("DB_HOST") or cfg.get("MYSQL_HOST") or "127.0.0.1"
+    porta = int(cfg.get("DB_PORT") or cfg.get("MYSQL_PORT") or 3308)
+    user = cfg.get("DB_USER") or cfg.get("MYSQL_USER") or "producao"
+    senha = cfg.get("DB_PASSWORD") or cfg.get("MYSQL_PASSWORD") or ""
+    base = cfg.get("DB_NAME") or cfg.get("MYSQL_DATABASE") or ""
+    if not base:
+        run.append_line("[banco] a tela de implantacao nao informou o banco — pulando o preparo")
+        return
+    try:
+        import pymysql
+    except Exception as e:  # noqa: BLE001
+        run.append_line(f"[banco] nao consegui falar com o banco: {e}")
+        return
+    try:
+        cn = pymysql.connect(host=host, port=porta, user=user, password=senha, autocommit=True)
+        cur = cn.cursor()
+        cur.execute(f"CREATE DATABASE IF NOT EXISTS `{base}` "
+                    "DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci")
+        cur.execute(f"USE `{base}`")
+        cur.execute("SHOW TABLES")
+        existentes = {r[0].lower() for r in cur.fetchall()}
+        comandos = [c.strip() for c in ddl.split(";") if c.strip()]
+        criadas, puladas, erros = [], [], []
+        for cmd in comandos:
+            m = _re.search(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`\"]?(\w+)", cmd, _re.I)
+            if m and m.group(1).lower() in existentes:
+                puladas.append(m.group(1))
+                continue
+            try:
+                cur.execute(cmd)
+                if m:
+                    criadas.append(m.group(1))
+            except Exception as e:  # noqa: BLE001
+                erros.append(f"{(m.group(1) if m else cmd[:40])}: {str(e)[:110]}")
+        cur.execute("SHOW TABLES")
+        agora = {r[0] for r in cur.fetchall()}
+        cn.close()
+        run.append_line(f"[banco] {base}: {len(criadas)} tabela(s) criada(s), "
+                        f"{len(puladas)} ja existia(m), {len(agora)} no total")
+        if criadas:
+            run.append_line(f"[banco] criadas: {', '.join(criadas)}")
+        if puladas:
+            run.append_line(f"[banco] mantidas como estavam (nao mexo em dado existente): "
+                            f"{', '.join(puladas)}")
+        for e in erros[:8]:
+            run.append_line(f"[banco] NAO criou — {e}")
+    except Exception as e:  # noqa: BLE001
+        run.append_line(f"[banco] preparo falhou: {str(e)[:180]}")
 
 def start_run(session_id: str, files: List[Dict[str, Any]],
               env_config: Optional[Dict[str, str]] = None) -> CodeRun:
