@@ -13480,11 +13480,28 @@ def execute_task_with_context(
         # diretamente com a MESMA descrição já formatada. Cobre TANTO kickoff (Crew) QUANTO executar
         # (LangGraphTeamAdapter, que envolve o kickoff internamente).
         def _run_crew():
-            if hasattr(crew, 'kickoff'):
-                return crew.kickoff(inputs={})
-            elif hasattr(crew, 'executar'):
-                return crew.executar(inputs={})
-            raise AttributeError(f"Team object has neither 'kickoff' nor 'executar' method: {type(crew).__name__}")
+            # O serviço do modelo às vezes devolve uma resposta VAZIA (sem escolhas), e a biblioteca
+            # quebra ao ler a primeira — "'NoneType' object is not subscriptable". Medido em
+            # 14/09/2026: derrubou uma geração de código depois de VINTE MINUTOS de trabalho, por
+            # uma falha momentânea do serviço. Tentar de novo custa segundos; perder a geração custa
+            # a sessão inteira.
+            _ultimo = None
+            for _tentativa in range(1, 4):
+                try:
+                    if hasattr(crew, "kickoff"):
+                        return crew.kickoff(inputs={})
+                    if hasattr(crew, "executar"):
+                        return crew.executar(inputs={})
+                    raise AttributeError(
+                        f"Team object has neither 'kickoff' nor 'executar' method: {type(crew).__name__}")
+                except TypeError as e:
+                    if "not subscriptable" not in str(e):
+                        raise
+                    _ultimo = e
+                    print(f"[LLM] resposta vazia do serviço (tentativa {_tentativa} de 3) — repetindo")
+                    time.sleep(8 * _tentativa)
+            raise RuntimeError(
+                f"o serviço do modelo devolveu resposta vazia três vezes seguidas ({_ultimo})")
 
         try:
             _provider_now = (os.getenv("LLM_PROVIDER", "openai") or "").lower()
