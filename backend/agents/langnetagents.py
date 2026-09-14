@@ -13499,7 +13499,8 @@ def execute_task_with_context(
                         raise
                     _ultimo = e
                     print(f"[LLM] resposta vazia do serviço (tentativa {_tentativa} de 3) — repetindo")
-                    time.sleep(8 * _tentativa)
+                    import time as _t_espera
+                    _t_espera.sleep(8 * _tentativa)
             raise RuntimeError(
                 f"o serviço do modelo devolveu resposta vazia três vezes seguidas ({_ultimo})")
 
