@@ -1494,9 +1494,9 @@ def s59(prs):
 def s60(prs):
     s = D._blank(prs); D.header(s, 11, "Bloco 11 · Sistemas", "LangNet: evidência medida")
     D.cards(s, 11, [
-        ("Cobertura de rastreabilidade: 100%.", "Todos os requisitos funcionais atravessam Spec → Modelo de Dados → Implementação, medido por PORTÃO DETERMINÍSTICO — não por confiança no modelo."),
-        ("Suíte de tarefas geradas: 100% executando ponta a ponta.", "Contra banco real — núcleo determinístico + tarefas com agente (laudo, extração de documento)."),
-        ("~10 defeitos do gerador capturados pelo portão ANTES do deploy.", "Variável indefinida, coluna inexistente, junção espacial faltante — cada um com o salto exato onde quebrava.", "good"),
+        ("CINCO portões determinísticos, todos verdes.", "Lógica das tarefas, ferramentas, contrato de tela, módulos do servidor e rede de fluxo — medido a cada geração, não por confiança no modelo."),
+        ("A implantação RECUSOU subir com lacuna conhecida.", "Três portões vermelhos e a etapa respondeu: \u2018implantar assim sobe um sistema com lacuna conhecida\u2019. Só subiu quando os cinco fecharam."),
+        ("8 defeitos que só aparecem EXECUTANDO.", "Coluna de 20 caracteres para um valor de 24 vindo da integração; campo obrigatório que o serviço externo não entrega; o mesmo dado com dois nomes.", "good"),
     ], x=0.6, y=2.05, size=16)
     D.callout(s, 11, [("O número não é a taxa de acerto do modelo — é a taxa em que o portão ", {"size": 15.5, "color": D.INK}),
                       ("pega o erro antes de virar produção", {"size": 15.5, "bold": True, "color": D.FAM['violet'][0]}),
