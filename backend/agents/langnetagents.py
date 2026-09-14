@@ -4531,7 +4531,20 @@ def _detect_extra_packages(tools_py: str) -> List[str]:
 
 
 
-def _ordenar_registros_de_ferramenta(codigo: str) -> tuple:
+def _ordenar_registros_de_ferramenta(codigo: str, _passes: int = 6) -> tuple:
+    """Repete o reparo até a ordem parar de mudar: mover uma classe para o fim pode deixar o
+    registro que a usa para trás, e aí é preciso mover o registro também."""
+    movidos_total: List[str] = []
+    atual = codigo
+    for _ in range(_passes):
+        atual, movidos = _ordenar_uma_vez(atual)
+        if not movidos:
+            break
+        movidos_total.extend(movidos)
+    return atual, sorted(set(movidos_total))
+
+
+def _ordenar_uma_vez(codigo: str) -> tuple:
     """Desce para o fim do arquivo o registro que usa classe definida mais abaixo.
 
     DEFEITO QUE ISTO CORRIGE (13/09/2026): o arquivo de ferramentas trazia
@@ -4549,17 +4562,22 @@ def _ordenar_registros_de_ferramenta(codigo: str) -> tuple:
         for no in arvore.body
         if isinstance(no, (_ast.ClassDef, _ast.FunctionDef))
     }
+    def _proprio(no):
+        return {no.name} if isinstance(no, _ast.ClassDef) else set()
     if not linha_da_classe:
         return codigo, []
     linhas = codigo.split("\n")
     mover = []
     for no in arvore.body:
-        if not isinstance(no, (_ast.Assign, _ast.AnnAssign)):
+        # Vale para registro (STD_TOOLS = {...}) e também para CLASSE que usa outra classe definida
+        # mais abaixo — é o caso de uma ferramenta cujo esquema de argumentos vem depois dela.
+        if not isinstance(no, (_ast.Assign, _ast.AnnAssign, _ast.ClassDef)):
             continue
         usados = {
             n.id for n in _ast.walk(no)
             if isinstance(n, _ast.Name) and isinstance(n.ctx, _ast.Load)
         }
+        usados -= _proprio(no)
         depois = [u for u in usados if linha_da_classe.get(u, 0) > no.lineno]
         if depois:
             mover.append((no.lineno, getattr(no, "end_lineno", no.lineno), sorted(depois)))
