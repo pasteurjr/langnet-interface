@@ -4558,7 +4558,8 @@ def _futuro_no_topo(codigo: str) -> str:
     return chr(10).join(resto[:inicio] + [l.strip() for l in dict.fromkeys(futuras)] + resto[inicio:])
 
 
-def _garantir_que_carrega(codigo: str, nome_modulo: str = "tools") -> tuple:
+def _garantir_que_carrega(codigo: str, nome_modulo: str = "tools",
+                          vizinhos: Optional[Dict[str, str]] = None) -> tuple:
     """Importa o arquivo de verdade e repara ate ele carregar. Devolve (codigo, o_que_foi_feito).
 
     POR QUE (medido em 13/09/2026): o arquivo de ferramentas do aplicativo e escrito pelo modelo e
@@ -4583,6 +4584,10 @@ def _garantir_que_carrega(codigo: str, nome_modulo: str = "tools") -> tuple:
             with open(_os.path.join(tmp, f"{nome_modulo}.py"), "w", encoding="utf-8") as fh:
                 fh.write(codigo)
             # os modulos vizinhos que o arquivo costuma citar existem no pacote gerado
+            _reais = dict(vizinhos or {})
+            for viz, conteudo in _reais.items():
+                with open(_os.path.join(tmp, f"{viz}.py"), "w", encoding="utf-8") as fh:
+                    fh.write(conteudo)
             for viz in {"tools_std", "mcp_tools", "adapters", "database"} | _vizinhos_extra:
                 cam = _os.path.join(tmp, f"{viz}.py")
                 if not _os.path.exists(cam):
@@ -4603,6 +4608,23 @@ def _garantir_que_carrega(codigo: str, nome_modulo: str = "tools") -> tuple:
         m = _re.search(r"name '([A-Za-z_][A-Za-z0-9_]*)' is not defined", erro)
         if m:
             faltante = m.group(1)
+            # O nome pode EXISTIR num modulo vizinho do pacote (foi o caso de database_tool, que
+            # tem arquivo proprio): ai o certo e IMPORTAR, nunca inventar substituto — inventar
+            # tapava o modulo real e o aplicativo perdia o acesso ao banco.
+            _onde = None
+            for _viz, _cont in (vizinhos or {}).items():
+                if _viz == faltante:
+                    _onde = ("modulo", _viz)
+                    break
+                if _re.search(rf"(?m)^(?:class|def)\s+{_re.escape(faltante)}\b", _cont or ""):
+                    _onde = ("nome", _viz)
+                    break
+            if _onde:
+                linha = (f"import {faltante}" if _onde[0] == "modulo"
+                         else f"from {_onde[1]} import {faltante}")
+                codigo = _futuro_no_topo(linha + chr(10) + codigo)
+                feitos.append(f"{faltante}: importado de {_onde[1]}")
+                continue
             stub = (
                 f"class {faltante}:  # capacidade sem implementacao: recusa em voz alta\n"
                 f"    def __init__(self, *a, **k):\n"
@@ -9941,7 +9963,9 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     if _anotados:
         print(f"[CODE-GEN] atributo de ferramenta sem tipo, anotado: {', '.join(_anotados)}")
     tools_py, _orfaos = _tirar_nomes_indefinidos(tools_py)
-    tools_py, _reparos_import = _garantir_que_carrega(tools_py)
+    _vizinhos = {f["path"].rsplit("/", 1)[-1][:-3]: f["content"]
+                 for f in files if f["path"].startswith("ws-server/") and f["path"].endswith(".py")}
+    tools_py, _reparos_import = _garantir_que_carrega(tools_py, vizinhos=_vizinhos)
     for _r in _reparos_import:
         print(f'[CODE-GEN] ferramentas: {_r}')
     if _reparos_import:
