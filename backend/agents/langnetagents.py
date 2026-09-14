@@ -4530,6 +4530,52 @@ def _detect_extra_packages(tools_py: str) -> List[str]:
 
 
 
+
+def _ordenar_registros_de_ferramenta(codigo: str) -> tuple:
+    """Desce para o fim do arquivo o registro que usa classe definida mais abaixo.
+
+    DEFEITO QUE ISTO CORRIGE (13/09/2026): o arquivo de ferramentas trazia
+    `STD_TOOLS = {"api_call_tool": ApiCallTool(), ...}` ANTES de `class ApiCallTool`. Python lê de
+    cima para baixo: o módulo estoura com "nome não definido" e o aplicativo fica sem ferramenta
+    nenhuma. A classe estava lá — só na ordem errada.
+    """
+    import ast as _ast
+    try:
+        arvore = _ast.parse(codigo)
+    except SyntaxError:
+        return codigo, []
+    linha_da_classe = {
+        no.name: no.lineno
+        for no in arvore.body
+        if isinstance(no, (_ast.ClassDef, _ast.FunctionDef))
+    }
+    if not linha_da_classe:
+        return codigo, []
+    linhas = codigo.split("\n")
+    mover = []
+    for no in arvore.body:
+        if not isinstance(no, (_ast.Assign, _ast.AnnAssign)):
+            continue
+        usados = {
+            n.id for n in _ast.walk(no)
+            if isinstance(n, _ast.Name) and isinstance(n.ctx, _ast.Load)
+        }
+        depois = [u for u in usados if linha_da_classe.get(u, 0) > no.lineno]
+        if depois:
+            mover.append((no.lineno, getattr(no, "end_lineno", no.lineno), sorted(depois)))
+    if not mover:
+        return codigo, []
+    fora = set()
+    blocos = []
+    movidos = []
+    for ini, fim, nomes in mover:
+        blocos.append("\n".join(linhas[ini - 1:fim]))
+        fora.update(range(ini - 1, fim))
+        movidos.extend(nomes)
+    restante = [l for i, l in enumerate(linhas) if i not in fora]
+    novo = "\n".join(restante).rstrip() + "\n\n\n" + "\n\n".join(blocos) + "\n"
+    return novo, sorted(set(movidos))
+
 def _anotar_atributos_de_ferramenta(codigo: str) -> tuple:
     """Põe o tipo nos atributos `name` e `description` das classes de ferramenta.
 
@@ -9727,6 +9773,9 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     else:
         print("[CODE-GEN][FERRAMENTAS] etapa não executada para este projeto — as ferramentas "
               "vêm como o modelo escreveu (podem conter implementação de mentira)")
+    tools_py, _reordenados = _ordenar_registros_de_ferramenta(tools_py)
+    if _reordenados:
+        print(f"[CODE-GEN] registro usava classe definida mais abaixo, movido para o fim: {', '.join(_reordenados)}")
     tools_py, _anotados = _anotar_atributos_de_ferramenta(tools_py)
     if _anotados:
         print(f"[CODE-GEN] atributo de ferramenta sem tipo, anotado: {', '.join(_anotados)}")
