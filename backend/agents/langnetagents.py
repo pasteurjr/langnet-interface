@@ -10561,6 +10561,33 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
             src = _agent_screen(s, comp_name, task_fields, model)
         else:
             src = _react_component_for_screen(s, comp_name, task_fields)
+        # REDE DE SEGURANCA DO CONTRATO DE TELA: qualquer campo que a Especificacao de Interface
+        # declare e que NAO tenha chegado ao codigo ganha um bloco de leitura no fim da tela. Sao
+        # quatro moldes diferentes (rico, cadastro, relatorio, agente) e cada um conhece um conjunto
+        # de tipos; o que um nao sabe desenhar sumia calado (medido em 13/09/2026: texto de avisos,
+        # justificativa, intervencoes e escolha de formato). Aqui ninguem some.
+        _faltando = [c for c in (s.get("components") or [])
+                     if c.get("field") and str(c.get("field")) not in src
+                     and (c.get("type") or "") not in ("table", "chart", "grid", "list")]
+        if _faltando:
+            _campos_jsx = "".join(
+                '<div className="mb-2"><div className="text-xs text-slate-500">'
+                + str(c.get("label") or _humanize(str(c.get("field")))).replace("<", "")
+                + '</div><div className="text-sm text-slate-800 whitespace-pre-wrap">{String('
+                + "(typeof result !== 'undefined' && result && result[" + json.dumps(str(c["field"]))
+                + "]) || '—')}</div></div>"
+                for c in _faltando
+            )
+            _bloco = ('\n      <section className="mt-4 rounded-lg border border-slate-200 bg-white p-4">\n'
+                      '        <h3 className="mb-2 text-sm font-semibold text-slate-700">Informações complementares</h3>\n'
+                      '        ' + _campos_jsx + '\n      </section>\n')
+            _corte = src.rfind("</div>")
+            if _corte > 0:
+                src = src[:_corte] + _bloco + src[_corte:]
+                print(f"[CODE-GEN][CONTRATO DE TELA] {len(_faltando)} campo(s) declarado(s) "
+                      f"acrescentado(s) a tela {s.get('name')}: "
+                      + ", ".join(str(c['field']) for c in _faltando))
+
         # Vocabulário de desfecho do caso de uso desta tela (selos, barra, exportação,
         # mensagem de erro no idioma do negócio em vez do jargão de verificação).
         _msgs: List[str] = []
