@@ -4691,6 +4691,21 @@ def _tirar_nomes_indefinidos(codigo: str) -> tuple:
     for no in _ast.walk(arvore):
         if isinstance(no, _ast.ClassDef):
             definidos_por_raiz.setdefault(_raiz(no.name), no.name)
+    # Ferramenta PADRAO citada sem importar: ela existe no modulo tools_std do proprio pacote.
+    # Remover a citacao (o que eu fazia antes) tirava o envio de e-mail do aplicativo. O certo e
+    # importar.
+    _PADRAO = {
+        "JwtTool", "PdfGeneratorTool", "CsvExporterTool", "EmbeddingTool",
+        "VectorSearchTool", "EmailSenderTool", "PdfReaderTool",
+    }
+    faltando_import = sorted(usados_orfaos & _PADRAO)
+    if faltando_import:
+        codigo = ("from tools_std import " + ", ".join(faltando_import) + chr(10)) + codigo
+        codigo = _futuro_no_topo(codigo)
+        usados_orfaos = usados_orfaos - set(faltando_import)
+        if not usados_orfaos:
+            return codigo, [f"importada de tools_std: {n}" for n in faltando_import]
+
     renomeados = []
     for orfao in sorted(usados_orfaos):
         alvo = definidos_por_raiz.get(_raiz(orfao))
