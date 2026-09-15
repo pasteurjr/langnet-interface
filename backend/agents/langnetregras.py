@@ -1255,35 +1255,75 @@ def _sem_colunas_vazias(sql, params):
 
     O banco so aplica o valor padrao quando a coluna e OMITIDA. Escrever vazio explicito numa
     coluna obrigatoria e recusado, mesmo que ela tenha padrao — e a gravacao inteira falha.
-    So mexe em INSERT simples com lista de colunas e marcadores; qualquer outra forma passa intacta.
+
+    A lista de valores costuma trazer funcoes com parenteses (UUID(), NOW()), entao a leitura e
+    feita contando a profundidade dos parenteses, e nao por um padrao simples — foi assim que a
+    primeira versao desta rotina deixou passar justamente o INSERT do escore de risco.
     """
     import re as _re
     if not params or not isinstance(params, (list, tuple)):
         return sql, params
-    m = _re.match(r"(?is)\s*INSERT\s+(?:IGNORE\s+)?INTO\s+([`\"\w.]+)\s*\(([^)]*)\)\s*VALUES\s*\(([^)]*)\)\s*$", sql or "")
+    texto = (sql or "").strip().rstrip(";")
+    m = _re.match(r"(?is)^INSERT\s+(?:IGNORE\s+)?INTO\s+([`\"\w.]+)\s*\(", texto)
     if not m:
         return sql, params
-    colunas = [c.strip() for c in m.group(2).split(",")]
-    marcas = [v.strip() for v in m.group(3).split(",")]
+
+    def _ate_fechar(t, i):
+        """Devolve (conteudo, indice depois do fecha) a partir do '(' em i."""
+        prof, j = 0, i
+        while j < len(t):
+            if t[j] == "(":
+                prof += 1
+            elif t[j] == ")":
+                prof -= 1
+                if prof == 0:
+                    return t[i + 1:j], j + 1
+            j += 1
+        return None, len(t)
+
+    cols_txt, pos = _ate_fechar(texto, m.end() - 1)
+    if cols_txt is None:
+        return sql, params
+    m2 = _re.match(r"(?is)\s*VALUES\s*\(", texto[pos:])
+    if not m2:
+        return sql, params
+    vals_txt, pos2 = _ate_fechar(texto, pos + m2.end() - 1)
+    if vals_txt is None or texto[pos2:].strip():
+        return sql, params      # tem mais coisa depois (ON DUPLICATE, etc.): nao mexe
+
+    def _fatiar(t):
+        """Divide por virgula, respeitando parenteses."""
+        partes, atual, prof = [], "", 0
+        for ch in t:
+            if ch == "(":
+                prof += 1
+            elif ch == ")":
+                prof -= 1
+            if ch == "," and prof == 0:
+                partes.append(atual.strip()); atual = ""
+            else:
+                atual += ch
+        if atual.strip():
+            partes.append(atual.strip())
+        return partes
+
+    colunas, marcas = _fatiar(cols_txt), _fatiar(vals_txt)
     if len(colunas) != len(marcas) or marcas.count("%s") != len(params):
         return sql, params
-    guardar, novos = [], []
-    i = 0
+    guardar, novos, i = [], [], 0
     for col, marca in zip(colunas, marcas):
         if marca != "%s":
-            guardar.append((col, marca))
-            continue
+            guardar.append((col, marca)); continue
         valor = params[i]; i += 1
         if valor is None:
-            continue          # omite a coluna: o padrao dela entra
+            continue            # omite a coluna: o padrao dela entra
         guardar.append((col, marca)); novos.append(valor)
-    if len(novos) == len(params):
+    if len(novos) == len(params) or not guardar:
         return sql, params
-    if not guardar:
-        return sql, params
-    novo_sql = (f"INSERT INTO {m.group(1)} (" + ", ".join(c for c, _ in guardar) + ") VALUES ("
-                + ", ".join(v for _, v in guardar) + ")")
+    novo_sql = (f"INSERT INTO {m.group(1)} (" + ", ".join(c for c, _ in guardar)
+                + ") VALUES (" + ", ".join(v for _, v in guardar) + ")")
     return novo_sql, novos
+
 
 
 def _rt_norm(x):
