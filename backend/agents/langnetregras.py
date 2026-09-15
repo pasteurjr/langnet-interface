@@ -925,7 +925,14 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                     linhas.append(f"{indent}_ctx[{guarda!r}] = (_rows[0].get({col!r}) if _rows else None)")
             elif tipo == "escrita":
                 linhas.append(f"{indent}# passo {n}: escrita")
-                linhas.append(f"{indent}cur.execute({p['sql']!r}, {_params_py(p.get('params') or [])})")
+                # Coluna que o passo nao tem valor para preencher: NAO escrever vazio explicito.
+                # O banco recusa vazio em coluna obrigatoria mesmo quando ela TEM valor padrao (o
+                # padrao so vale quando a coluna e omitida). Medido em 14/09/2026: o servico externo
+                # de Cox nao devolve intervalo de confianca, a tarefa escrevia vazio e a gravacao
+                # inteira falhava com "Column 'intervalo_confianca' cannot be null".
+                linhas.append(f"{indent}_sql_{n}, _par_{n} = _sem_colunas_vazias("
+                              f"{p['sql']!r}, {_params_py(p.get('params') or [])})")
+                linhas.append(f"{indent}cur.execute(_sql_{n}, _par_{n})")
                 if p.get("guarda_id_em"):
                     linhas.append(f"{indent}_ctx[{p['guarda_id_em']!r}] = cur.lastrowid or _ctx.get({p['guarda_id_em']!r})")
             elif tipo == "verificacao":
@@ -1240,6 +1247,41 @@ import json as _rt_json, hashlib as _rt_hashlib, datetime as _rt_dt
 
 class _RegraExecucao(Exception):
     """Falha de regra em tempo de execução, com mensagem legível."""
+def _sem_colunas_vazias(sql, params):
+    """Tira do INSERT as colunas cujo valor nao existe, para o PADRAO da coluna valer.
+
+    O banco so aplica o valor padrao quando a coluna e OMITIDA. Escrever vazio explicito numa
+    coluna obrigatoria e recusado, mesmo que ela tenha padrao — e a gravacao inteira falha.
+    So mexe em INSERT simples com lista de colunas e marcadores; qualquer outra forma passa intacta.
+    """
+    import re as _re
+    if not params or not isinstance(params, (list, tuple)):
+        return sql, params
+    m = _re.match(r"(?is)\s*INSERT\s+(?:IGNORE\s+)?INTO\s+([`\"\w.]+)\s*\(([^)]*)\)\s*VALUES\s*\(([^)]*)\)\s*$", sql or "")
+    if not m:
+        return sql, params
+    colunas = [c.strip() for c in m.group(2).split(",")]
+    marcas = [v.strip() for v in m.group(3).split(",")]
+    if len(colunas) != len(marcas) or marcas.count("%s") != len(params):
+        return sql, params
+    guardar, novos = [], []
+    i = 0
+    for col, marca in zip(colunas, marcas):
+        if marca != "%s":
+            guardar.append((col, marca))
+            continue
+        valor = params[i]; i += 1
+        if valor is None:
+            continue          # omite a coluna: o padrao dela entra
+        guardar.append((col, marca)); novos.append(valor)
+    if len(novos) == len(params):
+        return sql, params
+    if not guardar:
+        return sql, params
+    novo_sql = (f"INSERT INTO {m.group(1)} (" + ", ".join(c for c, _ in guardar) + ") VALUES ("
+                + ", ".join(v for _, v in guardar) + ")")
+    return novo_sql, novos
+
 
 def _rt_norm(x):
     if isinstance(x, bool): return x

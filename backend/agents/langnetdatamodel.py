@@ -391,10 +391,28 @@ def normalize_schema(conceptual_model: Dict[str, Any]) -> Dict[str, Any]:
     return parsed
 
 
+# Colunas que recebem TEXTO DE FORA (de um servico externo ou escrito por uma pessoa) e onde o
+# truncamento e a falha classica: o servico devolve "Cox proportional hazards" (24 caracteres) e a
+# coluna tem 20, e a gravacao INTEIRA falha com "Data too long". Medido no BioByte em 14/09/2026.
+_PALAVRAS_DE_TEXTO_LIVRE = (
+    "versao", "modelo", "mensagem", "descricao", "justificativa", "observacao", "motivo",
+    "url", "endereco", "titulo", "comentario", "resumo", "identificador_externo", "referencia",
+)
+_LARGURA_MINIMA_TEXTO_LIVRE = 120
+
+
 def _sql_type(col: Dict[str, Any], dbms: str = "mysql") -> str:
     """Mapeia o tipo lógico -> tipo nativo do dbms (determinístico)."""
     t = (col.get("type") or "VARCHAR(255)").strip()
     tu = t.upper()
+    # Largura minima para coluna de texto livre — vale tambem na REEMISSAO, que reaproveita o
+    # modelo logico antigo e por isso nao se beneficia de nenhuma regra nova de instrucao.
+    _m = re.match(r"VARCHAR\s*\(\s*(\d+)\s*\)", tu)
+    if _m and int(_m.group(1)) < _LARGURA_MINIMA_TEXTO_LIVRE:
+        _nome = (col.get("name") or "").lower()
+        if any(k in _nome for k in _PALAVRAS_DE_TEXTO_LIVRE):
+            t = f"VARCHAR({_LARGURA_MINIMA_TEXTO_LIVRE})"
+            tu = t.upper()
     if tu == "UUID":
         return "CHAR(36)"
     if tu.startswith("ENUM"):
