@@ -930,9 +930,12 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 # padrao so vale quando a coluna e omitida). Medido em 14/09/2026: o servico externo
                 # de Cox nao devolve intervalo de confianca, a tarefa escrevia vazio e a gravacao
                 # inteira falhava com "Column 'intervalo_confianca' cannot be null".
-                linhas.append(f"{indent}_sql_{n}, _par_{n} = _sem_colunas_vazias("
+                # O numero do passo pode ser "7.2" — e isso NAO e nome de variavel valido em
+                # Python. Troca o que nao for letra ou digito por sublinhado.
+                _n_var = re.sub(r"[^0-9A-Za-z]", "_", str(n))
+                linhas.append(f"{indent}_sql_{_n_var}, _par_{_n_var} = _sem_colunas_vazias("
                               f"{p['sql']!r}, {_params_py(p.get('params') or [])})")
-                linhas.append(f"{indent}cur.execute(_sql_{n}, _par_{n})")
+                linhas.append(f"{indent}cur.execute(_sql_{_n_var}, _par_{_n_var})")
                 if p.get("guarda_id_em"):
                     linhas.append(f"{indent}_ctx[{p['guarda_id_em']!r}] = cur.lastrowid or _ctx.get({p['guarda_id_em']!r})")
             elif tipo == "verificacao":
