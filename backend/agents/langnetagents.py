@@ -140,7 +140,10 @@ def _direct_llm_complete(description: str, expected_output: str = "", system: st
     # de tentar de novo — foi o que travou a geração dos casos de teste.
     if _provider == "claude_code":
         # a resposta vem inteira de uma vez (sem fluxo) e pode levar minutos em documento grande
-        _timeout = float(_os.getenv("CLAUDE_CODE_TIMEOUT", "900"))
+        # O servidor da API aceita ate 3600s por requisicao (corrigido do outro lado em
+        # 14/09/2026: o subprocess do CLI era morto aos 900s e a geracao saia cortada
+        # ou vazia — foi o que eu li como "tamanho imprevisivel" e como 502).
+        _timeout = float(_os.getenv("CLAUDE_CODE_TIMEOUT", "3000"))
     elif _provider == "deepseek":
         _timeout = float(_os.getenv("LLM_TIMEOUT", "300"))
     else:
@@ -315,7 +318,7 @@ def get_llm(use_deepseek: bool = False):
                 custom_openai=True,
                 base_url=claude_api_base,
                 api_key=os.getenv("CLAUDE_CODE_API_KEY", ""),
-                timeout=float(os.getenv("CLAUDE_CODE_TIMEOUT", "900")),
+                timeout=float(os.getenv("CLAUDE_CODE_TIMEOUT", "3000")),
                 max_tokens=int(os.getenv("CLAUDE_CODE_MAX_TOKENS", "32000")),
             )
 
