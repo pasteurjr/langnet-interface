@@ -4235,6 +4235,10 @@ class DatabaseTool(BaseTool):
             database=os.getenv("DB_NAME", ""),
             connection_timeout=10,
             autocommit=False,
+            # Sem dizer o alfabeto, a acentuacao volta trocada: "Classificacao automatica" aparecia
+            # como "ClassificaÃ§Ã£o automÃ¡tica" na tela (medido em 15/09/2026).
+            charset="utf8mb4",
+            collation="utf8mb4_general_ci",
         )
 
     def _run(self, query: str, params: Optional[List[Any]] = None) -> str:
@@ -5514,6 +5518,7 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
             f"        user=os.getenv('DB_USER', 'root'),\n"
             f"        password=os.getenv('DB_PASSWORD', ''),\n"
             f"        database=os.getenv('DB_NAME', ''),\n"
+            f"        charset='utf8mb4', collation='utf8mb4_general_ci',\n"
             f"    )\n"
             f"    try:\n"
             f"        cur = conn.cursor(dictionary=True)\n"
@@ -6102,7 +6107,8 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str,
         "    import os, mysql.connector\n"
         "    conn = mysql.connector.connect(host=os.getenv('DB_HOST','localhost'),\n"
         "        port=int(os.getenv('DB_PORT','3306')), user=os.getenv('DB_USER','root'),\n"
-        "        password=os.getenv('DB_PASSWORD',''), database=os.getenv('DB_NAME',''))\n"
+        "        password=os.getenv('DB_PASSWORD',''), database=os.getenv('DB_NAME',''),\n"
+        "        charset='utf8mb4', collation='utf8mb4_general_ci')\n"
     )
     seen = set()
     for ent in entities:
@@ -7890,7 +7896,8 @@ class VectorSearchTool(BaseTool):
         conn = mysql.connector.connect(
             host=os.getenv('DB_HOST', 'localhost'), port=int(os.getenv('DB_PORT', '3306')),
             user=os.getenv('DB_USER', 'root'), password=os.getenv('DB_PASSWORD', ''),
-            database=os.getenv('DB_NAME', ''))
+            database=os.getenv('DB_NAME', ''),
+            charset='utf8mb4', collation='utf8mb4_general_ci')
         try:
             cur = conn.cursor(dictionary=True)
             cur.execute(f"SELECT `{id_col}`, `{text_col}` FROM `{table}` LIMIT 500")
