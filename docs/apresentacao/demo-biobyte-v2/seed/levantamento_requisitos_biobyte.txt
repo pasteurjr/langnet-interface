@@ -1,0 +1,224 @@
+LEVANTAMENTO DE REQUISITOS — BIOBYTE SENTINELA
+Sistema de vigilância de Infecção de Corrente Sanguínea Associada a Cateter (ICSAC)
+
+Reunião com a Comissão de Controle de Infecção Hospitalar (CCIH)
+Participantes: médica infectologista (coordenadora da CCIH), enfermeira de controle de infecção,
+analista do laboratório de microbiologia, gerente de TI do hospital.
+Registro das falas organizadas por assunto.
+
+
+1. O PROBLEMA, NAS PALAVRAS DA CCIH
+
+A coordenadora abriu explicando o trabalho de hoje. A comissão acompanha os pacientes de UTI que
+estão com cateter venoso central. Todo dia alguém precisa olhar quem está com cateter, há quantos
+dias, e decidir quem merece atenção primeiro. Isso hoje é feito em planilha, com informação vindo
+de três lugares diferentes: o prontuário, o laboratório e a anotação da enfermagem.
+
+"O que mais nos custa é o tempo entre a hemocultura ficar pronta no laboratório e alguém aqui
+perceber que aquele paciente tem uma infecção de corrente sanguínea. Às vezes são dois dias. E
+quando o germe é multirresistente, dois dias é muita coisa."
+
+A enfermeira acrescentou que o problema não é só perceber, é também provar depois. "Toda
+classificação que a gente faz tem que poder ser auditada. Se eu digo que aquele caso é uma ICSAC
+confirmada, eu preciso mostrar por qual critério, em qual versão da norma, e quem assinou aquilo."
+
+
+2. O QUE O SISTEMA PRECISA FAZER
+
+2.1 Acesso ao sistema
+
+O sistema é usado por médicos, enfermeiros e administradores. Cada pessoa entra com e-mail e senha.
+Não queremos código enviado por mensagem nem aplicativo autenticador — isso atrapalha na UTI, onde
+às vezes a pessoa está de luva. Login comum, com e-mail e senha, e pronto.
+
+O cadastro de usuário guarda nome, e-mail, senha, o papel da pessoa (médico, enfermeiro ou
+administrador) e se ela está ativa. Usuário desligado do hospital é desativado, não apagado,
+porque o nome dele continua aparecendo nos registros antigos.
+
+Depois que a pessoa entra, o sistema sabe quem ela é durante todo o uso. Isso é importante: todo
+registro de auditoria precisa trazer o usuário que fez a ação, e a pessoa não pode ser obrigada a
+se identificar de novo a cada tela.
+
+2.2 Cadastro do caso clínico
+
+O ponto de partida é o paciente com cateter. O cadastro precisa de: nome do paciente, data de
+nascimento, sexo, número do prontuário, e o médico responsável.
+
+Sobre o episódio em si, a CCIH precisa de: a idade do paciente na data, há quantos dias o cateter
+está instalado, a pontuação APACHE II daquele paciente, o sítio de inserção do cateter (jugular
+interna, subclávia, femoral) e as comorbidades relevantes.
+
+A enfermeira foi enfática: "esses cinco dados são os que entram na conta do risco. Se faltar um, a
+conta não sai." O caso tem uma data de início, pode ter uma data de encerramento, e um estado —
+ativo ou encerrado.
+
+2.3 Risco: o escore de Cox
+
+O hospital já tem um serviço estatístico que calcula o risco de ICSAC pelo modelo de perigos
+proporcionais de Cox. Esse serviço é de fora, roda em outro servidor, e o BioByte vai consultá-lo.
+
+Ele recebe a idade, a pontuação APACHE II e o tipo de cateter, e devolve o escore, a faixa de risco
+(baixo, moderado ou alto), o preditor linear, os fatores que pesaram e o nome da versão do modelo
+usado.
+
+A médica pediu atenção a dois pontos. Primeiro: o serviço externo **não devolve intervalo de
+confiança**, então o sistema não pode exigir esse dado. Segundo: o nome do modelo vem como texto
+livre e pode ser longo — "Cox proportional hazards", por exemplo — então o campo tem que caber.
+
+O escore calculado fica guardado com o caso, junto da data do cálculo e da versão do modelo, porque
+quando o modelo mudar a CCIH precisa saber qual versão gerou cada número antigo.
+
+2.4 Microbiologia: a integração com o laboratório
+
+O laboratório tem um sistema próprio. O BioByte consulta esse sistema pelo número do paciente e
+recebe os resultados de hemocultura: o identificador da amostra, a origem (hemocultura, ponta de
+cateter ou outra), o microrganismo isolado, e o antibiograma.
+
+O analista do laboratório explicou o antibiograma: é uma lista de antimicrobianos, cada um com a
+classe a que pertence e o resultado — sensível, intermediário ou resistente.
+
+Ele avisou de dois comportamentos do sistema deles. "Nem sempre o resultado está pronto. Quando
+não está, a gente responde 'pendente', sem microrganismo nenhum. E às vezes a amostra vem com
+problema de cadastro, e a gente responde com uma mensagem explicando." O BioByte precisa lidar com
+os dois casos sem quebrar e sem inventar resultado.
+
+A importação não pode duplicar. Se o mesmo resultado for buscado duas vezes, o sistema reconhece e
+não cria registro repetido.
+
+2.5 Classificação pelo critério NHSN
+
+Com a microbiologia na mão, o sistema aplica o critério NHSN vigente e classifica o caso: a ICSAC
+está confirmada, descartada, ou ainda pendente.
+
+A coordenadora insistiu na rastreabilidade: "a classificação tem que dizer qual critério foi
+aplicado e qual versão dele". Os critérios ficam cadastrados no sistema, com a versão, o nome do
+critério, os limiares que ele usa e o período de vigência — porque a norma muda de tempos em
+tempos e os casos antigos continuam valendo pela norma da época.
+
+Ela também pediu que o médico possa **sobrescrever** a classificação automática, desde que
+justifique por escrito. Quando não há sobrescrita, a justificativa não deve ser exigida.
+
+2.6 Multirresistência e alerta
+
+A partir do antibiograma, o sistema identifica se o microrganismo é multirresistente — a regra
+prática é resistência a três ou mais classes de antimicrobianos.
+
+Quando detecta, o sistema abre um alerta com tipo, gravidade e situação (aberto, reconhecido ou
+encerrado), e **notifica a equipe**: a coordenadora da CCIH e o enfermeiro responsável, por e-mail.
+
+"Isso é o que mais importa para nós", disse a médica. "É o caso em que cada hora conta."
+
+A notificação registra para quem foi, por qual canal e quanto tempo levou. Se o envio falhar, o
+sistema tem que dizer que falhou — não pode fingir que enviou.
+
+2.7 Recomendação de tratamento
+
+Confirmado o caso, o sistema recomenda o pacote de medidas — o bundle. Os bundles ficam
+cadastrados, cada um com nome, indicação, a redução média de risco que ele produz e o intervalo de
+confiança dessa redução.
+
+A recomendação considera o resultado do NHSN e a presença de multirresistência. O médico pode
+escolher outro bundle, mas a recomendação do sistema fica registrada junto.
+
+Ponto importante levantado pela médica: "o sistema não pode recomendar um bundle de germe
+multirresistente para um caso onde não há multirresistência registrada. Se os dados não sustentam,
+ele deve dizer que não sustentam."
+
+Toda recomendação vem com uma justificativa em texto, que cita o resultado do NHSN e a situação de
+multirresistência — é isso que o médico lê antes de aceitar.
+
+2.8 Estimativa de redução de risco
+
+Escolhido o tratamento, o sistema estima quanto ele reduz o risco daquele paciente, num horizonte
+escolhido (30, 90 ou 180 dias). Devolve a redução absoluta, a redução relativa e o intervalo de
+confiança.
+
+Esse cálculo usa os mesmos dados clínicos do caso — idade, APACHE II, sítio de inserção — que o
+sistema **busca no próprio cadastro do caso**, sem pedir de novo ao usuário.
+
+2.9 Ciclo integrado
+
+A coordenadora pediu um comando único que faça a sequência inteira para um caso: buscar
+microbiologia, classificar, detectar multirresistência, calcular escore, recomendar e estimar. "Na
+prática, é isso que eu quero clicar de manhã."
+
+Esse comando devolve quais etapas concluíram e qual foi o resultado de cada uma.
+
+2.10 Painel de vigilância
+
+Um painel com a situação do serviço, por período (7, 30, 90 ou 365 dias): quantos casos ativos, o
+escore médio de risco, quantos casos classificados pelo NHSN, quantos alertas de multirresistência
+abertos, a conformidade por mês e a distribuição dos casos por faixa de risco.
+
+O painel é o que fica na tela da sala da CCIH.
+
+2.11 Relatórios
+
+Exportação do relatório de vigilância em PDF ou CSV, por período, podendo filtrar por paciente.
+O relatório traz os casos, os escores, as classificações e os alertas. O sistema informa quantos
+registros foram exportados e disponibiliza o arquivo.
+
+2.12 Auditoria
+
+Toda ação relevante é registrada: quem fez, o que fez, sobre qual registro, quando. O registro é
+encadeado — cada entrada guarda a marca da anterior — para que ninguém possa alterar o histórico
+sem que isso apareça.
+
+O administrador consulta o log filtrando por período, usuário ou tipo de ação.
+
+
+3. COMO O SISTEMA DEVE SE COMPORTAR QUANDO ALGO DÁ ERRADO
+
+Este ponto ocupou boa parte da reunião. A médica foi direta: "o pior que pode acontecer é o sistema
+mostrar um número que não existe".
+
+- Quando o laboratório está fora do ar, a tela diz que o laboratório está fora do ar — não mostra
+  resultado vazio como se fosse resultado normal.
+- Quando o serviço de escore não responde, o sistema diz isso, e não grava escore nenhum.
+- Quando faltam dados para uma conta, o sistema diz **qual** dado falta.
+- Quando o envio de e-mail não está configurado, o sistema avisa em vez de dar a notificação por
+  enviada.
+- Nenhuma tela mostra valor de exemplo, texto de preenchimento ou número inventado. Campo sem dado
+  aparece vazio, com a explicação do porquê.
+
+
+4. REQUISITOS NÃO FUNCIONAIS
+
+Conformidade com a LGPD: dado de paciente protegido, e anonimização antes de qualquer chamada a
+serviço externo.
+
+Rastreabilidade: toda decisão do sistema — risco, classificação, conduta — registrada e rastreável
+até a origem do dado.
+
+Desempenho: o painel responde em poucos segundos; a consulta ao laboratório tem tempo limite e
+falha explícita quando estoura.
+
+Confiabilidade: o sistema roda continuamente na rotina da CCIH.
+
+Usabilidade: as telas usam o vocabulário do hospital, não jargão de sistema. Quem lê a tela é
+médico ou enfermeiro, não analista.
+
+
+5. INTEGRAÇÕES EXTERNAS JÁ EXISTENTES
+
+O hospital já disponibiliza dois serviços, que o BioByte vai consumir:
+
+- Consulta de microbiologia, pelo identificador do paciente. Devolve situação, identificador da
+  amostra, origem, microrganismo, indicação de multirresistência e o antibiograma. Todos os campos
+  além da situação podem vir vazios quando o resultado ainda não saiu.
+
+- Escore de risco de Cox. Recebe idade (número inteiro), pontuação APACHE II (número inteiro) e
+  tipo de cateter (texto). Devolve o escore, a faixa de risco, o preditor linear, os fatores de
+  risco e o nome do modelo. Não devolve intervalo de confiança.
+
+E um terceiro para envio de e-mail, usado nas notificações de alerta.
+
+
+6. OBSERVAÇÕES FINAIS DA REUNIÃO
+
+O gerente de TI pediu que os nomes dos dados sejam consistentes em todo o sistema: "se o
+identificador do caso se chama de um jeito numa tela, tem que se chamar do mesmo jeito na outra, e
+no banco também. Já perdemos semanas com isso em outro projeto."
+
+A coordenadora encerrou pedindo que o sistema seja honesto acima de tudo: "prefiro que ele me diga
+'não consegui' a me dar um número que eu não posso defender numa auditoria".
