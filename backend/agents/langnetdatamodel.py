@@ -362,9 +362,96 @@ def _focus_spec_for_extraction(spec: str, budget: int = 62000) -> str:
     return head + "\n\n[... seções intermediárias omitidas — ver §6/§8 abaixo ...]\n\n" + tail
 
 
-def extract_entities(specification_document: str) -> Dict[str, Any]:
+
+def esquemas_dos_servicos_externos(project_id: str) -> dict:
+    """O que cada servico externo (MCP) do projeto EXIGE receber e GARANTE devolver.
+
+    POR QUE ISTO EXISTE (15/09/2026): o LangNet pergunta ao servidor MCP o que ele faz, GUARDA a
+    resposta no cadastro do servidor — e depois gera o sistema inteiro sem consultar o que guardou.
+    Resultado medido no BioByte: a tabela nasceu com `intervalo_confianca` OBRIGATORIO, e a ficha do
+    servico diz que esse campo NAO EXISTE na saida; a coluna do nome do modelo nasceu com 20
+    caracteres e o servico devolve "Cox proportional hazards" (24). Tres dias de conserto por um
+    dado que estava a uma consulta de distancia.
+    """
+    try:
+        from app.database import get_db_connection
+    except Exception:  # noqa: BLE001
+        return {}
+    import json as _json
+    achados: dict = {}
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            cur.execute(
+                "SELECT s.name AS servidor, s.capabilities_json "
+                "FROM mcp_servers s "
+                "JOIN mcp_project_servers ps ON ps.mcp_server_id = s.id "
+                "WHERE ps.project_id = %s AND ps.enabled = 1", (project_id,))
+            linhas = cur.fetchall() or []
+            cur.close()
+    except Exception as e:  # noqa: BLE001
+        print(f"[MODELO DE DADOS] fichas dos servicos externos indisponiveis: {e}")
+        return {}
+
+    def _campos(esq):
+        props = (esq or {}).get("properties") or {}
+        obrig = set((esq or {}).get("required") or [])
+        return {k: {"tipo": (v or {}).get("type") or "string", "obrigatorio": k in obrig}
+                for k, v in props.items()}
+
+    for l in linhas:
+        try:
+            ferramentas = _json.loads(l.get("capabilities_json") or "[]") or []
+        except Exception:  # noqa: BLE001
+            continue
+        for t in (ferramentas if isinstance(ferramentas, list) else []):
+            if not isinstance(t, dict) or not t.get("name"):
+                continue
+            achados[t["name"]] = {
+                "servidor": l.get("servidor"),
+                "recebe": _campos(t.get("input_schema") or t.get("inputSchema")),
+                "devolve": _campos(t.get("output_schema") or t.get("outputSchema")),
+            }
+    if achados:
+        print(f"[MODELO DE DADOS] fichas lidas de {len(achados)} ferramenta(s) externa(s): "
+              + ", ".join(achados))
+    return achados
+
+
+def texto_das_fichas_externas(fichas: dict) -> str:
+    """As fichas em texto, para entrar no pedido ao modelo."""
+    if not fichas:
+        return ""
+    linhas = ["", "## O QUE OS SERVICOS EXTERNOS DEVOLVEM (ficha declarada por eles mesmos)", ""]
+    for nome, f in fichas.items():
+        linhas.append(f"- **{nome}** (servidor: {f.get('servidor')})")
+        rec = ", ".join(f"{k}: {v['tipo']}{'' if v['obrigatorio'] else ' (opcional)'}"
+                        for k, v in (f.get("recebe") or {}).items()) or "(nada)"
+        dev = ", ".join(f"{k}: {v['tipo']}{'' if v['obrigatorio'] else ' (pode nao vir)'}"
+                        for k, v in (f.get("devolve") or {}).items()) or "(nao declara)"
+        linhas.append(f"    recebe: {rec}")
+        linhas.append(f"    devolve: {dev}")
+    linhas += [
+        "",
+        "REGRAS QUE ESTAS FICHAS IMPOEM (obedeca):",
+        "1. Coluna que guarda um campo DEVOLVIDO por servico externo: use texto de 120 caracteres no",
+        "   minimo, porque o valor vem de fora e voce nao controla o tamanho.",
+        "2. Campo que o servico NAO devolve (nao esta na lista) NAO pode existir como coluna",
+        "   obrigatoria alimentada por ele. Ou nao crie a coluna, ou deixe-a aceitar vazio.",
+        "3. Campo marcado '(pode nao vir)' vira coluna que aceita vazio.",
+        "",
+    ]
+    return "\n".join(linhas)
+
+def extract_entities(specification_document: str, fichas_externas: Optional[dict] = None) -> Dict[str, Any]:
     """Passo 1: extrai entidades do texto da specification."""
-    prompt = _EXTRACT_ENTITIES_PROMPT.format(specification_document=_focus_spec_for_extraction(specification_document))
+    prompt = _EXTRACT_ENTITIES_PROMPT.format(
+        specification_document=_focus_spec_for_extraction(specification_document))
+    # As fichas dos servicos externos entram AQUI: e o que impede a coluna de nascer
+    # curta demais ou obrigatoria para um dado que a integracao nao devolve.
+    _fichas = texto_das_fichas_externas(fichas_externas or {})
+    if _fichas:
+        prompt += _fichas
     # ENTIDADES OBRIGATÓRIAS da §6 (fonte autoritativa) — força o LLM a não colapsar/omitir.
     _s6 = _section6_entities(specification_document)
     if _s6:
@@ -1087,6 +1174,7 @@ def execute_data_model_workflow(
     specification_document: str,
     target_dbms: str = "mysql",
     progress_cb=None,
+    project_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Executa o pipeline completo de Data Model.
 
@@ -1107,7 +1195,10 @@ def execute_data_model_workflow(
                 pass
 
     _tick("extract_entities", 5)
-    conceptual = extract_entities(specification_document)
+    # As fichas dos servicos externos do projeto entram na extracao — sem elas o modelo
+    # de dados adivinha tamanho e obrigatoriedade de dado que vem de fora.
+    _fichas_ext = esquemas_dos_servicos_externos(project_id) if project_id else {}
+    conceptual = extract_entities(specification_document, _fichas_ext)
 
     _tick("normalize_schema", 25)
     logical = normalize_schema(conceptual)

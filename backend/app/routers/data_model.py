@@ -200,6 +200,7 @@ def generate_data_model(project_id: str, req: GenerateRequest, current_user=Depe
         result = execute_data_model_workflow(
             specification_document=spec_content,
             target_dbms=req.target_dbms,
+            project_id=project_id,
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Falha na geração: {e}")

@@ -595,6 +595,24 @@ def _worker(run: CodeRun, files: List[Dict[str, Any]]) -> None:
             run.work_dir = ws_dir
         _write_deploy_env(run)
 
+        # DIZ QUAL MODELO O APLICATIVO VAI USAR, e avisa quando ele cobra por uso. O provedor do
+        # aplicativo e uma configuracao DIFERENTE da do LangNet: trocar um nao troca o outro, e foi
+        # exatamente esse esquecimento que torrou o credito do usuario em 16/09/2026.
+        try:
+            _cfg = dict(run.env_config or {})
+            _prov = (_cfg.get("LLM_PROVIDER") or "").strip() or "(nao informado)"
+            _pago = {"deepseek": "DEEPSEEK_API_KEY", "openai": "OPENAI_API_KEY",
+                     "anthropic": "ANTHROPIC_API_KEY"}.get(_prov)
+            _tem_chave = bool((_cfg.get(_pago) or "").strip()) if _pago else False
+            run.append_line(f"[modelo] o aplicativo vai usar: {_prov}")
+            if _tem_chave:
+                run.append_line(
+                    f"[modelo] ATENCAO: {_prov} COBRA POR USO e a chave esta preenchida. "
+                    "Cada execucao de tarefa com agente consome creditos enquanto este aplicativo "
+                    "estiver no ar.")
+        except Exception:  # noqa: BLE001
+            pass
+
         # 1.5) Prepara o banco do aplicativo: cria as tabelas do pacote que ainda nao existem.
         _preparar_banco(run, files)
 
@@ -785,6 +803,23 @@ def start_run(session_id: str, files: List[Dict[str, Any]],
               env_config: Optional[Dict[str, str]] = None) -> CodeRun:
     """Cria um novo CodeRun e dispara o worker em thread.
     `env_config`: configuração informada na tela de Implantação (banco, LLM, chaves)."""
+    # DERRUBA O QUE JA ESTAVA NO AR antes de subir outro.
+    #
+    # POR QUE (16/09/2026, e custou dinheiro do usuario): cada geracao subia um aplicativo NOVO e o
+    # anterior continuava rodando. Chegaram a SETE ao mesmo tempo. Quatro deles tinham sido subidos
+    # antes de o provedor ser trocado e seguiam usando a chave paga do DeepSeek; cada teste que
+    # passava por agente ia neles. A conta do usuario foi de 2,87 para -0,03 dolar — zerada.
+    # Um aplicativo por vez. Quem quiser dois, sobe de proposito, nao por esquecimento.
+    _antigos = [r for r in _RUNS.values() if r.process and r.process.poll() is None]
+    for _velho in _antigos:
+        try:
+            _velho.append_line("[runner] derrubado para dar lugar a uma implantacao nova")
+            stop_run(_velho.id)
+        except Exception as _e:  # noqa: BLE001
+            print(f"[runner] nao consegui derrubar a implantacao anterior {_velho.id}: {_e}")
+    if _antigos:
+        print(f"[runner] {len(_antigos)} implantacao(oes) anterior(es) derrubada(s) antes de subir")
+
     run_id = str(uuid.uuid4())
     work_dir = RUNS_ROOT / session_id / run_id
     run = CodeRun(

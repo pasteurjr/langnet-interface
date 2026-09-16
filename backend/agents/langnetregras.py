@@ -342,6 +342,78 @@ def _expressoes_do_passo(p: dict) -> List[str]:
     return []
 
 
+
+def conferir_chamadas_externas(tarefas: dict, fichas: dict, tipos_das_colunas: dict = None) -> list:
+    """Confere cada chamada a servico externo contra a FICHA que o servico declara.
+
+    POR QUE (15/09/2026): a estimativa de reducao de risco chamava o escore de Cox passando o
+    VALOR DO ESCORE no lugar da idade e tambem no lugar do APACHE II. A ficha do servico diz, com
+    todas as letras, que os dois sao inteiros obrigatorios. Ninguem conferia — o erro so aparecia
+    em execucao, embrulhado num "falha no sistema externo".
+
+    Devolve a lista de divergencias: argumento que o servico nao conhece, obrigatorio que ninguem
+    passou, e campo lido da resposta que o servico nao devolve.
+    """
+    achados = []
+
+    def _varrer(nome_tarefa, passos):
+        for p in (passos or []):
+            if not isinstance(p, dict):
+                continue
+            if str(p.get("tipo")) == "externo" and p.get("ferramenta") in fichas:
+                ficha = fichas[p["ferramenta"]]
+                recebe = ficha.get("recebe") or {}
+                devolve = ficha.get("devolve") or {}
+                passados = set((p.get("argumentos") or {}).keys())
+                if recebe:
+                    for arg in sorted(passados - set(recebe)):
+                        achados.append({
+                            "tarefa": nome_tarefa, "ferramenta": p["ferramenta"], "tipo": "argumento_desconhecido",
+                            "o_que": f"passa «{arg}», que o serviço não recebe "
+                                     f"(ele recebe: {', '.join(recebe) or 'nada'})"})
+                    for obrig in sorted(k for k, v in recebe.items() if v.get("obrigatorio")):
+                        if obrig not in passados:
+                            achados.append({
+                                "tarefa": nome_tarefa, "ferramenta": p["ferramenta"], "tipo": "obrigatorio_faltando",
+                                "o_que": f"o serviço exige «{obrig}» ({recebe[obrig]['tipo']}) e a chamada não passa"})
+                # TIPO do que esta sendo passado. O nome do argumento pode estar certo e o VALOR
+                # errado: a estimativa passava `escore_info.valor_escore` (decimal) no campo
+                # `idade`, que a ficha declara como INTEIRO. Nome conferia, tipo nao — e so
+                # estourava em execucao, embrulhado num "falha no sistema externo".
+                colunas = tipos_das_colunas or {}
+                for arg, valor in (p.get("argumentos") or {}).items():
+                    esperado = (recebe.get(arg) or {}).get("tipo")
+                    if not esperado or not isinstance(valor, str):
+                        continue
+                    campo = valor.split(".")[-1].strip().strip("'\"")
+                    tipo_sql = (colunas.get(campo) or "").upper()
+                    if not tipo_sql:
+                        continue
+                    familia = ("integer" if tipo_sql.startswith(("INT", "BIGINT", "SMALLINT", "TINYINT"))
+                               else "number" if tipo_sql.startswith(("DECIMAL", "NUMERIC", "FLOAT", "DOUBLE"))
+                               else "boolean" if tipo_sql.startswith("BOOL")
+                               else "string")
+                    if familia != esperado and not (esperado == "number" and familia == "integer"):
+                        achados.append({
+                            "tarefa": nome_tarefa, "ferramenta": p["ferramenta"], "tipo": "tipo_incompativel",
+                            "o_que": f"passa «{valor}» ({familia}) em «{arg}», que o servico declara "
+                                     f"como {esperado}"})
+                if devolve:
+                    for campo in sorted((p.get("mapeia") or {}).keys()):
+                        if campo not in devolve:
+                            achados.append({
+                                "tarefa": nome_tarefa, "ferramenta": p["ferramenta"], "tipo": "resposta_inexistente",
+                                "o_que": f"lê «{campo}» da resposta, que o serviço não devolve "
+                                         f"(ele devolve: {', '.join(devolve)})"})
+            for aninhado in ("passos", "senao", "passos_senao"):
+                if p.get(aninhado):
+                    _varrer(nome_tarefa, p[aninhado])
+
+    for nome, cfg in (tarefas or {}).items():
+        if isinstance(cfg, dict):
+            _varrer(nome, cfg.get("steps"))
+    return achados
+
 def entradas_do_contrato(passos: List[dict]) -> Tuple[List[str], List[str]]:
     """(entradas_obrigatorias, entradas_opcionais) que o contrato ESPERA receber: todo nome usado
     numa expressão que nenhum passo anterior produziu. Nome só dentro de existe()/opcional() é
