@@ -184,6 +184,26 @@ mostrar um número que não existe".
 
 4. REQUISITOS NÃO FUNCIONAIS
 
+O gerente de TI trouxe a lista do que a área de segurança do hospital exige, e disse que nada disso
+é negociável:
+
+"Primeiro: a comunicação é toda por HTTPS, sem exceção. Não quero dado de paciente trafegando em
+texto aberto nem dentro da rede interna."
+
+"Segundo: o servidor não confia na tela. Toda chamada ao servidor tem que vir com um token de
+acesso, emitido no login e verificado em cada requisição. Se o token não vier, ou estiver vencido,
+o servidor recusa — não importa o que a tela mandou. A sessão expira e o usuário entra de novo."
+
+"Terceiro: senha não fica guardada em texto. Guarda o resumo criptográfico dela, com sal. E senha
+nunca aparece em registro de log, nem em mensagem de erro, nem em tela."
+
+"Quarto: cada papel enxerga o que lhe cabe. Enfermeiro não apaga registro de auditoria.
+Administrador não precisa ver dado clínico para gerenciar usuário."
+
+"Quinto: as credenciais dos serviços externos — laboratório, motor de risco, e-mail — ficam em
+configuração do servidor, nunca dentro do código nem na tela. E a chamada ao laboratório vai com
+os dados do paciente já anonimizados."
+
 Conformidade com a LGPD: dado de paciente protegido, e anonimização antes de qualquer chamada a
 serviço externo.
 

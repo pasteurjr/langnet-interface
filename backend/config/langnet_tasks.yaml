@@ -198,6 +198,17 @@ extract_requirements:
     - TEAM SIZE mentioned → Usability NFR
     - SENSITIVE DATA mentioned → Security NFR
 
+    SEGURANCA — o NFR de seguranca NAO pode ser generico. Escreva um requisito por MECANISMO, cada
+    um verificavel, e diga COMO se verifica:
+    - transporte: toda comunicacao por HTTPS
+    - autenticacao: token de acesso emitido no login e conferido pelo servidor em CADA requisicao;
+      token vencido e recusado; a sessao expira
+    - senha: guardada como resumo criptografico com sal; nunca em log, em mensagem de erro ou em tela
+    - autorizacao: cada papel enxerga e faz so o que lhe cabe
+    - credenciais de servico externo: em configuracao do servidor, nunca no codigo nem na tela
+    - dado sensivel: anonimizado antes de sair para servico externo
+    Um requisito que diz apenas "o sistema deve ser seguro" e INUTIL e deve ser rejeitado.
+
     ═══════════════════════════════════════════════════════════
     PART 2: EXTRACT FROM INSTRUCTIONS (additional_instructions)
     ═══════════════════════════════════════════════════════════
@@ -665,6 +676,9 @@ enrich_requirements:
     QUESTION 3: Are there inferred technical requirements?
     - Must include: Database, API, Security, Infrastructure
     - Check: At least 4-5 NFRs covering infrastructure
+    - Check SEGURANCA: existe requisito NOMEANDO o mecanismo (HTTPS, token conferido no servidor,
+      senha com resumo criptografico, autorizacao por papel, credencial fora do codigo)?
+      "O sistema deve ser seguro" NAO conta — REJEITAR e pedir o mecanismo.
     - ✓ YES → Continue
     - ✗ NO → REJECT: "Missing infrastructure planning"
 
