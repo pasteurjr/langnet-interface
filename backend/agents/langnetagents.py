@@ -847,13 +847,23 @@ def _termos_de_pesquisa(nome_projeto: str, dominio: str, entidades_json: str) ->
     ent = []
     try:
         dados = json.loads(entidades_json or "{}")
-        bruto = dados.get("entities") or dados.get("entidades") or dados
+        # SÓ usa a lista de entidades quando ela EXISTE. Sem esta guarda, o código caía em
+        # `bruto = dados` e mandava para o buscador TODOS OS VALORES do JSON — medido em
+        # 16/09/2026: cinco consultas ao Google com pedaços do próprio resultado, do tipo
+        # `source": "from_document", "evidence": "Ata 2.6: ...`. Isso sujou o material que segue
+        # para a etapa seguinte e o documento final saiu com ZERO requisitos vindos do documento.
+        bruto = dados.get("entities") or dados.get("entidades") or []
         if isinstance(bruto, dict):
             bruto = list(bruto.values())
-        for e in (bruto or [])[:12]:
-            nome = e.get("name") or e.get("nome") if isinstance(e, dict) else str(e)
-            if nome and len(str(nome)) > 2:
-                ent.append(str(nome))
+        if not isinstance(bruto, list):
+            bruto = []
+        for e in bruto[:12]:
+            nome = (e.get("name") or e.get("nome")) if isinstance(e, dict) else e
+            nome = str(nome or "").strip()
+            # Termo de busca é NOME DE COISA: curto, sem pontuação de código, sem quebra de linha.
+            if (2 < len(nome) <= 40 and "\n" not in nome
+                    and not any(ch in nome for ch in '{}[]":\\')):
+                ent.append(nome)
     except Exception:
         pass
     # O NOME do projeto NÃO entra na busca: é nome próprio inventado e traz resultado errado
@@ -1898,7 +1908,13 @@ def generate_document_output_func(state: LangNetFullState, result: Any) -> LangN
     # 3) se AINDA vazio, salvar o raw p/ diagnóstico
     if not requirements_doc_md:
         try:
-            _dbg = "/home/pasteurjr/progreact/langnet-interface/docs/clinica-medica/failed_generate_document_raw.txt"
+            # O diagnostico ia para a pasta de OUTRO projeto (clinica-medica), cravada no codigo:
+            # quem fosse procurar a falha do projeto atual nao achava. Agora vai para a area de
+            # trabalho do proprio LangNet, com a hora no nome.
+            import tempfile as _tmp, time as _tm, os as _os_dbg
+            _dir = _os_dbg.path.join(_tmp.gettempdir(), "langnet-diagnostico")
+            _os_dbg.makedirs(_dir, exist_ok=True)
+            _dbg = _os_dbg.path.join(_dir, f"requisitos_sem_documento_{_tm.strftime('%Y%m%d_%H%M%S')}.json")
             with open(_dbg, "w") as _f:
                 _f.write(output_json if isinstance(output_json, str) else str(output_json))
             print(f"[DEBUG] raw salvo p/ diagnóstico em {_dbg}")
