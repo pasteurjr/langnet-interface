@@ -33,7 +33,7 @@ const defaultFormData: ProjectFormData = {
   description: '',
   domain: '',
   startFrom: 'blank',
-  defaultLLM: 'OpenAI GPT-4',
+  defaultLLM: 'Modelo local (LM Studio) — sem custo',
   framework: 'crewai',
   protocol: 'okf',
   memorySystem: 'LangChain'
@@ -99,7 +99,16 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
   // Dados de exemplo para os selects
   const domains = ['Atendimento', 'Jurídico', 'Educação', 'Saúde', 'Finanças', 'Outro'];
   const templates = ['Assistente de Atendimento', 'Análise de Documentos', 'Pesquisa Acadêmica', 'Personalizado'];
-  const llmOptions = ['OpenAI GPT-4', 'OpenAI GPT-3.5', 'Claude 3 Opus', 'Claude 3 Sonnet', 'Llama 3'];
+  // Os modelos que o sistema gerado PODE usar de verdade — os mesmos que a tela de Configurações
+  // do Projeto oferece. A lista anterior era fixa e antiga (GPT-4, Claude 3 Opus, Llama 3): nenhum
+  // deles estava em uso, o campo não era lido por nenhuma etapa de geração, e quem via a tela
+  // acreditava ter escolhido o modelo. Medido em 16/09/2026.
+  const llmOptions = [
+    'Modelo local (LM Studio) — sem custo',
+    'Claude (API própria) — sem custo por token',
+    'DeepSeek (nuvem, pago por uso)',
+    'OpenAI (nuvem, pago por uso)',
+  ];
   const memoryOptions = ['LangChain', 'Redis', 'Pinecone', 'ChromaDB', 'Nenhum'];
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -167,6 +176,33 @@ const CreateProjectModal: React.FC<CreateProjectModalProps> = ({
         };
 
         const createdProject = await createProject(apiData);
+
+        // O modelo escolhido aqui passa a VALER: grava na configuracao que o aplicativo gerado
+        // consome. Antes o campo era so decorativo — ficava no banco e nenhuma etapa lia, entao a
+        // tela prometia uma escolha que nao acontecia.
+        try {
+          const porRotulo: Record<string, { provedor: string; modelo?: string; endereco?: string }> = {
+            'Modelo local (LM Studio) — sem custo': {
+              provedor: 'lmstudio', modelo: 'qwen2.5-coder-32b-instruct',
+              endereco: 'http://192.168.1.115:1234/v1' },
+            'Claude (API própria) — sem custo por token': { provedor: 'claude_code' },
+            'DeepSeek (nuvem, pago por uso)': { provedor: 'deepseek' },
+            'OpenAI (nuvem, pago por uso)': { provedor: 'openai' },
+          };
+          const escolha = porRotulo[formData.defaultLLM];
+          if (escolha) {
+            const API = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+            const token = localStorage.getItem('accessToken') || localStorage.getItem('token') || '';
+            await fetch(`${API}/projects/${createdProject.id}/app-llm`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify(escolha),
+            });
+          }
+        } catch (e) {
+          console.warn('escolha de modelo não gravada na configuração do projeto:', e);
+        }
+
         toast.success('Projeto criado com sucesso!');
 
         // Call parent callback
