@@ -299,11 +299,14 @@ PROVEDORES_APP = {
         "observacao": "Rápido e barato; exige chave e saldo.",
     },
     "lmstudio": {
-        "rotulo": "Modelo local (LM Studio)",
-        "modelo_padrao": "qwen/qwen3.8-27b",
-        "endereco_padrao": "http://localhost:1234/v1",
+        "rotulo": "Modelo local (LM Studio) — PADRÃO",
+        # Medido em 16/09/2026 no BioByte: a tarefa com passo de julgamento respondeu em 6s contra
+        # ~15s da API própria do Claude, sem custo e sem depender de nada de fora. Virou o padrão
+        # depois de a chave paga do DeepSeek zerar e ser recusada no meio do trabalho.
+        "modelo_padrao": "qwen2.5-coder-32b-instruct",
+        "endereco_padrao": "http://192.168.1.115:1234/v1",
         "chave_env": "LMSTUDIO_API_KEY",
-        "observacao": "Sem custo, mas depende da máquina local estar ligada.",
+        "observacao": "Sem custo e sem chave. Depende da máquina local estar ligada.",
     },
     "openai": {
         "rotulo": "OpenAI",
@@ -325,10 +328,14 @@ class AppLlmConfig(BaseModel):
 def llm_do_app(project_id: str) -> dict:
     """Configuração do modelo da aplicação gerada, já preenchida com os padrões do provedor.
 
-    Projeto que nunca escolheu recebe o padrão do sistema (Claude) — e o pacote gerado sai com
-    todos os provedores listados no arquivo de ambiente, comentados, a uma linha de trocar.
+    Projeto que nunca escolheu recebe o padrão do sistema — e o pacote gerado sai com todos os
+    provedores listados no arquivo de ambiente, comentados, a uma linha de trocar.
+
+    O padrão é o MODELO LOCAL desde 16/09/2026: sem custo, sem chave para vencer, sem serviço de
+    fora para cair no meio de uma demonstração — e, medido, mais rápido que as alternativas na
+    tarefa com passo de julgamento (6s contra ~15s).
     """
-    escolha = {"provedor": "claude_code"}
+    escolha = {"provedor": "lmstudio"}
     try:
         with get_db_connection() as conn:
             cur = conn.cursor(dictionary=True)
@@ -340,9 +347,9 @@ def llm_do_app(project_id: str) -> dict:
                 escolha = guardado
     except Exception as exc:  # noqa: BLE001 — configuração nunca derruba a geração
         print(f"[PROJETO] leitura da escolha de modelo falhou (usando o padrão): {exc}")
-    base = PROVEDORES_APP.get(escolha.get("provedor"), PROVEDORES_APP["claude_code"])
+    base = PROVEDORES_APP.get(escolha.get("provedor"), PROVEDORES_APP["lmstudio"])
     return {
-        "provedor": escolha.get("provedor", "claude_code"),
+        "provedor": escolha.get("provedor", "lmstudio"),
         "modelo": escolha.get("modelo") or base["modelo_padrao"],
         "endereco": escolha.get("endereco") or base["endereco_padrao"],
         "max_tokens": int(escolha.get("max_tokens") or 24000),
