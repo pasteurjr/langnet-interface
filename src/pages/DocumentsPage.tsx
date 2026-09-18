@@ -409,7 +409,10 @@ const DocumentsPage: React.FC = () => {
       websocket.close();
     }
 
-    const ws = new WebSocket(`ws://localhost:8000/ws/langnet/${executionId}`);
+    // A porta vinha fixa em 8000 enquanto o servidor atende em 8003: o canal de eventos
+    // nunca abria e a barra de progresso da análise ficava parada na tela do operador.
+    const wsBase = process.env.REACT_APP_WS_URL || 'ws://localhost:8003';
+    const ws = new WebSocket(`${wsBase}/ws/langnet/${executionId}`);
 
     ws.onopen = () => {
       console.log('WebSocket connected for execution:', executionId);

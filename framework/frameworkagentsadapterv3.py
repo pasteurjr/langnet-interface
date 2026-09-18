@@ -549,8 +549,16 @@ class HybridTaskAdapter(AiTeamTask):
             raise ValueError("Agent é obrigatório para HybridTaskAdapter")
         print("TOOLS")
         print(tools)
-        crewai_tools = [crewait for crewait, phidatat in tools] if tools else []
-        phidata_tools = [phidatat for crewait, phidatat in tools] if tools else []
+        # A lista de ferramentas chega em dois formatos: pares (crewai, phidata) do
+        # caminho híbrido e ferramentas SOLTAS do pipeline do LangNet. Desempacotar às
+        # cegas rebentava com "too many values to unpack" e derrubava a tarefa inteira
+        # (foi assim que a pesquisa web da etapa de Requisitos morreu sem pesquisar nada).
+        crewai_tools, phidata_tools = [], []
+        for _t in (tools or []):
+            if isinstance(_t, (tuple, list)) and len(_t) == 2:
+                crewai_tools.append(_t[0]); phidata_tools.append(_t[1])
+            else:
+                crewai_tools.append(_t)
 
         super().__init__(
             description=description,

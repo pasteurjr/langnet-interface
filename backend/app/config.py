@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     deepseek_api_key: str = Field(default="", env="DEEPSEEK_API_KEY")
     deepseek_api_base: str = Field(default="https://api.deepseek.com/v1", env="DEEPSEEK_API_BASE")
     deepseek_model_name: str = Field(default="deepseek/deepseek-chat", env="DEEPSEEK_MODEL_NAME")
+    # Teto de resposta. 65536 é o máximo que a API aceita (medido 17/09/2026); com 32768 a
+    # extração dos requisitos era cortada no fim, com as chaves do JSON abertas.
+    deepseek_max_tokens: int = Field(default=65536, env="DEEPSEEK_MAX_TOKENS")
 
     # LM Studio: usar LMSTUDIO_* (sem underscore) — já declarados acima nas linhas 49-50.
     lmstudio_api_key: str = Field(default="lm-studio", env="LMSTUDIO_API_KEY")

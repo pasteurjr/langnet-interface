@@ -1043,35 +1043,20 @@ generate_document:
     - No placeholder text remaining
 
   expected_output: >
-    RETURN ONLY VALID JSON. Do NOT add markdown code blocks. Do NOT add explanatory text after JSON.
+    DEVOLVA O DOCUMENTO EM MARKDOWN PURO, e mais nada.
 
-    {
-      "requirements_document_md": "# COMPLETE Markdown document here...",
-      "document_metadata": {
-        "total_requirements": number,
-        "functional_count": number,
-        "non_functional_count": number,
-        "business_rules_count": number,
-        "pages_estimated": number,
-        "completeness_score": 0-100
-      },
-      "quality_summary": {
-        "overall_quality_score": 0-100,
-        "critical_issues_count": number,
-        "high_issues_count": number,
-        "medium_issues_count": number,
-        "low_issues_count": number
-      },
-      "source_distribution": {
-        "from_documents": number,
-        "from_instructions": number,
-        "inferred": number,
-        "from_web_research": number,
-        "suggested_by_ai": number
-      }
-    }
+    Comece a resposta com a primeira linha do documento (# Documento de Requisitos) e termine com
+    a última linha dele. NÃO embrulhe o documento em JSON, NÃO use cercas de código, NÃO escreva
+    comentário nenhum antes nem depois do documento.
 
-    CRITICAL: requirements_document_md field MUST contain complete document. NO empty strings or placeholders.
+    POR QUE ASSIM: embrulhar um documento de setenta mil caracteres dentro de um campo de texto
+    JSON quase dobra o tamanho da resposta, porque toda aspa e toda quebra de linha viram dois
+    caracteres. Medido em 16/09/2026: o documento foi escrito inteiro, com as treze seções, a
+    matriz de rastreabilidade e o caminho crítico — e chegou decepado no meio de uma frase,
+    porque não coube numa resposta só. Em markdown puro ele cabe.
+
+    Os números (contagem de requisitos, distribuição por origem, nota de qualidade) NÃO precisam
+    ser devolvidos: o programa os conta a partir dos próprios requisitos.
 
 generate_specification:
   description: >

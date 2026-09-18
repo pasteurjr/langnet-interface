@@ -320,6 +320,13 @@ def get_llm(use_deepseek: bool = False):
                 api_key=os.getenv("CLAUDE_CODE_API_KEY", ""),
                 timeout=float(os.getenv("CLAUDE_CODE_TIMEOUT", "3000")),
                 max_tokens=int(os.getenv("CLAUDE_CODE_MAX_TOKENS", "32000")),
+                # EM FLUXO, SEMPRE. Sem isto a ponte devolve só o ÚLTIMO pedaço de uma
+                # resposta longa e ainda diz que terminou bem (finish_reason=stop). Medido
+                # em 16/09/2026 com o mesmo pedido de 400 itens: 3.516 caracteres começando
+                # no meio de uma palavra, contra 84.997 completos em fluxo. Foi assim que a
+                # extração de 193 requisitos do BioByte chegou à etapa seguinte com o começo
+                # decepado, e o documento saiu com UM requisito.
+                stream=True,
             )
 
         elif llm_provider == "lmstudio":
@@ -746,6 +753,144 @@ def analyze_document_input_func(state: LangNetFullState) -> Dict[str, Any]:
     return task_input
 
 
+def _blocos_do_documento(texto: str, alvo: int = 3200) -> list:
+    """Corta o documento nos TÍTULOS dele e agrupa em blocos de ~7 mil caracteres.
+
+    Corta em título (e não a cada N caracteres) para nenhum assunto ficar partido ao meio: a
+    seção "2.4 Microbiologia" inteira vai num bloco só, com a fala do analista do laboratório
+    junto da regra que ela origina. Bloco partido produz requisito sem contexto."""
+    import re as _re_b
+    linhas = (texto or "").split("\n")
+    # título = linha curta que começa por numeração (1., 2.3, 4) ou é um cabeçalho markdown
+    e_titulo = lambda l: bool(_re_b.match(r"^\s*(#{1,4}\s+|\d+(\.\d+)*[\.\)]?\s+[A-ZÀ-Ú])", l)) and len(l.strip()) < 120
+    secoes, atual, titulo = [], [], "Início do documento"
+    for l in linhas:
+        if e_titulo(l) and atual:
+            secoes.append((titulo, "\n".join(atual)))
+            titulo, atual = l.strip()[:90], [l]
+        else:
+            if e_titulo(l):
+                titulo = l.strip()[:90]
+            atual.append(l)
+    if atual:
+        secoes.append((titulo, "\n".join(atual)))
+
+    blocos, corrente, nomes = [], [], []
+    for tit, corpo in secoes:
+        if corrente and sum(len(c) for c in corrente) + len(corpo) > alvo:
+            blocos.append((" · ".join(nomes), "\n".join(corrente)))
+            corrente, nomes = [], []
+        corrente.append(corpo); nomes.append(tit)
+    if corrente:
+        blocos.append((" · ".join(nomes), "\n".join(corrente)))
+    return blocos
+
+
+def _extrair_requisitos_em_lotes(state: LangNetFullState) -> str:
+    """Extrai os requisitos UM PEDAÇO DO DOCUMENTO POR VEZ e junta no programa.
+
+    POR QUE: pedir todos os requisitos numa resposta só produz 125 mil caracteres, e isso não
+    cabe em provedor nenhum — o Claude pela ponte cortava no começo (e dizia que estava
+    completo), o DeepSeek corta no fim (chaves abertas), e no modelo local nem entra. Medido
+    nos três em 16 e 17/09/2026.
+
+    É o mesmo conserto que a Especificação recebeu em 09/09/2026 e que resolveu o problema lá
+    ("o pedido único de catorze seções não entregava casos de uso"). Cada lote devolve ~10 KB,
+    que qualquer modelo entrega inteiro.
+
+    De brinde, a procedência fica EXATA: como o programa sabe de qual trecho cada lote veio,
+    o campo `module` deixa de ser palpite do modelo."""
+    documento = state.get("document_content", "") or ""
+    instrucoes = state.get("additional_instructions", "") or ""
+    blocos = _blocos_do_documento(documento)
+    print(f"[LOTES] documento de {len(documento):,} caracteres dividido em {len(blocos)} bloco(s)")
+
+    fr, nfr, br = [], [], []
+    atores, entidades, fluxos, glossario, abertas, consultas = [], [], [], [], [], []
+    vistos = set()          # descrições de requisito já aproveitadas
+    vistos_nomes = {}       # nomes já aproveitados, SEPARADOS POR TIPO
+
+    def _acrescentar(destino, itens, prefixo, modulo):
+        for it in (itens or []):
+            if not isinstance(it, dict):
+                continue
+            desc = " ".join(str(it.get("description") or it.get("text") or "").split())
+            if len(desc) < 12:
+                continue
+            chave = desc.lower()[:90]
+            if chave in vistos:          # o mesmo assunto citado em dois trechos da ata
+                continue
+            vistos.add(chave)
+            it["description"] = desc
+            it["module"] = it.get("module") or modulo      # de qual trecho veio, de verdade
+            it["id"] = f"{prefixo}-{len(destino) + 1:03d}"  # numeração contínua, dada pelo programa
+            destino.append(it)
+
+    for i, (titulo, corpo) in enumerate(blocos, 1):
+        pedido = (
+            f"Você está lendo UM TRECHO de um documento de levantamento de requisitos.\n"
+            f"TRECHO {i} de {len(blocos)} — assuntos: {titulo}\n\n"
+            f"--- TRECHO ---\n{corpo}\n--- FIM DO TRECHO ---\n\n"
+            + (f"INSTRUÇÕES DO USUÁRIO (valem para todo o trabalho):\n{instrucoes}\n\n" if instrucoes else "")
+            + "Extraia os requisitos QUE ESTE TRECHO SUSTENTA, e só eles. Não repita requisitos de\n"
+              "outros trechos, não invente funcionalidade que ninguém pediu, e não escreva requisito\n"
+              "sem a frase do texto que o justifica.\n\n"
+              "Para cada requisito: `description` (o que o sistema deve fazer, específico e\n"
+              "verificável), `source` (from_document se está dito no trecho; from_instructions se vem\n"
+              "das instruções do usuário; inferred se você deduziu — e aí explique em `rationale`;\n"
+              "suggested_by_ai se é ideia sua que ninguém pediu), `evidence` (a frase do texto, entre\n"
+              "aspas) e `priority` (high, medium ou low).\n\n"
+              "Requisito de segurança tem de NOMEAR O MECANISMO. \"O sistema deve ser seguro\" não serve.\n\n"
+              "Se o trecho não sustentar requisito de algum tipo, devolva a lista vazia. Lista vazia é\n"
+              "resposta correta; encher de requisito genérico não é."
+        )
+        formato = (
+            '{"functional_requirements":[{"description":"","source":"","evidence":"","priority":""}],'
+            '"non_functional_requirements":[{"description":"","category":"","source":"","evidence":"","priority":""}],'
+            '"business_rules":[{"name":"","description":"","source":"","evidence":""}],'
+            '"actors":[{"name":"","role":""}],"entities":[{"name":"","description":""}],'
+            '"workflows":[{"name":"","steps":[""]}],"glossary":[{"term":"","definition":""}],'
+            '"open_questions":[""],"web_research_queries":[""]}\n'
+            "Devolva SÓ este JSON, sem cercas de código e sem comentário."
+        )
+        bruto = _direct_llm_complete(pedido, formato,
+                                     system="Você é analista de requisitos. Baseie-se ESTRITAMENTE no "
+                                            "trecho fornecido. Não invente.")
+        dados = _lenient_json(bruto)
+        if not isinstance(dados, dict):
+            print(f"[LOTES] bloco {i}/{len(blocos)} ({titulo[:40]}): resposta ilegível, {len(bruto or '')} caracteres")
+            continue
+        _acrescentar(fr,  dados.get("functional_requirements"),     "FR",  titulo)
+        _acrescentar(nfr, dados.get("non_functional_requirements"), "NFR", titulo)
+        _acrescentar(br,  dados.get("business_rules"),              "BR",  titulo)
+        # Um conjunto de "já vistos" POR TIPO. Com um conjunto só — como estava — uma entidade
+        # chamada "caso" fazia sumir o termo "caso" do glossário, porque o nome já constava.
+        # Tipos diferentes podem (e costumam) usar a mesma palavra.
+        for chave, destino in (("actors", atores), ("entities", entidades), ("workflows", fluxos),
+                               ("glossary", glossario)):
+            ja = vistos_nomes.setdefault(chave, set())
+            for it in (dados.get(chave) or []):
+                nome = (it.get("name") or it.get("term") or "") if isinstance(it, dict) else str(it)
+                if nome and nome.lower() not in ja:
+                    ja.add(nome.lower()); destino.append(it)
+        abertas.extend(x for x in (dados.get("open_questions") or []) if isinstance(x, str))
+        consultas.extend(x for x in (dados.get("web_research_queries") or []) if isinstance(x, str))
+        print(f"[LOTES] bloco {i}/{len(blocos)} ({titulo[:40]}): "
+              f"+{len(dados.get('functional_requirements') or [])} FR "
+              f"+{len(dados.get('non_functional_requirements') or [])} NFR "
+              f"+{len(dados.get('business_rules') or [])} BR "
+              f"({len(bruto or ''):,} caracteres)")
+
+    reunido = {
+        "functional_requirements": fr, "non_functional_requirements": nfr, "business_rules": br,
+        "actors": atores, "entities": entidades, "workflows": fluxos, "glossary": glossario,
+        "open_questions": abertas[:25], "web_research_queries": consultas[:12],
+    }
+    print(f"[LOTES] reunidos: {len(fr)} FR, {len(nfr)} NFR, {len(br)} BR, "
+          f"{len(atores)} atores, {len(entidades)} entidades, {len(fluxos)} fluxos")
+    return json.dumps(reunido, ensure_ascii=False)
+
+
 def extract_requirements_input_func(state: LangNetFullState) -> Dict[str, Any]:
     """Extract input for extract_requirements task"""
     print(f"\n{'='*80}")
@@ -773,6 +918,11 @@ def extract_requirements_input_func(state: LangNetFullState) -> Dict[str, Any]:
 
 
 
+# Fontes reais que a pesquisa do PROGRAMA encontrou na última busca (título + endereço).
+# É a única lista confiável: o que o modelo escreve como "fonte" pode ser endereço de memória.
+_ULTIMAS_FONTES_WEB: list = []
+
+
 def _fontes_da_web(termos: list, dominio: str = "", maximo_consultas: int = 5) -> str:
     """Faz a pesquisa web AQUI, em Python, e devolve as fontes prontas para entrar no texto do passo.
 
@@ -798,6 +948,7 @@ def _fontes_da_web(termos: list, dominio: str = "", maximo_consultas: int = 5) -
             break
     if not consultas:
         return ""
+    _ULTIMAS_FONTES_WEB.clear()
     linhas, achadas = [], 0
     for consulta in consultas:
         texto = ""
@@ -831,6 +982,10 @@ def _fontes_da_web(termos: list, dominio: str = "", maximo_consultas: int = 5) -
             except Exception:
                 pass
             linhas.append(f"- [{consulta}] {titulo.strip()[:120]} — {url}")
+            # GUARDA as fontes de forma estruturada. Sem isto elas só existiam como texto
+            # dentro do prompt: a busca rodava, achava 20 endereços reais, e o documento saía
+            # com a seção de referências EM BRANCO — gastava a pesquisa e não entregava nada.
+            _ULTIMAS_FONTES_WEB.append({"consulta": consulta, "titulo": titulo.strip()[:140], "url": url})
     if not linhas:
         print("[PESQUISA] nenhuma fonte encontrada para as consultas montadas")
         return ""
@@ -887,7 +1042,22 @@ def _termos_de_pesquisa(nome_projeto: str, dominio: str, entidades_json: str) ->
     ]
     if ent:
         termos.insert(1, f"{dom} {' '.join(ent[:3])} reference architecture best practices".strip())
-    return termos
+    # A PRÓPRIA extração já propõe consultas, e elas são MUITO melhores: nascem do assunto real e
+    # no idioma certo (medido em 16/09/2026, no BioByte: "critérios NHSN CLABSI versão atual",
+    # "definição microrganismo multirresistente três classes ANVISA", "bundle prevenção infecção
+    # corrente sanguínea cateter venoso central"). Estavam sendo IGNORADAS: a busca ia com termos
+    # montados aqui, do tipo "Usuario Paciente technical standard specification", que não trazem
+    # o material do domínio — e sem material o modelo fica tentado a preencher de memória.
+    # As consultas do modelo vêm primeiro; as de norma ficam atrás, complementando.
+    propostas = []
+    try:
+        for q in (json.loads(entidades_json or "{}").get("web_research_queries") or [])[:8]:
+            q = " ".join(str(q or "").split())
+            if 8 < len(q) <= 120 and not any(ch in q for ch in '{}[]":\\'):
+                propostas.append(q)
+    except Exception:
+        pass
+    return propostas + termos if propostas else termos
 
 
 def research_additional_info_input_func(state: LangNetFullState) -> Dict[str, Any]:
@@ -1264,17 +1434,85 @@ def analyze_document_output_func(state: LangNetFullState, result: Any) -> LangNe
     return log_task_complete(updated_state, "analyze_document", output_json[:200])
 
 
+def _texto_da_resposta(result: Any) -> str:
+    """Tira a resposta do modelo de dentro dos envelopes que as camadas põem em volta
+    (`raw_output`, `team_result`, `raw`) e devolve o texto puro, sem cercas de markdown.
+    Antes, quando o envelope era `team_result`, o `json.dumps(result)` transformava o
+    envelope INTEIRO no 'JSON de requisitos' — e a etapa seguinte recebia
+    `{"team_result": "<texto>"}` em vez dos requisitos."""
+    if not isinstance(result, dict):
+        texto = str(getattr(result, "raw", "") or result or "")
+    else:
+        texto = ""
+        for chave in ("raw_output", "team_result", "raw", "output", "final_output", "result"):
+            valor = result.get(chave)
+            if isinstance(valor, str) and valor.strip():
+                texto = valor
+                break
+        if not texto:
+            texto = json.dumps(result, ensure_ascii=False)
+    texto = texto.strip()
+    if texto.startswith("```"):
+        import re as _re_env   # o módulo não é importado no topo deste arquivo
+        texto = _re_env.sub(r"^```(?:json)?\s*", "", texto)
+        texto = _re_env.sub(r"\s*```$", "", texto).strip()
+    return texto
+
+
+def _resposta_veio_pela_metade(texto: str) -> str:
+    """Devolve o motivo quando a resposta do modelo chegou CORTADA NO COMEÇO, ou "" quando
+    está inteira.
+
+    Por que isto existe: numa extração de requisitos a resposta passou do teto de saída do
+    modelo, a ponte devolveu só a CONTINUAÇÃO, e o texto começava no meio da palavra
+    `category`. Os 119 requisitos funcionais e 23 não funcionais do início simplesmente não
+    existiam. Ninguém percebeu: o pedaço seguiu por quatro etapas e o documento saiu com UM
+    requisito. Agora a etapa para aqui e diz o que houve."""
+    t = (texto or "").lstrip()
+    if not t:
+        return "o modelo não devolveu nada"
+    if t[0] not in "{[":
+        return (f"a resposta não começa por '{{' — começa em {t[:60]!r}. "
+                "Isso é a CONTINUAÇÃO de uma resposta que estourou o teto de saída do "
+                "modelo: o começo (que traz os primeiros requisitos) se perdeu")
+    if t[0] == "{" and t.count("{") > t.count("}"):
+        return "a resposta começa certo mas termina no meio (chaves abertas sem fechar)"
+    return ""
+
+
 def extract_requirements_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
     """Update state with extract_requirements results"""
-    if isinstance(result, dict):
-        output_json = result.get("raw_output", json.dumps(result))
-    else:
-        output_json = str(result)
+    output_json = _texto_da_resposta(result)
+
+    motivo = _resposta_veio_pela_metade(output_json)
+    if motivo:
+        raise RuntimeError(
+            f"Extração de requisitos inutilizável: {motivo}. "
+            f"Recebi {len(output_json)} caracteres. NÃO vou passar este pedaço adiante — "
+            f"foi assim que um documento saiu com 1 requisito em vez de 193. "
+            f"Teto de resposta do provedor {os.getenv('LLM_PROVIDER','?')} "
+            f"pequeno demais para este volume, ou o pedido é grande demais: "
+            f"aumente o teto do provedor ou peça menos requisitos por vez."
+        )
 
     try:
         parsed = json.loads(output_json)
     except json.JSONDecodeError:
-        parsed = {}
+        parsed = _lenient_json(output_json)
+        if not isinstance(parsed, dict):
+            parsed = {}
+
+    _frs = parsed.get("functional_requirements") or []
+    _nfrs = parsed.get("non_functional_requirements") or []
+    _brs = parsed.get("business_rules") or []
+    print(f"[PORTÃO requisitos] {len(_frs)} funcionais, {len(_nfrs)} não funcionais, "
+          f"{len(_brs)} regras de negócio — {len(output_json)} caracteres")
+    if not _frs:
+        raise RuntimeError(
+            "Extração de requisitos sem NENHUM requisito funcional. "
+            f"O que chegou tem {len(output_json)} caracteres e as chaves "
+            f"{list(parsed.keys())[:12]}. Parar aqui em vez de gerar um documento vazio."
+        )
 
     updated_state = {
         **state,
@@ -1299,6 +1537,10 @@ def research_additional_info_output_func(state: LangNetFullState, result: Any) -
 
     updated_state = {
         **state,
+        # As fontes que o PROGRAMA achou seguem no estado, para o documento listá-las com
+        # título e endereço. O que o modelo chama de "fonte" pode ser endereço de memória;
+        # estas foram efetivamente consultadas.
+        "fontes_web": list(_ULTIMAS_FONTES_WEB),
         "research_findings_json": output_json,
         "research_findings_data": parsed
     }
@@ -1795,6 +2037,12 @@ def _build_requirements_doc_fallback(state: LangNetFullState) -> str:
         _asdict(state.get("requirements_data")),
         _asdict(state.get("requirements_json")),
         _asdict(state.get("extracted_requirements")),
+        # A validação de qualidade guarda as LACUNAS e os PEDIDOS DE INFORMAÇÃO. Sem ela nesta
+        # lista, as seções correspondentes saíam vazias dizendo "as etapas anteriores não
+        # produziram este conteúdo" — quando tinham produzido, e o documento é que não olhava.
+        _asdict(state.get("quality_validation")),
+        _asdict(state.get("validation_data")),
+        _asdict(state.get("validation_json")),
     ]
 
     def _pick(key):
@@ -1831,16 +2079,240 @@ def _build_requirements_doc_fallback(state: LangNetFullState) -> str:
 
     proj = state.get("project_name", "") or "Projeto"
     instr = (state.get("additional_instructions") or "")[:400]
-    doc = (
-        f"# Documento de Requisitos\n## {proj}\n\n---\n\n"
-        f"**Versão:** 2.0 · **Data:** {_dt.now().strftime('%Y-%m-%d %H:%M')} · "
-        f"**Geração:** render determinístico (LLM do generate_document indisponível)\n\n"
-        f"**Instruções de origem:** {instr}\n\n---\n\n"
-        f"## 1. Requisitos Funcionais ({len(fr)})\n{_fmt(fr)}\n\n"
-        f"## 2. Requisitos Não-Funcionais ({len(nfr)})\n{_fmt(nfr)}\n\n"
-        f"## 3. Regras de Negócio ({len(br)})\n{_fmt(br)}\n"
-    )
-    return doc
+    # ─────────────────────────────────────────────────────────────────────────────
+    # DOCUMENTO ESTRUTURADO, MONTADO PELO PROGRAMA
+    #
+    # Por que o programa monta e não o modelo: o documento inteiro passa de 150 mil
+    # caracteres, e pedir isso numa resposta só estourava o transporte — a resposta chegava
+    # decapitada e o começo se perdia (medido três vezes em 16/09/2026). Além disso, mandar o
+    # modelo TRANSCREVER duzentos requisitos que já foram julgados nas etapas anteriores é
+    # trabalho de cópia, com risco de trocar ou perder item pelo caminho. O julgamento já
+    # aconteceu: extrair, enriquecer e validar. Aqui é gravar.
+    # Mesma regra que já vale na Especificação: o programa busca, o modelo julga, o programa
+    # grava. A matriz de rastreabilidade montada pelo programa está sempre certa.
+    # ─────────────────────────────────────────────────────────────────────────────
+    atores    = _pick("actors")      or _pick("atores")
+    entidades = _pick("entities")    or _pick("entidades")
+    fluxos    = _pick("workflows")   or _pick("fluxos")
+    glossario = _pick("glossary")    or _pick("domain_terminology") or _pick("glossario")
+    abertas   = _pick("open_questions") or _pick("perguntas_em_aberto")
+    lacunas   = _pick("critical_gaps")  or _pick("missing_areas")
+    pedidos   = _pick("information_requests")
+
+    ORIGENS = [
+        ("from_document",     "🔴 RED", "Extraído dos documentos"),
+        ("from_instructions", "📘 REI", "Extraído das instruções do usuário"),
+        ("inferred",          "🔧 RI",  "Inferido pelo modelo, com justificativa"),
+        ("from_web_research", "🌐 RW",  "Vindo da pesquisa complementar"),
+        ("suggested_by_ai",   "🤖 RIA", "Sugerido pela IA — precisa de aprovação"),
+    ]
+    _rotulo_origem = {k: r for k, r, _ in ORIGENS}
+
+    def _campo(it, *nomes, padrao=""):
+        for n in nomes:
+            v = it.get(n) if isinstance(it, dict) else None
+            if v not in (None, "", [], {}):
+                return v
+        return padrao
+
+    def _texto(v, limite=0):
+        if isinstance(v, (list, tuple)):
+            v = "; ".join(str(x) for x in v)
+        v = " ".join(str(v or "").split()).replace("|", "/")
+        return (v[:limite] + "…") if limite and len(v) > limite else v
+
+    def _tabela(itens, titulo_vazio="_(nenhum)_"):
+        """Tabela markdown com uma linha por requisito. Colunas escolhidas para o LEITOR
+        humano: o que é, de onde veio, a frase que sustenta, e quanto pesa."""
+        if not itens:
+            return titulo_vazio
+        linhas = ["| ID | Origem | Requisito | Evidência | Prioridade |",
+                  "|----|--------|-----------|-----------|------------|"]
+        for i, it in enumerate(itens, 1):
+            if not isinstance(it, dict):
+                linhas.append(f"| — | — | {_texto(it, 300)} | | |")
+                continue
+            rid  = _campo(it, "id", "req_id", "code", padrao=f"REQ-{i:03d}")
+            orig = _rotulo_origem.get(str(_campo(it, "source", "origem")), "—")
+            desc = _texto(_campo(it, "description", "text", "requirement", "title"), 400)
+            evid = _texto(_campo(it, "evidence", "evidencia", "rationale", "justificativa"), 260)
+            prio = _texto(_campo(it, "priority", "prioridade", padrao="—"), 20)
+            linhas.append(f"| **{rid}** | {orig} | {desc} | {evid} | {prio} |")
+        return "\n".join(linhas)
+
+    def _por_origem(itens):
+        """Agrupa por procedência. É o que permite ao leitor separar o que a CCIH PEDIU do
+        que o sistema DEDUZIU — a distinção que mais importa numa revisão de requisitos."""
+        blocos = []
+        for chave, rotulo, explica in ORIGENS:
+            grupo = [it for it in (itens or [])
+                     if isinstance(it, dict) and str(it.get("source") or it.get("origem")) == chave]
+            if not grupo:
+                continue
+            blocos.append(f"#### {rotulo} — {explica} ({len(grupo)})\n\n{_tabela(grupo)}\n")
+        sem = [it for it in (itens or [])
+               if not isinstance(it, dict) or str(it.get("source") or it.get("origem")) not in _rotulo_origem]
+        if sem:
+            blocos.append(f"#### Sem procedência declarada ({len(sem)})\n\n{_tabela(sem)}\n")
+        return "\n".join(blocos) or "_(nenhum)_"
+
+    def _lista_simples(itens, campos=("name", "nome", "term", "termo", "id")):
+        if not itens:
+            return ""
+        out = []
+        for it in itens:
+            if isinstance(it, dict):
+                nome = _campo(it, *campos, padrao="—")
+                resto = _texto(_campo(it, "description", "definition", "descricao", "definicao",
+                                      "role", "papel", "steps", "passos"), 400)
+                out.append(f"- **{_texto(nome, 80)}**" + (f" — {resto}" if resto else ""))
+            elif str(it).strip():
+                out.append(f"- {_texto(it, 400)}")
+        return "\n".join(out)
+
+    def _matriz(itens, fluxos_lista):
+        """Matriz requisito → fluxo de trabalho, montada a partir do que cada fluxo DECLARA
+        cobrir. Não é escrita por modelo nenhum: é leitura dos próprios dados, então não tem
+        como divergir deles."""
+        if not itens or not fluxos_lista:
+            return ""
+        cobertura = {}
+        for fl in fluxos_lista:
+            if not isinstance(fl, dict):
+                continue
+            nome = _texto(_campo(fl, "name", "nome", padrao="fluxo"), 60)
+            for rid in (fl.get("related_requirements") or fl.get("requisitos") or []):
+                cobertura.setdefault(str(rid), []).append(nome)
+        if not cobertura:
+            return ""
+        linhas = ["| Requisito | Fluxo(s) que o realizam |", "|-----------|--------------------------|"]
+        orfaos = []
+        for it in itens:
+            if not isinstance(it, dict):
+                continue
+            rid = str(_campo(it, "id", "req_id", padrao=""))
+            if not rid:
+                continue
+            onde = cobertura.get(rid)
+            if onde:
+                linhas.append(f"| {rid} | {'; '.join(sorted(set(onde)))} |")
+            else:
+                orfaos.append(rid)
+        tabela = "\n".join(linhas)
+        if orfaos:
+            tabela += (f"\n\n⚠️ **{len(orfaos)} requisito(s) sem fluxo declarado:** "
+                       f"{', '.join(orfaos[:40])}{'…' if len(orfaos) > 40 else ''}. "
+                       f"Isso não significa que estejam errados — significa que nenhum fluxo de "
+                       f"trabalho os citou, e a Especificação precisa resolver onde eles entram.")
+        return tabela
+
+    def _por_modulo(*grupos):
+        """Requisito × trecho do documento de origem. Cada requisito declara de qual seção da
+        ata ele saiu ("2.1 Acesso ao sistema", "2.4 Microbiologia"…). Isso amarra o documento
+        de volta à fala que o originou — é a rastreabilidade que uma revisão de requisitos
+        realmente cobra, e o programa a monta lendo os próprios dados."""
+        por_mod = {}
+        for g in grupos:
+            for it in (g or []):
+                if not isinstance(it, dict):
+                    continue
+                mod = _texto(_campo(it, "module", "modulo", "section", "secao", padrao=""), 70)
+                rid = _texto(_campo(it, "id", "req_id", padrao=""), 20)
+                if mod and rid:
+                    por_mod.setdefault(mod, []).append(rid)
+        if not por_mod:
+            return ""
+        linhas = ["| Trecho do documento de origem | Requisitos que nasceram dele | Quantos |",
+                  "|-------------------------------|------------------------------|---------|"]
+        for mod in sorted(por_mod):
+            ids = sorted(set(por_mod[mod]))
+            mostra = ", ".join(ids[:25]) + ("…" if len(ids) > 25 else "")
+            linhas.append(f"| {mod} | {mostra} | {len(ids)} |")
+        return "\n".join(linhas)
+
+    def _fontes_consultadas():
+        """As fontes que a pesquisa do PROGRAMA abriu de verdade, com a consulta que as trouxe.
+        Fica no CORPO do documento, não só nas referências, porque o leitor precisa saber em que
+        material externo a análise se apoiou — e porque rodar a busca e descartar o resultado é
+        pior do que não buscar."""
+        fontes = state.get("fontes_web") or []
+        if not fontes:
+            return ""
+        por_consulta = {}
+        for f in fontes:
+            por_consulta.setdefault(f.get("consulta", "—"), []).append(f)
+        linhas = [f"Foram feitas **{len(por_consulta)} consultas** e abertas "
+                  f"**{len(fontes)} fontes**:\n"]
+        for consulta, achados in por_consulta.items():
+            linhas.append(f"**{_texto(consulta, 140)}**\n")
+            for f in achados:
+                linhas.append(f"- [{_texto(f.get('titulo') or f.get('url'), 140)}]({f.get('url')})")
+            linhas.append("")
+        return "\n".join(linhas)
+
+    def _contagem_por_origem(*grupos):
+        tot = {}
+        for g in grupos:
+            for it in (g or []):
+                if isinstance(it, dict):
+                    k = str(it.get("source") or it.get("origem") or "sem_declaracao")
+                    tot[k] = tot.get(k, 0) + 1
+        if not tot:
+            return ""
+        linhas = ["| Procedência | Quantidade |", "|-------------|------------|"]
+        for chave, rotulo, explica in ORIGENS:
+            if tot.get(chave):
+                linhas.append(f"| {rotulo} {explica} | {tot[chave]} |")
+        outros = sum(v for k, v in tot.items() if k not in _rotulo_origem)
+        if outros:
+            linhas.append(f"| Sem procedência declarada | {outros} |")
+        return "\n".join(linhas)
+
+    def _secao(numero, titulo, corpo, vazio=None):
+        """Seção que NUNCA mente: quando não há dado, ela diz que não há e por quê, em vez de
+        sumir do documento ou trazer texto de enfeite."""
+        if corpo and str(corpo).strip():
+            return f"## {numero}. {titulo}\n\n{corpo}\n\n---\n"
+        aviso = vazio or ("_As etapas anteriores não produziram este conteúdo. A seção fica "
+                          "declarada e vazia, em vez de preenchida com texto genérico._")
+        return f"## {numero}. {titulo}\n\n{aviso}\n\n---\n"
+
+    total = len(fr) + len(nfr) + len(br)
+    agora = _dt.now().strftime("%d/%m/%Y %H:%M")
+
+    partes = [
+        f"# Documento de Requisitos\n## {proj}\n",
+        f"**Data:** {agora}  ",
+        f"**Total de requisitos:** {total} — {len(fr)} funcionais, {len(nfr)} não funcionais, "
+        f"{len(br)} regras de negócio  ",
+        f"**Montagem:** o conteúdo foi extraído, enriquecido e validado pelos agentes; a "
+        f"organização deste documento é feita pelo programa, a partir desses dados.\n",
+        "---\n",
+        _secao(1, "Instruções que orientaram a análise",
+               f"> {instr}" if instr else "",
+               "_Nenhuma instrução adicional foi dada: a análise se apoiou apenas nos documentos._"),
+        _secao(2, "De onde vêm os requisitos", _contagem_por_origem(fr, nfr, br) +
+               ("\n\n**Legenda:** " + " · ".join(f"{r} = {e}" for _, r, e in ORIGENS))),
+        _secao(3, f"Requisitos Funcionais ({len(fr)})", _por_origem(fr)),
+        _secao(4, f"Requisitos Não-Funcionais ({len(nfr)})", _por_origem(nfr)),
+        _secao(5, f"Regras de Negócio ({len(br)})", _por_origem(br)),
+        _secao(6, f"Atores ({len(atores or [])})", _lista_simples(atores)),
+        _secao(7, f"Entidades de dados ({len(entidades or [])})", _lista_simples(entidades)),
+        _secao(8, f"Fluxos de trabalho ({len(fluxos or [])})", _lista_simples(fluxos)),
+        _secao(9, "Matriz de rastreabilidade — requisito × fluxo", _matriz(fr, fluxos),
+               "_Nenhum fluxo declarou quais requisitos realiza, então não há como cruzar os "
+               "dois sem inventar a ligação. A amarração até a fonte está na seção seguinte._"),
+        _secao(10, "Rastreabilidade até o documento de origem", _por_modulo(fr, nfr, br),
+               "_Os requisitos não declararam de que trecho do documento saíram._"),
+        _secao(11, f"Glossário ({len(glossario or [])})", _lista_simples(glossario)),
+        _secao(12, f"Perguntas em aberto ({len(abertas or [])})", _lista_simples(abertas),
+               "_A análise não deixou pergunta em aberto registrada._"),
+        _secao(13, "Pesquisa complementar na web", _fontes_consultadas(),
+               "_A pesquisa web não estava marcada nesta análise, ou não retornou fonte alguma._"),
+        _secao(14, "Lacunas e pedidos de informação",
+               "\n\n".join(x for x in (_lista_simples(lacunas), _lista_simples(pedidos)) if x)),
+    ]
+    return "".join(partes)
 
 
 def generate_document_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
@@ -1863,6 +2335,24 @@ def generate_document_output_func(state: LangNetFullState, result: Any) -> LangN
 
     print(f"[DEBUG] output_json length: {len(output_json)}")
     print(f"[DEBUG] output_json preview (first 500 chars): {output_json[:500]}")
+
+    # CAMINHO NOVO (16/09/2026): a tarefa passou a devolver o documento em MARKDOWN PURO.
+    # Antes pedíamos o documento dentro de um campo de texto JSON — o que quase dobra o tamanho
+    # da resposta (cada aspa e cada quebra de linha viram dois caracteres) e fazia um documento
+    # de setenta mil caracteres não caber numa resposta só: ele chegava decepado no meio de uma
+    # frase e o programa caía no render determinístico, perdendo as treze seções que o modelo
+    # tinha escrito. Se a resposta já vem em markdown, usa direto e pula toda a decifração.
+    _cru = _texto_da_resposta(result)
+    _cru_limpo = _cru.lstrip()
+    if _cru_limpo.startswith("#") and len(_cru_limpo) > 2000:
+        print(f"[DOC] markdown puro recebido — {len(_cru_limpo)} caracteres, sem embrulho JSON")
+        updated_state = {
+            **state,
+            "requirements_document_md": _cru_limpo,
+            "validation_json": state.get("validation_json", "{}"),
+            "validation_data": state.get("validation_data", {}) or {},
+        }
+        return log_task_complete(updated_state, "generate_document")
 
     parsed = {}
     team_result_str = None
@@ -1990,6 +2480,13 @@ def generate_document_output_func(state: LangNetFullState, result: Any) -> LangN
 
         for tech in research.get("recommended_technologies", []):
             add_source(tech.get("name", "Tecnologia"), tech.get("source_url", tech.get("url", "")))
+
+        # O modelo costuma devolver os achados SEM o endereço. Quando isso acontece, valem as
+        # fontes que o próprio programa consultou — elas existem e foram efetivamente abertas.
+        # Antes desta emenda a seção saía em branco mesmo com 20 fontes reais encontradas.
+        if not web_sources:
+            for f in (state.get("fontes_web") or []):
+                add_source(f.get("titulo") or f.get("consulta") or "Fonte", f.get("url", ""))
 
         if web_sources:
             ref_lines.append("\n### 16.2 Fontes Web Consultadas\n")
@@ -13532,11 +14029,36 @@ def execute_task_with_context(
 
         try:
             _provider_now = (os.getenv("LLM_PROVIDER", "openai") or "").lower()
-            if _provider_now == "lmstudio" and not tools_list:
-                # Task SEM tools no LLM local: via DIRETA em streaming — evita o estol do
-                # litellm/httpx do CrewAI em respostas LONGAS (recebe parte e trava). Tasks
-                # COM tools seguem pelo CrewAI (precisam da orquestração de tool-calling).
-                print(f"[DIRECT] '{task_name}' sem tools — chamada DIRETA (streaming) ao LM Studio")
+            if task_name == "extract_requirements" and os.getenv("REQ_EM_LOTES", "true").lower() != "false":
+                # EXTRAÇÃO EM LOTES (padrão desde 17/09/2026). O pedido único produzia 125 mil
+                # caracteres numa resposta só e NENHUM provedor entregava isso inteiro. Mesmo
+                # conserto que a Especificação recebeu em 09/09/2026. Para voltar ao caminho
+                # antigo: REQ_EM_LOTES=false no ambiente.
+                print("[LOTES] extração de requisitos por trecho do documento")
+                result = _DirectResult(_extrair_requisitos_em_lotes(context_state))
+            elif task_name == "generate_document":
+                # O documento de requisitos é MONTADO PELO PROGRAMA, não escrito pelo modelo.
+                # Os requisitos, atores, entidades, fluxos, glossário e perguntas em aberto já
+                # foram julgados nas etapas anteriores; escrevê-los de novo é trabalho de cópia
+                # de mais de 150 mil caracteres — que não cabe numa resposta só (três tentativas
+                # em 16/09/2026, todas chegando decapitadas) e ainda arrisca trocar ou perder
+                # item na transcrição. O montador determinístico produz o documento completo,
+                # com a matriz de rastreabilidade, em segundos e sem custo de modelo.
+                print("[DOC] documento de requisitos montado pelo programa (sem transcrição por modelo)")
+                result = _DirectResult("")
+            elif _provider_now in ("lmstudio", "claude_code") and not tools_list:
+                # Task SEM tools: via DIRETA em fluxo. Dois motivos, um por provedor.
+                # LM STUDIO: o litellm/httpx do CrewAI estola no transporte de respostas LONGAS
+                #   (recebe parte e trava) — travas de dezenas de minutos.
+                # CLAUDE_CODE: a ponte, SEM fluxo, devolve só o ÚLTIMO pedaço de uma resposta
+                #   longa e ainda diz finish_reason=stop. Medido em 16/09/2026: pedido de 400
+                #   itens voltou com 3.516 caracteres começando no meio de uma palavra, sem o
+                #   item 1; em fluxo, 84.997 completos. Pôr stream=True no LLM do CrewAI NÃO
+                #   resolveu (ele não honra o pedido por este caminho) — a extração continuou
+                #   chegando decapitada. O caminho direto transmite em fluxo sempre, e é o mesmo
+                #   que já gera o código do aplicativo inteiro sem perder nada.
+                # Tasks COM ferramenta seguem pelo CrewAI (precisam da orquestração de chamada).
+                print(f"[DIRECT] '{task_name}' sem ferramenta — chamada DIRETA (em fluxo) a {_provider_now}")
                 # Persona do agente (role/goal/backstory) como system prompt — replica o que o
                 # CrewAI enviaria. SEM ela, o modelo ignora os dados reais (ex.: fluxo agêntico
                 # do domínio) e preenche o template com conteúdo genérico/CRUD.

@@ -193,7 +193,11 @@ class LLMClient:
         # link residencial externo estolam no não-streaming (a conexão idle é derrubada e
         # o transporte da resposta trava em ~33KB). O streaming mantém a conexão viva
         # (bytes fluindo) e recebe a resposta completa. Demais providers: não-streaming.
-        if self.provider == "lmstudio":
+        # claude_code entra na MESMA regra, por motivo diferente: a ponte devolve só o
+        # ÚLTIMO pedaço de uma resposta longa (e declara finish_reason=stop, como se
+        # estivesse inteira). Medido em 16/09/2026 com o mesmo pedido: 3.516 caracteres
+        # começando no meio de uma palavra sem fluxo, contra 84.997 completos com fluxo.
+        if self.provider in ("lmstudio", "claude_code"):
             _stream = self.client.chat.completions.create(
                 model=model_to_use,
                 messages=messages,
