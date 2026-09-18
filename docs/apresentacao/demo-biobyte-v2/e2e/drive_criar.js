@@ -37,7 +37,7 @@ const shot=async(p,t)=>{const f=`${OUT}/${String(N).padStart(3,'0')}-${t}.png`;a
         if (rot.includes('llm')) alvo=[...c.options].find(o=>/local/i.test(o.textContent));
         if (rot.includes('memória')||rot.includes('memoria')) alvo=[...c.options].find(o=>/langchain/i.test(o.textContent));
         if (alvo){c.value=alvo.value;c.dispatchEvent(new Event('change',{bubbles:true}));feitos.push(rot.slice(0,14)+'='+alvo.textContent.trim().slice(0,18));}
-      } else if (rot.includes('nome do projeto')) { setar(c,'BioByte Sentinela v3'); feitos.push('nome'); }
+      } else if (rot.includes('nome do projeto')) { setar(c,'BioByte Sentinela v4'); feitos.push('nome'); }
       else if (rot.includes('descrição')||rot.includes('descricao')) {
         setar(c,'Vigilância de Infecção de Corrente Sanguínea Associada a Cateter (ICSAC) para a Comissão de Controle de Infecção Hospitalar: prioriza pacientes por risco, confirma o caso pela microbiologia, recomenda o pacote de prevenção e estima a redução de risco — com registro auditável de cada decisão.');
         feitos.push('descrição');

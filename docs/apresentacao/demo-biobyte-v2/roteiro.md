@@ -268,3 +268,347 @@ O documento foi lido e está pronto para a análise.
 ---
 
 *(as cenas seguintes são escritas à medida que as etapas rodam)*
+
+---
+
+## Parte C — A etapa de Requisitos
+
+### Cena 14 — O pedido de análise
+
+**TELA:** `shots/141-instrucoes-e-pesquisa-web.png`
+
+**NARRAÇÃO:**
+A ata está anexada. Antes de iniciar, escrevemos as instruções que orientam a leitura — o que a
+CCIH exigiu e nós não queremos que se perca: que os requisitos de segurança nomeiem o mecanismo,
+que o login seja simples sem verificação em duas etapas, que a sessão valha em todas as telas, e
+que o sistema registre o que os serviços externos **não** devolvem.
+
+E marcamos a pesquisa complementar na web. Guarde isso: ela vai reaparecer mais adiante, e de um
+jeito que talvez surpreenda.
+
+---
+
+### Cena 15 — A análise em andamento
+
+**TELA:** `shots/142-analise-em-andamento.png`
+
+**NARRAÇÃO:**
+A ata não é lida de uma vez. Ela é cortada nos próprios títulos, em cinco pedaços, e cada pedaço
+é analisado sozinho. Depois cada pedaço é **conferido de novo** contra o que saiu dele — a
+pergunta "o que este trecho exige e não está na lista?".
+
+Isso não é detalhe de implementação: é o que faz a etapa funcionar em qualquer modelo. Pedir os
+cento e quarenta requisitos numa resposta só produz um texto que nenhum provedor entrega inteiro.
+
+---
+
+### Cena 16 — De onde vem cada requisito
+
+**TELA:** `shots/131-trecho-de-onde-vem-os-requisitos.png`
+
+**NARRAÇÃO:**
+Esta é a tabela mais importante do documento, e é a primeira coisa que um revisor procura.
+
+Cento e doze requisitos foram **extraídos da ata** — estão lá, ditos por alguém na reunião. Dez
+vieram das **instruções** que demos à análise. Doze vieram da **pesquisa na web**. E oito são
+**sugestão da própria IA** — ninguém os pediu, e por isso ficam separados, esperando aprovação.
+
+Repare no que essa separação permite: o revisor consegue olhar o documento e dizer "isto eu pedi,
+isto eu não pedi". Sem ela, sugestão de máquina e exigência de cliente se misturam — e é assim que
+um sistema ganha funcionalidade que ninguém queria.
+
+Logo abaixo, a tabela de requisitos: identificador, origem, nome, descrição, prioridade, atores,
+dependências e critério de aceite. Cada linha tem também a frase da ata que a sustenta.
+
+---
+
+### Cena 17 — Rastreabilidade até a origem
+
+**TELA:** `shots/134-trecho-rastreabilidade-requisito-trecho.png`
+
+**NARRAÇÃO:**
+Cada requisito declara de qual trecho da ata nasceu. A tabela cruza os dois.
+
+Isso responde à pergunta que toda revisão faz: *"de onde você tirou isso?"*. E responde sem
+depender de ninguém lembrar — a amarração é montada pelo programa, lendo os próprios dados.
+
+---
+
+### Cena 18 — O mapa de cobertura
+
+**TELA:** `shots/135-trecho-mapa-de-cobertura.png`
+
+**NARRAÇÃO:**
+Quanto cada assunto da reunião rendeu, e de que procedência.
+
+Serve para enxergar desequilíbrio: um assunto que ocupou meia hora de reunião e rendeu dois
+requisitos provavelmente foi mal lido. É uma ferramenta de desconfiança, não de comemoração.
+
+---
+
+### Cena 19 — O que o sistema não conseguiu resolver
+
+**TELA:** `shots/136-trecho-perguntas-em-aberto.png` e `shots/137-trecho-lacunas-e-pedidos.png`
+
+**NARRAÇÃO:**
+Aqui está a parte que mais diz sobre a qualidade da ferramenta: o que ela **não** resolveu.
+
+As perguntas em aberto são as que a ata não responde — qual o tempo exato de expiração da sessão,
+qual o tempo limite da consulta ao laboratório, quais são exatamente os bundles cadastrados.
+
+E as lacunas são achados de verdade. Uma delas merece atenção: **não há auditoria de leitura**. A
+CCIH pediu para auditar quem *alterou* registro. Ninguém pensou em auditar quem *leu* prontuário —
+e isso é exigência da lei de proteção de dados.
+
+Não foi um humano que percebeu. E o sistema **não** inventou a resposta: ele declarou a falta.
+
+---
+
+### Cena 20 — A pesquisa complementar
+
+**TELA:** `shots/138-trecho-pesquisa-complementar.png`
+
+**NARRAÇÃO:**
+As fontes consultadas, agrupadas por consulta, com endereço. E, desta vez, elas produziram
+requisito: doze deles, cada um citando a fonte que o sustenta — base legal do tratamento de dados,
+atendimento a pedidos de acesso e portabilidade, registro das operações, notificação de incidente
+de segurança.
+
+Nada disso está na ata. Tudo isso a lei exige.
+
+**NOTA DE PRODUÇÃO:** vale dizer na narração que esta seção nunca tinha funcionado em nenhuma
+geração anterior — saía sempre com zero.
+
+---
+
+### Cena 21 — O documento pede revisão humana
+
+**TELA:** `shots/140-trecho-aprovacoes.png`
+
+**NARRAÇÃO:**
+O documento termina com um quadro de aprovações em branco — responsável pelo negócio, responsável
+técnico, responsável pela segurança — e com um aviso: documento gerado automaticamente, requer
+revisão e aprovação humana antes de seguir.
+
+O sistema não se declara pronto. Ele declara o que fez e pede conferência.
+
+---
+
+## Parte D — Corrigindo um requisito pela conversa
+
+### Cena 22 — Achando o defeito
+
+**TELA:** `shots/119-documento-antes-do-refino.png`
+
+**NARRAÇÃO:**
+Lendo o documento, dois requisitos não passam por uma revisão séria:
+
+*"O painel deve responder em poucos segundos"* — e o critério de aceite diz *"medir o tempo e
+verificar que está em poucos segundos"*. O critério repete o requisito. Não há como testar isso.
+
+*"O sistema deve rodar continuamente na rotina da CCIH"* — mesmo problema. E o nome do ator saiu
+com erro de digitação.
+
+---
+
+### Cena 23 — O pedido de correção
+
+**TELA:** `shots/120-pedido-de-correcao-escrito.png`
+
+**NARRAÇÃO:**
+Escrevemos na conversa o que está errado e o que se espera. Em português, como se fala com um
+analista.
+
+O que acontece a seguir é o ponto desta cena: **o documento inteiro não vai para o modelo.** O
+programa descobre quais requisitos o pedido atinge, manda só esses, recebe só esses de volta, e
+troca no lugar.
+
+---
+
+### Cena 24 — O que mudou, e só o que mudou
+
+**TELA:** `shots/122-comparacao-entre-versoes.png`
+
+**NARRAÇÃO:**
+A comparação abre lado a lado. Mudaram duas linhas: os dois requisitos apontados. Os outros cento
+e quinze ficaram idênticos, caractere a caractere — não porque o modelo prometeu preservá-los, mas
+porque ele nunca os viu.
+
+E repare na correção: em vez de inventar "dois segundos", o sistema escreveu que o painel responde
+dentro de um limite medido em segundos e que **o valor exato ainda será definido pela CCIH**.
+
+Inventar o número seria pior do que deixar em aberto. Ele deixou em aberto.
+
+---
+
+### Cena 25 — As duas versões
+
+**TELA:** `shots/115-historico-com-duas-versoes.png`
+
+**NARRAÇÃO:**
+O histórico guarda as duas: a versão um, da análise inicial, e a versão dois, do refinamento —
+com o pedido que a originou registrado na descrição. Dá para voltar a qualquer uma.
+
+---
+
+## Parte E — A Especificação Funcional
+
+### Cena 26 — De onde a especificação nasce
+
+**TELA:** `shots/151-spec-origem-modal.png` e `shots/152-spec-origem-versoes.png`
+
+**NARRAÇÃO:**
+A etapa não deixa gerar sem antes escolher a origem: qual documento de requisitos, e **qual
+versão dele**. São três cliques de propósito.
+
+Isso não é burocracia. É o que permite, mais tarde, responder "esta especificação nasceu de qual
+versão dos requisitos?" — e a resposta fica gravada, não depende de ninguém lembrar.
+
+---
+
+### Cena 27 — A geração em fases
+
+**TELA:** `shots/154-spec-gerando.png`
+
+**NARRAÇÃO:**
+A especificação também não é escrita de uma vez. Primeiro o sistema monta um **plano**: quantos
+casos de uso existem e quais são. Depois escreve os casos **em lotes**. Depois as demais seções.
+E o programa monta o documento.
+
+Foram treze chamadas ao modelo, e o resultado: **trinta e três casos de uso planejados, trinta e
+três escritos**. Nenhum ficou pelo caminho.
+
+---
+
+### Cena 28 — Um caso de uso por dentro
+
+**TELA:** `shots/158-spec-uc-001.png`
+
+**NARRAÇÃO:**
+Este é o UC-001, autenticar usuário. Ator, objetivo, pré-condições, pós-condições. E duas linhas
+que valem a atenção: **os requisitos que este caso de uso realiza** — FR-001, 002, 005 e 006 — e a
+**regra de negócio** que se aplica a ele.
+
+Repare no que isso completa. O caso de uso aponta para os requisitos. Os requisitos apontam para o
+trecho da ata. A corrente vai da fala da coordenadora da CCIH até aqui, e dá para percorrer nos
+dois sentidos.
+
+Abaixo, o fluxo principal: o que o usuário faz, o que o sistema responde, passo a passo.
+
+---
+
+### Cena 29 — O que acontece quando dá errado
+
+**TELA:** `shots/159-spec-fluxos-de-excecao.png`
+
+**NARRAÇÃO:**
+Cada caso de uso traz fluxos alternativos e fluxos de exceção.
+
+E aqui há um detalhe que merece ser mostrado: quando o e-mail não existe e quando a senha está
+errada, o sistema responde **exatamente a mesma mensagem** — "E-mail ou senha inválidos".
+
+Isso é prática de segurança: mensagens diferentes revelariam quais e-mails estão cadastrados.
+Ninguém pediu isso na ata. Veio da leitura que o sistema fez das exigências de segurança.
+
+---
+
+### Cena 30 — Modelo de dados e rastreabilidade
+
+**TELA:** `shots/160-spec-modelo-de-dados-conceitual.png` e `shots/162-spec-rastreabilidade.png`
+
+**NARRAÇÃO:**
+A especificação já esboça o modelo conceitual de dados — que a próxima etapa vai transformar em
+tabelas — e fecha com a matriz de rastreabilidade, ligando requisito a caso de uso.
+
+---
+
+### Cena 31 — Leitura crítica: dois defeitos
+
+**TELA:** `shots/163-spec-atores-do-sistema.png`
+
+**NARRAÇÃO:**
+Agora a parte honesta. Olhe a lista de atores do sistema.
+
+Aparecem dezoito itens, entre eles "BioByte; CCIH", "BioByte; CCIH; médico", "médico; enfermeiro",
+"médico; enfermeiro; administrador". Não são dezoito atores — são **combinações** de atores
+tratadas como se fossem atores distintos. Os atores reais são quatro ou cinco.
+
+E há um segundo defeito: duas seções receberam o número 12, e o título do Mapa de Cobertura saiu
+com um pedaço de tabela grudado.
+
+Nenhum dos dois compromete o conteúdo — os casos de uso estão certos. Mas são exatamente o tipo de
+coisa que a próxima etapa consome, e por isso vale corrigir aqui, na conversa, antes de seguir.
+
+**NOTA DE PRODUÇÃO:** esta cena existe para mostrar que a leitura crítica faz parte do método —
+cada etapa é conferida no próprio documento antes de alimentar a seguinte.
+
+---
+
+## Parte F — Corrigindo a Especificação pela conversa
+
+### Cena 32 — O pedido
+
+**TELA:** `shots/164-spec-pedido-de-correcao.png`
+
+**NARRAÇÃO:**
+Escrevemos na conversa o defeito da cena anterior: a lista de atores traz combinações tratadas
+como atores distintos, e queremos a lista real, cada ator uma vez, com o papel de cada um.
+
+Repare no botão escolhido: **Refinar**, não "Analisar". Analisar só resume o documento; quem
+altera é Refinar. É um atrito da interface que vale mostrar.
+
+---
+
+### Cena 33 — O refino acontece por trecho
+
+**TELA:** `shots/165-spec-refino-em-andamento.png`
+
+**NARRAÇÃO:**
+A especificação tem duzentos e vinte e nove mil caracteres. Ela não vai inteira para o modelo.
+
+O sistema a divide em quarenta e nove unidades — as seções e cada caso de uso — descobre que o
+pedido nomeia a seção cinco, e refina **só ela**. As outras quarenta e oito não são tocadas.
+
+---
+
+### Cena 34 — Antes e depois
+
+**TELA:** `shots/168-spec-atores-do-sistema.png`
+
+**NARRAÇÃO:**
+Antes, dezessete linhas, várias delas combinações: "BioByte; CCIH; médico", "médico; enfermeiro;
+administrador", "Sistema; Servidor; Área de segurança do hospital".
+
+Depois, treze atores reais, cada um uma vez, com o papel descrito. O BioByte é o sistema de
+vigilância; a CCIH é a comissão que analisa e decide; o sistema do laboratório é serviço externo
+que fornece resultados; a ANVISA é o órgão que recebe notificação obrigatória.
+
+E repare no que ele separou: "Gerente de TI; Equipe de desenvolvimento" virou dois atores
+distintos, com papéis diferentes. "Sistema; Servidor; Área de segurança" virou três.
+
+O documento cresceu setecentos e oitenta e seis caracteres — exatamente o tamanho das descrições
+acrescentadas. Nenhum caso de uso foi tocado.
+
+---
+
+### Cena 35 — Uma recusa que valeu a pena mostrar
+
+**TELA:** (a mesma da cena 33, com a linha do registro em destaque)
+
+**NARRAÇÃO:**
+Na primeira tentativa, este mesmo pedido foi **recusado pelo próprio sistema**, com a mensagem:
+*"unidade 5 não mudou — o termo pedido não apareceu"*.
+
+Existe uma guarda que confere se a correção pedida realmente aconteceu, para não gravar uma
+alteração que não fez o que se pediu. Mas ela supunha que um termo citado entre aspas é coisa a
+**acrescentar** — e aqui o termo estava citado como exemplo do que **remover**. A correção tinha
+funcionado, e a guarda jogou fora justamente o acerto.
+
+Vale mostrar por dois motivos. Primeiro: o sistema erra, e o erro aparece no registro em vez de
+passar em silêncio. Segundo: sem conferir o resultado no documento, esse erro teria sido lido como
+"o modelo não conseguiu" — quando o modelo tinha conseguido.
+
+**NOTA DE PRODUÇÃO:** cena curta, mas é a que melhor explica o método — conferir o artefato, não
+o log de sucesso.
+
+---

@@ -747,12 +747,33 @@ def _mudou_de_verdade(original: str, refinado: str, instrucoes: str) -> tuple:
     if refinado.strip() == original.strip():
         return False, "o trecho voltou igual"
     termos = _re.findall(r'"([^"]{3,40})"', instrucoes or "")
+    if not termos:
+        return True, ""
+
+    # POLARIDADE (corrigido em 18/09/2026): a guarda supunha que termo entre aspas é coisa a
+    # ACRESCENTAR e vetava quando ele não aparecia. Mas metade dos pedidos cita o termo como
+    # exemplo do que REMOVER — "a lista traz combinações como \"BioByte; CCIH; médico\"".
+    # Nesses casos a correção certa faz o termo SUMIR, e a guarda descartava justamente o
+    # refino bem-sucedido, devolvendo o documento intacto e gravando uma versão idêntica à
+    # anterior. Medido na especificação do BioByte: v2 igual à v1, byte a byte.
+    pedido_de_remocao = _re.search(
+        r"\b(remov|retir|elimin|apag|tir[ae]|n[ãa]o deve|deixe de|substitu|refa[çc]|corrij|limp)",
+        (instrucoes or "").lower())
+    if pedido_de_remocao:
+        # num pedido de remoção, SUCESSO é o termo citado ter sumido — e ele continuar ali é
+        # falha, mesmo que o resto do texto tenha mudado. Por isso esta checagem vem ANTES da
+        # aceitação por presença do termo: com a ordem trocada, um trecho que só ganhou a
+        # palavra "(revisado)" ao lado da combinação errada passava como corrigido.
+        sumiu = [t for t in termos if t.lower() in original.lower()
+                 and t.lower() not in refinado.lower()]
+        if sumiu:
+            return True, ""
+        return False, (f"o pedido era de correção/remoção e o termo {termos[0]!r} continua "
+                       f"no texto")
     for t in termos:
         if t.lower() in refinado.lower():
             return True, ""
-    if termos:
-        return False, f"o termo pedido não apareceu: {termos[0]!r}"
-    return True, ""
+    return False, f"o termo pedido não apareceu: {termos[0]!r}"
 
 
 async def _refine_specification_chunked(current_specification: str,
@@ -1013,6 +1034,30 @@ IMPORTANTE: Retorne SOMENTE o documento markdown refinado. Comece diretamente co
         if not refined_specification or len(refined_specification) < 100:
             print(f"[SPEC REFINEMENT] ⚠️ WARNING: LLM returned empty or too short document!")
             raise Exception("Refinement failed: LLM returned empty or invalid response")
+
+        # DOCUMENTO IGUAL NÃO VIRA VERSÃO NOVA (18/09/2026). Quando as guardas recusam todas as
+        # alterações, o documento volta intacto — e o código gravava assim mesmo uma "versão 2"
+        # byte a byte igual à 1. O histórico passava a afirmar que houve refinamento quando não
+        # houve, que é pior do que não ter refinado: some o sinal de que o pedido falhou.
+        if refined_specification.strip() == (current_specification or "").strip():
+            print("[SPEC REFINEMENT] documento voltou IDÊNTICO — nenhuma versão será gravada")
+            save_specification_chat_message(
+                session_id=session_id,
+                sender_type="agent",
+                message_text=(
+                    "Não alterei a especificação: nenhuma das mudanças pedidas pôde ser aplicada "
+                    "com segurança, então o documento ficou como estava e **nenhuma versão nova "
+                    "foi criada**. O motivo de cada recusa está no registro desta etapa. "
+                    "Tente nomear o trecho de forma mais específica (a seção ou o caso de uso) "
+                    "e diga o que deve passar a constar nele."),
+                message_type="text",
+                sender_name="Agente de Especificação")
+            with get_db_connection() as db:
+                cur = db.cursor()
+                cur.execute("UPDATE execution_specification_sessions SET status='completed' "
+                            "WHERE id=%s", (session_id,))
+                db.commit(); cur.close()
+            return
 
         # 8. Save progress message - Analysis completed
         save_specification_chat_message(

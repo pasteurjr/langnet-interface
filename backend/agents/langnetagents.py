@@ -810,15 +810,46 @@ def _extrair_requisitos_em_lotes(state: LangNetFullState) -> str:
     vistos = set()          # descrições de requisito já aproveitadas
     vistos_nomes = {}       # nomes já aproveitados, SEPARADOS POR TIPO
 
-    def _acrescentar(destino, itens, prefixo, modulo):
+    import re as _re_dup
+
+    def _palavras(texto):
+        """Palavras longas do requisito — é por elas que se reconhece o mesmo assunto escrito
+        com outras palavras."""
+        return set(_re_dup.findall(r"[a-zà-ú]{5,}", (texto or "").lower()))
+
+    def _ja_existe(desc, destino):
+        """Repetido NÃO é só texto igual: a passagem de conferência reescreve o requisito com
+        outras palavras e ele passava batido. Medido em 18/09/2026: 93 pares quase idênticos
+        num documento de 188 requisitos — FR-101 a FR-111 eram FR-007, FR-011 e FR-012
+        reformulados. Comparar os primeiros 90 caracteres não pega isso; comparar as palavras
+        pega."""
+        pa = _palavras(desc)
+        if not pa:
+            return False
+        for outro in destino:
+            pb = _palavras(outro.get("description", "") if isinstance(outro, dict) else "")
+            if pb and len(pa & pb) / min(len(pa), len(pb)) > 0.70:
+                return True
+        return False
+
+    def _acrescentar(destino, itens, prefixo, modulo, origem=None):
         for it in (itens or []):
             if not isinstance(it, dict):
                 continue
+            if origem:
+                it["source"] = origem      # procedência dada pelo programa, não pelo modelo
+            elif str(it.get("source") or "") not in ("from_document", "from_instructions",
+                                                     "inferred", "from_web_research",
+                                                     "suggested_by_ai"):
+                # Sem isto, requisito com procedência em branco ou escrita de outro jeito caía
+                # em "sem procedência declarada" — 41 dos 151 na medição de 18/09/2026. Veio de
+                # um trecho do documento, então é do documento.
+                it["source"] = "from_document"
             desc = " ".join(str(it.get("description") or it.get("text") or "").split())
             if len(desc) < 12:
                 continue
             chave = desc.lower()[:90]
-            if chave in vistos:          # o mesmo assunto citado em dois trechos da ata
+            if chave in vistos or _ja_existe(desc, destino):
                 continue
             vistos.add(chave)
             it["description"] = desc
@@ -832,22 +863,37 @@ def _extrair_requisitos_em_lotes(state: LangNetFullState) -> str:
             f"TRECHO {i} de {len(blocos)} — assuntos: {titulo}\n\n"
             f"--- TRECHO ---\n{corpo}\n--- FIM DO TRECHO ---\n\n"
             + (f"INSTRUÇÕES DO USUÁRIO (valem para todo o trabalho):\n{instrucoes}\n\n" if instrucoes else "")
-            + "Extraia os requisitos QUE ESTE TRECHO SUSTENTA, e só eles. Não repita requisitos de\n"
-              "outros trechos, não invente funcionalidade que ninguém pediu, e não escreva requisito\n"
-              "sem a frase do texto que o justifica.\n\n"
-              "Para cada requisito: `description` (o que o sistema deve fazer, específico e\n"
+            + "Extraia TUDO que este trecho sustenta. Seja EXAUSTIVO: passe frase por frase e, para\n"
+              "cada uma que imponha comportamento ao sistema, escreva um requisito. Inclua o que\n"
+              "parece pequeno — campo opcional, filtro, mensagem de erro, registro de auditoria,\n"
+              "quem é notificado, o que acontece quando falha. Um trecho de três mil caracteres\n"
+              "costuma render de vinte a quarenta requisitos; se você escreveu menos de quinze,\n"
+              "releia o trecho, porque deixou coisa passar.\n\n"
+              "NÃO se preocupe com repetição: se um assunto aparece aqui e em outro trecho, escreva\n"
+              "assim mesmo — quem remove repetido é o programa, depois. Omitir por medo de repetir\n"
+              "faz o requisito sumir do documento inteiro, e isso já aconteceu.\n\n"
+              "O que NÃO fazer: inventar funcionalidade que ninguém pediu, e escrever requisito sem\n"
+              "a frase do texto que o justifica.\n\n"
+              "Para cada requisito: `name` (título de até 6 palavras), `description` (o que o\n"
+              "sistema deve fazer, específico e\n"
               "verificável), `source` (from_document se está dito no trecho; from_instructions se vem\n"
               "das instruções do usuário; inferred se você deduziu — e aí explique em `rationale`;\n"
               "suggested_by_ai se é ideia sua que ninguém pediu), `evidence` (a frase do texto, entre\n"
-              "aspas) e `priority` (high, medium ou low).\n\n"
+              "aspas), `priority` (high, medium ou low), `actors` (quem usa ou é afetado),\n"
+              "`depends_on` (outros requisitos deste mesmo trecho de que ele depende, se houver)\n"
+              "e `acceptance` (como se verifica que foi cumprido — uma frase objetiva).\n\n"
               "Requisito de segurança tem de NOMEAR O MECANISMO. \"O sistema deve ser seguro\" não serve.\n\n"
               "Se o trecho não sustentar requisito de algum tipo, devolva a lista vazia. Lista vazia é\n"
               "resposta correta; encher de requisito genérico não é."
         )
         formato = (
-            '{"functional_requirements":[{"description":"","source":"","evidence":"","priority":""}],'
-            '"non_functional_requirements":[{"description":"","category":"","source":"","evidence":"","priority":""}],'
-            '"business_rules":[{"name":"","description":"","source":"","evidence":""}],'
+            # `name` (título curto), `actors`, `depends_on` e `acceptance` existem porque o
+            # documento tem colunas para eles desde agosto. Sem pedir, as colunas ficam vazias.
+            '{"functional_requirements":[{"name":"","description":"","source":"","evidence":"",'
+            '"priority":"","actors":[""],"depends_on":[""],"acceptance":""}],'
+            '"non_functional_requirements":[{"name":"","description":"","category":"","source":"",'
+            '"evidence":"","priority":"","acceptance":""}],'
+            '"business_rules":[{"name":"","description":"","source":"","evidence":"","depends_on":[""]}],'
             '"actors":[{"name":"","role":""}],"entities":[{"name":"","description":""}],'
             '"workflows":[{"name":"","steps":[""]}],"glossary":[{"term":"","definition":""}],'
             '"open_questions":[""],"web_research_queries":[""]}\n'
@@ -880,6 +926,46 @@ def _extrair_requisitos_em_lotes(state: LangNetFullState) -> str:
               f"+{len(dados.get('non_functional_requirements') or [])} NFR "
               f"+{len(dados.get('business_rules') or [])} BR "
               f"({len(bruto or ''):,} caracteres)")
+
+    # ── CONFERÊNCIA TRECHO A TRECHO ───────────────────────────────────────────────────
+    # A conferência antiga comparava a ata INTEIRA contra a lista INTEIRA. Pergunta larga,
+    # resposta por cima: medido em 18/09/2026, ela devolvia reformulação do que já existia
+    # (71 acréscimos, 43 deles repetidos) e continuava deixando passar detalhe — "filtro
+    # opcional por paciente", "período de 7, 30, 90 ou 365 dias". Agora cada trecho é conferido
+    # contra os requisitos que saíram DELE: pergunta estreita, e o detalhe não escapa.
+    for i, (titulo, corpo) in enumerate(blocos, 1):
+        meus = [x for x in (fr + nfr + br) if x.get("module") == titulo]
+        pedido_conf = (
+            f"--- TRECHO ---\n{corpo}\n--- FIM DO TRECHO ---\n\n"
+            f"--- O QUE JÁ FOI EXTRAÍDO DESTE TRECHO ({len(meus)}) ---\n"
+            + "\n".join(f"- {x['description'][:120]}" for x in meus) + "\n--- FIM ---\n\n"
+            "Leia o trecho frase por frase. Sua ÚNICA tarefa: apontar o que ele exige e a lista\n"
+            "acima NÃO cobre.\n\n"
+            "Repare no que costuma escapar: valor de lista (os períodos, os formatos, os sítios),\n"
+            "campo opcional, filtro, quem é notificado e por qual canal, o que acontece quando uma\n"
+            "etapa falha, o que o sistema NÃO deve exigir, sobrescrita com justificativa, e a\n"
+            "mensagem mostrada ao operador.\n\n"
+            "Se a lista já cobre o trecho, devolva listas VAZIAS. Não reescreva o que já está lá."
+        )
+        formato_conf = (
+            '{"functional_requirements":[{"name":"","description":"","evidence":"","priority":"",'
+            '"actors":[""],"acceptance":""}],'
+            '"non_functional_requirements":[{"name":"","description":"","evidence":"","priority":""}],'
+            '"business_rules":[{"name":"","description":"","evidence":""}]}\nSó este JSON.'
+        )
+        f_json = _lenient_json(_direct_llm_complete(
+            pedido_conf, formato_conf,
+            system="Você confere cobertura de requisitos contra um trecho. Aponte o que falta."))
+        if not isinstance(f_json, dict):
+            continue
+        antes = len(fr) + len(nfr) + len(br)
+        # procedência: veio do DOCUMENTO (o trecho é do documento), marcada pelo programa
+        _acrescentar(fr,  f_json.get("functional_requirements"),     "FR",  titulo, "from_document")
+        _acrescentar(nfr, f_json.get("non_functional_requirements"), "NFR", titulo, "from_document")
+        _acrescentar(br,  f_json.get("business_rules"),              "BR",  titulo, "from_document")
+        novos = len(fr) + len(nfr) + len(br) - antes
+        if novos:
+            print(f"[LOTES] conferência do bloco {i}/{len(blocos)}: +{novos} que tinha escapado")
 
     reunido = {
         "functional_requirements": fr, "non_functional_requirements": nfr, "business_rules": br,
@@ -1523,6 +1609,73 @@ def extract_requirements_output_func(state: LangNetFullState, result: Any) -> La
     return log_task_complete(updated_state, "extract_requirements", output_json[:200])
 
 
+def _requisitos_da_pesquisa_web(state: LangNetFullState) -> dict:
+    """Confronta as fontes que a busca abriu com os requisitos já levantados e devolve o que as
+    fontes exigem e a lista não cobre.
+
+    POR QUE existe: a busca achava 20 fontes reais e ZERO delas virava requisito — apareciam só
+    como lista de links no fim do documento. E POR QUE fica aqui, e não dentro da extração: a
+    busca acontece DEPOIS da extração, então lá a lista de fontes ainda está vazia (erro que
+    cometi em 18/09/2026 — a passagem rodou sem fonte nenhuma e não fez nada)."""
+    fontes = state.get("fontes_web") or []
+    dados = _lenient_json(state.get("requirements_json") or "{}")
+    if not fontes or not isinstance(dados, dict):
+        return dados if isinstance(dados, dict) else {}
+    fr = dados.get("functional_requirements") or []
+    nfr = dados.get("non_functional_requirements") or []
+    br = dados.get("business_rules") or []
+    resumo_fontes = "\n".join(f"- [{f.get('consulta')}] {f.get('titulo')} — {f.get('url')}"
+                               for f in fontes[:20])
+    indice = "\n".join(f"- {str(x.get('description'))[:110]}" for x in (fr + nfr + br))
+    bruto = _direct_llm_complete(
+        (f"O sistema é: {state.get('project_description') or state.get('project_name')}\n\n"
+         f"--- FONTES CONSULTADAS NA WEB ---\n{resumo_fontes}\n--- FIM ---\n\n"
+         f"--- REQUISITOS JÁ LEVANTADOS ({len(fr)+len(nfr)+len(br)}) ---\n{indice}\n--- FIM ---\n\n"
+         "Com base NAS FONTES ACIMA, aponte exigências de norma, padrão ou boa prática do domínio\n"
+         "que a lista NÃO cobre e que um sistema deste tipo precisa cumprir.\n\n"
+         "Regras: no máximo 10. Cada um tem de citar em `evidence` QUAL fonte o sustenta (título\n"
+         "ou endereço). Não invente norma que não esteja nas fontes. Se as fontes só confirmam o\n"
+         "que já está na lista, devolva listas VAZIAS — essa é uma resposta boa."),
+        '{"functional_requirements":[{"name":"","description":"","evidence":"","priority":""}],'
+        '"non_functional_requirements":[{"name":"","description":"","evidence":"","priority":""}],'
+        '"business_rules":[{"name":"","description":"","evidence":""}]}\nSó este JSON.',
+        system="Você confronta requisitos com normas e boas práticas do domínio, citando a fonte.")
+    achado = _lenient_json(bruto)
+    if not isinstance(achado, dict):
+        print(f"[WEB] resposta ilegível ({len(bruto or '')} caracteres) — sigo sem ela")
+        return dados
+    _propostos = sum(len(achado.get(k) or []) for k in
+                     ("functional_requirements", "non_functional_requirements", "business_rules"))
+    print(f"[WEB] o modelo propôs {_propostos} requisito(s) a partir das fontes")
+    import re as _re_w
+    pal = lambda t: set(_re_w.findall(r"[a-zà-ú]{5,}", str(t or "").lower()))
+    total = 0
+    for chave, destino, prefixo in (("functional_requirements", fr, "FR"),
+                                    ("non_functional_requirements", nfr, "NFR"),
+                                    ("business_rules", br, "BR")):
+        for it in (achado.get(chave) or []):
+            if not isinstance(it, dict):
+                continue
+            desc = " ".join(str(it.get("description") or "").split())
+            pa = pal(desc)
+            if len(desc) < 12 or not pa:
+                continue
+            if any(pal(x.get("description")) and
+                   len(pa & pal(x.get("description"))) / min(len(pa), len(pal(x.get("description")))) > 0.70
+                   for x in destino):
+                continue
+            it["source"] = "from_web_research"       # marcado pelo PROGRAMA
+            it["module"] = "pesquisa complementar na web"
+            it["id"] = f"{prefixo}-{len(destino) + 1:03d}"
+            destino.append(it); total += 1
+    print(f"[WEB] +{total} aproveitado(s) de {_propostos} propostos "
+          f"({_propostos - total} descartados por já existirem na lista)")
+    dados["functional_requirements"] = fr
+    dados["non_functional_requirements"] = nfr
+    dados["business_rules"] = br
+    return dados
+
+
 def research_additional_info_output_func(state: LangNetFullState, result: Any) -> LangNetFullState:
     """Update state with research_additional_info results"""
     if isinstance(result, dict):
@@ -1544,6 +1697,16 @@ def research_additional_info_output_func(state: LangNetFullState, result: Any) -
         "research_findings_json": output_json,
         "research_findings_data": parsed
     }
+
+    # Agora que as fontes existem, confronta-as com os requisitos: é aqui que a pesquisa deixa
+    # de ser lista de links e vira requisito com procedência 🌐 e fonte citada.
+    try:
+        _com_web = _requisitos_da_pesquisa_web(updated_state)
+        if _com_web:
+            updated_state["requirements_json"] = json.dumps(_com_web, ensure_ascii=False)
+            updated_state["requirements_data"] = _com_web
+    except Exception as _e_web:
+        print(f"[WEB] passagem da pesquisa falhou ({type(_e_web).__name__}) — sigo sem ela")
 
     return log_task_complete(updated_state, "research_additional_info", output_json[:200])
 
@@ -2122,39 +2285,72 @@ def _build_requirements_doc_fallback(state: LangNetFullState) -> str:
         return (v[:limite] + "…") if limite and len(v) > limite else v
 
     def _tabela(itens, titulo_vazio="_(nenhum)_"):
-        """Tabela markdown com uma linha por requisito. Colunas escolhidas para o LEITOR
-        humano: o que é, de onde veio, a frase que sustenta, e quanto pesa."""
+        """Tabela de requisitos NO FORMATO ORIGINAL do documento (o de agosto/2026):
+        ID · Origem · Nome · Descrição · Prioridade · Atores · Dependências · Critérios.
+        A coluna Evidência fica logo abaixo de cada linha, porque é texto longo e espremê-la
+        numa célula tornava a tabela ilegível."""
         if not itens:
             return titulo_vazio
-        linhas = ["| ID | Origem | Requisito | Evidência | Prioridade |",
-                  "|----|--------|-----------|-----------|------------|"]
+        linhas = ["| ID | Origem | Nome | Descrição | Prioridade | Atores | Dependências | Critérios de aceite |",
+                  "|----|--------|------|-----------|------------|--------|--------------|---------------------|"]
         for i, it in enumerate(itens, 1):
             if not isinstance(it, dict):
-                linhas.append(f"| — | — | {_texto(it, 300)} | | |")
+                linhas.append(f"| — | — | — | {_texto(it, 300)} | — | — | — | — |")
                 continue
             rid  = _campo(it, "id", "req_id", "code", padrao=f"REQ-{i:03d}")
             orig = _rotulo_origem.get(str(_campo(it, "source", "origem")), "—")
-            desc = _texto(_campo(it, "description", "text", "requirement", "title"), 400)
-            evid = _texto(_campo(it, "evidence", "evidencia", "rationale", "justificativa"), 260)
+            nome = _texto(_campo(it, "name", "nome", "title", padrao="—"), 60)
+            desc = _texto(_campo(it, "description", "text", "requirement"), 400)
             prio = _texto(_campo(it, "priority", "prioridade", padrao="—"), 20)
-            linhas.append(f"| **{rid}** | {orig} | {desc} | {evid} | {prio} |")
+            ator = _texto(_campo(it, "actors", "atores", padrao="—"), 70)
+            dep  = _texto(_campo(it, "depends_on", "dependencias", "dependencies", padrao="—"), 60)
+            crit = _texto(_campo(it, "acceptance", "criterios", "acceptance_criteria", padrao="—"), 180)
+            linhas.append(f"| **{rid}** | {orig} | {nome} | {desc} | {prio} | {ator} | {dep} | {crit} |")
+        # evidências abaixo da tabela, uma por requisito — é o que sustenta cada linha
+        evid = []
+        for it in itens:
+            if not isinstance(it, dict):
+                continue
+            e = _texto(_campo(it, "evidence", "evidencia", "rationale", "justificativa"), 300)
+            if e:
+                evid.append(f"- **{_campo(it, 'id', padrao='—')}** — {e}")
+        if evid:
+            linhas.append("\n<details><summary>Evidência de cada requisito (a frase que o sustenta)</summary>\n")
+            linhas.extend(evid)
+            linhas.append("\n</details>")
         return "\n".join(linhas)
 
-    def _por_origem(itens):
-        """Agrupa por procedência. É o que permite ao leitor separar o que a CCIH PEDIU do
-        que o sistema DEDUZIU — a distinção que mais importa numa revisão de requisitos."""
+    def _por_origem(itens, secao, titulo_tipo="Requisitos"):
+        """Subseções por procedência + CONSOLIDADO, exatamente como no formato original: a
+        seção N traz N.1 até N.5 separando de onde veio cada requisito, e N.6 com todos
+        juntos em ordem de ID.
+
+        Por que a separação importa: é o que permite ao leitor distinguir o que o cliente
+        PEDIU do que o sistema DEDUZIU ou SUGERIU — numa revisão de requisitos essa é a
+        distinção que decide o que vai a aprovação. Subseção vazia continua aparecendo, com
+        o aviso, porque some-la esconderia do leitor que aquela origem não rendeu nada."""
         blocos = []
-        for chave, rotulo, explica in ORIGENS:
+        for n, (chave, rotulo, explica) in enumerate(ORIGENS, 1):
             grupo = [it for it in (itens or [])
                      if isinstance(it, dict) and str(it.get("source") or it.get("origem")) == chave]
-            if not grupo:
-                continue
-            blocos.append(f"#### {rotulo} — {explica} ({len(grupo)})\n\n{_tabela(grupo)}\n")
+            cab = f"### {secao}.{n} {titulo_tipo} — {explica} ({rotulo})\n"
+            if grupo:
+                blocos.append(f"{cab}\n{_tabela(grupo)}\n\n**Total: {len(grupo)}**\n")
+            else:
+                aviso = ("⚠️ *Nenhum requisito desta procedência.*" if chave != "from_web_research"
+                         else "⚠️ *A pesquisa web foi feita e as fontes estão na seção de Pesquisa "
+                              "Complementar, mas nenhuma delas gerou requisito novo: o que foi "
+                              "encontrado confirma o que a ata já dizia.*")
+                blocos.append(f"{cab}\n{aviso}\n\n**Total: 0**\n")
         sem = [it for it in (itens or [])
                if not isinstance(it, dict) or str(it.get("source") or it.get("origem")) not in _rotulo_origem]
         if sem:
-            blocos.append(f"#### Sem procedência declarada ({len(sem)})\n\n{_tabela(sem)}\n")
-        return "\n".join(blocos) or "_(nenhum)_"
+            blocos.append(f"### {secao}.6 {titulo_tipo} sem procedência declarada\n\n{_tabela(sem)}\n")
+        todos = [it for it in (itens or []) if isinstance(it, dict)]
+        todos.sort(key=lambda x: str(x.get("id", "")))
+        blocos.append(f"### {secao}.{7 if sem else 6} CONSOLIDADO — todos, em ordem de identificador\n\n"
+                      f"{_tabela(todos)}\n\n**Total geral: {len(todos)}**\n")
+        return "\n".join(blocos)
 
     def _lista_simples(itens, campos=("name", "nome", "term", "termo", "id")):
         if not itens:
@@ -2277,40 +2473,180 @@ def _build_requirements_doc_fallback(state: LangNetFullState) -> str:
                           "declarada e vazia, em vez de preenchida com texto genérico._")
         return f"## {numero}. {titulo}\n\n{aviso}\n\n---\n"
 
-    total = len(fr) + len(nfr) + len(br)
+    total_req = len(fr) + len(nfr) + len(br)
     agora = _dt.now().strftime("%d/%m/%Y %H:%M")
+    _vazio_visao = ("_O projeto não trouxe descrição própria; o que o sistema faz está nos "
+                    "requisitos das seções 3 a 5._")
+
+    def _contexto_texto():
+        """Contexto em prosa, montado do que a análise achou — não é texto de enfeite."""
+        partes_ctx = []
+        if atores:
+            nomes = [_texto(_campo(a, "name", "nome", padrao=""), 50) for a in atores[:6] if isinstance(a, dict)]
+            nomes = [n for n in nomes if n]
+            if nomes:
+                partes_ctx.append(f"O sistema é usado por {len(atores)} tipos de participante, "
+                                  f"entre eles {', '.join(nomes)}.")
+        if fluxos:
+            partes_ctx.append(f"A operação se organiza em {len(fluxos)} fluxos de trabalho, "
+                              f"detalhados na seção 8.")
+        if abertas or lacunas:
+            partes_ctx.append(f"A análise deixou {len(abertas or [])} pergunta(s) em aberto e "
+                              f"apontou lacunas no material de origem — estão nas seções 13 e 14 e "
+                              f"precisam de resposta antes da Especificação.")
+        return " ".join(partes_ctx) or "_A análise não reuniu contexto além dos próprios requisitos._"
+
+    def _mapa_de_cobertura(*grupos):
+        """Quanto de cada assunto do documento de origem virou requisito, e de que procedência.
+        Serve para o leitor ver DESEQUILÍBRIO: um trecho com muita fala e poucos requisitos
+        costuma ser trecho mal extraído."""
+        por_mod = {}
+        for g in grupos:
+            for it in (g or []):
+                if not isinstance(it, dict):
+                    continue
+                mod = _texto(_campo(it, "module", "modulo", padrao="—"), 60)
+                origem = str(it.get("source") or "—")
+                d = por_mod.setdefault(mod, {"total": 0})
+                d["total"] += 1
+                d[origem] = d.get(origem, 0) + 1
+        if not por_mod:
+            return ""
+        linhas = ["| Assunto | Total | Do documento | Das instruções | Deduzidos | Da web | Sugeridos |",
+                  "|---------|-------|--------------|----------------|-----------|--------|-----------|"]
+        for mod in sorted(por_mod, key=lambda m: -por_mod[m]["total"]):
+            d = por_mod[mod]
+            linhas.append(f"| {mod} | **{d['total']}** | {d.get('from_document', 0)} | "
+                          f"{d.get('from_instructions', 0)} | {d.get('inferred', 0)} | "
+                          f"{d.get('from_web_research', 0)} | {d.get('suggested_by_ai', 0)} |")
+        return "\n".join(linhas)
+
+    def _recomendacoes(fr_, nfr_, br_, abertas_, lacunas_):
+        """Recomendações DERIVADAS do que foi medido — não conselho genérico."""
+        rec = []
+        sugeridos = [x for x in (fr_ + nfr_ + br_) if isinstance(x, dict)
+                     and str(x.get("source")) == "suggested_by_ai"]
+        if sugeridos:
+            rec.append(f"- **Decidir sobre os {len(sugeridos)} requisitos sugeridos pela IA.** "
+                       f"Ninguém os pediu; cada um precisa ser aprovado ou cortado antes da "
+                       f"Especificação: {', '.join(str(x.get('id')) for x in sugeridos[:10])}"
+                       f"{'…' if len(sugeridos) > 10 else ''}.")
+        if abertas_:
+            rec.append(f"- **Responder as {len(abertas_)} perguntas em aberto** (seção 13). "
+                       f"Enquanto não forem respondidas, os casos de uso correspondentes não têm "
+                       f"como ser escritos sem inventar regra.")
+        if lacunas_:
+            rec.append(f"- **Resolver as lacunas apontadas** (seção 14). São contradições ou "
+                       f"omissões do material de origem, não erros da análise.")
+        sem_criterio = [x for x in fr_ if isinstance(x, dict)
+                        and not (x.get("acceptance") or x.get("criterios"))]
+        if sem_criterio:
+            rec.append(f"- **{len(sem_criterio)} requisito(s) funcionais sem critério de aceite.** "
+                       f"Sem critério não há como testar; convém completá-los antes dos Casos de Teste.")
+        sem_evid = [x for x in (fr_ + nfr_ + br_) if isinstance(x, dict) and not x.get("evidence")]
+        if sem_evid:
+            rec.append(f"- **{len(sem_evid)} requisito(s) sem evidência.** Requisito sem a frase de "
+                       f"origem não se defende numa revisão: conferir ou remover.")
+        if not rec:
+            rec.append("- A análise não encontrou pendência que impeça seguir para a Especificação.")
+        return "\n".join(rec)
+
+    docs_lidos = state.get("documents_table") or state.get("document_path") or ""
+    versao_ant = state.get("version_history") or ""
 
     partes = [
         f"# Documento de Requisitos\n## {proj}\n",
-        f"**Data:** {agora}  ",
-        f"**Total de requisitos:** {total} — {len(fr)} funcionais, {len(nfr)} não funcionais, "
-        f"{len(br)} regras de negócio  ",
-        f"**Montagem:** o conteúdo foi extraído, enriquecido e validado pelos agentes; a "
-        f"organização deste documento é feita pelo programa, a partir desses dados.\n",
         "---\n",
-        _secao(1, "Instruções que orientaram a análise",
-               f"> {instr}" if instr else "",
-               "_Nenhuma instrução adicional foi dada: a análise se apoiou apenas nos documentos._"),
-        _secao(2, "De onde vêm os requisitos", _contagem_por_origem(fr, nfr, br) +
-               ("\n\n**Legenda:** " + " · ".join(f"{r} = {e}" for _, r, e in ORIGENS))),
-        _secao(3, f"Requisitos Funcionais ({len(fr)})", _por_origem(fr)),
-        _secao(4, f"Requisitos Não-Funcionais ({len(nfr)})", _por_origem(nfr)),
-        _secao(5, f"Regras de Negócio ({len(br)})", _por_origem(br)),
+
+        _secao(1, "Informações do Projeto",
+               f"### 1.1 Visão Geral\n\n{_texto(state.get('project_description') or '', 0) or _vazio_visao}\n\n"
+               f"### 1.2 Contexto e Justificativa\n\n"
+               f"{_lista_simples(_pick('business_context') if isinstance(_pick('business_context'), list) else []) or _contexto_texto()}\n\n"
+               f"### 1.3 Escopo\n\n"
+               f"O escopo cobre os {len(fluxos or [])} fluxos de trabalho da seção 8, sustentados por "
+               f"{total_req} requisitos e {len(entidades or [])} entidades de dados. O que a análise "
+               f"NÃO conseguiu resolver está declarado nas seções de perguntas em aberto e lacunas — "
+               f"esses pontos ficam fora do escopo até serem respondidos."),
+
+        _secao(2, "Fontes de Informação",
+               f"### 2.1 Documentos Analisados\n\n{docs_lidos or '_Ver seção de Referências._'}\n\n"
+               f"### 2.2 Estatísticas da Análise\n\n"
+               f"| Medida | Valor |\n|--------|-------|\n"
+               f"| Requisitos funcionais | {len(fr)} |\n"
+               f"| Requisitos não-funcionais | {len(nfr)} |\n"
+               f"| Regras de negócio | {len(br)} |\n"
+               f"| Atores identificados | {len(atores or [])} |\n"
+               f"| Entidades de dados | {len(entidades or [])} |\n"
+               f"| Fluxos de trabalho | {len(fluxos or [])} |\n"
+               f"| Termos no glossário | {len(glossario or [])} |\n"
+               f"| Perguntas em aberto | {len(abertas or [])} |\n"
+               f"| Fontes web consultadas | {len(state.get('fontes_web') or [])} |\n\n"
+               f"**De onde vêm os requisitos**\n\n{_contagem_por_origem(fr, nfr, br)}\n\n"
+               f"**Legenda:** " + " · ".join(f"{r} = {e}" for _, r, e in ORIGENS)),
+
+        _secao(3, f"Requisitos Funcionais — FR ({len(fr)})", _por_origem(fr, 3, "Requisitos")),
+        _secao(4, f"Requisitos Não-Funcionais — NFR ({len(nfr)})", _por_origem(nfr, 4, "Requisitos")),
+        _secao(5, f"Regras de Negócio — BR ({len(br)})", _por_origem(br, 5, "Regras")),
+
         _secao(6, f"Atores ({len(atores or [])})", _lista_simples(atores)),
-        _secao(7, f"Entidades de dados ({len(entidades or [])})", _lista_simples(entidades)),
-        _secao(8, f"Fluxos de trabalho ({len(fluxos or [])})", _lista_simples(fluxos)),
-        _secao(9, "Matriz de rastreabilidade — requisito × fluxo", _matriz(fr, fluxos),
-               "_Nenhum fluxo declarou quais requisitos realiza, então não há como cruzar os "
-               "dois sem inventar a ligação. A amarração até a fonte está na seção seguinte._"),
-        _secao(10, "Rastreabilidade até o documento de origem", _por_modulo(fr, nfr, br),
+        _secao(7, f"Entidades de Dados ({len(entidades or [])})", _lista_simples(entidades)),
+        _secao(8, f"Fluxos de Trabalho ({len(fluxos or [])})", _lista_simples(fluxos)),
+        _secao(9, f"Glossário ({len(glossario or [])})", _lista_simples(glossario)),
+
+        _secao(10, "Rastreabilidade — requisito × fluxo de trabalho", _matriz(fr, fluxos),
+               "_Nenhum fluxo declarou quais requisitos realiza, então não há como cruzar os dois "
+               "sem inventar a ligação. A amarração até a fonte está na seção 11._"),
+        _secao(11, "Rastreabilidade — requisito × trecho do documento de origem",
+               _por_modulo(fr, nfr, br),
                "_Os requisitos não declararam de que trecho do documento saíram._"),
-        _secao(11, f"Glossário ({len(glossario or [])})", _lista_simples(glossario)),
-        _secao(12, f"Perguntas em aberto ({len(abertas or [])})", _lista_simples(abertas),
+        _secao(12, "Mapa de Cobertura", _mapa_de_cobertura(fr, nfr, br)),
+
+        _secao(13, f"Perguntas em Aberto ({len(abertas or [])})", _lista_simples(abertas),
                "_A análise não deixou pergunta em aberto registrada._"),
-        _secao(13, "Pesquisa complementar na web", _fontes_consultadas(),
-               "_A pesquisa web não estava marcada nesta análise, ou não retornou fonte alguma._"),
-        _secao(14, "Lacunas e pedidos de informação",
+        _secao(14, "Lacunas e Pedidos de Informação",
                "\n\n".join(x for x in (_lista_simples(lacunas), _lista_simples(pedidos)) if x)),
+        _secao(15, "Pesquisa Complementar na Web", _fontes_consultadas(),
+               "_A pesquisa web não estava marcada nesta análise, ou não retornou fonte alguma._"),
+
+        _secao(16, "Recomendações", _recomendacoes(fr, nfr, br, abertas, lacunas)),
+        _secao(17, "Próximos Passos",
+               "### 17.1 Ações Imediatas\n\n"
+               + (_lista_simples(pedidos) or "- Revisar e aprovar os requisitos deste documento.") + "\n\n"
+               "### 17.2 Validações Necessárias\n\n"
+               + (_lista_simples(abertas) or "- Nenhuma pendência registrada pela análise.") + "\n\n"
+               "### 17.3 Preparação para a Especificação Funcional\n\n"
+               "- Os requisitos aprovados aqui alimentam a etapa de Especificação, que os transforma "
+               "em casos de uso.\n"
+               "- Requisito marcado como sugerido pela IA (🤖 RIA) **não** deve seguir sem aprovação "
+               "explícita: ninguém o pediu.\n"
+               "- Perguntas em aberto respondidas viram requisito novo; enquanto não forem "
+               "respondidas, o caso de uso correspondente fica sem como ser escrito."),
+
+        _secao(18, "Metadados do Documento",
+               f"| Campo | Valor |\n|-------|-------|\n"
+               f"| Projeto | {proj} |\n"
+               f"| Data de geração | {agora} |\n"
+               f"| Total de requisitos | {total_req} |\n"
+               f"| Modelo que analisou | {os.getenv('LLM_PROVIDER', '—')} |\n"
+               f"| Pesquisa web | {'realizada' if state.get('fontes_web') else 'não realizada'} |\n"
+               f"| Montagem do documento | pelo programa, a partir dos dados das etapas anteriores |\n\n"
+               f"**Como este documento foi feito:** os agentes leram o material, extraíram e "
+               f"validaram os requisitos; a organização, a numeração, as tabelas e as matrizes são "
+               f"montadas pelo programa. Nenhum requisito é transcrito por modelo — é isso que "
+               f"garante que a contagem das tabelas bate com a lista."),
+
+        _secao(19, "Controle de Versões",
+               versao_ant or "| Versão | Data | Origem | Mudança |\n|--------|------|--------|---------|\n"
+                             f"| 1 | {agora} | análise inicial | Documento criado a partir do material "
+                             f"anexado ao projeto |"),
+
+        _secao(20, "Aprovações",
+               "| Papel | Nome | Data | Situação |\n|-------|------|------|----------|\n"
+               "| Responsável pelo negócio | | | pendente |\n"
+               "| Responsável técnico | | | pendente |\n"
+               "| Responsável pela segurança | | | pendente |\n\n"
+               "⚠️ *Documento gerado automaticamente. Requer revisão e aprovação humana antes de "
+               "seguir para a Especificação Funcional.*"),
     ]
     return "".join(partes)
 
@@ -14046,7 +14382,7 @@ def execute_task_with_context(
                 # com a matriz de rastreabilidade, em segundos e sem custo de modelo.
                 print("[DOC] documento de requisitos montado pelo programa (sem transcrição por modelo)")
                 result = _DirectResult("")
-            elif _provider_now in ("lmstudio", "claude_code") and not tools_list:
+            elif _provider_now in ("lmstudio", "claude_code", "deepseek") and not tools_list:
                 # Task SEM tools: via DIRETA em fluxo. Dois motivos, um por provedor.
                 # LM STUDIO: o litellm/httpx do CrewAI estola no transporte de respostas LONGAS
                 #   (recebe parte e trava) — travas de dezenas de minutos.
@@ -14057,6 +14393,11 @@ def execute_task_with_context(
                 #   resolveu (ele não honra o pedido por este caminho) — a extração continuou
                 #   chegando decapitada. O caminho direto transmite em fluxo sempre, e é o mesmo
                 #   que já gera o código do aplicativo inteiro sem perder nada.
+                # DEEPSEEK: ficou de fora desta lista até 18/09/2026 e por isso ia pelo CrewAI.
+                #   Resultado medido: o enriquecimento voltou ilegível, a validação de qualidade
+                #   recebeu lista VAZIA e escreveu no documento "No functional requirements
+                #   provided at all" — num documento com 78 requisitos funcionais. Ela disse a
+                #   verdade sobre o que recebeu; o erro foi não passar nada a ela.
                 # Tasks COM ferramenta seguem pelo CrewAI (precisam da orquestração de chamada).
                 print(f"[DIRECT] '{task_name}' sem ferramenta — chamada DIRETA (em fluxo) a {_provider_now}")
                 # Persona do agente (role/goal/backstory) como system prompt — replica o que o

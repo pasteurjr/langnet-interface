@@ -228,6 +228,116 @@ class RefineRequirementsRequest(BaseModel):
     parent_message_id: Optional[str] = None
 
 
+def _linhas_de_requisito(md: str) -> dict:
+    """Devolve {identificador: linha inteira da tabela} para cada requisito do documento.
+
+    As linhas aparecem DUAS vezes (na subseção por procedência e na tabela consolidada); o
+    dicionário guarda uma, e a troca depois é feita em todas as ocorrências."""
+    import re as _re
+    achados = {}
+    for m in _re.finditer(r"^\|\s*\*\*((?:FR|NFR|BR)-\d+)\*\*\s*\|.*$", md, _re.M):
+        achados.setdefault(m.group(1), m.group(0))
+    return achados
+
+
+def _resumo_para_escolha(linhas: dict) -> str:
+    """Índice enxuto (identificador + começo da descrição) para o modelo dizer QUAIS requisitos
+    o pedido atinge, sem precisar receber o documento inteiro."""
+    import re as _re
+    fora = []
+    for rid, linha in linhas.items():
+        celulas = [c.strip() for c in linha.split("|")]
+        nome = celulas[3] if len(celulas) > 3 else ""
+        desc = celulas[4] if len(celulas) > 4 else ""
+        fora.append(f"{rid}: {nome} — {desc[:110]}")
+    return "\n".join(fora)
+
+
+async def _refinar_por_trecho(current_requirements: str, refinement_instructions: str,
+                              documentos: str, historico: str):
+    """Refinamento CIRÚRGICO: troca só os requisitos que o pedido atinge.
+
+    POR QUE: o caminho antigo reenviava o documento inteiro e exigia que o modelo o copiasse
+    TODO de volta com a mudança aplicada. Num documento de cem mil caracteres isso não cabe
+    numa resposta só — volta cortado — e, mesmo cabendo, obriga o modelo a recopiar centenas
+    de requisitos, com risco de renumerar ou perder algum (por isso o pedido antigo tinha um
+    aviso em maiúsculas implorando para preservar os identificadores).
+
+    Aqui o modelo só julga e escreve o que muda; quem preserva o resto é o programa, que não
+    erra. Devolve (documento_novo, relato) ou (None, motivo) quando não dá para ser cirúrgico.
+    """
+    from app.llm import get_llm_client
+    linhas = _linhas_de_requisito(current_requirements)
+    if len(linhas) < 3:
+        return None, "documento sem tabela de requisitos reconhecível"
+
+    llm = get_llm_client()
+
+    # 1) QUAIS requisitos o pedido atinge — resposta minúscula
+    escolha = llm.complete(
+        prompt=(f"PEDIDO DO USUÁRIO:\n{refinement_instructions}\n\n"
+                f"REQUISITOS DO DOCUMENTO:\n{_resumo_para_escolha(linhas)}\n\n"
+                "Diga QUAIS requisitos este pedido atinge. Responda só com os identificadores "
+                "separados por vírgula (ex.: FR-012, NFR-003). Se o pedido não for sobre "
+                "requisitos específicos — por exemplo, mexer em texto de introdução, formato ou "
+                "organização do documento — responda a palavra DOCUMENTO. Se o pedido for para "
+                "ACRESCENTAR requisito novo, responda NOVO."),
+        temperature=0.0, max_tokens=300)
+    escolha = (escolha or "").strip()
+    print(f"[REFINO CIRÚRGICO] o pedido atinge: {escolha[:200]}")
+
+    import re as _re
+    alvos = [x for x in _re.findall(r"(?:FR|NFR|BR)-\d+", escolha) if x in linhas]
+    if "DOCUMENTO" in escolha.upper() or (not alvos and "NOVO" not in escolha.upper()):
+        return None, "o pedido não é sobre requisitos específicos"
+    if not alvos:
+        return None, "o pedido acrescenta requisito novo"
+
+    # 2) Só os requisitos atingidos vão ao modelo — resposta pequena
+    trecho = "\n".join(linhas[a] for a in alvos)
+    cabecalho = ("| ID | Origem | Nome | Descrição | Prioridade | Atores | Dependências | "
+                 "Critérios de aceite |")
+    corrigidas = llm.complete(
+        prompt=(f"{historico}PEDIDO DO USUÁRIO:\n{refinement_instructions}\n\n"
+                f"MATERIAL DE ORIGEM (para conferir o que o documento sustenta):\n"
+                f"{documentos[:30000]}\n\n"
+                f"LINHAS A CORRIGIR (formato de tabela markdown):\n{cabecalho}\n{trecho}\n\n"
+                "Devolva as MESMAS linhas, na mesma ordem e no mesmo formato de tabela, já com o "
+                "pedido aplicado.\n"
+                "- NÃO mude o identificador (a primeira célula).\n"
+                "- NÃO mude a coluna de origem (o emoji), porque ela diz de onde o requisito veio.\n"
+                "- Mude só o que o pedido exige; o resto de cada linha fica idêntico.\n"
+                "- Não escreva nada além das linhas."),
+        temperature=0.3, max_tokens=8000)
+
+    novas = {}
+    for linha in (corrigidas or "").split("\n"):
+        m = _re.match(r"^\|\s*\*\*((?:FR|NFR|BR)-\d+)\*\*\s*\|", linha.strip())
+        if m and m.group(1) in linhas:
+            novas[m.group(1)] = linha.strip()
+    if not novas:
+        return None, "o modelo não devolveu linhas reconhecíveis"
+
+    # 3) O PROGRAMA troca, em todas as ocorrências. O resto do documento fica intacto por
+    #    construção — não por promessa do modelo.
+    doc = current_requirements
+    trocados = []
+    for rid, nova in novas.items():
+        antiga = linhas[rid]
+        if antiga in doc:
+            doc = doc.replace(antiga, nova)
+            trocados.append(rid)
+    if not trocados:
+        return None, "não consegui casar as linhas no documento"
+
+    relato = (f"Alterei {len(trocados)} requisito(s): {', '.join(trocados)}. "
+              f"O restante do documento ficou idêntico — a troca foi feita pelo programa, "
+              f"linha por linha, então nenhum outro requisito pôde ser alterado, renumerado "
+              f"ou perdido.")
+    print(f"[REFINO CIRÚRGICO] {relato}")
+    return doc, relato
+
+
 async def execute_refinement_workflow(
     session_id: str,
     refinement_instructions: str,
@@ -394,6 +504,20 @@ Maintain the structure and quality of the original document while incorporating 
             print(f"[REFINEMENT] 📭 Nenhum refinamento anterior encontrado")
         # ==================================================================
 
+        # ── CAMINHO CIRÚRGICO (padrão desde 18/09/2026) ──────────────────────────────
+        # Troca só os requisitos que o pedido atinge; o resto do documento fica intacto por
+        # construção. Cai no caminho antigo (documento inteiro) quando o pedido não é sobre
+        # requisitos específicos — mexer na introdução, no formato, acrescentar requisito.
+        # Para desligar: REFINO_CIRURGICO=false no ambiente.
+        import os as _os_ref
+        refined_requirements = None
+        if _os_ref.getenv("REFINO_CIRURGICO", "true").lower() != "false":
+            refined_requirements, _relato = await _refinar_por_trecho(
+                current_requirements, refinement_instructions,
+                all_documents_content, refinement_history)
+            if not refined_requirements:
+                print(f"[REFINEMENT] caminho cirúrgico não se aplica ({_relato}) — documento inteiro")
+
         refinement_prompt = f"""DOCUMENTO ATUAL:
 {current_requirements}
 
@@ -418,12 +542,14 @@ TAREFA CRÍTICA:
 IMPORTANTE: Retorne SOMENTE o documento em markdown. Sem introduções, sem comentários.
 """
 
-        llm_client = get_llm_client()
-        refined_requirements = llm_client.complete(
-            prompt=refinement_prompt,
-            temperature=0.7,
-            max_tokens=65536  # ✅ 64K tokens (compatível com DeepSeek-Reasoner)
-        )
+        # Só chama o modelo com o documento inteiro se o caminho cirúrgico não resolveu.
+        if not refined_requirements:
+            llm_client = get_llm_client()
+            refined_requirements = llm_client.complete(
+                prompt=refinement_prompt,
+                temperature=0.7,
+                max_tokens=65536
+            )
 
         print(f"[REFINEMENT] LLM completed. Refined document length: {len(refined_requirements)} chars")
 
