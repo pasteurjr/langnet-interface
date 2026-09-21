@@ -1036,6 +1036,50 @@ def _emit_alembic_deterministic(logical_model: Dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _comandos_do_script(schema_sql: str) -> list:
+    """Divide o script em comandos respeitando o texto entre aspas.
+
+    POR QUE: cortar em todo ponto e vírgula parte o comando ao meio quando o ponto e vírgula está
+    DENTRO de um texto — e está, nos comentários de tabela que o próprio gerador escreve:
+    COMMENT='Pessoa que acessa o sistema; guarda nome, e-mail...'. Medido no BioByte em
+    21/09/2026: a conferência acusava "O SCHEMA NÃO APLICA — erro de sintaxe perto de 'Pessoa que
+    acessa o sistema'", em vermelho, na tela da etapa. O esquema estava correto; quem estava
+    errado era o divisor. Vinte e quatro tabelas reprovadas por causa disso.
+    """
+    comandos, atual, aspa = [], [], None
+    i, n = 0, len(schema_sql or "")
+    while i < n:
+        c = schema_sql[i]
+        if aspa:
+            atual.append(c)
+            if c == aspa:
+                # aspa dobrada dentro do texto ('' ou "") não fecha
+                if i + 1 < n and schema_sql[i + 1] == aspa:
+                    atual.append(schema_sql[i + 1])
+                    i += 2
+                    continue
+                aspa = None
+            elif c == "\\" and i + 1 < n:
+                atual.append(schema_sql[i + 1])
+                i += 2
+                continue
+        elif c in ("'", '"', "`"):
+            aspa = c
+            atual.append(c)
+        elif c == ";":
+            t = "".join(atual).strip()
+            if t:
+                comandos.append(t)
+            atual = []
+        else:
+            atual.append(c)
+        i += 1
+    t = "".join(atual).strip()
+    if t:
+        comandos.append(t)
+    return comandos
+
+
 def generate_alembic_migration(logical_model: Dict[str, Any]) -> str:
     """Passo 5: 0001_initial.py. DETERMINÍSTICO (sem LLM); LLM só como fallback."""
     try:
@@ -1068,7 +1112,7 @@ def _validate_schema_executable_pg(schema_sql: str) -> Optional[Dict[str, Any]]:
         cur = conn.cursor()
         cur.execute('CREATE SCHEMA "%s"' % schema)
         cur.execute('SET search_path TO "%s", public' % schema)
-        for stmt in [s.strip() for s in schema_sql.split(";") if s.strip()]:
+        for stmt in _comandos_do_script(schema_sql):
             if stmt.upper().startswith("CREATE EXTENSION"):
                 continue  # postgis já está em public (search_path cobre)
             try:
@@ -1123,7 +1167,7 @@ def _validate_schema_executable(schema_sql: str, dbms: str = "mysql") -> Optiona
         cur = conn.cursor()
         cur.execute("CREATE DATABASE `%s` CHARACTER SET utf8mb4" % tmpdb)
         cur.execute("USE `%s`" % tmpdb)
-        for stmt in [s.strip() for s in schema_sql.split(";") if s.strip()]:
+        for stmt in _comandos_do_script(schema_sql):
             try:
                 cur.execute(stmt)
             except Exception as _se:
