@@ -848,25 +848,26 @@ Não é conversa com o modelo: é o que o portão vai cobrar depois.
 
 ---
 
-### Cena 51 — Dezessete agentes, trinta e uma tarefas
+### Cena 51 — Quinze agentes, quarenta e cinco tarefas
 
-**TELA:** `shots/294-ats-gerando.png` e `shots/297-ats-visao-geral-dos-agentes.png`
+**TELA:** `shots/354-ats-gerando.png` e `shots/362-ats-visao-geral-dos-agentes.png`
 
 **NARRAÇÃO:**
-Uma rodada, cento e dois segundos, noventa e seis mil caracteres.
+Uma rodada, cento e um segundos, cento e cinco mil caracteres.
 
-Dezessete agentes, um por especialidade: autenticação, importação de microbiologia, classificação
-NHSN, detecção de multirresistência, escore de Cox, recomendação de tratamento, estimativa de
-redução de risco, notificação, auditoria, painel, exportação e o ciclo integrado.
+Quinze agentes, um por especialidade: autenticação, gestão de usuários, cadastro clínico,
+integração com o laboratório, escore de risco, classificação clínica, multirresistência,
+notificação, recomendação de tratamento, estimativa de redução, ciclo integrado, painel e
+relatórios, auditoria encadeada, tratamento de falhas e conformidade com a LGPD.
 
-E trinta e uma tarefas — cada uma com quem executa, o que recebe, o que devolve e por qual passo
-cada saída é produzida.
+E quarenta e cinco tarefas, agrupadas por módulo — cada uma com quem executa, o que recebe, o que
+devolve e por qual passo cada saída é produzida.
 
 ---
 
 ### Cena 52 — A tarefa por dentro
 
-**TELA:** `shots/298-ats-especificacao-detalhada-das-tarefas.png`
+**TELA:** `shots/364-ats-especificacao-detalhada-das-tarefas.png` e `shots/365-ats-modulo-escore-de-risco.png`
 
 **NARRAÇÃO:**
 Esta é a peça que a geração de código vai ler. A tarefa declara o agente responsável, as entradas
@@ -880,16 +881,15 @@ isso que as próximas etapas conferem este documento antes de gerar qualquer lin
 
 ### Cena 53 — Trinta e três de trinta e três
 
-**TELA:** `shots/299-ats-matriz-de-rastreabilidade.png` e `shots/315-ats-nomenclatura-canonica-aplicada.png`
+**TELA:** `shots/299-ats-matriz-de-rastreabilidade.png`
 
 **NARRAÇÃO:**
-A matriz de rastreabilidade liga cada caso de uso às tarefas que o atendem. Trinta e três casos de
-uso, trinta e três cobertos — nenhum ficou órfão.
+A rastreabilidade liga cada caso de uso às tarefas que o atendem. Trinta e três casos de uso,
+trinta e três cobertos — nenhum ficou órfão.
 
-E a última seção presta contas da instrução: a lista dos nomes canônicos, com a frase *"nenhuma
-tarefa usa `id_usuario` ou `id_caso`"*. Conferido no documento: das cinquenta ocorrências do
-identificador de usuário, todas usam o nome canônico. A única menção ao nome errado é a que proíbe
-usá-lo.
+E o documento presta contas da instrução: a lista dos nomes canônicos. Conferido no documento: das
+oitenta e três ocorrências do identificador de usuário, todas usam o nome canônico. A única menção
+ao nome errado é a que proíbe usá-lo.
 
 ---
 
@@ -898,7 +898,8 @@ usá-lo.
 **TELA:** `shots/296-ats-gap-analysis.png`
 
 **NARRAÇÃO:**
-E aqui está o que mais vale nesta etapa. Antes de especificar qualquer tarefa, ela compara a
+E aqui está o que mais vale nesta etapa — esta captura é da **primeira** geração, antes das
+correções; a cena 59 mostra a mesma seção depois. Antes de especificar qualquer tarefa, ela compara a
 Especificação com o Modelo de Dados e lista **quinze lacunas**, cada uma com impacto e decisão.
 
 Três são defeitos de verdade, herdados das etapas anteriores:
@@ -986,5 +987,26 @@ escondido no número do prontuário, no identificador da amostra e no token de a
 tinha sido pedido; todos teriam quebrado a segunda gravação.
 
 É a diferença entre corrigir um sintoma e corrigir a regra que o produz.
+
+---
+
+### Cena 59 — As lacunas fechadas
+
+**TELA:** `shots/361-ats-gap-analysis-preliminar.png`
+
+**NARRAÇÃO:**
+Com o modelo de dados corrigido, a etapa foi regerada. A lista de lacunas caiu de **quinze para
+quatro** — e nenhuma das três que tinham sido corrigidas voltou.
+
+Repare numa delas, que mudou de lado. Antes: *"o banco não aceita coordenadora da CCIH nem
+enfermeiro responsável"*. Agora: *"o banco aceita os dois, mas o caso de uso de cadastro ainda não
+os oferece"*.
+
+A lacuna subiu um degrau. Deixou de ser defeito do banco e virou item da Especificação — que é
+exatamente onde ela tem de ser resolvida.
+
+As quatro que restam são honestas e ficam declaradas: recuperação de senha, cópia de segurança,
+auditoria de leitura, e o cadastro dos dois papéis novos. Nenhuma delas foi inventada pelo sistema;
+todas faltam mesmo no documento de origem.
 
 ---
