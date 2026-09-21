@@ -516,7 +516,7 @@ def _sql_type(col: Dict[str, Any], dbms: str = "mysql") -> str:
     return t
 
 
-def _default_clause(col: Dict[str, Any]) -> str:
+def _default_clause(col: Dict[str, Any], unico: bool = False) -> str:
     """Cláusula DEFAULT determinística. Colunas de data de CRIAÇÃO NOT NULL sem
     default ganham CURRENT_TIMESTAMP (senão INSERTs parciais quebram)."""
     d = col.get("default")
@@ -548,6 +548,12 @@ def _default_clause(col: Dict[str, Any]) -> str:
         # seria pior que o erro. Para o resto, damos um padrao vazio do tipo certo — a tarefa
         # continua gravando o valor real quando o tem, e deixa de quebrar quando nao tem.
         if not col.get("nullable", True):
+            # Coluna UNICA nao pode receber padrao vazio: a PRIMEIRA gravacao que nao a informe
+            # passa, e a SEGUNDA e recusada por repeticao ('Duplicate entry' no indice unico).
+            # Medido no BioByte: usuarios.email NOT NULL DEFAULT '' sob indice unico — o segundo
+            # cadastro sem e-mail quebrava. Aqui o erro precoce e melhor: quem grava informa.
+            if unico:
+                return ""
             e_chave = bool(col.get("primary_key") or col.get("pk") or col.get("foreign_key")
                            or col.get("references") or name == "id" or name.endswith("_id"))
             if not e_chave:
@@ -635,10 +641,19 @@ def _emit_ddl_deterministic(logical_model: Dict[str, Any], dbms: str = "mysql") 
     for name in order:
         t = by_name[name]
         body: List[str] = []
+        _unicas = set()
+        for idx in (t.get("indexes") or []):
+            _cols = idx.get("columns") or []
+            if idx.get("unique") and len(_cols) == 1:
+                _unicas.add(str(_cols[0]).lower())
+        for _uc in (t.get("unique_constraints") or []):
+            _cols = _uc.get("columns") if isinstance(_uc, dict) else ([_uc] if isinstance(_uc, str) else [])
+            if _cols and len(_cols) == 1:
+                _unicas.add(str(_cols[0]).lower())
         for col in t.get("columns", []):
             cn = col["name"]
             typ = _sql_type(col, dbms)
-            deff = _default_clause(col)
+            deff = _default_clause(col, unico=bool(col.get("unique")) or cn.lower() in _unicas)
             if col.get("pk"):
                 line = "    `%s` %s PRIMARY KEY%s" % (cn, typ, deff)
             else:

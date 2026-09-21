@@ -231,6 +231,182 @@ def _serialize(row: Dict[str, Any], include_mockups: bool = True) -> Dict[str, A
 
 # ─────────────────── Endpoints ───────────────────
 
+def _amarrar_menu_as_telas(ui_spec: dict) -> dict:
+    """Faz cada item do menu apontar para uma tela que EXISTE.
+
+    POR QUE: o menu e as telas são pedidos ao modelo em momentos diferentes, e ele escreve o
+    endereço duas vezes — de dois jeitos. Medido no BioByte em 21/09/2026: 16 dos 18 itens do menu
+    levavam a endereço sem tela. "Cadastro de Usuário" apontava para `/usuarios`, e a tela estava
+    em `/usuarios/cadastro`. Quem clica não chega a lugar nenhum, e a estrutura de menus mostrada
+    na etapa mente sobre o sistema.
+
+    A amarração é determinística, nesta ordem: endereço que já casa fica; endereço que é o começo
+    do endereço de UMA tela adota o dela; senão, casa pelo nome da tela. O que não casar é
+    reportado — não se inventa destino.
+    """
+    telas = ui_spec.get("screens") or []
+    nav = ui_spec.get("navigation") or []
+    if not telas or not nav:
+        return {"corrigidos": 0, "sem_tela": 0}
+
+    def _n(r):
+        return str(r or "").strip().lower().rstrip("/")
+
+    por_rota = {_n(t.get("route")): t for t in telas}
+    por_nome = {str(t.get("name") or "").strip().lower(): t for t in telas}
+    corrigidos, sem_tela = 0, 0
+    for item in nav:
+        if not isinstance(item, dict):
+            continue
+        r = _n(item.get("route"))
+        if r in por_rota:
+            item.setdefault("screen_id", por_rota[r].get("id"))
+            continue
+        candidatas = [t for k, t in por_rota.items() if r and k.startswith(r + "/")]
+        alvo = candidatas[0] if len(candidatas) == 1 else por_nome.get(
+            str(item.get("label") or "").strip().lower())
+        if alvo is None and len(candidatas) > 1:
+            # mais de uma tela sob o mesmo prefixo: fica a do nome igual ao rótulo, se houver
+            alvo = next((t for t in candidatas
+                         if str(t.get("name") or "").strip().lower()
+                         == str(item.get("label") or "").strip().lower()), None)
+        if alvo is None:
+            sem_tela += 1
+            continue
+        item["route"] = alvo.get("route")
+        item["screen_id"] = alvo.get("id")
+        corrigidos += 1
+    return {"corrigidos": corrigidos, "sem_tela": sem_tela}
+
+
+def _unificar_telas_repetidas(ui_spec: dict) -> dict:
+    """Junta telas que são A MESMA tela pedida por casos de uso diferentes.
+
+    POR QUE: as telas são geradas caso de uso por caso de uso, em lotes. Quando dois casos de uso
+    pedem a mesma tela — o escore de risco de Cox aparece no UC-004 (calcular) e no UC-020
+    (consultar), os detalhes do caso clínico em três casos de uso — o modelo desenha a tela duas
+    vezes, com a MESMA rota e nomes quase iguais. Medido no BioByte em 21/09/2026: de 33 telas,
+    duas eram par repetido, e uma delas tinha o MESMO identificador de outra
+    (`detalhes-caso-clinico`), o que no protótipo faz uma página sobrescrever a outra e some do
+    menu sem aviso.
+
+    A REGRA: a rota identifica a tela. Telas de rota igual viram uma, que passa a declarar TODOS
+    os casos de uso que atende, com a união dos componentes — nada do que o caso de uso pediu se
+    perde. Depois disso, identificador repetido é corrigido, e o menu deixa de repetir a entrada.
+    """
+    telas = ui_spec.get("screens") or []
+    if not telas:
+        return {"unificadas": 0, "ids_corrigidos": 0, "menu_limpo": 0}
+
+    def _chave(t):
+        r = str(t.get("route") or "").strip().lower().rstrip("/")
+        return r or ("nome:" + str(t.get("name") or "").strip().lower())
+
+    saida, por_chave, unificadas = [], {}, 0
+    for t in telas:
+        k = _chave(t)
+        base = por_chave.get(k)
+        if base is None:
+            por_chave[k] = t
+            saida.append(t)
+            continue
+        unificadas += 1
+        # casos de uso: união, mantendo a ordem de aparição
+        ucs = list(base.get("uc") or [])
+        for u in (t.get("uc") or []):
+            if u not in ucs:
+                ucs.append(u)
+        base["uc"] = ucs
+        # componentes: acrescenta o que a outra tela tinha e esta não
+        comps = base.get("components") or []
+        vistos = {(str(c.get("id") or ""), str(c.get("label") or "")) for c in comps}
+        for c in (t.get("components") or []):
+            assin = (str(c.get("id") or ""), str(c.get("label") or ""))
+            if assin not in vistos:
+                comps.append(c)
+                vistos.add(assin)
+        base["components"] = comps
+        # desenho: fica o mais completo dos dois
+        for campo in ("mockup_html", "wireframe", "description"):
+            a, b = base.get(campo) or "", t.get(campo) or ""
+            if len(str(b)) > len(str(a)):
+                base[campo] = b
+
+    # identificador único (depois da união ainda pode haver homônimo de rotas diferentes)
+    usados, ids_corrigidos = set(), 0
+    for t in saida:
+        i = str(t.get("id") or "tela")
+        if i in usados:
+            n = 2
+            while f"{i}-{n}" in usados:
+                n += 1
+            t["id"] = f"{i}-{n}"
+            ids_corrigidos += 1
+            i = t["id"]
+        usados.add(i)
+
+    # segunda passada: MESMO NOME, rotas diferentes. É a mesma tela com dois endereços
+    # inventados (`/casos-clinicos/:id` e `/casos/:id/detalhes` para "Detalhes do Caso Clínico").
+    # Duas entradas de nome idêntico no menu são indistinguíveis para quem opera; fica a primeira
+    # rota, e o menu que apontava para a segunda passa a apontar para ela.
+    rota_trocada: dict = {}
+    por_nome: dict = {}
+    final = []
+    for t in saida:
+        n = str(t.get("name") or "").strip().lower()
+        base = por_nome.get(n) if n else None
+        if base is None:
+            if n:
+                por_nome[n] = t
+            final.append(t)
+            continue
+        unificadas += 1
+        de = str(t.get("route") or "").strip().lower().rstrip("/")
+        para = str(base.get("route") or "").strip().lower().rstrip("/")
+        if de and para and de != para:
+            rota_trocada[de] = para
+        ucs = list(base.get("uc") or [])
+        for u in (t.get("uc") or []):
+            if u not in ucs:
+                ucs.append(u)
+        base["uc"] = ucs
+        comps = base.get("components") or []
+        vistos = {(str(c.get("id") or ""), str(c.get("label") or "")) for c in comps}
+        for c in (t.get("components") or []):
+            assin = (str(c.get("id") or ""), str(c.get("label") or ""))
+            if assin not in vistos:
+                comps.append(c)
+                vistos.add(assin)
+        base["components"] = comps
+        for campo in ("mockup_html", "wireframe", "description"):
+            a, b = base.get(campo) or "", t.get(campo) or ""
+            if len(str(b)) > len(str(a)):
+                base[campo] = b
+    saida = final
+
+    ui_spec["screens"] = saida
+
+    # menu: uma entrada por rota
+    nav, vistas, menu_limpo = ui_spec.get("navigation") or [], set(), 0
+    novo_nav = []
+    for item in nav:
+        r = str((item or {}).get("route") or "").strip().lower().rstrip("/")
+        if r in rota_trocada:
+            r = rota_trocada[r]
+            if isinstance(item, dict):
+                item["route"] = r
+        if r and r in vistas:
+            menu_limpo += 1
+            continue
+        if r:
+            vistas.add(r)
+        novo_nav.append(item)
+    if nav:
+        ui_spec["navigation"] = novo_nav
+
+    return {"unificadas": unificadas, "ids_corrigidos": ids_corrigidos, "menu_limpo": menu_limpo}
+
+
 def _tirar_mapas_sem_geometria(ui_spec: dict, schema_sql: str) -> int:
     """Remove componente de mapa das telas quando o BANCO não tem onde guardar geometria.
 
@@ -289,6 +465,8 @@ def generate_ui_spec(project_id: str, req: GenerateRequest, current_user=Depends
         raise HTTPException(status_code=502, detail=f"Falha na geração: {e}")
 
     _tirar_mapas_sem_geometria(result.get("ui_spec") or {}, schema_sql)
+    _unificar_telas_repetidas(result.get("ui_spec") or {})
+    _amarrar_menu_as_telas(result.get("ui_spec") or {})
 
     session_id = str(uuid.uuid4())
     with get_db_connection() as conn:
@@ -373,6 +551,10 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
         raise HTTPException(status_code=502, detail=f"Falha no refino: {e}")
 
     new_spec = result["ui_spec"]
+    # As mesmas conferências da geração valem no refino: um pedido pela conversa pode criar tela
+    # repetida ou item de menu apontando para endereço que não existe.
+    _unificar_telas_repetidas(new_spec)
+    _amarrar_menu_as_telas(new_spec)
     mockup_update = result.get("mockup_update") or {}
     refined = result.get("refined_screen")
 

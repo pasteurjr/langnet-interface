@@ -805,3 +805,180 @@ Na implementação, só uma peça muda: a origem dos dados deixa de ser o exempl
 servidor. As telas são estas.
 
 ---
+
+## Parte I — Agentes e Tarefas
+
+### Cena 49 — De onde nasce a divisão do trabalho
+
+**TELA:** `shots/290-ats-etapa-aberta.png` e `shots/292-ats-origem-escolhida.png`
+
+**NARRAÇÃO:**
+A etapa de Agentes e Tarefas responde a duas perguntas: **quem** faz cada coisa no sistema, e
+**qual trabalho** cada um executa.
+
+A origem é a Especificação Funcional aprovada — os trinta e três casos de uso. Escolhida a versão,
+a etapa registra de qual especificação este documento nasceu.
+
+---
+
+### Cena 50 — As instruções que carregam o que já aprendemos
+
+**TELA:** `shots/293-ats-instrucoes.png`
+
+**NARRAÇÃO:**
+Antes de gerar, as instruções. Cada uma delas custou um ciclo de retrabalho nas rodadas anteriores:
+
+*Um nome por dado* — `usuario_id` em toda tarefa, nunca `id_usuario`; divergência de nome faz a
+tarefa recusar com o dado na mão.
+
+*Toda saída prometida tem de ser produzida por algum passo.*
+
+*Quem chama serviço externo obedece à ficha do serviço* — a consulta de microbiologia e o escore de
+Cox chegam por MCP.
+
+*Campo usado só dentro de uma condição não é entrada obrigatória.* *Texto fixo vai entre aspas.*
+
+Não é conversa com o modelo: é o que o portão vai cobrar depois.
+
+---
+
+### Cena 51 — Dezessete agentes, trinta e uma tarefas
+
+**TELA:** `shots/294-ats-gerando.png` e `shots/297-ats-visao-geral-dos-agentes.png`
+
+**NARRAÇÃO:**
+Uma rodada, cento e dois segundos, noventa e seis mil caracteres.
+
+Dezessete agentes, um por especialidade: autenticação, importação de microbiologia, classificação
+NHSN, detecção de multirresistência, escore de Cox, recomendação de tratamento, estimativa de
+redução de risco, notificação, auditoria, painel, exportação e o ciclo integrado.
+
+E trinta e uma tarefas — cada uma com quem executa, o que recebe, o que devolve e por qual passo
+cada saída é produzida.
+
+---
+
+### Cena 52 — A tarefa por dentro
+
+**TELA:** `shots/298-ats-especificacao-detalhada-das-tarefas.png`
+
+**NARRAÇÃO:**
+Esta é a peça que a geração de código vai ler. A tarefa declara o agente responsável, as entradas
+com nome e tipo, os passos na ordem, as consultas ao banco, os serviços externos que usa e o que
+entrega.
+
+Não é descrição literária: é contrato. O que estiver errado aqui vira defeito no sistema — e é por
+isso que as próximas etapas conferem este documento antes de gerar qualquer linha.
+
+---
+
+### Cena 53 — Trinta e três de trinta e três
+
+**TELA:** `shots/299-ats-matriz-de-rastreabilidade.png` e `shots/315-ats-nomenclatura-canonica-aplicada.png`
+
+**NARRAÇÃO:**
+A matriz de rastreabilidade liga cada caso de uso às tarefas que o atendem. Trinta e três casos de
+uso, trinta e três cobertos — nenhum ficou órfão.
+
+E a última seção presta contas da instrução: a lista dos nomes canônicos, com a frase *"nenhuma
+tarefa usa `id_usuario` ou `id_caso`"*. Conferido no documento: das cinquenta ocorrências do
+identificador de usuário, todas usam o nome canônico. A única menção ao nome errado é a que proíbe
+usá-lo.
+
+---
+
+### Cena 54 — A etapa acusa as anteriores
+
+**TELA:** `shots/296-ats-gap-analysis.png`
+
+**NARRAÇÃO:**
+E aqui está o que mais vale nesta etapa. Antes de especificar qualquer tarefa, ela compara a
+Especificação com o Modelo de Dados e lista **quinze lacunas**, cada uma com impacto e decisão.
+
+Três são defeitos de verdade, herdados das etapas anteriores:
+
+O banco não aceita os papéis *coordenadora da CCIH* e *enfermeiro responsável*, que os casos de uso
+citam como atores.
+
+O horizonte da estimativa de risco aceita sete, trinta, noventa e trezentos e sessenta e cinco
+dias; o requisito FR-042 exige **cento e oitenta** — a tarefa teria de recusar justamente o que o
+requisito manda atender.
+
+E o e-mail do usuário é obrigatório com valor padrão vazio, sob índice de valor único: o segundo
+cadastro sem e-mail seria recusado por repetição.
+
+Nenhum desses três apareceu quando o Modelo de Dados foi gerado. Apareceram agora, porque outra
+etapa leu o mesmo artefato com outra pergunta.
+
+---
+
+## Parte J — A etapa seguinte conserta a anterior
+
+### Cena 55 — O pedido de correção, em português
+
+**TELA:** `shots/306-dm-validacao-com-problemas.png` e `shots/307-dm-pedido-de-correcao.png`
+
+**NARRAÇÃO:**
+Com as lacunas na mão, voltamos ao Modelo de Dados — na conversa da própria etapa, sem editar
+arquivo nenhum:
+
+*"Na tabela usuários, a coluna papel não aceita coordenadora da CCIH nem enfermeiro responsável;
+acrescente os dois, mantendo os que já existem."*
+
+*"O horizonte da estimativa aceita 7, 30, 90 e 365; acrescente 180, porque o requisito FR-042
+exige 30, 90 e 180."*
+
+*"O e-mail é obrigatório com valor padrão vazio, sob índice de valor único; remova o valor
+padrão."*
+
+---
+
+### Cena 56 — Duas correções entram, uma resiste
+
+**TELA:** `shots/308-dm-refino-em-andamento.png`
+
+**NARRAÇÃO:**
+Os dois primeiros entram na versão seguinte: o papel passa a aceitar os dois cargos, e o horizonte
+passa a aceitar cento e oitenta dias — o valor que o requisito exigia e o banco recusava.
+
+O terceiro não. E o sistema respondia **"atualizado com sucesso"** — três vezes, sem alterar uma
+linha.
+
+**NOTA DE PRODUÇÃO:** esta cena é o gancho para a seguinte. Não resolver aqui.
+
+---
+
+### Cena 57 — Não era o modelo: era o programa
+
+**NARRAÇÃO:**
+A causa apareceu ao procurar quem escreve o SQL. **Não é o modelo de linguagem.** O SQL é emitido
+pelo programa, a partir do modelo lógico — e o programa tinha uma regra: *coluna obrigatória ganha
+valor padrão*, para que uma gravação que não a informe não seja recusada.
+
+Regra boa, criada depois de seis gravações perdidas. Mas cega: aplicada também a coluna de **valor
+único**, onde o padrão vazio faz o **segundo** cadastro colidir com o primeiro.
+
+O agente obedecia; o programa desfazia em seguida, em silêncio. Por isso o pedido "falhava"
+respondendo sucesso.
+
+Duas correções, no lugar certo: coluna sob índice de valor único não recebe mais padrão; e a
+resposta ao refino passa a ser escrita pelo programa **depois de comparar o modelo antes e
+depois** — dizendo em quais tabelas mexeu, ou dizendo que não mexeu.
+
+---
+
+### Cena 58 — O mesmo defeito em quatro tabelas
+
+**NARRAÇÃO:**
+Refeito o pedido, a resposta passou a ser esta, e é conferível:
+
+*"Modelo alterado: quatro linhas saíram e quatro entraram, em usuários, pacientes, resultados de
+hemocultura e tokens de acesso."*
+
+Quatro, não uma — porque a regra vale para toda coluna de valor único, e o mesmo defeito estava
+escondido no número do prontuário, no identificador da amostra e no token de acesso. Nenhum deles
+tinha sido pedido; todos teriam quebrado a segunda gravação.
+
+É a diferença entre corrigir um sintoma e corrigir a regra que o produz.
+
+---

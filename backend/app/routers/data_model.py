@@ -397,11 +397,63 @@ def update_session(session_id: str, req: UpdateRequest, current_user=Depends(get
     return {"status": "ok", "version": new_version}
 
 
+def _resumo_da_mudanca(antes_sql: str, depois_sql: str) -> tuple:
+    """Diz se o refino MUDOU o esquema e, se mudou, em quais tabelas.
+
+    POR QUE: esta etapa respondia "Data Model atualizado com sucesso" sempre — tivesse mudado
+    alguma coisa ou não — e gravava versão nova do mesmo jeito. Medido no BioByte em 21/09/2026:
+    um pedido explícito para tirar o valor padrão da coluna `email` foi respondido com sucesso
+    duas vezes, e o esquema saiu idêntico das duas. Quem pede pela conversa não tem como saber
+    que não aconteceu nada; o histórico de versões enche de cópias iguais.
+
+    A conferência é do programa, não do modelo: compara o SQL antes e depois, linha a linha, e
+    diz em que tabela cada linha mudou. Mesma regra que já vale na Especificação.
+    """
+    import difflib
+    a = [l.rstrip() for l in (antes_sql or "").splitlines()]
+    b = [l.rstrip() for l in (depois_sql or "").splitlines()]
+    if a == b:
+        return (False, "")
+
+    def _tabela_da_linha(linhas, i):
+        for j in range(min(i, len(linhas) - 1), -1, -1):
+            l = linhas[j].upper()
+            if "CREATE TABLE" in l:
+                bruto = linhas[j]
+                for sep in ("`", '"'):
+                    if sep in bruto:
+                        partes = bruto.split(sep)
+                        if len(partes) > 1:
+                            return partes[1]
+                return bruto.strip().split()[-1].strip("( ")
+        return "?"
+
+    tocadas, saiu, entrou = [], 0, 0
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b).get_opcodes():
+        if op == "equal":
+            continue
+        saiu += i2 - i1
+        entrou += j2 - j1
+        for i in range(i1, i2):
+            t = _tabela_da_linha(a, i)
+            if t not in tocadas:
+                tocadas.append(t)
+        for j in range(j1, j2):
+            t = _tabela_da_linha(b, j)
+            if t not in tocadas:
+                tocadas.append(t)
+
+    resumo = "Modelo alterado: %d linha(s) saíram e %d entraram, em %s." % (
+        saiu, entrou, ", ".join("`%s`" % t for t in tocadas[:8]) or "nenhuma tabela identificada")
+    return (True, resumo)
+
+
 @router.post("/{session_id}/chat")
 def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(get_current_user)):
     """Refina o Data Model via chat (LLM re-gera artefatos)."""
     row = _fetch_session(session_id)
     current_yaml = row.get("data_model_yaml") or ""
+    sql_antes = row.get("schema_sql") or ""
     # O dbms da SESSÃO é autoritativo — é o dialeto com que o modelo foi gerado (ex.: postgresql/
     # PostGIS). Refinar não troca de dialeto. Antes, o default "mysql" do request vencia e o refino
     # reescrevia um schema PostGIS em MySQL (perdia geometry(...,4674) e a extensão postgis).
@@ -411,6 +463,29 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
         result = refine_data_model(current_yaml, req.content, target_dbms=dbms)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Falha no refino: {e}")
+
+    mudou, resumo_mudanca = _resumo_da_mudanca(sql_antes, result.get("schema_sql") or "")
+    if not mudou:
+        # Nada mudou: não se grava versão nova nem se afirma sucesso. Diz-se o que aconteceu.
+        aviso = ("O modelo saiu idêntico ao que já estava: este pedido não alterou nada. "
+                 "Diga a tabela e a coluna pelo nome e o que deve ficar escrito nela — "
+                 "por exemplo: na tabela `usuarios`, a coluna `email` deve ser "
+                 "`VARCHAR(200) NOT NULL`, sem valor padrão.")
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            try:
+                cur.execute(
+                    "INSERT INTO data_model_chat_messages (id, data_model_session_id, role, content) VALUES (%s,%s,%s,%s)",
+                    (str(uuid.uuid4()), session_id, "user", req.content),
+                )
+                cur.execute(
+                    "INSERT INTO data_model_chat_messages (id, data_model_session_id, role, content) VALUES (%s,%s,%s,%s)",
+                    (str(uuid.uuid4()), session_id, "assistant", aviso),
+                )
+                conn.commit()
+            finally:
+                cur.close()
+        return {"session_id": session_id, "changed": False, "message": aviso}
 
     # Persiste
     with get_db_connection() as conn:
@@ -442,7 +517,7 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
         )
         cur.execute(
             "INSERT INTO data_model_chat_messages (id, data_model_session_id, role, content) VALUES (%s,%s,%s,%s)",
-            (msg_bot_id, session_id, "assistant", "Data Model atualizado com sucesso."),
+            (msg_bot_id, session_id, "assistant", resumo_mudanca),
         )
         conn.commit()
       finally:
