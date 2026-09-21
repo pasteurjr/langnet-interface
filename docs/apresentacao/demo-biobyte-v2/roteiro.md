@@ -710,28 +710,31 @@ si.
 
 ### Cena 42 — A estrutura de menus do sistema
 
-**TELA:** `shots/270-etapa-estrutura-de-menus.png`
+**TELA:** `shots/330-uispec-etapa-telas-unificadas.png`
 
 **NARRAÇÃO:**
-A etapa abre pela **Estrutura de Menus** — dezoito itens, trinta e três telas. É o menu que o
+A etapa abre pela **Estrutura de Menus** — dezenove itens, vinte e oito telas. É o menu que o
 sistema vai ter, montado a partir dos casos de uso, com o endereço de cada tela e o caso de uso
 que ela realiza.
 
-Abaixo, a lista dos casos de uso: UC-001 Login, UC-002 Cadastro de Usuário, UC-003 Cadastro de
-Paciente com Cateter, e assim por diante. Cada um diz quantas telas tem e a qual tabela se liga.
+Abaixo, a lista dos casos de uso: Login, Cadastro de Usuário, Cadastro de Paciente com Cateter,
+Classificação NHSN, e assim por diante — trinta e três ao todo, todos cobertos.
+
+**NOTA DE PRODUÇÃO:** vinte e oito telas para trinta e três casos de uso porque três telas
+atendem mais de um caso de uso — a mesma tela de escore de Cox serve ao cálculo e à consulta.
 
 ---
 
 ### Cena 43 — A tela do caso de uso
 
-**TELA:** `shots/273-uispec-tela-antes-do-ajuste.png`
+**TELA:** `shots/340-uispec-tela-antes-do-ajuste.png`
 
 **NARRAÇÃO:**
 Clicando no caso de uso, aparece a tela dele — **na aparência final**, a mesma que o protótipo e
 o aplicativo terão. Não é um esboço ao lado do produto: é o produto.
 
 Aqui é a tela de login: identificação com e-mail e senha, as etapas da autenticação, o painel de
-sessão, e as mensagens de erro do caso de uso agrupadas e coloridas por gravidade.
+sessão e as mensagens de erro que o caso de uso nomeia, agrupadas por gravidade.
 
 Se o caso de uso declarar mais de uma tela, elas aparecem lado a lado.
 
@@ -739,12 +742,12 @@ Se o caso de uso declarar mais de uma tela, elas aparecem lado a lado.
 
 ### Cena 44 — Pedindo um ajuste pela conversa
 
-**TELA:** `shots/274-uispec-pedido-de-ajuste.png`
+**TELA:** `shots/341-uispec-pedido-de-ajuste.png`
 
 **NARRAÇÃO:**
 À direita, a conversa. O pedido é escrito em português, do jeito que se fala com um projetista:
 
-*"Troque o botão Fechar por Esqueci minha senha e deixe os dois lado a lado, com o Entrar à
+*"Troque o botão Cancelar por Esqueci minha senha e deixe os dois lado a lado, com o Entrar à
 esquerda. Use a cor de destaque apenas no Entrar."*
 
 Posição, cor, rótulo — o ajuste que um responsável pelo produto faria olhando a tela.
@@ -753,11 +756,11 @@ Posição, cor, rótulo — o ajuste que um responsável pelo produto faria olha
 
 ### Cena 45 — O ajuste entra e vira versão
 
-**TELA:** `shots/275-uispec-tela-depois-do-ajuste.png`
+**TELA:** `shots/342-uispec-tela-depois-do-ajuste.png`
 
 **NARRAÇÃO:**
 A tela volta com **Entrar** à esquerda, em destaque, e **Esqueci minha senha** ao lado, neutro. O
-"Fechar" saiu.
+"Cancelar" saiu.
 
 E isso vira **versão 2** no histórico da etapa, com o registro do que a originou: *"refino por
 chat — tela login"*. Nada se perde: dá para voltar à versão anterior a qualquer momento.
@@ -766,10 +769,10 @@ chat — tela login"*. Nada se perde: dá para voltar à versão anterior a qual
 
 ### Cena 46 — Renderizar a aplicação
 
-**TELA:** `shots/277-uispec-montando-o-prototipo.png` e `shots/278-uispec-prototipo-montado-na-etapa.png`
+**TELA:** `shots/344-uispec-montando-o-prototipo.png` e `shots/345-uispec-prototipo-montado-na-etapa.png`
 
 **NARRAÇÃO:**
-O botão **Renderizar protótipo** monta a aplicação inteira com as alterações — as trinta e três
+O botão **Renderizar protótipo** monta a aplicação inteira com as alterações — as vinte e oito
 telas ligadas pelo menu.
 
 E monta **a partir das telas que você acabou de aprovar**. É o ponto que faz esta etapa valer: o
@@ -779,7 +782,7 @@ que se aprova é o que se navega, e é o que a implementação vai usar depois.
 
 ### Cena 47 — A aplicação navegável
 
-**TELA:** `shots/279-prototipo-aberto-fora-do-langnet.png`
+**TELA:** `shots/346-prototipo-aberto-fora-do-langnet.png`
 
 **NARRAÇÃO:**
 O protótipo tem endereço próprio e abre em qualquer navegador, sem o LangNet em volta.
@@ -787,19 +790,22 @@ O protótipo tem endereço próprio e abre em qualquer navegador, sem o LangNet 
 Repare no login: **Entrar** e **Esqueci minha senha**, lado a lado, exatamente como foi pedido na
 conversa. O ajuste atravessou da conversa para a aplicação.
 
-No menu à esquerda, as trinta e três telas — inclusive as de erro, com nome próprio: *Consulta de
-Microbiologia — Falha do Laboratório*, *Escore de Cox — Serviço Indisponível*, *Caso Clínico —
-Operação com Falha*.
+No menu à esquerda, as vinte e oito telas — inclusive as de erro, com nome próprio: *Escore de Cox
+— Tratar Indisponibilidade do Serviço*, *Caso Clínico — Operação com Falha*.
+
+E os dados são de exemplo, tirados do modelo de dados: o e-mail de uma enfermeira do hospital, o
+registro de auditoria das sessões, a sessão que expirou. É o que faz o operador entender a tela
+antes de ela existir de verdade.
 
 ---
 
 ### Cena 48 — Navegando o sistema
 
-**TELA:** `shots/280-prototipo-ciclo-integrado.png`, `281-prototipo-painel-de-vigilancia.png`, `282-prototipo-classificacao-nhsn.png`
+**TELA:** `shots/347-prototipo-painel-de-vigilancia.png`, `348-prototipo-ciclo-integrado-analise.png`, `349-prototipo-classificacao-nhsn.png`
 
 **NARRAÇÃO:**
-Ciclo integrado, painel de vigilância, classificação NHSN. Dados de exemplo tirados do modelo de
-dados, para o operador entender o que cada tela faz.
+Painel de vigilância, ciclo integrado de análise, classificação NHSN. Vinte e oito telas
+navegáveis, ligadas pelo mesmo menu.
 
 Na implementação, só uma peça muda: a origem dos dados deixa de ser o exemplo e passa a ser o
 servidor. As telas são estas.

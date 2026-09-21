@@ -467,6 +467,9 @@ def generate_ui_spec(project_id: str, req: GenerateRequest, current_user=Depends
     _tirar_mapas_sem_geometria(result.get("ui_spec") or {}, schema_sql)
     _unificar_telas_repetidas(result.get("ui_spec") or {})
     _amarrar_menu_as_telas(result.get("ui_spec") or {})
+    # O total de telas é contado DEPOIS das conferências — senão a etapa anuncia o número de
+    # antes da unificação (anunciou 33 quando tinha 28) e o roteiro do vídeo herda o número errado.
+    result["screens_count"] = len((result.get("ui_spec") or {}).get("screens") or [])
 
     session_id = str(uuid.uuid4())
     with get_db_connection() as conn:
