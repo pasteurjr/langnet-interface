@@ -388,6 +388,72 @@ def _achar_esbuild() -> Optional[str]:
     return shutil.which("esbuild")
 
 
+def montar_prototipo_de_telas(ui_spec: dict, destino: Path, project_name: str) -> dict:
+    """Monta o protótipo COMPLETO e navegável a partir das telas que a etapa gerou.
+
+    Uma tela por caso de uso, com o padrão de interface do projeto e dados mocados, todas
+    ligadas pelo mesmo menu lateral. É ESTE o artefato: o usuário navega, vê o sistema como
+    ele vai ser, e pede ajuste pela conversa. A implementação depois troca só a fonte dos
+    dados pelas chamadas reais.
+
+    POR QUE ASSIM (20/09/2026): antes havia DOIS desenhos da mesma tela — o que o modelo
+    produzia (com menu, cartões, avisos por gravidade, dados de exemplo) e outro que o nosso
+    código reinventava a partir da lista de campos, em coluna única. O primeiro virava imagem e
+    era descartado; o segundo virava o protótipo E o aplicativo. Resultado: o que se aprovava
+    não era o que ia ao ar, e o que ia ao ar era pior.
+    """
+    import html as _html
+    import re as _re
+    destino = Path(destino)
+    destino.mkdir(parents=True, exist_ok=True)
+    telas = [t for t in (ui_spec.get("screens") or []) if (t.get("mockup_html") or "").strip()]
+    if not telas:
+        return {"ok": False, "erro": "nenhuma tela com HTML gerado", "telas": 0}
+
+    def arquivo(t):
+        return f"{t.get('id') or 'tela'}.html"
+
+    # menu lateral: uma entrada por tela, agrupada pelo módulo que a própria tela declara
+    grupos: Dict[str, List[dict]] = {}
+    for t in telas:
+        grupos.setdefault(t.get("module") or t.get("group") or "Telas", []).append(t)
+
+    def menu_html(atual):
+        partes = ['<nav class="w-64 shrink-0 bg-slate-900 text-slate-300 min-h-screen py-4">',
+                  f'<div class="px-5 pb-4 mb-2 border-b border-slate-800">'
+                  f'<div class="text-white font-semibold leading-tight">{_html.escape(project_name)}</div>'
+                  f'<div class="text-[11px] text-slate-400 mt-0.5">protótipo navegável · dados de exemplo</div></div>']
+        for grupo, itens in grupos.items():
+            partes.append(f'<div class="px-5 pt-3 pb-1 text-[10px] uppercase tracking-wider '
+                          f'text-slate-500">{_html.escape(str(grupo))}</div>')
+            for t in itens:
+                ativo = (t is atual)
+                cls = ("block px-5 py-2 text-sm " +
+                       ("bg-indigo-600 text-white font-medium" if ativo
+                        else "hover:bg-slate-800 hover:text-white"))
+                partes.append(f'<a href="./{arquivo(t)}" class="{cls}">'
+                              f'{_html.escape(str(t.get("name") or t.get("id")))}</a>')
+        partes.append('</nav>')
+        return "".join(partes)
+
+    gravadas = 0
+    for t in telas:
+        doc = t["mockup_html"]
+        # a tela já vem com o próprio menu lateral (estático); troca pelo menu NAVEGÁVEL
+        doc = _re.sub(r"<aside\b.*?</aside>", menu_html(t), doc, count=1, flags=_re.S|_re.I)
+        if "<aside" not in (t["mockup_html"] or "") .lower():
+            doc = _re.sub(r"(<body[^>]*>)", r"\1" + menu_html(t), doc, count=1, flags=_re.I)
+        (destino / arquivo(t)).write_text(doc, encoding="utf-8")
+        gravadas += 1
+
+    (destino / "index.html").write_text(
+        f'<!doctype html><meta charset="utf-8">'
+        f'<title>{_html.escape(project_name)} — protótipo</title>'
+        f'<meta http-equiv="refresh" content="0; url=./{arquivo(telas[0])}">', encoding="utf-8")
+    return {"ok": True, "erro": "", "telas": gravadas,
+            "bytes": sum((destino / arquivo(t)).stat().st_size for t in telas)}
+
+
 def montar_prototipo(arquivos: List[Dict[str, str]], destino: Path,
                      project_name: str = "Protótipo") -> dict:
     """Grava os arquivos, empacota e deixa `destino` pronto para ser servido estaticamente.

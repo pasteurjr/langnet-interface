@@ -365,3 +365,48 @@
 .tc-btn.apontando { background: #4f46e5; color: #fff; border-color: #4f46e5; }
 .uispec-proto-alvo { font-size: 12px; color: #3730a3; background: #eef2ff; border: 1px solid #c7d2fe; padding: 3px 8px; border-radius: 999px; display: inline-flex; align-items: center; gap: 6px; }
 .uispec-proto-limpar { border: 0; background: transparent; color: #4338ca; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+
+/* ─── Telas do caso de uso, lado a lado ───────────────────────────────────────
+   Antes a lista era por tela e só uma aparecia por vez. Quando um caso de uso
+   tem o fluxo normal e o de falha, é preciso ver os dois juntos para avaliar se
+   a tela realiza o caso de uso. */
+.uispec-uc-cab {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-bottom: 12px;
+}
+.uispec-uc-cab h3 { margin: 0; font-size: 15px; color: #1e293b; }
+
+.uispec-telas-lado-a-lado {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  align-items: start;
+}
+.uispec-tela-card {
+  margin: 0; padding: 10px;
+  border: 2px solid #e2e8f0; border-radius: 12px; background: #fff;
+  cursor: pointer; transition: border-color .15s, box-shadow .15s;
+}
+.uispec-tela-card:hover { border-color: #c7d2fe; }
+.uispec-tela-card.ativa { border-color: #6366f1; box-shadow: 0 0 0 3px #e0e7ff; }
+.uispec-tela-card figcaption {
+  font-size: 12px; font-weight: 600; color: #475569;
+  margin-bottom: 8px; text-align: left;
+}
+.uispec-tela-card .uispec-mockup { width: 100%; border-radius: 8px; display: block; }
+
+/* ─── Estrutura de menus ─────────────────────────────────────────────────── */
+.uispec-menus h3 { margin: 0 0 4px; font-size: 16px; color: #1e293b; }
+.uispec-menus-nota { margin: 0 0 18px; font-size: 13px; color: #64748b; }
+.uispec-menu-grupo { margin-bottom: 18px; }
+.uispec-menu-grupo-nome {
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  color: #94a3b8; font-weight: 700; padding: 0 0 6px 2px;
+  border-bottom: 1px solid #e2e8f0; margin-bottom: 6px;
+}
+.uispec-menu-item {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; padding: 7px 10px; border-radius: 8px; cursor: pointer;
+}
+.uispec-menu-item:hover { background: #f1f5f9; }
+.uispec-menu-item-nome { font-size: 13px; color: #1e293b; font-weight: 500; }
+.uispec-menu-item-abre { font-size: 11px; color: #94a3b8; white-space: nowrap; }

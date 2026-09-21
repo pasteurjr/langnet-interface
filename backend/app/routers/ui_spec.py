@@ -231,6 +231,46 @@ def _serialize(row: Dict[str, Any], include_mockups: bool = True) -> Dict[str, A
 
 # ─────────────────── Endpoints ───────────────────
 
+def _tirar_mapas_sem_geometria(ui_spec: dict, schema_sql: str) -> int:
+    """Remove componente de mapa das telas quando o BANCO não tem onde guardar geometria.
+
+    POR QUE: o modelo inventa mapa por afinidade com o domínio. Medido no BioByte (sistema de
+    vigilância hospitalar) em 19/09/2026: NOVE telas ganharam mapa que ninguém pediu —
+    "distribuição geoespacial dos alertas", "localização do leito", "distribuição geográfica
+    dos consentimentos". Nenhum está na ata, nos requisitos ou nos casos de uso. Instruir o
+    modelo a não inventar reduziu de nove para dois, mas não zerou: o que depende de obediência
+    falha uma fração das vezes.
+
+    A REGRA NÃO É "apagar mapa" — seria destruir o projeto de uso do solo, que é geoespacial de
+    verdade. A regra é: mapa só sobrevive se existir coluna de geometria no esquema. Medido:
+    uso do solo tem 13 colunas `geometry(Geometry,4674)`; o BioByte, nenhuma. A mesma regra
+    serve aos dois.
+    """
+    import re as _re
+    tem_geometria = bool(_re.search(r"\b(geometry|geography|polygon|multipolygon|linestring)\b",
+                                    schema_sql or "", _re.I))
+    if tem_geometria:
+        return 0
+    removidos = 0
+    for tela in (ui_spec.get("screens") or []):
+        comps = tela.get("components") or []
+        ficam = [c for c in comps if c.get("type") != "map"]
+        if len(ficam) != len(comps):
+            removidos += len(comps) - len(ficam)
+            tela["components"] = ficam
+            # o mockup também precisa perder o mapa, senão a imagem continua mostrando
+            html = tela.get("mockup_html") or ""
+            if html:
+                html = _re.sub(r"<div[^>]*id=['\"]map['\"][^>]*>.*?</div>", "", html, flags=_re.S)
+                html = _re.sub(r"<(script|link)[^>]*leaflet[^>]*>(</\1>)?", "", html, flags=_re.I)
+                tela["mockup_html"] = html
+    if removidos:
+        print(f"[UI_SPEC] {removidos} componente(s) de mapa removido(s): o esquema não tem "
+              f"coluna de geometria, então não há o que mostrar num mapa")
+    return removidos
+
+
+
 @router.post("/{project_id}/generate")
 def generate_ui_spec(project_id: str, req: GenerateRequest, current_user=Depends(get_current_user)):
     """Gera a UI Spec completa (todas as telas + mockups PNG)."""
@@ -247,6 +287,8 @@ def generate_ui_spec(project_id: str, req: GenerateRequest, current_user=Depends
         )
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Falha na geração: {e}")
+
+    _tirar_mapas_sem_geometria(result.get("ui_spec") or {}, schema_sql)
 
     session_id = str(uuid.uuid4())
     with get_db_connection() as conn:

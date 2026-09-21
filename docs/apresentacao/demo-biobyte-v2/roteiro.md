@@ -591,24 +591,217 @@ acrescentadas. Nenhum caso de uso foi tocado.
 
 ---
 
-### Cena 35 — Uma recusa que valeu a pena mostrar
+## Parte G — O Modelo de Dados
 
-**TELA:** (a mesma da cena 33, com a linha do registro em destaque)
+### Cena 35 — De onde o banco nasce
+
+**TELA:** `shots/174-dm-etapa-aberta.png` e `shots/175-dm-origem-escolhida.png`
 
 **NARRAÇÃO:**
-Na primeira tentativa, este mesmo pedido foi **recusado pelo próprio sistema**, com a mensagem:
-*"unidade 5 não mudou — o termo pedido não apareceu"*.
+Mesma exigência das etapas anteriores: escolher a origem. O modelo de dados nasce de uma **versão
+específica da Especificação** — a de hoje, 18 de setembro.
 
-Existe uma guarda que confere se a correção pedida realmente aconteceu, para não gravar uma
-alteração que não fez o que se pediu. Mas ela supunha que um termo citado entre aspas é coisa a
-**acrescentar** — e aqui o termo estava citado como exemplo do que **remover**. A correção tinha
-funcionado, e a guarda jogou fora justamente o acerto.
+E há uma escolha a mais, que vale mostrar: o banco de destino. MySQL, aqui. A mesma especificação
+gera para outro banco sem reescrever nada.
 
-Vale mostrar por dois motivos. Primeiro: o sistema erra, e o erro aparece no registro em vez de
-passar em silêncio. Segundo: sem conferir o resultado no documento, esse erro teria sido lido como
-"o modelo não conseguiu" — quando o modelo tinha conseguido.
+---
 
-**NOTA DE PRODUÇÃO:** cena curta, mas é a que melhor explica o método — conferir o artefato, não
-o log de sucesso.
+### Cena 36 — A especificação impõe as tabelas
+
+**TELA:** `shots/176-dm-gerando.png`
+
+**NARRAÇÃO:**
+Enquanto gera, o sistema registra uma decisão importante: *"a seção 6 impõe 22 entidades"* —
+Usuário, Paciente, Caso clínico, Registro de auditoria, Escore de Cox, Resultado de hemocultura, e
+assim por diante.
+
+O modelo de dados **não inventa tabela**. Ele é obrigado a realizar as entidades que a
+Especificação declarou. É mais um elo da corrente: fala da CCIH, requisito, caso de uso, entidade,
+tabela.
+
+---
+
+### Cena 37 — Vinte e quatro tabelas
+
+**TELA:** `shots/178-modelo-de-dados-gerado.png`
+
+**NARRAÇÃO:**
+Vinte e quatro tabelas, com relacionamentos, tipos, chaves e índices.
+
+E elas **aplicam de verdade**: rodei o script num banco vazio e as vinte e quatro foram criadas
+sem um erro. Isso não é detalhe — um modelo de dados que não vira banco não serve para nada.
+
+---
+
+### Cena 38 — Uma tabela por dentro
+
+**TELA:** `shots/181-dm-escore.png`
+
+**NARRAÇÃO:**
+A tabela dos escores de Cox. Repare na coluna `versao_modelo`: **VARCHAR de 120 caracteres**.
+
+Esse número vem de uma frase da reunião. A médica disse: *"o nome do modelo vem como texto livre e
+pode ser longo — 'Cox proportional hazards', por exemplo — então o campo tem que caber."*
+
+Na geração anterior esse campo tinha vinte caracteres e estourava na primeira gravação, derrubando
+o registro inteiro. A fala da reunião atravessou requisito, caso de uso e chegou ao tipo da coluna.
+
+E `intervalo_confianca` está **opcional** — porque o serviço de Cox não devolve esse dado, e a ata
+diz isso com todas as letras.
+
+---
+
+### Cena 39 — O sistema critica o próprio trabalho
+
+**TELA:** `shots/183-dm-validacao-com-problemas.png`
+
+**NARRAÇÃO:**
+Esta é a tela mais honesta do pipeline. A etapa valida o que ela mesma acabou de gerar e mostra o
+resultado: **nota 25 de 100, 21 problemas**.
+
+Três deles são o mesmo defeito: colunas que recebem dado de serviço externo com cem caracteres,
+abaixo do mínimo de cento e vinte — *identificador da amostra*, *intervalo de confiança do bundle*,
+*intervalo de confiança da estimativa*. É a mesma armadilha da cena anterior, em outros campos.
+
+Um quarto aponta que a coluna de e-mail tem valor padrão vazio sob um índice único: dois usuários
+sem e-mail colidiriam.
+
+**NOTA DE PRODUÇÃO:** vale narrar que eu conferi **uma** coluna, vi que estava certa, e concluí que
+a regra tinha sido aplicada. O validador encontrou outras três onde não foi. A máquina foi mais
+cética que o humano.
+
+---
+
+### Cena 40 — Corrigindo pela conversa
+
+**TELA:** `shots/184-dm-pedido-de-correcao.png` e `shots/186-dm-refino-concluido.png`
+
+**NARRAÇÃO:**
+Pedimos a correção nomeando tabela e coluna. O agente corrigiu as três colunas alimentadas por
+serviço externo — e **deixou intactas** outras três que também tinham cem caracteres, mas são
+campos internos.
+
+Ele aplicou a regra, não o padrão de texto. Isso é o que separa entender de substituir.
+
+**NOTA DE HONESTIDADE:** das quatro correções pedidas no mesmo parágrafo, ele fez três. A do e-mail
+ficou de fora. É um comportamento que se repetiu na Especificação: **um pedido, um alvo** — quando
+o pedido junta alvos de naturezas diferentes, um deles escapa.
+
+---
+
+### Cena 41 — O modelo vira script
+
+**TELA:** `shots/187-dm-aba-schema-sql.png`, `188-dm-aba-models-py.png`, `189-dm-aba-alembic.png`, `190-dm-aba-yaml.png`
+
+**NARRAÇÃO:**
+E aqui está o que essa etapa realmente entrega. Quatro abas, quatro artefatos do mesmo modelo:
+
+O **Schema SQL** — o script que cria as tabelas.
+O **models.py** — as classes Python, com SQLAlchemy e Pydantic, que o código gerado vai usar.
+O **Alembic** — a migração versionada, para evoluir o banco sem perder dado.
+E o **YAML** — a descrição legível do modelo, que as etapas seguintes consomem.
+
+Não é um desenho de banco. É banco, código, migração e contrato, saindo juntos e coerentes entre
+si.
+
+---
+
+## Parte H — Interface e Protótipo
+
+### Cena 42 — A estrutura de menus do sistema
+
+**TELA:** `shots/270-etapa-estrutura-de-menus.png`
+
+**NARRAÇÃO:**
+A etapa abre pela **Estrutura de Menus** — dezoito itens, trinta e três telas. É o menu que o
+sistema vai ter, montado a partir dos casos de uso, com o endereço de cada tela e o caso de uso
+que ela realiza.
+
+Abaixo, a lista dos casos de uso: UC-001 Login, UC-002 Cadastro de Usuário, UC-003 Cadastro de
+Paciente com Cateter, e assim por diante. Cada um diz quantas telas tem e a qual tabela se liga.
+
+---
+
+### Cena 43 — A tela do caso de uso
+
+**TELA:** `shots/273-uispec-tela-antes-do-ajuste.png`
+
+**NARRAÇÃO:**
+Clicando no caso de uso, aparece a tela dele — **na aparência final**, a mesma que o protótipo e
+o aplicativo terão. Não é um esboço ao lado do produto: é o produto.
+
+Aqui é a tela de login: identificação com e-mail e senha, as etapas da autenticação, o painel de
+sessão, e as mensagens de erro do caso de uso agrupadas e coloridas por gravidade.
+
+Se o caso de uso declarar mais de uma tela, elas aparecem lado a lado.
+
+---
+
+### Cena 44 — Pedindo um ajuste pela conversa
+
+**TELA:** `shots/274-uispec-pedido-de-ajuste.png`
+
+**NARRAÇÃO:**
+À direita, a conversa. O pedido é escrito em português, do jeito que se fala com um projetista:
+
+*"Troque o botão Fechar por Esqueci minha senha e deixe os dois lado a lado, com o Entrar à
+esquerda. Use a cor de destaque apenas no Entrar."*
+
+Posição, cor, rótulo — o ajuste que um responsável pelo produto faria olhando a tela.
+
+---
+
+### Cena 45 — O ajuste entra e vira versão
+
+**TELA:** `shots/275-uispec-tela-depois-do-ajuste.png`
+
+**NARRAÇÃO:**
+A tela volta com **Entrar** à esquerda, em destaque, e **Esqueci minha senha** ao lado, neutro. O
+"Fechar" saiu.
+
+E isso vira **versão 2** no histórico da etapa, com o registro do que a originou: *"refino por
+chat — tela login"*. Nada se perde: dá para voltar à versão anterior a qualquer momento.
+
+---
+
+### Cena 46 — Renderizar a aplicação
+
+**TELA:** `shots/277-uispec-montando-o-prototipo.png` e `shots/278-uispec-prototipo-montado-na-etapa.png`
+
+**NARRAÇÃO:**
+O botão **Renderizar protótipo** monta a aplicação inteira com as alterações — as trinta e três
+telas ligadas pelo menu.
+
+E monta **a partir das telas que você acabou de aprovar**. É o ponto que faz esta etapa valer: o
+que se aprova é o que se navega, e é o que a implementação vai usar depois.
+
+---
+
+### Cena 47 — A aplicação navegável
+
+**TELA:** `shots/279-prototipo-aberto-fora-do-langnet.png`
+
+**NARRAÇÃO:**
+O protótipo tem endereço próprio e abre em qualquer navegador, sem o LangNet em volta.
+
+Repare no login: **Entrar** e **Esqueci minha senha**, lado a lado, exatamente como foi pedido na
+conversa. O ajuste atravessou da conversa para a aplicação.
+
+No menu à esquerda, as trinta e três telas — inclusive as de erro, com nome próprio: *Consulta de
+Microbiologia — Falha do Laboratório*, *Escore de Cox — Serviço Indisponível*, *Caso Clínico —
+Operação com Falha*.
+
+---
+
+### Cena 48 — Navegando o sistema
+
+**TELA:** `shots/280-prototipo-ciclo-integrado.png`, `281-prototipo-painel-de-vigilancia.png`, `282-prototipo-classificacao-nhsn.png`
+
+**NARRAÇÃO:**
+Ciclo integrado, painel de vigilância, classificação NHSN. Dados de exemplo tirados do modelo de
+dados, para o operador entender o que cada tela faz.
+
+Na implementação, só uma peça muda: a origem dos dados deixa de ser o exemplo e passa a ser o
+servidor. As telas são estas.
 
 ---

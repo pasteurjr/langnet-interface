@@ -30,6 +30,10 @@ interface Screen {
   layout?: string;
   components?: ScreenComponent[];
   actions?: ScreenAction[];
+  /** grupo de menu que a tela declara — usado para montar a Estrutura de Menus */
+  module?: string;
+  group?: string;
+  mockup_html?: string;
 }
 interface UISpec {
   screens: Screen[];
@@ -475,6 +479,38 @@ const UISpecPage: React.FC = () => {
   };
 
   const screens = session?.ui_spec?.screens || [];
+
+  // Telas agrupadas POR CASO DE USO. Um caso de uso pode ter mais de uma tela — o fluxo normal
+  // e o de falha, por exemplo — e elas precisam aparecer juntas, lado a lado, porque é assim que
+  // se avalia se a tela realiza o caso de uso.
+  const casosDeUso = React.useMemo(() => {
+    const porUc = new Map<string, { uc: string; titulo: string; telas: any[] }>();
+    for (const t of screens) {
+      for (const uc of (t.uc && t.uc.length ? t.uc : ["(sem caso de uso)"])) {
+        if (!porUc.has(uc)) porUc.set(uc, { uc, titulo: t.name || "", telas: [] });
+        porUc.get(uc)!.telas.push(t);
+      }
+    }
+    return Array.from(porUc.values()).sort((a, b) => a.uc.localeCompare(b.uc));
+  }, [screens]);
+
+  // Estrutura de menus: o artefato JÁ TRAZ a navegação pronta (rótulo + rota por tela). Eu
+  // tinha inventado um agrupamento por um campo "module" que as telas não declaram — todas
+  // caíam num grupo só. O menu verdadeiro é este.
+  const menu = React.useMemo(() => {
+    const nav = session?.ui_spec?.navigation || [];
+    const porRota = new Map(screens.map((t) => [t.route || "", t]));
+    return nav.map((n) => ({ ...n, tela: porRota.get(n.route) || null }));
+  }, [session, screens]);
+
+  const ucSelecionado = React.useMemo(
+    () => casosDeUso.find((c) => c.telas.some((t: any) => t.id === selected))?.uc || null,
+    [casosDeUso, selected]
+  );
+  const telasDoUc = React.useMemo(
+    () => casosDeUso.find((c) => c.uc === ucSelecionado)?.telas || [],
+    [casosDeUso, ucSelecionado]
+  );
   const current = screens.find((s) => s.id === selected) || null;
 
   // ---- Botões de origem da sidebar: seleção da Especificação de origem ----
@@ -780,30 +816,103 @@ const UISpecPage: React.FC = () => {
 
       {screens.length > 0 && (
         <div className="uispec-body">
+          {/* ESQUERDA: estrutura de menus (1ª opção) + um item por CASO DE USO.
+              Antes a lista era por TELA, sem agrupar: quando um caso de uso tinha mais de uma
+              tela (o fluxo normal e o de falha), elas apareciam soltas e sem relação visível. */}
           <div className="uispec-list">
-            {screens.map((s) => (
+            <div
+              className={`uispec-item ${selected === "__menus__" ? "active" : ""}`}
+              onClick={() => setSelected("__menus__")}
+            >
+              <div className="uispec-item-name">🗂️ Estrutura de Menus</div>
+              <div className="uispec-item-meta">
+                como o menu do sistema fica · {menu.length} itens · {screens.length} telas
+              </div>
+            </div>
+            {casosDeUso.map((c) => (
               <div
-                key={s.id}
-                className={`uispec-item ${selected === s.id ? "active" : ""}`}
-                onClick={() => setSelected(s.id)}
+                key={c.uc}
+                className={`uispec-item ${ucSelecionado === c.uc ? "active" : ""}`}
+                onClick={() => { setSelected(c.telas[0].id); }}
               >
-                <div className="uispec-item-name">{s.name}</div>
+                <div className="uispec-item-name">{c.uc} · {c.titulo}</div>
                 <div className="uispec-item-meta">
-                  {(s.uc || []).join(",")} · {s.layout} · {s.entity || "—"}
+                  {c.telas.length === 1 ? "1 tela" : `${c.telas.length} telas`} ·{" "}
+                  {c.telas.map((t: any) => t.entity).filter(Boolean).join(", ") || "—"}
                 </div>
               </div>
             ))}
           </div>
 
           <div className="uispec-preview">
-            {current && (
+            {/* ESTRUTURA DE MENUS — primeira opção da lista. Mostra como o menu do sistema fica
+                e o que cada item abre, montado a partir das telas dos casos de uso. */}
+            {selected === "__menus__" && (
+              <div className="uispec-menus">
+                <h3>🗂️ Estrutura de Menus</h3>
+                <p className="uispec-menus-nota">
+                  É este o menu que o protótipo e o aplicativo terão. Cada item abre a tela do
+                  caso de uso correspondente.
+                </p>
+                <div className="uispec-menu-grupo">
+                  <div className="uispec-menu-grupo-nome">
+                    menu · rota · caso de uso que a tela realiza
+                  </div>
+                  {menu.map((m, i) => (
+                    <div
+                      key={i}
+                      className="uispec-menu-item"
+                      onClick={() => m.tela && setSelected(m.tela.id)}
+                      title={m.tela ? "abrir esta tela" : "sem tela associada"}
+                    >
+                      <span className="uispec-menu-item-nome">{m.label}</span>
+                      <span className="uispec-menu-item-abre">
+                        <code>{m.route}</code>
+                        {m.tela ? ` · ${(m.tela.uc || []).join(", ")}` : " · (sem tela)"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AS TELAS DO CASO DE USO, LADO A LADO — o fluxo normal e o de falha juntos, que é
+                como se avalia se a tela realiza o caso de uso. */}
+            {selected !== "__menus__" && telasDoUc.length > 0 && (
+              <div className="uispec-telas-do-uc">
+                <div className="uispec-uc-cab">
+                  <h3>{ucSelecionado} · {telasDoUc.length === 1 ? "1 tela" : `${telasDoUc.length} telas`}</h3>
+                  <button
+                    className="tc-btn primary"
+                    onClick={gerarPrototipo}
+                    disabled={protoBusy}
+                    title="monta o protótipo navegável com as alterações e abre em outra aba"
+                  >
+                    {protoBusy ? "Renderizando…" : "▶ Renderizar protótipo"}
+                  </button>
+                </div>
+                <div className="uispec-telas-lado-a-lado">
+                  {telasDoUc.map((t: any) => (
+                    <figure
+                      key={t.id}
+                      className={`uispec-tela-card ${selected === t.id ? "ativa" : ""}`}
+                      onClick={() => setSelected(t.id)}
+                      title="selecionar esta tela para alterar pela conversa"
+                    >
+                      <figcaption>{t.name}</figcaption>
+                      {mockups[t.id] ? (
+                        <img className="uispec-mockup" src={mockups[t.id]} alt={t.name} />
+                      ) : (
+                        <div className="uispec-nomock">Sem tela renderizada.</div>
+                      )}
+                    </figure>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {selected !== "__menus__" && current && (
               <>
-                <h3>{current.name}</h3>
-                {mockups[current.id] ? (
-                  <img className="uispec-mockup" src={mockups[current.id]} alt={current.name} />
-                ) : (
-                  <div className="uispec-nomock">Sem mockup renderizado.</div>
-                )}
                 <div className="uispec-struct">
                   <h4>Componentes</h4>
                   <ul>

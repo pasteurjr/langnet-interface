@@ -12137,13 +12137,22 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
     has_chart = has_chart or _quer_grafico
     has_upload = has_upload and _quer_upload
 
-    map_jsx = ('<div style={{display:"flex",gap:16,marginTop:8}}>'
-               '<div style={{flex:2}}><div style={{fontSize:12,color:"#64748b",marginBottom:6}}>Desenhe a área do empreendimento no mapa:</div>'
+    # O RÓTULO E O CENTRO DO MAPA SAEM DA PRÓPRIA TELA. Estavam fixos aqui, escritos para o
+    # projeto de uso do solo: "Desenhe a área do empreendimento no mapa" e o mapa centrado em
+    # Belo Horizonte (-19.9, -44.0). Qualquer projeto que declarasse um mapa recebia isso —
+    # um sistema de vigilância hospitalar mostrava "área do empreendimento" e o mapa de BH
+    # (visto no BioByte em 19/09/2026). Conteúdo de um projeto não pode morar no gerador.
+    _comp_mapa = next((c for c in comps if c.get("type") == "map"), {})
+    _rotulo_mapa = json.dumps(str(_comp_mapa.get("label") or "Área no mapa"), ensure_ascii=False)
+    _centro = (_comp_mapa.get("props") or {}).get("center")
+    _zoom = (_comp_mapa.get("props") or {}).get("zoom")
+    map_jsx = ('<div style={{display:"flex",gap:16,marginTop:8}}>' 
+               '<div style={{flex:2}}><div style={{fontSize:12,color:"#64748b",marginBottom:6}}>' + _rotulo_mapa + '</div>'
                '<div ref={mapRef} style={{height:420,borderRadius:12,border:"1px solid #cbd5e1"}} />'
                '{wkt && <div style={{fontSize:11,color:"#16a34a",marginTop:6}}>Geometria capturada ✓</div>}</div>'
                '<div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:"#334155",marginBottom:6}}>Resultado da análise</div>'
                '<div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:14,minHeight:120,fontSize:13}}>'
-               '{result ? <pre style={{whiteSpace:"pre-wrap",margin:0}}>{JSON.stringify(result,null,2)}</pre> : <span style={{color:"#94a3b8"}}>Desenhe a área e clique em ' + action_label + '.</span>}</div></div></div>') if has_map else ""
+               '{result ? <pre style={{whiteSpace:"pre-wrap",margin:0}}>{JSON.stringify(result,null,2)}</pre> : <span style={{color:"#94a3b8"}}>Marque a área no mapa e clique em ' + action_label + '.</span>}</div></div></div>') if has_map else ""
 
     upload_jsx = ('<div style={{marginTop:12}}><div style={{fontSize:13,fontWeight:600,color:"#334155",marginBottom:6}}>Importar arquivo</div>'
                   '<label style={{display:"block",border:"2px dashed #cbd5e1",borderRadius:12,padding:24,textAlign:"center",color:"#64748b",cursor:"pointer"}}>'
@@ -12179,7 +12188,7 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
     effect_block = ('''  useEffect(() => {
     if (!mapRef.current || mapRef.current._built) return;
     mapRef.current._built = true;
-    const map = L.map(mapRef.current).setView([-19.9, -44.0], 12);
+    const map = L.map(mapRef.current).setView(__CENTRO__, __ZOOM__);
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribution: "\\u00a9 OpenStreetMap" }).addTo(map);
     const drawn = new L.FeatureGroup(); map.addLayer(drawn);
     const dc = new L.Control.Draw({ edit: { featureGroup: drawn },
@@ -12197,7 +12206,9 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
     if (g.type === "Polygon") return "POLYGON((" + g.coordinates[0].map(p).join(", ") + "))";
     return "";
   }
-''') if has_map else ""
+'''.replace("__CENTRO__", json.dumps(_centro) if isinstance(_centro, (list, tuple)) and len(_centro) == 2
+                     else "[0, 0]")
+     .replace("__ZOOM__", str(int(_zoom)) if isinstance(_zoom, (int, float)) else "2")) if has_map else ""
     # #1: manda o WKT sob MÚLTIPLAS chaves para casar com o input da task (localizacao/geometria/coluna).
     geom_submit = ('      if (wkt) { input["__GEOM__"] = wkt; input["localizacao"] = wkt; input["geometria"] = wkt; }\n'
                    .replace("__GEOM__", geom_field)) if has_map else ""

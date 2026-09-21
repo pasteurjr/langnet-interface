@@ -63,6 +63,23 @@ def _parse_uc_body(uc_id: str, uc_name: str, body: str) -> Dict[str, str]:
     if flow_m:
         uc["flow"] = flow_m.group(1).strip()
 
+    # FLUXOS ALTERNATIVOS E DE EXCEÇÃO — eram DESCARTADOS aqui (corrigido em 20/09/2026).
+    # A Especificação escreve os três fluxos de cada caso de uso: principal, alternativos e de
+    # exceção. Este leitor extraía só o principal, então a tela nascia sabendo o caminho feliz e
+    # nada do resto. Medido no BioByte: das 30 telas, 20 não tinham NENHUMA das mensagens e
+    # botões que os casos de uso nomeiam para quando algo dá errado — "laboratório fora do ar",
+    # "tentar novamente", "não consegui calcular a estimativa", "falha no envio do e-mail",
+    # "E-mail ou senha inválidos", "os dados não sustentam uma recomendação".
+    # E não adiantava instruir o modelo a incluí-los: a informação não chegava até ele.
+    # Isso é o coração do que a ata exigiu — "o pior que pode acontecer é o sistema mostrar um
+    # número que não existe" — então é o que MENOS pode se perder no caminho.
+    alt_m = re.search(r'#+\s*Fluxos?\s+Alternativos?(.*?)(?=\n#+\s|\Z)', body, re.S)
+    if alt_m:
+        uc["flow_alt"] = alt_m.group(1).strip()
+    exc_m = re.search(r'#+\s*Fluxos?\s+de\s+Exce[çc][ãa]o(.*?)(?=\n#+\s|\Z)', body, re.S)
+    if exc_m:
+        uc["flow_exc"] = exc_m.group(1).strip()
+
     # Wireframe ASCII
     wf_m = re.search(r'#+\s*Wireframe.*?```(.*?)```', body, re.S)
     if wf_m:
@@ -335,9 +352,16 @@ REGRAS:
    arquétipo/croqui do UC no wireframe abaixo). NÃO reduza tudo a formulário/tabela. Emita o
    `type` certo em `components[]` E renderize-o de verdade no `mockup_html` (mantendo o shell
    Tailwind: menu lateral + header + card). Catálogo:
-   - **map** (geoespacial): se o UC lida com localização/área/zoneamento OU a tabela tem coluna
-     GEOMETRY. Componente `type:"map"`, `bindTo` na coluna de geometria, `props` com
-     layers (ex.: zoneamento, app) e draw:true. No mockup: inclua o CSS+JS do Leaflet via CDN
+   - **map** (geoespacial): SOMENTE quando o caso de uso PEDE localização no mapa **e** existe
+     coluna GEOMETRY na tabela ligada à tela. Os dois ao mesmo tempo. Se o UC apenas cita um
+     local por nome (unidade, leito, setor), isso é TEXTO, não mapa.
+     ⚠️ NÃO invente mapa por "combinar" com o domínio. Medido em 19/09/2026 num sistema de
+     vigilância hospitalar: nove telas ganharam mapa que ninguém pediu — "distribuição
+     geoespacial dos alertas", "localização do leito", "distribuição geográfica dos
+     consentimentos" — nenhum desses está na ata, nos requisitos ou nos casos de uso. Mapa que
+     o cliente não pediu é enfeite que vira código, tela e manutenção.
+     Componente `type:"map"`, `bindTo` na coluna de geometria, `props` com as camadas que o
+     PRÓPRIO caso de uso nomeia, `center` e `zoom` da área real do sistema, e draw:true. No mockup: inclua o CSS+JS do Leaflet via CDN
      (cdn.jsdelivr.net/npm/leaflet) e um `<div id="map" style="height:420px">` com camada de
      tiles do OpenStreetMap; mostre um polígono de exemplo desenhado e um botão "Desenhar área"
      e um painel lateral de resultado. NUNCA um `<input>` de "coordenada"/"WKT" cru.
@@ -368,6 +392,20 @@ Tela declarada: {screen_title}
 
 ### Fluxo Principal (ator → sistema)
 {flow}
+
+### Fluxos Alternativos (caminhos válidos que não são o principal)
+{flow_alt}
+
+### Fluxos de Exceção (o que acontece quando algo dá errado)
+{flow_exc}
+
+⚠️ OS TRÊS FLUXOS SÃO OBRIGATÓRIOS NA TELA. Os fluxos alternativos e de exceção NÃO são
+detalhe: cada mensagem que eles citam entre aspas — "laboratório fora do ar", "tentar
+novamente", "não consegui calcular", "E-mail ou senha inválidos" — precisa existir como
+componente da tela (um aviso, um estado vazio explicado, um botão de repetir). Uma tela que só
+sabe o caminho feliz mente para quem a usa: ela mostra campo vazio sem dizer por quê.
+Se um fluxo de exceção diz que o sistema exibe uma mensagem, emita um componente para ela.
+Se diz que oferece um botão, emita o botão.
 
 ### Wireframe ASCII (referência visual — reproduza como HTML limpo)
 {wireframe}
@@ -424,6 +462,8 @@ def build_single_screen_prompt(uc: Dict[str, str], sub_schema: str,
         objetivo=uc.get("objetivo", "—"),
         screen_title=uc.get("screen_title", uc.get("name", "")),
         flow=uc.get("flow", "(sem fluxo detalhado)"),
+        flow_alt=uc.get("flow_alt", "(o caso de uso não declara fluxo alternativo)"),
+        flow_exc=uc.get("flow_exc", "(o caso de uso não declara fluxo de exceção)"),
         wireframe=uc.get("wireframe", "(sem wireframe)"),
         schema_block=schema_block,
     )

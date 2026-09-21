@@ -16,7 +16,7 @@ from app.database import get_db_connection
 from app.dependencies import get_current_user
 
 from agents.langnetprototype import (
-    gerar_prototipo, montar_prototipo, RAIZ_PROTOTIPOS,
+    gerar_prototipo, montar_prototipo, montar_prototipo_de_telas, RAIZ_PROTOTIPOS,
 )
 
 router = APIRouter(prefix="/api/prototype", tags=["prototype"])
@@ -81,9 +81,20 @@ def gerar(project_id: str, req: GerarRequest, user=Depends(get_current_user)):
     if not schema:
         raise HTTPException(400, "Modelo de Dados sem DDL aprovado — a semente de dados "
                                  "fictícios sai dele; aprove o Modelo de Dados antes")
-    arquivos = gerar_prototipo(ui_spec, schema, tasks, nome)
     destino = RAIZ_PROTOTIPOS / sid / f"v{versao}"
-    resultado = montar_prototipo(arquivos, destino, nome)
+
+    # O PROTÓTIPO É A TELA QUE O USUÁRIO APROVOU (21/09/2026). Antes havia dois desenhos da
+    # mesma tela: o que a etapa gera e mostra (com menu, cartões, avisos por gravidade, dados
+    # de exemplo) e outro que o nosso código reinventava a partir da lista de campos, em coluna
+    # única. O segundo virava o protótipo — então aprovava-se uma coisa e navegava-se outra.
+    # Agora o protótipo é montado DAS PRÓPRIAS TELAS, ligadas pelo menu. O caminho antigo fica
+    # como reserva, para o caso de alguma tela não ter chegado renderizada.
+    resultado = montar_prototipo_de_telas(ui_spec, destino, nome)
+    if not resultado.get("ok"):
+        print(f"[PROTOTIPO] montagem pelas telas falhou ({resultado.get('erro')}) — "
+              f"caindo no caminho antigo")
+        arquivos = gerar_prototipo(ui_spec, schema, tasks, nome)
+        resultado = montar_prototipo(arquivos, destino, nome)
     if not resultado.get("ok"):
         raise HTTPException(500, resultado.get("erro") or "falha ao montar o protótipo")
     resultado.update({"ui_spec_session_id": sid, "version": versao,
