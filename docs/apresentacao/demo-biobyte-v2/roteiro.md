@@ -1145,3 +1145,72 @@ Um arquivo de configuração quebrado derruba a geração de código inteira. Es
 milissegundos.
 
 ---
+
+## Parte M — Sequência de Tarefas
+
+### Cena 68 — Três origens, uma sequência
+
+**TELA:** `shots/419-sequencia-etapa-aberta.png` e `shots/420-sequencia-tres-origens.png`
+
+**NARRAÇÃO:**
+Esta etapa responde **em que ordem** o sistema faz o que faz, e **o que cada tarefa recebe e
+entrega**.
+
+Ela exige três origens, e não deixa gerar sem as três: a Especificação Funcional, o documento de
+Agentes e Tarefas, e o arquivo de configuração das tarefas. Cada uma é escolhida na sua aba, e a
+etapa registra de qual versão veio.
+
+---
+
+### Cena 69 — O estado que atravessa o sistema
+
+**TELA:** `shots/424-seq-visao-geral.png` e `shots/425-seq-definicao-do-state.png`
+
+**NARRAÇÃO:**
+Primeiro, o **estado**: a estrutura que atravessa o sistema inteiro, passando de tarefa em tarefa.
+
+Ela vem em três partes: o que entra no começo — configuração e dados do usuário; o que cada
+tarefa **produz**, com a coluna dizendo quem produz e quem consome; e os metadados de execução.
+
+É essa tabela que impede o defeito mais comum de sistema multiagente: a tarefa que espera um dado
+que ninguém produziu.
+
+---
+
+### Cena 70 — A tarefa, com o SQL e a mensagem do caso de uso
+
+**TELA:** `shots/426-seq-sequencia-de-execucao.png`
+
+**NARRAÇÃO:**
+E então, tarefa por tarefa — quarenta e cinco delas.
+
+Veja a primeira. A função de entrada diz o que ela tira do estado: e-mail e senha. Os passos são
+concretos: busca o usuário com o SQL escrito por extenso, usando a ferramenta `database_tool` —
+a mesma que a etapa anterior ligou a este agente. Se não achar, ou se o usuário estiver inativo,
+devolve **"E-mail ou senha inválidos"** — a frase exata do caso de uso. Confere a senha contra o
+resumo criptográfico guardado. Emite o token, grava, e captura o identificador com uma consulta
+explícita, nunca com o atalho que quebra sob concorrência.
+
+Isto não é mais descrição: é o que a geração de código vai transformar em programa.
+
+---
+
+### Cena 71 — Quarenta e cinco não cabem numa resposta só
+
+**NARRAÇÃO:**
+A primeira tentativa saiu **cortada no meio de uma frase**, com oito tarefas das quarenta e cinco.
+
+É um defeito que este projeto já conhecia e já tinha resolvido duas vezes — na Especificação e nos
+Requisitos. A causa nunca é o modelo: é o tamanho do pedido.
+
+Agora o programa corta a lista em blocos de seis, pede o cabeçalho e o estado num pedido curto,
+pede cada bloco em separado — mandando só o recorte da configuração daquelas seis tarefas — e
+monta o documento.
+
+Resultado medido: **quarenta e cinco de quarenta e cinco**, cento e quarenta e quatro mil
+caracteres, noventa blocos de código, dois minutos. Nenhuma tarefa faltando, nenhuma repetida,
+nenhuma inventada.
+
+**NOTA DE PRODUÇÃO:** cena sem captura — narrar sobre a Cena 70 ou sobre o log dos oito lotes.
+
+---
