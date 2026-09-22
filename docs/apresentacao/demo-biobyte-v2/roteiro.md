@@ -1079,3 +1079,69 @@ está anotada: quem vai cobrar isso é a etapa de Casos de Teste, executando a f
 conferindo a resposta.
 
 ---
+
+## Parte L — YAML de Agentes e Tarefas
+
+### Cena 64 — O documento vira configuração executável
+
+**TELA:** `shots/404-yaml-etapa-aberta.png` e `shots/405-yaml-agentes-origem.png`
+
+**NARRAÇÃO:**
+Até aqui tudo é documento para pessoa ler. Esta etapa traduz o documento de Agentes e Tarefas em
+**dois arquivos de configuração** que o sistema executa: um descreve os agentes, outro as tarefas.
+
+A origem é escolhida na lista, com a contagem à vista — *quinze agentes, quarenta e cinco
+tarefas* —, e a etapa registra de qual versão nasceu.
+
+---
+
+### Cena 65 — Quinze agentes, quarenta e cinco tarefas
+
+**TELA:** `shots/406-yaml-agentes-gerando.png` e `shots/410-yaml-tarefas-pronto.png`
+
+**NARRAÇÃO:**
+Sai exatamente o que entrou: quinze agentes e quarenta e cinco tarefas. Nenhuma tarefa aponta para
+agente que não existe.
+
+E cada tarefa traz o campo que decide **como** ela roda: trinta e oito são determinísticas — o
+programa executa, sem modelo de linguagem — e sete são de julgamento, que é quando o agente é
+chamado. É a arquitetura híbrida escrita no arquivo, não na intenção.
+
+---
+
+### Cena 66 — O que faltava: as ferramentas
+
+**NARRAÇÃO:**
+E aqui esta etapa quase deixou passar o defeito mais caro do dia.
+
+Na primeira geração, os quinze agentes e as quarenta e cinco tarefas saíram **sem nenhuma
+ferramenta declarada**. O inventário da etapa anterior tinha cinco ferramentas resolvidas — e
+nenhuma chegava ao arquivo. Na prática: o aplicativo gerado não teria como chamar o laboratório,
+o escore de Cox nem o e-mail. As três integrações reais do sistema, mudas.
+
+A informação que faltava já estava gravada: cada ferramenta do inventário diz **quem a usa**.
+Ninguém precisava perguntar ao modelo — bastava ler o que a etapa anterior tinha apurado.
+
+Agora o programa lê o inventário e escreve as ferramentas em cada agente e em cada tarefa. Com
+critério: a chamada externa vai só para os quatro que falam com fora; o leitor de JSON, para os
+dois que recebem resposta de serviço; o leitor de PDF, só para quem exporta relatório. Ferramenta
+não resolvida não entra — declarar o que ninguém implementa seria pior que a falta.
+
+---
+
+### Cena 67 — E a trava que nasceu do erro
+
+**NARRAÇÃO:**
+A primeira versão dessa ligação **quebrou o arquivo de tarefas**: escreveu as ferramentas num
+nível de recuo errado, e o arquivo deixou de ser lido.
+
+O erro apareceu porque o artefato foi conferido — não porque a tela disse "gerado com sucesso".
+
+Duas coisas saíram dali: o recuo passou a ser o da primeira linha do bloco, e o programa ganhou
+uma trava — depois de acrescentar as ferramentas, ele tenta ler o arquivo de volta; se não
+conseguir, descarta o acréscimo, mantém o original e **diz que descartou**.
+
+Um arquivo de configuração quebrado derruba a geração de código inteira. Esta trava custa
+milissegundos.
+
+---

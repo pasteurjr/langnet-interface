@@ -112,19 +112,31 @@ def _acrescentar_ferramentas_ao_yaml(conteudo: str, uso: dict) -> str:
             ferramentas = uso.get(nome)
             if ferramentas:
                 # varre o bloco para ver se já tem tools:
-                j, tem_tools, recuo = i + 1, False, "  "
+                j, tem_tools, recuo = i + 1, False, ""
                 while j < n and (not linhas[j].strip() or linhas[j].startswith((" ", "\t"))):
                     if re.match(r"^\s+tools\s*:", linhas[j]):
                         tem_tools = True
-                    if linhas[j].strip() and not linhas[j].strip().startswith("#"):
-                        recuo = linhas[j][: len(linhas[j]) - len(linhas[j].lstrip())] or "  "
+                    # o recuo é o da PRIMEIRA linha do bloco: pegar o de uma linha mais funda
+                    # (um campo aninhado) escreve `tools:` num nível errado e quebra o arquivo.
+                    if not recuo and linhas[j].strip() and not linhas[j].strip().startswith("#"):
+                        recuo = linhas[j][: len(linhas[j]) - len(linhas[j].lstrip())]
                     j += 1
+                recuo = recuo or "  "
                 if not tem_tools:
                     saida.append(f"{recuo}tools:")
                     for f in ferramentas:
                         saida.append(f"{recuo}  - {f}")
         i += 1
-    return "\n".join(saida) + ("\n" if conteudo.endswith("\n") else "")
+    novo = "\n".join(saida) + ("\n" if conteudo.endswith("\n") else "")
+    # Trava: se o acréscimo estragou o arquivo, fica o original. Um YAML quebrado derruba a
+    # geração de código inteira, e um recuo errado já fez exatamente isso em 22/09/2026.
+    try:
+        import yaml as _yaml
+        _yaml.safe_load(re.sub(r"^```[a-z]*\n|```\s*$", "", novo.strip(), flags=re.M))
+    except Exception as e:
+        print(f"[YAML] acréscimo de ferramentas descartado — quebraria o arquivo: {e}")
+        return conteudo
+    return novo
 
 router = APIRouter(prefix="/tasks-yaml", tags=["tasks-yaml"])
 
