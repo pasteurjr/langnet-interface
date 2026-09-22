@@ -1214,3 +1214,61 @@ nenhuma inventada.
 **NOTA DE PRODUÇÃO:** cena sem captura — narrar sobre a Cena 70 ou sobre o log dos oito lotes.
 
 ---
+
+## Parte N — Rede de Petri
+
+### Cena 72 — O sistema vira um modelo formal
+
+**TELA:** `shots/427-petri-etapa-aberta.png` e `shots/433-petri-origens.png`
+
+**NARRAÇÃO:**
+Esta etapa transforma o sistema num **modelo formal**: uma rede de Petri.
+
+Ela come três artefatos, todos gerados nesta mesma cascata: a configuração dos agentes, a das
+tarefas e o documento de sequência. Lugares são estados; transições são as tarefas; a ficha é o
+trabalho andando.
+
+Não é diagrama ilustrativo — é o que o executor do aplicativo vai percorrer.
+
+---
+
+### Cena 73 — Quarenta e nove lugares, quarenta e oito transições
+
+**TELA:** `shots/435-petri-rede.png`
+
+**NARRAÇÃO:**
+A rede sai com quarenta e nove lugares, quarenta e oito transições, cento e cinquenta e quatro
+arcos e quinze agentes — cada lugar sabe a qual agente pertence.
+
+À esquerda, a ficha inicial. O fluxo entra pela autenticação, passa pela validação do token, e
+então se abre: cadastros, classificação, microbiologia, escore de risco. É o sistema inteiro num
+desenho só.
+
+E a rede passa na conferência estrutural: **zero arcos ligando dois lugares ou duas transições**.
+Parece detalhe, mas foi um defeito real numa rodada anterior — uma rede que viola isso não é uma
+rede de Petri, e o executor não a percorre.
+
+---
+
+### Cena 74 — O portão conserta o que sabe, e declara o que não sabe
+
+**NARRAÇÃO:**
+Junto com a rede vem a conferência estrutural, gravada com ela.
+
+**O que o portão consertou sozinho:** um lugar alimentava duas transições que disputavam a mesma
+ficha — a auditoria e o fim do fluxo. Duas transições competindo por uma ficha é corrida: uma
+ganha, a outra nunca dispara. O portão inseriu uma bifurcação, uma ficha por ramo.
+
+**O que ele não consertou, e diz:** uma tarefa entre quarenta e oito — a que trata campo sem dado —
+ficou numa ilha: tem arcos, mas só para si mesma, e nunca é alcançada a partir do início.
+
+Pedimos ao modelo, duas vezes, que a ligasse. Ele acrescentou vinte e oito arcos e não ligou essa.
+É a diferença entre o que se consegue por instrução e o que precisa de regra no programa — e a
+regra para esta classe ainda não existe.
+
+O que o sistema **não** faz é fingir que consertou. A pendência fica gravada junto do artefato,
+com nome e sobrenome.
+
+**NOTA DE PRODUÇÃO:** cena sem captura — narrar sobre a rede da Cena 73.
+
+---
