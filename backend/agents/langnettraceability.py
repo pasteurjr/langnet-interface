@@ -385,7 +385,13 @@ def audit(requirements_md: str, spec_md: str = "", ats_md: str = "",
         if any(t in d or d in t for d in dm):
             return True
         return bool(_dl.get_close_matches(t, list(dm), n=1, cutoff=0.6))
-    tbl_violations = sorted(t for t in tt["tables"] if dm and not _resolves(t)) if dm else []
+    # Catálogo do próprio banco não é tabela do aplicativo: consultar information_schema para
+    # saber se uma tabela existe é uso legítimo, e acusá-la como "tabela inexistente" é alarme
+    # falso — apareceu no BioByte em 22/09/2026 e escondia o achado real (etapas_ciclo).
+    _CATALOGOS = {"information_schema", "performance_schema", "mysql", "sys", "pg_catalog", "sqlite_master"}
+    tbl_violations = sorted(t for t in tt["tables"]
+                            if dm and str(t).split(".")[0].lower() not in _CATALOGOS
+                            and not _resolves(t)) if dm else []
 
     # Salto 4b: task -> DM no nível de COLUNA (o SQL cita coluna que não existe no schema).
     col_violations = _query_column_violations(tasks_yaml, _dm_columns(schema_sql))

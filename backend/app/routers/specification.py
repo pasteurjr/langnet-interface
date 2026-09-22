@@ -1361,6 +1361,134 @@ async def execute_specification_review(
 # REFINEMENT ENDPOINT
 # ============================================================
 
+@router.post("/{session_id}/recompor-rastreabilidade")
+async def recompor_rastreabilidade(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Refaz a seção de Rastreabilidade a partir do próprio documento, sem regerar e sem modelo.
+
+    POR QUE: a matriz requisito → caso de uso é montada pelo programa. Quando o defeito está no
+    MONTADOR, corrigir o programa não conserta o documento já gravado — e o portão continua
+    acusando um requisito como órfão. Medido no BioByte em 22/09/2026: o título do FR-040 veio
+    com um cabeçalho de seção dentro, partiu a linha da tabela ao meio e criou uma segunda seção
+    numerada 12 na especificação.
+
+    Aqui a matriz é reconstruída do que cada caso de uso DECLARA em "RFs Relacionados" — a mesma
+    fonte que o montador usa — e a seção antiga é substituída, gravando versão nova.
+    """
+    import re as _re
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        cur.execute("""SELECT s.specification_document, s.requirements_session_id
+                       FROM execution_specification_sessions s WHERE s.id=%s""", (session_id,))
+        row = cur.fetchone()
+        cur.close()
+    if not row or not row.get("specification_document"):
+        raise HTTPException(status_code=404, detail="Especificação não encontrada")
+    doc = row["specification_document"]
+
+    # requisitos e títulos, do documento de requisitos da origem
+    requisitos_md = ""
+    try:
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT requirements_document FROM execution_sessions WHERE id=%s",
+                        (row.get("requirements_session_id"),))
+            r2 = cur.fetchone()
+            cur.close()
+        requisitos_md = (r2 or {}).get("requirements_document") or ""
+    except Exception:
+        pass
+
+    from agents.langnetespecfases import _titulo_do_requisito
+
+    # quem realiza o quê: lido dos próprios casos de uso
+    por_fr: dict = {}
+    for m in _re.finditer(r"####\s*(UC-\d+)(.*?)(?=\n####\s*UC-|\Z)", doc, _re.S):
+        uc, corpo = m.group(1), m.group(2)
+        # No documento a célula vem como "| **RFs Relacionados** | FR-001, FR-002 |": os
+        # asteriscos do negrito ficam ENTRE o rótulo e a barra. Sem prevê-los, a matriz saía com
+        # todos os requisitos órfãos.
+        mr = _re.search(r"RFs?\s+Relacionados\**\s*\|\s*([^|\n]+)", corpo)
+        if not mr:
+            continue
+        for fr in _re.findall(r"FR-\d+", mr.group(1)):
+            por_fr.setdefault(fr, [])
+            if uc not in por_fr[fr]:
+                por_fr[fr].append(uc)
+
+    frs = sorted(set(_re.findall(r"FR-\d+", requisitos_md or doc)),
+                 key=lambda x: int(x.split("-")[1]))
+    if not frs:
+        raise HTTPException(status_code=422, detail="Nenhum requisito funcional encontrado")
+
+    linhas = ["## 13. Rastreabilidade", "",
+              "Matriz Requisito → Caso de Uso, construída da lista de casos de uso desta "
+              "especificação. Requisito sem caso de uso aparece como lacuna — não é preenchido "
+              "por aproximação.", "",
+              "| Requisito | Título | Caso(s) de uso que o realizam |", "|---|---|---|"]
+    lacunas = []
+    for fr in frs:
+        ucs = por_fr.get(fr) or []
+        if not ucs:
+            lacunas.append(fr)
+        titulo = _titulo_do_requisito(requisitos_md, fr) if requisitos_md else "—"
+        linhas.append(f"| {fr} | {titulo} | {', '.join(ucs) if ucs else '⚠️ SEM CASO DE USO'} |")
+    if lacunas:
+        linhas += ["", f"⚠️ **Lacuna de rastreabilidade:** {len(lacunas)} requisito(s) sem caso de "
+                       f"uso — {', '.join(lacunas)}."]
+    nova_secao = "\n".join(linhas)
+
+    # troca a seção 13 inteira (até o próximo título de seção de primeiro nível)
+    m = _re.search(r"\n##\s*13\.[^\n]*\n", doc)
+    if not m:
+        raise HTTPException(status_code=422, detail="Seção 13 não encontrada no documento")
+    resto = doc[m.end():]
+    fim = _re.search(r"\n##\s*\d+\.\s", resto)
+    doc_novo = doc[:m.start()] + "\n" + nova_secao + "\n" + (resto[fim.start():] if fim else "")
+
+    # Sobra da matriz antiga: quando o defeito partiu a tabela ao meio, o pedaço de baixo virou
+    # uma "seção" com número repetido e corpo só de linhas de matriz. Ela é removida aqui — não
+    # por semelhança, mas pela regra: número de seção duplicado E corpo que é só tabela do tipo
+    # "| FR-xxx | ... |".
+    numeros = {}
+    for mm in _re.finditer(r"\n##\s*(\d+)\.[^\n]*\n", doc_novo):
+        numeros.setdefault(mm.group(1), []).append(mm)
+    for num, ocorrencias in numeros.items():
+        if len(ocorrencias) < 2:
+            continue
+        for mm in ocorrencias[1:]:
+            resto2 = doc_novo[mm.end():]
+            f2 = _re.search(r"\n##\s*\d+\.\s", resto2)
+            corpo2 = resto2[:f2.start()] if f2 else resto2
+            linhas2 = [l for l in corpo2.splitlines() if l.strip()]
+            if linhas2 and sum(1 for l in linhas2 if _re.match(r"^\|\s*FR-\d+\s*\|", l)) >= len(linhas2) * 0.8:
+                doc_novo = doc_novo[:mm.start()] + (resto2[f2.start():] if f2 else "")
+                break
+
+    if doc_novo == doc:
+        return {"session_id": session_id, "mudou": False,
+                "mensagem": "A seção já estava correta; nada foi gravado."}
+
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        cur.execute("""UPDATE execution_specification_sessions
+                       SET specification_document=%s, updated_at=NOW() WHERE id=%s""",
+                    (doc_novo, session_id))
+        cur.execute("""SELECT MAX(version) v FROM specification_version_history
+                       WHERE specification_session_id=%s""", (session_id,))
+        atual = (cur.fetchone() or {}).get("v") or 0
+        cur.execute("""INSERT INTO specification_version_history
+                       (specification_session_id, version, specification_document, created_by,
+                        change_description, change_type, doc_size)
+                       VALUES (%s,%s,%s,%s,%s,'manual_edit',%s)""",
+                    (session_id, atual + 1, doc_novo, current_user["id"],
+                     "Rastreabilidade recomposta pelo programa (determinística, sem modelo)", len(doc_novo)))
+        conn.commit()
+        cur.close()
+    return {"session_id": session_id, "mudou": True, "versao": atual + 1,
+            "requisitos": len(frs), "sem_caso_de_uso": lacunas,
+            "tamanho_antes": len(doc), "tamanho_depois": len(doc_novo)}
+
+
 @router.post("/{session_id}/refine")
 async def refine_specification(
     session_id: str,
