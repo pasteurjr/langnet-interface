@@ -1252,42 +1252,61 @@ Não é diagrama ilustrativo — é o que o executor do aplicativo vai percorrer
 
 ### Cena 73 — Quarenta e nove lugares, quarenta e oito transições
 
-**TELA:** `shots/435-petri-rede.png`
+**TELA:** `shots/492-petri-rede-conferida.png`
 
 **NARRAÇÃO:**
-A rede sai com quarenta e nove lugares, quarenta e oito transições, cento e cinquenta e quatro
-arcos e quinze agentes — cada lugar sabe a qual agente pertence.
+A rede sai com quarenta e nove lugares, quarenta e oito transições, cento e sessenta e dois arcos
+e quinze agentes — cada lugar sabe a qual agente pertence.
 
 À esquerda, a ficha inicial. O fluxo entra pela autenticação, passa pela validação do token, e
-então se abre: cadastros, classificação, microbiologia, escore de risco. É o sistema inteiro num
-desenho só.
-
-E a rede passa na conferência estrutural: **zero arcos ligando dois lugares ou duas transições**.
-Parece detalhe, mas foi um defeito real numa rodada anterior — uma rede que viola isso não é uma
-rede de Petri, e o executor não a percorre.
+então se abre: cadastros, classificação, microbiologia, escore de risco.
 
 ---
 
-### Cena 74 — O portão conserta o que sabe, e declara o que não sabe
+### Cena 74 — Oito conferências, e o que cada uma responde
 
 **NARRAÇÃO:**
-Junto com a rede vem a conferência estrutural, gravada com ela.
+Uma rede bonita que executa errado não serve. Por isso ela é conferida contra os artefatos que a
+originaram, e cada conferência responde a uma pergunta concreta:
 
-**O que o portão consertou sozinho:** um lugar alimentava duas transições que disputavam a mesma
-ficha — a auditoria e o fim do fluxo. Duas transições competindo por uma ficha é corrida: uma
-ganha, a outra nunca dispara. O portão inseriu uma bifurcação, uma ficha por ramo.
+*As quarenta e cinco tarefas da sequência estão na rede?* **Quarenta e cinco de quarenta e cinco.**
 
-**O que ele não consertou, e diz:** uma tarefa entre quarenta e oito — a que trata campo sem dado —
-ficou numa ilha: tem arcos, mas só para si mesma, e nunca é alcançada a partir do início.
+*Todo arco liga um lugar a uma transição, como a regra da rede de Petri exige?* **Zero arcos
+inválidos.**
 
-Pedimos ao modelo, duas vezes, que a ligasse. Ele acrescentou vinte e oito arcos e não ligou essa.
-É a diferença entre o que se consegue por instrução e o que precisa de regra no programa — e a
-regra para esta classe ainda não existe.
+*Toda tarefa é alcançada a partir da ficha inicial?* **Todas** — e o fim do fluxo também.
 
-O que o sistema **não** faz é fingir que consertou. A pendência fica gravada junto do artefato,
-com nome e sobrenome.
+*Cada lugar aponta para um agente que existe na configuração?* **Sim, nenhum inválido.**
 
-**NOTA DE PRODUÇÃO:** cena sem captura — narrar sobre a rede da Cena 73.
+E a mais importante: *a ordem respeita os dados?* Se a estimativa de redução de risco consome o
+identificador da recomendação, a recomendação tem de vir antes. **Cinquenta e seis dependências
+conferidas, zero violações.**
+
+---
+
+### Cena 75 — O que estava errado, e como se conserta
+
+**NARRAÇÃO:**
+Nada disso passou de primeira, e vale contar por quê.
+
+**Nenhum lugar da rede declarava o que entrega.** Zero de quarenta e nove — enquanto quarenta e um
+declaravam o que consomem. A rede sabia o que cada tarefa recebe e não sabia o que ela produz, e
+por isso não tinha como saber de onde vem cada dado.
+
+A causa não era o modelo: era o programa procurando a resposta no lugar errado. Ele buscava a
+saída num formato estruturado, e a configuração das tarefas declara em **português corrido** —
+*"retornar um JSON com as chaves resultado_id e situacao"*. Ensinado a ler o texto, passou de zero
+para **quarenta e uma de quarenta e cinco** tarefas com saída declarada.
+
+Com isso, duas correções viraram possíveis, e as duas são feitas pelo programa, não por pedido ao
+modelo: a tarefa chamada sob demanda — a que trata campo sem dado — deixa de ficar ilhada, ligada
+pelo dado que consome; e a ordem passa a obedecer o que a sequência **declara**, ligando cada
+consumidor à saída do seu produtor.
+
+E cada costura fica escrita: *"a estimativa passou a vir depois da recomendação porque consome o
+identificador da recomendação, produzido por ela"*.
+
+**NOTA DE PRODUÇÃO:** cena sem captura — narrar sobre a rede da cena 73.
 
 ---
 
