@@ -37,8 +37,11 @@ const shot=async(p,t)=>{const f=`${OUT}/${String(N).padStart(3,'0')}-${t}.png`;a
   }
   await cx.focus(); await p.keyboard.type(PEDIDO,{delay:2});
   await sleep(600); await shot(p,'dm-pedido-de-correcao');
-  const env = p.getByRole('button',{name:/^enviar$/i}).first();
-  await env.click({timeout:20000,force:true}).catch(async e=>{console.log('clique falhou:',String(e.message).split('\n')[0]);});
+  const enviou = await p.evaluate(()=>{
+    const bs=[...document.querySelectorAll('button')].filter(x=>/^enviar$/i.test((x.textContent||'').trim()) && !x.disabled);
+    if(!bs.length) return false; bs[bs.length-1].click(); return true;});
+  if(!enviou){ console.log('!! botão Enviar indisponível — nada foi enviado'); await b.close(); return; }
+  console.log('enviado de fato');
   console.log('▷ refino disparado às', new Date().toLocaleTimeString());
   await sleep(8000); await shot(p,'dm-refino-em-andamento');
   for (let i=0;i<60;i++){

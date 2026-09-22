@@ -273,6 +273,24 @@ O documento foi lido e está pronto para a análise.
 
 ## Parte C — A etapa de Requisitos
 
+### Cena 13.1 — A ata, lida dentro do sistema
+
+**TELA:** `shots/008-ata-texto-no-sistema.png`
+
+**NARRAÇÃO:**
+Antes de pedir qualquer coisa ao sistema, vale abrir o que foi carregado. O arquivo tem doze
+quilobytes e é a transcrição de uma reunião — não um documento de requisitos formatado.
+
+Está tudo em linguagem de hospital: *"o que mais nos custa é o tempo entre a hemocultura ficar
+pronta no laboratório e alguém aqui perceber que aquele paciente tem uma infecção de corrente
+sanguínea. Às vezes são dois dias."*
+
+É deste texto que sairão os oitenta e três requisitos funcionais, os trinta e três casos de uso,
+as vinte e cinco tabelas e as vinte e oito telas. Tudo o que vem a seguir tem origem aqui — e o
+sistema guarda essa ligação, como as próximas cenas mostram.
+
+---
+
 ### Cena 14 — O pedido de análise
 
 **TELA:** `shots/141-instrucoes-e-pesquisa-web.png`
@@ -608,7 +626,7 @@ gera para outro banco sem reescrever nada.
 
 ### Cena 36 — A especificação impõe as tabelas
 
-**TELA:** `shots/176-dm-gerando.png`
+**TELA:** `shots/176-dm-gerando.png` e `shots/470-dm-modelo-final-25-tabelas.png`
 
 **NARRAÇÃO:**
 Enquanto gera, o sistema registra uma decisão importante: *"a seção 6 impõe 22 entidades"* —
@@ -621,14 +639,14 @@ tabela.
 
 ---
 
-### Cena 37 — Vinte e quatro tabelas
+### Cena 37 — Vinte e cinco tabelas
 
-**TELA:** `shots/178-modelo-de-dados-gerado.png`
+**TELA:** `shots/470-dm-modelo-final-25-tabelas.png`
 
 **NARRAÇÃO:**
-Vinte e quatro tabelas, com relacionamentos, tipos, chaves e índices.
+Vinte e cinco tabelas, com relacionamentos, tipos, chaves e índices.
 
-E elas **aplicam de verdade**: rodei o script num banco vazio e as vinte e quatro foram criadas
+E elas **aplicam de verdade**: rodei o script num banco vazio e as vinte e cinco foram criadas
 sem um erro. Isso não é detalhe — um modelo de dados que não vira banco não serve para nada.
 
 ---
