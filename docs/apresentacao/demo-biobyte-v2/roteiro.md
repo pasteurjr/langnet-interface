@@ -1272,3 +1272,77 @@ com nome e sobrenome.
 **NOTA DE PRODUÇÃO:** cena sem captura — narrar sobre a rede da Cena 73.
 
 ---
+
+## Parte O — Casos de Teste
+
+### Cena 75 — De caso de uso para caso de teste, por método
+
+**TELA:** `shots/436-testes-etapa-aberta.png`
+
+**NARRAÇÃO:**
+Esta etapa não pede ao modelo que "invente testes". Ela aplica um método com nome e idade: o
+**Grafo de Causa-Efeito**.
+
+As **causas** são o que o operador faz e as condições do sistema — acessar a tela, preencher os
+campos, ter credenciais válidas, estar ativo. Os **efeitos** são o que o sistema responde. As
+regras ligam uns aos outros, e as **restrições** dizem o que não pode coexistir: causas
+mutuamente exclusivas, causas que obrigam outras.
+
+Dali sai uma tabela de decisão, e **cada coluna da tabela é um caso de teste**. Não é opinião: é
+derivação.
+
+---
+
+### Cena 76 — Trinta e três grafos, trezentos e sessenta e um casos
+
+**TELA:** `shots/437-testes-gerando.png` e `shots/438-testes-prontos.png`
+
+**NARRAÇÃO:**
+Trinta e três casos de uso, trinta e três grafos, trezentos e sessenta e um casos de teste.
+
+E cada caso diz **onde conferir**: na tela, no sistema — executando a tarefa e cobrando a
+resposta — ou num serviço externo. Essa distinção existe porque já nos custou caro: um caso que
+só procurava a frase "Credenciais inválidas" na tela passava com um login que não conferia senha
+nenhuma.
+
+---
+
+### Cena 77 — O caso de uso que ficou com zero testes
+
+**TELA:** `shots/439-testes-uc-sem-casos.png`
+
+**NARRAÇÃO:**
+Na primeira rodada, um caso de uso entre trinta e três saiu com **zero casos de teste** — o
+cadastro de paciente com cateter. E ele tinha nove causas e dez efeitos: o grafo estava completo.
+
+Pedimos ao agente que refizesse. Não adiantou — e não podia adiantar, porque a tabela de decisão
+**não é escrita pelo modelo**: é calculada pelo programa, a partir do grafo.
+
+O defeito estava no cálculo. Ao montar cada coluna, o programa considera só as causas que entram
+na regra daquele efeito; as outras são indiferentes. Mas, na hora de conferir as restrições, ele
+tratava as indiferentes como **falsas** — e isso reprova para sempre uma restrição do tipo "pelo
+menos uma destas é verdadeira". Todas as combinações eram descartadas.
+
+Corrigido: a restrição só reprova quando é impossível satisfazê-la com **qualquer** valor das
+causas indiferentes.
+
+O caso de uso passou de zero para treze casos. E o efeito foi maior do que ele: no projeto
+inteiro, **de duzentos e setenta e dois para trezentos e sessenta e um casos** — oitenta e nove
+testes que existiam por direito e estavam sendo engolidos em silêncio.
+
+---
+
+### Cena 78 — O que a etapa admite sobre si mesma
+
+**NARRAÇÃO:**
+Dezesseis casos saem marcados como **contraditórios**, com o motivo escrito: *"todas as causas são
+verdadeiras e o efeito descreve uma exceção — falta na tabela a causa que a dispara"*.
+
+É a etapa dizendo que o grafo daquele caso de uso está incompleto: a exceção existe no texto, mas
+a condição que a provoca não foi declarada como causa.
+
+Ela podia ter escondido — bastava não marcar. Preferiu entregar o caso com a ressalva colada.
+
+**NOTA DE PRODUÇÃO:** cena sem captura — narrar sobre a tela da Cena 76.
+
+---

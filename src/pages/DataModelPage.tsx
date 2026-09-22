@@ -202,6 +202,30 @@ const DataModelPage: React.FC = () => {
     }
   };
 
+  // Reconfere o esquema guardado sem regerar nada. Existe porque o relatório de conferência é
+  // gravado na geração: quando o defeito está no CONFERENTE, corrigir o programa não limpa o
+  // alarme antigo, e a etapa continua acusando um esquema que aplica.
+  const [reconferindo, setReconferindo] = useState(false);
+  const reconferir = async () => {
+    if (!session?.session_id) { toast.error("Gere o Modelo de Dados antes de conferir."); return; }
+    setReconferindo(true);
+    try {
+      const r = await fetch(`${API_BASE}/data-model/${session.session_id}/reconferir`, {
+        method: "POST", headers, body: JSON.stringify({}),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d?.detail || `HTTP ${r.status}`);
+      toast.success(d.aplica
+        ? `Esquema aplica: ${d.tabelas_criadas} tabelas criadas, ${d.problemas_restantes} problema(s) restante(s).`
+        : `O esquema continua não aplicando — veja o relatório.`);
+      await loadLatest();
+    } catch (e: any) {
+      toast.error(`Falha ao reconferir: ${e.message}`);
+    } finally {
+      setReconferindo(false);
+    }
+  };
+
   const review = async () => {
     if (!session?.session_id) {
       toast.error("Gere o Modelo de Dados antes de revisar.");
@@ -384,6 +408,15 @@ const DataModelPage: React.FC = () => {
         <option value="postgresql">PostgreSQL</option>
         <option value="sqlite">SQLite</option>
       </select>
+      <button
+        onClick={reconferir}
+        disabled={!session?.session_id || reconferindo || generating}
+        title="Aplica o esquema guardado num banco descartável e atualiza o relatório — sem regerar e sem usar modelo"
+        style={{ width: "100%", marginTop: 10, padding: "8px 10px", borderRadius: 6,
+                 border: "1px solid #d1d5db", background: "#f8fafc", fontSize: 13, cursor: "pointer" }}
+      >
+        {reconferindo ? "Conferindo…" : "🧪 Conferir o esquema de novo"}
+      </button>
     </div>
   );
 

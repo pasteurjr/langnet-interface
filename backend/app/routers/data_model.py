@@ -625,6 +625,57 @@ def get_version(session_id: str, version: int, current_user=Depends(get_current_
     }
 
 
+@router.post("/{session_id}/reconferir")
+def reconferir_esquema(session_id: str, current_user=Depends(get_current_user)):
+    """Refaz a conferência do esquema guardado, sem regerar nada e sem chamar modelo.
+
+    POR QUE: o relatório de conferência é gravado no momento da geração. Quando o defeito está no
+    CONFERENTE e não no esquema, corrigir o programa não limpa o alarme antigo — a etapa continua
+    mostrando "O SCHEMA NÃO APLICA" em vermelho sobre um esquema que aplica. Medido no BioByte em
+    22/09/2026: o divisor de comandos cortava dentro do texto dos comentários; corrigido o
+    divisor, o esquema aplica com 24 tabelas e zero erros, mas o alarme velho permanecia na tela.
+
+    Aqui só se refaz a parte determinística: aplicar o esquema num banco descartável e contar.
+    """
+    from agents.langnetdatamodel import _validate_schema_executable
+    row = _fetch_session(session_id)
+    sql = row.get("schema_sql") or ""
+    dbms = row.get("target_dbms") or "mysql"
+    resultado = _validate_schema_executable(sql, dbms)
+    anterior = row.get("validation_report") or ""
+    try:
+        relatorio = json.loads(anterior) if anterior else {}
+    except Exception:
+        relatorio = {}
+    if not isinstance(relatorio, dict):
+        relatorio = {}
+    aplicou = bool(resultado and resultado.get("applied"))
+    # tira do relatório os problemas que falavam da aplicação do esquema
+    problemas = [p for p in (relatorio.get("issues") or [])
+                 if "SCHEMA NÃO APLICA" not in str(p.get("issue", ""))]
+    if not aplicou:
+        problemas.append({"severity": "high", "category": "schema",
+                          "issue": "O SCHEMA NÃO APLICA: " + str((resultado or {}).get("errors"))[:300]})
+    relatorio["issues"] = problemas
+    if aplicou:
+        relatorio["schema_aplica"] = {"tabelas_criadas": (resultado or {}).get("tables_created", 0),
+                                      "erros": []}
+        base = relatorio.get("score")
+        if isinstance(base, (int, float)) and base < 100 and not problemas:
+            relatorio["score"] = 100
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute("UPDATE data_model_sessions SET validation_report=%s WHERE id=%s",
+                        (json.dumps(relatorio, ensure_ascii=False), session_id))
+            conn.commit()
+        finally:
+            cur.close()
+    return {"session_id": session_id, "aplica": aplicou,
+            "tabelas_criadas": (resultado or {}).get("tables_created", 0),
+            "problemas_restantes": len(problemas)}
+
+
 @router.post("/{session_id}/review")
 def review_session(session_id: str, current_user=Depends(get_current_user)):
     """Revisão automática (LLM): retorna sugestões de melhoria do Modelo de Dados.
