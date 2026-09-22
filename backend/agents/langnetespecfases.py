@@ -110,17 +110,37 @@ def requisitos_funcionais(requisitos_md: str) -> List[str]:
     return sorted({f"FR-{n.zfill(3)}" for n in achados})
 
 
+def _limpar_titulo(t: str) -> str:
+    """Deixa o título em UMA linha, sem barra vertical e sem marcação — para não rasgar a tabela.
+
+    POR QUE: o padrão de busca aceitava quebra de linha dentro do título e capturava um pedaço do
+    documento de requisitos inteiro. Medido no BioByte em 22/09/2026: o título do FR-040 veio com
+    o cabeçalho "## 12. Mapa de Cobertura" dentro, o que partiu a linha da matriz ao meio, criou
+    uma segunda seção 12 na especificação e fez o portão de rastreabilidade acusar FR-040 como
+    requisito sem caso de uso — sendo que ele estava mapeado no UC-008 e no UC-010.
+    """
+    t = str(t or "").split("\n")[0]
+    t = t.replace("|", "/").replace("#", "").strip(" -–—*`")
+    t = re.sub(r"\s+", " ", t).strip()
+    return t[:60]
+
+
 def _titulo_do_requisito(requisitos_md: str, fr: str) -> str:
     """Título do requisito na tabela de requisitos (para a matriz sair legível)."""
     alt = fr.replace("FR-", "RF-")
     for ident in (fr, alt):
-        m = re.search(re.escape(ident) + r"\s*\|[^|]*\|\s*([^|]+)\|", requisitos_md or "")
+        # a captura não pode atravessar linha: o título vive na MESMA linha do identificador
+        m = re.search(re.escape(ident) + r"[^|\n]*\|[^|\n]*\|\s*([^|\n]+)\|", requisitos_md or "")
         if m:
-            return m.group(1).strip()[:60]
+            limpo = _limpar_titulo(m.group(1))
+            if limpo and limpo.upper() not in (fr, alt):
+                return limpo
         m = re.search(re.escape(ident) + r"\s*[:\-–]\s*([^\n|]{4,80})", requisitos_md or "")
         if m:
-            return m.group(1).strip()[:60]
-    return fr
+            limpo = _limpar_titulo(m.group(1))
+            if limpo:
+                return limpo
+    return "—"
 
 
 # ─────────────────────────────── fase 1: o plano ───────────────────────────────
