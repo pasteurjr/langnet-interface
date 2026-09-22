@@ -102,6 +102,42 @@ def expr_causes(expr: Any, acc: Optional[set] = None) -> set:
 # ─────────────────────────────────────────────────────────────
 # Restrições entre causas
 # ─────────────────────────────────────────────────────────────
+def _restricao_possivel(definidas: Dict[str, bool], livres: set, c: dict) -> bool:
+    """Diz se a restrição AINDA pode ser satisfeita, sabendo só as causas DEFINIDAS.
+
+    POR QUE: o montador da tabela enumera apenas as causas que entram na expressão do efeito;
+    as demais são indiferentes. Ao conferir as restrições, ele completava as indiferentes com
+    FALSO — e isso reprovava toda restrição do tipo "pelo menos uma" sobre causas indiferentes.
+    Medido no BioByte em 22/09/2026: o UC-003 tinha 9 causas, 10 efeitos e uma restrição
+    `O(c8, c9)`; TODAS as combinações foram descartadas e o caso de uso ficou com ZERO casos de
+    teste. Não é defeito do modelo: a informação estava correta, quem errou foi a conferência.
+
+    A regra passa a ser: a restrição só reprova quando é impossível satisfazê-la com QUALQUER
+    valor das causas indiferentes.
+    """
+    t = (c.get("type") or "").upper()
+    cs = [x for x in c.get("causes", []) if x in definidas or x in livres]
+    if not cs:
+        return True
+    vals = [definidas[x] for x in cs if x in definidas]
+    n_livres = sum(1 for x in cs if x not in definidas)
+    if t == "E":      # no máximo uma verdadeira
+        return sum(vals) <= 1
+    if t == "O":      # uma e só uma
+        verdadeiras = sum(vals)
+        if verdadeiras > 1:
+            return False
+        return verdadeiras == 1 or n_livres > 0
+    if t == "S":      # todas iguais
+        return len(set(vals)) <= 1
+    if t == "C":      # a primeira verdadeira obriga as demais
+        primeira = cs[0]
+        if primeira in definidas and definidas[primeira]:
+            return all(definidas.get(x, True) for x in cs[1:])
+        return True
+    return True
+
+
 def _cause_constraints_ok(assign: Dict[str, bool], constraints: List[dict]) -> bool:
     for c in constraints or []:
         t = (c.get("type") or "").upper()
@@ -166,9 +202,10 @@ def build_decision_table(ceg: dict) -> List[dict]:
         for combo in product([True, False], repeat=len(involved)):
             partial = dict(zip(involved, combo))
             # completa as não-envolvidas como False só para avaliar restrições/efeitos
-            full = {c: partial.get(c, False) for c in cause_ids}
-            if not _cause_constraints_ok(full, constraints):
+            livres = {c for c in cause_ids if c not in partial}
+            if not all(_restricao_possivel(partial, livres, r) for r in (constraints or [])):
                 continue
+            full = {c: partial.get(c, False) for c in cause_ids}
             if not eval_expr(expr, full):
                 continue  # combinação não ativa o efeito
             # efeitos com lógica de 3 valores: don't-care = None (indeterminado).
