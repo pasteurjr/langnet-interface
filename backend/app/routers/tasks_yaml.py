@@ -1,3 +1,4 @@
+import re
 """
 API Router: Tasks YAML Generation
 Gera tasks.yaml a partir de documentos MD de especificação de agentes/tarefas
@@ -27,6 +28,103 @@ from prompts.generate_single_task_yaml import (
     build_single_task_prompt, extract_task_block,
 )
 from prompts.review_tasks_yaml import get_review_tasks_yaml_prompt
+
+
+
+def _projeto_da_sessao(tabela: str, session_id: str) -> str:
+    """Descobre o projeto a partir da sessão — a função de geração só recebe a sessão."""
+    from app.database import get_db_connection as _conn
+    try:
+        with _conn() as c:
+            cur = c.cursor(dictionary=True)
+            cur.execute(f"SELECT project_id FROM {tabela} WHERE id=%s", (session_id,))
+            row = cur.fetchone()
+            cur.close()
+        return str(row["project_id"]) if row and row.get("project_id") else ""
+    except Exception:
+        return ""
+
+
+def _ferramentas_do_inventario(project_id: str) -> dict:
+    """Devolve {quem_usa: [ferramentas]} a partir do inventário da etapa Ferramentas.
+
+    POR QUE: a etapa Ferramentas resolve QUEM implementa cada serviço, e guarda em cada
+    ferramenta a lista de quem a usa (`agente:nome`, `tarefa:nome`). Essa informação não chegava
+    ao YAML: medido no BioByte em 22/09/2026, os 15 agentes e as 45 tarefas saíram SEM NENHUMA
+    ferramenta declarada — o aplicativo gerado não teria como chamar o laboratório, o escore de
+    Cox nem o e-mail, que são as três integrações reais do sistema.
+
+    Quem liga as duas pontas é o programa, não o modelo: a resposta já está gravada.
+    Ferramenta que o inventário marcou como NÃO resolvida fica de fora — declarar ferramenta que
+    ninguém implementa seria pior que a falta.
+    """
+    import json as _json
+    from app.database import get_db_connection as _conn
+    uso: dict = {}
+    try:
+        with _conn() as c:
+            cur = c.cursor(dictionary=True)
+            cur.execute(
+                """SELECT tools_json FROM tool_sessions
+                   WHERE project_id=%s AND status='completed'
+                   ORDER BY created_at DESC LIMIT 1""", (project_id,))
+            row = cur.fetchone()
+            cur.close()
+        if not row or not row.get("tools_json"):
+            return uso
+        dados = _json.loads(row["tools_json"])
+        ferramentas = dados if isinstance(dados, list) else (dados.get("tools") or [])
+        for f in ferramentas:
+            if not f.get("resolvida"):
+                continue
+            nome = str(f.get("nome") or "").strip()
+            if not nome:
+                continue
+            for quem in (f.get("usada_por") or []):
+                q = str(quem).strip()
+                if ":" in q:
+                    q = q.split(":", 1)[1].strip()
+                if q:
+                    uso.setdefault(q, [])
+                    if nome not in uso[q]:
+                        uso[q].append(nome)
+    except Exception as e:
+        print(f"[YAML] inventário de ferramentas indisponível: {e}")
+    return uso
+
+
+def _acrescentar_ferramentas_ao_yaml(conteudo: str, uso: dict) -> str:
+    """Escreve `tools:` em cada bloco do YAML cujo nome aparece no inventário.
+
+    Trabalha no texto para não reescrever o arquivo inteiro (comentários e ordem se mantêm).
+    Bloco que já declara `tools:` não é tocado.
+    """
+    if not conteudo or not uso:
+        return conteudo
+    linhas = conteudo.splitlines()
+    saida, i, n = [], 0, len(linhas)
+    while i < n:
+        linha = linhas[i]
+        saida.append(linha)
+        m = re.match(r"^([A-Za-z_][\w\-]*):\s*$", linha)
+        if m:
+            nome = m.group(1)
+            ferramentas = uso.get(nome)
+            if ferramentas:
+                # varre o bloco para ver se já tem tools:
+                j, tem_tools, recuo = i + 1, False, "  "
+                while j < n and (not linhas[j].strip() or linhas[j].startswith((" ", "\t"))):
+                    if re.match(r"^\s+tools\s*:", linhas[j]):
+                        tem_tools = True
+                    if linhas[j].strip() and not linhas[j].strip().startswith("#"):
+                        recuo = linhas[j][: len(linhas[j]) - len(linhas[j].lstrip())] or "  "
+                    j += 1
+                if not tem_tools:
+                    saida.append(f"{recuo}tools:")
+                    for f in ferramentas:
+                        saida.append(f"{recuo}  - {f}")
+        i += 1
+    return "\n".join(saida) + ("\n" if conteudo.endswith("\n") else "")
 
 router = APIRouter(prefix="/tasks-yaml", tags=["tasks-yaml"])
 
@@ -176,6 +274,15 @@ async def execute_tasks_yaml_generation(
                 tasks_yaml_content = _sanitize_task_keys(tasks_yaml_content)
                 print(f"[TASKS_YAML] chunked OK: {stats['ok']} ok, {stats['retried']} retried, "
                       f"{stats['failed']} failed, {stats['with_sql']} with SQL")
+
+        # As ferramentas resolvidas na etapa anterior entram aqui — o inventário já
+        # diz quem usa cada uma; sem isto o YAML sai sem ferramenta nenhuma.
+        _uso = _ferramentas_do_inventario(_projeto_da_sessao("tasks_yaml_sessions", session_id))
+        if _uso:
+            _antes = tasks_yaml_content
+            tasks_yaml_content = _acrescentar_ferramentas_ao_yaml(tasks_yaml_content, _uso)
+            if tasks_yaml_content != _antes:
+                print(f"[YAML] ferramentas ligadas a partir do inventário: {len(_uso)} destinatário(s)")
 
         end_time = datetime.now()
         generation_time_ms = int((end_time - start_time).total_seconds() * 1000)
