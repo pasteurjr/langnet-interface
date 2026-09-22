@@ -3152,6 +3152,44 @@ def _campos_de_saida_da_tarefa(cfg: dict) -> list:
         esquema = cfg.get("output_schema") or {}
         props = (esquema.get("properties") or {}) if isinstance(esquema, dict) else {}
         campos = [k for k in props if k not in ("type", "required")]
+    if not campos:
+        # A tarefa pode declarar a saída em PROSA, no `expected_output`: "retornar um texto em
+        # formato JSON contendo as seguintes keys: - resultado_id: UUID - situacao: String".
+        # Sem ler isto, NENHUM lugar da rede declarava o que entrega — medido no BioByte em
+        # 22/09/2026: 0 de 49 lugares com saída declarada, 41 com entrada. A consequência é que a
+        # rede não sabia de onde vem cada dado e nenhuma tarefa solta podia ser costurada.
+        texto = str(cfg.get("expected_output") or "")
+        for linha in _re.split(r"[\n]|(?=\s-\s)", texto):
+            m = _re.match(r"\s*-?\s*([a-z_][a-z0-9_]{2,40})\s*:", linha.strip(), _re.I)
+            if not m:
+                continue
+            nome = m.group(1).strip()
+            if nome.lower() in ("keys", "key", "json", "formato", "retornar", "exemplo",
+                                "type", "required", "obs", "observacao", "nota"):
+                continue
+            if nome not in campos:
+                campos.append(nome)
+    if not campos:
+        # Outro estilo de prosa, igualmente comum: "um objeto JSON com os campos status e
+        # mensagem" / "com o campo \"notificacoes\"". Aqui só se aceita nome CITADO entre aspas
+        # ou listado logo após "campo(s)/chave(s)" — para não recolher palavra solta do texto.
+        texto = str(cfg.get("expected_output") or "")
+        m = _re.search(r"(?:campos?|chaves?|keys?)\s*:?\s*(.{0,260})", texto, _re.I | _re.S)
+        if m:
+            trecho = m.group(1).split(".")[0]
+            citados = _re.findall(r'["\u201c\u2018\u0060]([a-z_][a-z0-9_]{2,40})["\u201d\u2019\u0060]', trecho, _re.I)
+            if citados:
+                for n in citados:
+                    if n not in campos:
+                        campos.append(n)
+            else:
+                for pedaco in _re.split(r",|\s+e\s+|;", trecho):
+                    n = pedaco.strip().strip('"\u201c\u201d')
+                    if _re.fullmatch(r"[a-z_][a-z0-9_]{2,40}", n or "", _re.I) and n.lower() not in (
+                            "json", "objeto", "texto", "formato", "lista", "string", "enum",
+                            "inteiro", "com", "que", "cada", "item", "contendo", "caso", "um"):
+                        if n not in campos:
+                            campos.append(n)
     return campos
 
 
@@ -3328,6 +3366,165 @@ def _conferir_e_reparar_estrutura(net: Dict[str, Any]) -> Dict[str, Any]:
     if not consertos and not pendencias:
         print("[PETRI PORTÃO] estrutura passou sem reparo")
     return net
+
+def _costurar_tarefas_pelo_dado(net: Dict[str, Any], fluxo_md: str = "") -> Dict[str, Any]:
+    """Liga ao fluxo a tarefa que ficou solta, usando o DADO que ela consome.
+
+    POR QUE: a rede é desenhada pelo modelo, e ele deixa de fora justamente as tarefas chamadas
+    sob demanda — as de tratamento de falha. Medido no BioByte em 22/09/2026: `exibir_campo_sem_dado`
+    formava ilha (tinha arcos só para si mesma, nunca alcançada a partir da ficha inicial) e
+    `tratar_falta_dado_estimativa` consumia `dado_faltante` de uma tarefa que não a precedia.
+    Pedir ao modelo que ligasse não resolveu em duas tentativas — ele acrescentou 28 arcos e
+    nenhum era esse.
+
+    A informação para ligar já está na rede: cada lugar declara o que ENTREGA (`output_data`) e o
+    que CONSOME (`input_data`), tirado do contrato da própria tarefa. Então a regra é do programa:
+    tarefa não alcançada, ou cuja entrada não tem produtor antes dela, recebe um arco vindo do
+    lugar que produz esse dado — e só desse. Sem produtor, fica pendente e é declarada, como antes.
+    """
+    import re  # este módulo não importa `re` no topo
+    lugares = {l["id"]: l for l in net.get("lugares", []) if l.get("id")}
+    transicoes = {t["id"]: t for t in net.get("transicoes", []) if t.get("id")}
+    arcos = net.get("arcos", []) or []
+
+    def _chave(c):
+        return re.sub(r"[^a-z0-9]", "", str(c).lower())
+
+    saindo, entrando = {}, {}
+    for a in arcos:
+        saindo.setdefault(a.get("origem"), []).append(a.get("destino"))
+        entrando.setdefault(a.get("destino"), []).append(a.get("origem"))
+
+    def _alcancaveis(inicio):
+        vistos, fila = set(), [inicio]
+        while fila:
+            x = fila.pop()
+            if x in vistos:
+                continue
+            vistos.add(x)
+            fila.extend(saindo.get(x, []))
+        return vistos
+
+    inicio = "P0" if "P0" in lugares else (next(iter(lugares), None))
+    if not inicio:
+        return net
+    alcance = _alcancaveis(inicio)
+
+    # Pares produtor→consumidor DECLARADOS no documento de sequência. É a única fonte confiável:
+    # por nome de campo, "estado" ou "acao" casam por coincidência e criam dependência falsa.
+    declarado = []           # (nome_produtor, nome_consumidor, campo)
+    if fluxo_md:
+        blocos = re.split(r"\n### Task \d+:\s*", fluxo_md)[1:]
+        id2nome = {}
+        for b in blocos:
+            m = re.search(r"\*\*ID:\*\*\s*(\S+)", b)
+            if m:
+                id2nome[m.group(1).strip()] = b.split("\n")[0].strip()
+        for b in blocos:
+            consumidor = b.split("\n")[0].strip()
+            m = re.search(r"\*\*Input Schema:\*\*(.*?)(?=\n\*\*|\n###|\Z)", b, re.S)
+            if not m:
+                continue
+            for linha in m.group(1).splitlines():
+                campo = (re.search(r"\*\*(.+?)\*\*", linha) or [None, ""])[1]
+                for ref in re.findall(r"T-[A-Z]+-\d+", linha):
+                    produtor = id2nome.get(ref)
+                    if produtor and produtor != consumidor:
+                        declarado.append((produtor, consumidor, campo))
+
+    # o que cada lugar entrega
+    entrega = {}
+    for pid, l in lugares.items():
+        for campo in (l.get("output_data") or {}):
+            entrega.setdefault(_chave(campo), []).append(pid)
+
+    t_por_nome = {(t.get("task_name") or re.sub(r"^T_", "", tid)): tid
+                  for tid, t in transicoes.items()}
+    costuras = []
+    for tid, t in transicoes.items():
+        if not t.get("task_id"):
+            continue
+        # lugar da tarefa: o que alimenta esta transição
+        fontes = [p for p in entrando.get(tid, []) if p in lugares]
+        consome = []
+        for p in fontes + [pid for pid in lugares if pid == "P_" + re.sub(r"^T_", "", tid)]:
+            consome += list((lugares.get(p) or {}).get("input_data") or {})
+        # SÓ a tarefa não alcançada é costurada. Ligar também por "entrada sem produtor antes"
+        # parecia certo e não é: campo de nome genérico casa por coincidência e cria dependência
+        # falsa. Medido em 22/09/2026: a primeira versão ligou `cadastrar_paciente_e_caso` a
+        # `registrar_auditoria` por causa de um campo chamado "estado".
+        if tid in alcance:
+            continue
+        alvo_campos = consome
+
+        # Campo de nome genérico não serve de prova de dependência.
+        _GENERICOS = {"estado", "status", "acao", "mensagem", "erro", "id", "data", "tipo",
+                      "resultado", "situacao", "valor", "nome", "descricao", "observacao"}
+        alvo_campos = [c for c in alvo_campos if _chave(c) not in {_chave(g) for g in _GENERICOS}]
+        candidatos = []
+        for campo in alvo_campos:
+            for p in entrega.get(_chave(campo), []):
+                if p in alcance and p != "P_" + re.sub(r"^T_", "", tid):
+                    candidatos.append((p, campo))
+        if not candidatos:
+            continue
+        # o produtor que cobre mais campos desta tarefa
+        from collections import Counter as _C
+        melhor = _C(p for p, _ in candidatos).most_common(1)[0][0]
+        campos = sorted({c for p, c in candidatos if p == melhor})
+        if melhor in entrando.get(tid, []):
+            continue
+        arcos.append({"id": f"A_costura_{melhor}_{tid}", "origem": melhor, "destino": tid,
+                      "peso": 1, "tipo": "normal"})
+        saindo.setdefault(melhor, []).append(tid)
+        entrando.setdefault(tid, []).append(melhor)
+        alcance = _alcancaveis(inicio)
+        costuras.append(f"{tid} ligada a {melhor} pelo dado que consome ({', '.join(campos[:3])})")
+
+    # Passada 2: ordem DECLARADA pela sequência. Se a sequência diz que B consome um dado de A,
+    # A precisa vir antes de B na rede. Aqui não há adivinhação de nome: o par veio escrito.
+    for produtor, consumidor, campo in declarado:
+        t_cons = t_por_nome.get(consumidor)
+        t_prod = t_por_nome.get(produtor)
+        if not t_cons or not t_prod:
+            continue
+        # O lugar a usar é o de SAÍDA do produtor, não o de entrada dele. Nesta rede o lugar
+        # "tarefa pronta" vem ANTES da transição "Executar tarefa": ligar o consumidor ao lugar
+        # de entrada faz as duas dispararem EM PARALELO, que é o oposto do que a sequência pede.
+        # Medido em 22/09/2026: a primeira versão desta passada levou as violações de 1 para 12.
+        saidas_do_produtor = [p for p in saindo.get(t_prod, []) if p in lugares]
+        if not saidas_do_produtor:
+            continue
+        p_prod = saidas_do_produtor[0]
+        if t_cons in _alcancaveis(p_prod):
+            continue
+        if p_prod in entrando.get(t_cons, []):
+            continue
+        arcos.append({"id": f"A_ordem_{p_prod}_{t_cons}", "origem": p_prod, "destino": t_cons,
+                      "peso": 1, "tipo": "normal"})
+        saindo.setdefault(p_prod, []).append(t_cons)
+        entrando.setdefault(t_cons, []).append(p_prod)
+        alcance = _alcancaveis(inicio)
+        costuras.append(f"{t_cons} passou a vir depois de {p_prod}: a sequência declara que "
+                        f"consome \"{campo}\" produzido por {produtor}")
+
+    if costuras:
+        net["arcos"] = arcos
+        conf = net.setdefault("conferencia_estrutural", {"consertos": [], "pendencias": []})
+        conf.setdefault("consertos", []).extend(costuras)
+        # a pendência de tarefa não alcançada some se a costura resolveu
+        restantes = [tid for tid, t in transicoes.items()
+                     if t.get("task_id") and tid not in alcance]
+        conf["pendencias"] = [p for p in (conf.get("pendencias") or [])
+                              if "não é(são) alcançada(s)" not in p]
+        if restantes:
+            conf["pendencias"].append(
+                f"{len(restantes)} tarefa(s) não é(são) alcançada(s) pelo fluxo: "
+                f"{', '.join(restantes[:6])}")
+        for linha in costuras:
+            print(f"[PETRI COSTURA] {linha}")
+    return net
+
 
 def _preencher_dados_dos_lugares(net: Dict[str, Any], tasks_yaml: str) -> Dict[str, Any]:
     """Diz, em cada posição da rede, o que ENTRA nela e o que ela ENTREGA — pelos arcos.
@@ -3644,6 +3841,10 @@ def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNe
     adapted = _preencher_dados_dos_lugares(adapted, state.get("tasks_yaml") or "")
     # De onde vem cada entrada: de um lugar anterior, ou de fora (tela/operador).
     adapted = _declarar_origem_das_entradas(adapted)
+    # Costura pelo dado: só agora a rede sabe o que cada lugar entrega e consome, então é aqui
+    # que dá para ligar a tarefa que o modelo deixou solta.
+    adapted = _costurar_tarefas_pelo_dado(
+        adapted, (state.get("dependencies") or {}).get("flow_document_md") or "")
     print(
         f"[PETRI OUT] adapted: lugares={len(adapted.get('lugares', []))} "
         f"transicoes={len(adapted.get('transicoes', []))} "
