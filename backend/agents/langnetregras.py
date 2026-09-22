@@ -1163,9 +1163,42 @@ _MOTIVO_FORA_DA_REGRA = {
 }
 
 
+def _normalizar_tipo_pelo_formato(passos: Any) -> int:
+    """Corrige o NOME do passo quando o formato dele já diz o que ele é.
+
+    POR QUE: o passo que guarda o resultado de uma expressão num nome chama-se `calculo` e tem
+    dois campos, `atribui` e `expressao`. O modelo às vezes escreve `tipo: atribui` — usando o
+    nome do campo como nome do passo — e o contrato inteiro é recusado por causa do rótulo,
+    embora o passo esteja completo e correto. Medido no BioByte em 21/09/2026: o leitor de JSON,
+    usado por quatro tarefas, ficou pendente por isto e por nada mais.
+
+    A correção é conservadora: só troca o nome quando os campos são EXATAMENTE os do passo certo.
+    Passo faltando campo continua sendo recusado — o rótulo não vira desculpa.
+    """
+    trocados = 0
+    if not isinstance(passos, list):
+        return 0
+    for p in passos:
+        if not isinstance(p, dict):
+            continue
+        tipo = str(p.get("tipo") or "").lower()
+        if tipo in ("atribui", "atribuicao", "atribuição", "define", "definicao"):
+            if p.get("atribui") and p.get("expressao"):
+                p["tipo"] = "calculo"
+                trocados += 1
+        # passos de dentro de condição e de laço contam igual: o defeito de rótulo aparece lá
+        # com a mesma frequência, e recusar o contrato inteiro por causa deles é o mesmo erro.
+        for campo in ("passos", "entao", "senao", "corpo", "then", "else"):
+            filho = p.get(campo)
+            if isinstance(filho, list):
+                trocados += _normalizar_tipo_pelo_formato(filho)
+    return trocados
+
+
 def validar_regra(passos: Any, entrada: Any = None) -> List[dict]:
     """Confere o contrato de uma ferramenta por regra. Devolve a lista de problemas (vazia = ok)."""
     problemas: List[dict] = []
+    _normalizar_tipo_pelo_formato(passos)
     if not isinstance(passos, list) or not passos:
         return [_erro("-", "a regra precisa de `passos` — descreva o cálculo em passos, "
                            "como no contrato das tarefas")]
