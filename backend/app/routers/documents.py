@@ -677,6 +677,44 @@ async def get_document(
     }
 
 
+@router.get("/{document_id}/conteudo")
+def ler_conteudo_do_documento(document_id: str, current_user=Depends(get_current_user)):
+    """Devolve o TEXTO do documento carregado, para ser lido dentro do sistema.
+
+    POR QUE: o documento de origem é o que justifica todo o resto do pipeline, e não havia como
+    abri-lo na interface — a lista mostrava o nome do arquivo e o visualizador mostrava apenas o
+    que a análise extraiu (entidades, requisitos, problemas). Quem quisesse conferir se um
+    requisito corresponde ao que a ata diz precisava abrir o arquivo fora do sistema.
+
+    Só leitura, e só texto: PDF e formatos binários voltam com aviso em vez de bytes.
+    """
+    from pathlib import Path as _Path
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT original_filename, file_type, file_path, file_size FROM documents WHERE id=%s",
+                    (document_id,))
+        row = cur.fetchone()
+        cur.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Documento não encontrado")
+    caminho = _Path(row["file_path"])
+    if not caminho.is_absolute():
+        caminho = _Path(__file__).resolve().parents[2] / row["file_path"]
+    if not caminho.exists():
+        raise HTTPException(status_code=404, detail=f"Arquivo não está no disco: {row['file_path']}")
+    tipo = (row.get("file_type") or "").lower()
+    if tipo in ("txt", "md", "markdown", "csv", "json", "yaml", "yml"):
+        try:
+            texto = caminho.read_text(encoding="utf-8", errors="replace")
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Não foi possível ler o arquivo: {e}")
+        return {"document_id": document_id, "filename": row["original_filename"],
+                "tipo": tipo, "tamanho": row.get("file_size"), "conteudo": texto}
+    return {"document_id": document_id, "filename": row["original_filename"],
+            "tipo": tipo, "tamanho": row.get("file_size"),
+            "conteudo": "", "aviso": "Formato não é texto; use o download do arquivo."}
+
+
 @router.post("/{document_id}/analyze")
 async def analyze_document(
     document_id: int,

@@ -291,11 +291,14 @@ const DocumentsPage: React.FC = () => {
       const transformedDocs: Document[] = docs.map((doc: any) => ({
         id: doc.id.toString(),
         projectId: doc.project_id.toString(),
-        name: doc.name,
-        originalName: doc.name,
-        size: 0, // Backend doesn't return size
-        type: doc.type,
-        uploadedAt: doc.created_at,
+        name: doc.original_filename || doc.name,
+        originalName: doc.original_filename || doc.name,
+        // O backend DEVOLVE o tamanho (file_size) e a data (uploaded_at). Estava fixo em zero,
+        // com um comentário dizendo que não vinha — a tela mostrava "0 Bytes" e "Invalid Date"
+        // para todo documento carregado.
+        size: doc.file_size ?? doc.size ?? 0,
+        type: doc.type || doc.file_type || 'unknown',
+        uploadedAt: doc.uploaded_at || doc.created_at || new Date().toISOString(),
         status: mapBackendStatus(doc.status),
         extractedEntities: [],
         requirements: [],
@@ -796,7 +799,16 @@ const DocumentsPage: React.FC = () => {
                 documents.map(doc => (
                   <div key={doc.id} className={`document-item ${doc.status}`}>
                     <div className="doc-icon">📄</div>
-                    <div className="doc-info">
+                    {/* Abrir o documento carregado: a lista compacta mostrava só o NOME do
+                        arquivo — não havia como ler, dentro do sistema, o texto que originou
+                        todo o resto. O visualizador já existia; faltava ligá-lo aqui. */}
+                    <div
+                      className="doc-info"
+                      role="button"
+                      title={`Abrir ${doc.name}`}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => handleView(doc)}
+                    >
                       <div className="doc-name" title={doc.name}>{doc.name}</div>
                       <div className="doc-status">
                         {doc.status === DocumentStatus.UPLOADED && '⏸️ Pendente'}

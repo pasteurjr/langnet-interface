@@ -15,7 +15,24 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
   onClose,
   onExport
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'entities' | 'requirements' | 'issues'>('overview');
+  const [activeTab, setActiveTab] = useState<'texto' | 'overview' | 'entities' | 'requirements' | 'issues'>('overview');
+  // Texto do documento carregado: sem isto, o visualizador mostrava só o que a análise extraiu,
+  // e não havia como ler no sistema a fonte que originou todo o pipeline.
+  const [textoDoArquivo, setTextoDoArquivo] = React.useState<string>('');
+  const [carregandoTexto, setCarregandoTexto] = React.useState(false);
+  React.useEffect(() => {
+    if (!isOpen || !document?.id || String(activeTab) !== 'texto' || textoDoArquivo) return;
+    const API = process.env.REACT_APP_API_URL || 'http://localhost:8000/api';
+    const token = localStorage.getItem('accessToken') || localStorage.getItem('token');
+    setCarregandoTexto(true);
+    fetch(`${API}/documents/${document.id}/conteudo`, {
+      headers: { Authorization: token ? `Bearer ${token}` : '' },
+    })
+      .then((r) => r.json())
+      .then((d) => setTextoDoArquivo(d.conteudo || d.aviso || 'Sem conteúdo legível.'))
+      .catch((e) => setTextoDoArquivo(`Não foi possível ler o arquivo: ${e.message}`))
+      .finally(() => setCarregandoTexto(false));
+  }, [isOpen, document, activeTab, textoDoArquivo]);
 
   if (!isOpen || !document) return null;
 
@@ -94,6 +111,12 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
           >
             📊 Visão Geral
           </button>
+          <button
+            className={`tab ${activeTab === 'texto' ? 'active' : ''}`}
+            onClick={() => setActiveTab('texto')}
+          >
+            📄 Texto do documento
+          </button>
           <button 
             className={`tab ${activeTab === 'entities' ? 'active' : ''}`}
             onClick={() => setActiveTab('entities')}
@@ -115,6 +138,20 @@ const DocumentViewModal: React.FC<DocumentViewModalProps> = ({
         </div>
 
         <div className="modal-content">
+          {activeTab === 'texto' && (
+            <div className="texto-tab">
+              {carregandoTexto ? (
+                <p>Lendo o arquivo…</p>
+              ) : (
+                <pre style={{ whiteSpace: 'pre-wrap', fontFamily: 'ui-monospace, monospace',
+                              fontSize: 13, lineHeight: 1.5, background: '#f8fafc',
+                              border: '1px solid #e5e7eb', borderRadius: 6, padding: 16,
+                              maxHeight: '60vh', overflow: 'auto' }}>
+                  {textoDoArquivo}
+                </pre>
+              )}
+            </div>
+          )}
           {activeTab === 'overview' && (
             <div className="overview-tab">
               <div className="stats-grid">
