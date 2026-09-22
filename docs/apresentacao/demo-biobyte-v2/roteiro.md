@@ -1010,3 +1010,72 @@ auditoria de leitura, e o cadastro dos dois papéis novos. Nenhuma delas foi inv
 todas faltam mesmo no documento de origem.
 
 ---
+
+## Parte K — Ferramentas
+
+### Cena 60 — Quem implementa cada serviço
+
+**TELA:** `shots/379-ferramentas-etapa-aberta.png` e `shots/380-ferramentas-levantando.png`
+
+**NARRAÇÃO:**
+As tarefas pedem serviços: consultar o laboratório, calcular o escore, gravar no banco, ler um
+PDF, enviar e-mail. Esta etapa responde **quem implementa cada um**.
+
+Ela lê o documento de Agentes e Tarefas e levanta a lista — não por adivinhação: cada ferramenta
+vem com os agentes e as tarefas que a citam.
+
+Cinco ferramentas. Quatro se resolvem sozinhas: o acesso ao banco vira passo de consulta dentro da
+própria tarefa; a leitura de PDF e a execução de SQL já existem na biblioteca; a chamada externa é
+um encaminhador, e o serviço real é o que está atrás dele — laboratório, escore de Cox e e-mail,
+os três por MCP.
+
+---
+
+### Cena 61 — A quinta não se resolve, e a etapa diz por quê
+
+**TELA:** `shots/383-ferramentas-pendencia.png`
+
+**NARRAÇÃO:**
+A quinta fica pendente: o leitor de JSON, usado por quatro tarefas. E a etapa não esconde — diz o
+passo e o motivo.
+
+Aqui está o ponto que vale mostrar. O primeiro motivo era **de rótulo**: o passo que guarda o
+resultado de uma expressão chama-se *cálculo*, e o modelo escreveu *atribui* — o nome do campo no
+lugar do nome do passo. O passo estava completo e correto; o contrato inteiro era recusado pela
+etiqueta.
+
+Corrigido isso no programa — e só quando os campos são exatamente os do passo certo, para que
+passo incompleto continue sendo recusado — apareceram os **dois defeitos de verdade**, que a
+reclamação de nome vinha escondendo: uma expressão com colchete, que a linguagem de regras não
+tem, e um valor prometido na saída que nenhum passo produzia.
+
+---
+
+### Cena 62 — A correção pela conversa
+
+**TELA:** `shots/384-ferramentas-pedido.png` e `shots/385-ferramentas-depois-do-refino.png`
+
+**NARRAÇÃO:**
+O pedido vai pela conversa da etapa, dizendo o que a linguagem aceita:
+
+*"Reescreva sem colchete, com o passo de cálculo dados igual a de_json do texto. E acrescente um
+passo que produza o valor válido — o retorno só pode listar o que algum passo produziu."*
+
+A regra volta com seis passos, o valor válido produzido por um passo, e nenhum colchete.
+
+---
+
+### Cena 63 — Cinco de cinco
+
+**TELA:** `shots/386-ferramentas-inventario-resolvido.png` e `shots/387-ferramentas-aprovada.png`
+
+**NARRAÇÃO:**
+Cinco ferramentas, cinco resolvidas, nenhuma pendente. A etapa é aprovada, e a aprovação fica
+gravada com data e hora.
+
+**A honestidade da cena:** um passo da regra corrigida lê o campo chamado *caminho*, e não o campo
+*indicado* por caminho. O contrato aceita, porque a forma está certa. A semântica é duvidosa, e
+está anotada: quem vai cobrar isso é a etapa de Casos de Teste, executando a ferramenta e
+conferindo a resposta.
+
+---
