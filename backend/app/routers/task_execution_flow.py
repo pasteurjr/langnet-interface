@@ -327,10 +327,29 @@ async def generate_task_execution_flow(
     }
 
 
+def _tirar_cerca_externa(texto: str) -> str:
+    """Tira a cerca de código que envolve a resposta INTEIRA — e só ela.
+
+    POR QUE: a limpeza anterior usava busca linha a linha e apagava TODAS as cercas do texto,
+    inclusive as dos blocos de código de dentro do documento. Medido em 22/09/2026: as funções
+    de entrada e saída de todas as 45 tarefas saíram sem cerca, viradas texto solto.
+    """
+    t = (texto or "").strip()
+    if not t.startswith("```"):
+        return t
+    fim = t.rfind("```")
+    if fim <= 0:
+        return t
+    primeira_quebra = t.find("\n")
+    if primeira_quebra < 0 or primeira_quebra > fim:
+        return t
+    return t[primeira_quebra + 1:fim].strip()
+
+
 def _tarefas_do_yaml(tasks_yaml: str) -> list:
     """Nomes das tarefas, na ordem em que aparecem no arquivo de configuração."""
     import re as _re
-    texto = _re.sub(r"^```[a-z]*\n|```\s*$", "", (tasks_yaml or "").strip(), flags=_re.M)
+    texto = _tirar_cerca_externa(tasks_yaml)
     nomes, dentro = [], False
     for linha in texto.splitlines():
         m = _re.match(r"^([A-Za-z_][\w\-]*):\s*$", linha)
@@ -355,7 +374,7 @@ def _recorte_do_yaml(tasks_yaml: str, nomes: list) -> str:
     tarefas, em vez dos milhares que elas ocupam.
     """
     import re as _re
-    texto = _re.sub(r"^```[a-z]*\n|```\s*$", "", (tasks_yaml or "").strip(), flags=_re.M)
+    texto = _tirar_cerca_externa(tasks_yaml)
     linhas = texto.splitlines()
     alvo = set(nomes)
     # recuo em que as tarefas vivem: o da primeira chave que é uma delas
@@ -422,7 +441,7 @@ async def _fluxo_em_lotes(specification_document, agent_task_spec_document, task
             system="Você é especialista em design de workflows e state management (LangGraph).",
             temperature=0.3, max_tokens=12000)
         import re as _re
-        trecho = _re.sub(r"^```[a-z]*\n|```\s*$", "", (trecho or "").strip(), flags=_re.M)
+        trecho = _tirar_cerca_externa(trecho)
         # fora qualquer cabeçalho que o modelo tenha repetido
         pos = trecho.find("### Task")
         if pos > 0:
