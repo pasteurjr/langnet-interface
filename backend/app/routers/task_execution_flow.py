@@ -327,6 +327,114 @@ async def generate_task_execution_flow(
     }
 
 
+def _tarefas_do_yaml(tasks_yaml: str) -> list:
+    """Nomes das tarefas, na ordem em que aparecem no arquivo de configuração."""
+    import re as _re
+    texto = _re.sub(r"^```[a-z]*\n|```\s*$", "", (tasks_yaml or "").strip(), flags=_re.M)
+    nomes, dentro = [], False
+    for linha in texto.splitlines():
+        m = _re.match(r"^([A-Za-z_][\w\-]*):\s*$", linha)
+        if m:
+            nome = m.group(1)
+            if nome == "tasks":
+                dentro = True
+                continue
+            nomes.append(nome)
+        elif dentro:
+            m2 = _re.match(r"^  ([A-Za-z_][\w\-]*):\s*$", linha)
+            if m2:
+                nomes.append(m2.group(1))
+    return nomes
+
+
+def _recorte_do_yaml(tasks_yaml: str, nomes: list) -> str:
+    """Devolve só os blocos das tarefas pedidas — o modelo não precisa do arquivo inteiro.
+
+    O corte respeita o NÍVEL de recuo da chave da tarefa: campos internos (`tools:`, `agent:`)
+    estão mais fundos e não encerram o bloco. Ignorar isso devolvia 125 caracteres para seis
+    tarefas, em vez dos milhares que elas ocupam.
+    """
+    import re as _re
+    texto = _re.sub(r"^```[a-z]*\n|```\s*$", "", (tasks_yaml or "").strip(), flags=_re.M)
+    linhas = texto.splitlines()
+    alvo = set(nomes)
+    # recuo em que as tarefas vivem: o da primeira chave que é uma delas
+    recuo_tarefa = None
+    for l in linhas:
+        m = _re.match(r"^(\s*)([A-Za-z_][\w\-]*):\s*$", l)
+        if m and m.group(2) in alvo:
+            recuo_tarefa = len(m.group(1))
+            break
+    if recuo_tarefa is None:
+        return texto
+    saida, pegando = [], False
+    for l in linhas:
+        m = _re.match(r"^(\s*)([A-Za-z_][\w\-]*):\s*$", l)
+        if m and len(m.group(1)) == recuo_tarefa:
+            pegando = m.group(2) in alvo
+        if pegando:
+            saida.append(l)
+    return "\n".join(saida)
+
+
+async def _fluxo_em_lotes(specification_document, agent_task_spec_document, tasks_yaml,
+                          additional_docs_text, custom_instructions, por_lote: int = 6):
+    """Gera o fluxo em blocos de tarefas e monta o documento aqui, no programa.
+
+    POR QUE: numa resposta só, 45 tarefas não cabem — medido em 22/09/2026, o documento saiu
+    cortado no meio de uma frase com 8 de 45. Mesmo remédio já validado na Especificação e nos
+    Requisitos: dividir o pedido; o programa junta.
+    """
+    from prompts.generate_task_execution_flow import (
+        get_task_execution_flow_prompt, get_flow_prompt_em_lotes)
+
+    nomes = _tarefas_do_yaml(tasks_yaml)
+    if len(nomes) <= por_lote:
+        return await get_llm_response_async(
+            prompt=get_task_execution_flow_prompt(
+                specification_document, agent_task_spec_document, tasks_yaml,
+                additional_docs_text, custom_instructions or ""),
+            system="Você é especialista em design de workflows e state management (LangGraph).",
+            temperature=0.3, max_tokens=12000)
+
+    print(f"[TASK_FLOW] {len(nomes)} tarefas — gerando em lotes de {por_lote}")
+
+    # 1) cabeçalho, visão geral e definição do state: pedido curto, com a lista completa
+    cabecalho = await get_llm_response_async(
+        prompt=get_task_execution_flow_prompt(
+            specification_document, agent_task_spec_document, tasks_yaml,
+            additional_docs_text,
+            (custom_instructions or "") +
+            "\n\nIMPORTANTE: escreva APENAS as seções 1 (Visão Geral) e 2 (Definição do State), "
+            "cobrindo TODAS as tarefas. NÃO escreva a seção 3 nem as seções de cada tarefa."),
+        system="Você é especialista em design de workflows e state management (LangGraph).",
+        temperature=0.3, max_tokens=12000)
+    partes = [cabecalho.rstrip(), "", "## 3. Sequência de Execução", ""]
+
+    # 2) as tarefas, em blocos
+    for ini in range(0, len(nomes), por_lote):
+        bloco = nomes[ini:ini + por_lote]
+        trecho = await get_llm_response_async(
+            prompt=get_flow_prompt_em_lotes(
+                specification_document, agent_task_spec_document,
+                _recorte_do_yaml(tasks_yaml, bloco), bloco, ini + 1, len(nomes),
+                custom_instructions or ""),
+            system="Você é especialista em design de workflows e state management (LangGraph).",
+            temperature=0.3, max_tokens=12000)
+        import re as _re
+        trecho = _re.sub(r"^```[a-z]*\n|```\s*$", "", (trecho or "").strip(), flags=_re.M)
+        # fora qualquer cabeçalho que o modelo tenha repetido
+        pos = trecho.find("### Task")
+        if pos > 0:
+            trecho = trecho[pos:]
+        partes.append(trecho.rstrip())
+        partes.append("")
+        print(f"[TASK_FLOW] lote {ini//por_lote + 1}: tarefas {ini+1}-{ini+len(bloco)} "
+              f"({len(trecho)} caracteres)")
+
+    return "\n".join(partes)
+
+
 async def execute_flow_generation(
     session_id: str,
     specification_document: str,
@@ -359,12 +467,9 @@ async def execute_flow_generation(
         # LLM call
         # max_tokens=12000: um documento de fluxo tem poucos KB; reservar 32K de saída
         # somado a specs grandes (~34K de entrada) estourava a janela de 64K do LLM local.
-        flow_document = await get_llm_response_async(
-            prompt=prompt,
-            system="Você é especialista em design de workflows e state management (LangGraph).",
-            temperature=0.3,
-            max_tokens=12000
-        )
+        flow_document = await _fluxo_em_lotes(
+            specification_document, agent_task_spec_document, tasks_yaml,
+            additional_docs_text, custom_instructions)
 
         end_time = datetime.now()
         generation_time_ms = int((end_time - start_time).total_seconds() * 1000)

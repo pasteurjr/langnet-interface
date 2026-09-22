@@ -521,3 +521,83 @@ Se o documento estiver bom, diga isso e sugira melhorias menores. Não retorne o
 
 Gere agora:
 """
+
+
+def get_flow_prompt_em_lotes(
+    specification_document: str,
+    agent_task_spec_document: str,
+    tasks_yaml_do_lote: str,
+    nomes_do_lote: list,
+    primeiro_indice: int,
+    total_geral: int,
+    custom_instructions: str = ""
+) -> str:
+    """Pede APENAS as seções das tarefas de um lote.
+
+    POR QUE: pedir o fluxo das 45 tarefas numa resposta só não cabe. Medido no BioByte em
+    22/09/2026: o documento saiu cortado no meio de uma frase, com 8 tarefas de 45. É o mesmo
+    defeito que já foi consertado na Especificação (em fases) e nos Requisitos (em lotes):
+    o problema não é o modelo, é o tamanho do pedido. Aqui o programa corta a lista de tarefas
+    em blocos, pede um bloco de cada vez e monta o documento.
+    """
+    lista = "\n".join(f"{i}. {n}" for i, n in enumerate(nomes_do_lote, start=primeiro_indice))
+    return f"""Você é especialista em design de workflows e state management (LangGraph).
+
+TAREFA: Escrever APENAS as seções de fluxo das tarefas listadas abaixo. Nada de cabeçalho, nada
+de visão geral, nada de definição de state, nada de grafo de dependências — outra etapa cuida
+disso. Comece direto no primeiro `### Task {primeiro_indice}:` e termine na última tarefa da lista.
+
+TAREFAS DESTE BLOCO ({len(nomes_do_lote)} de {total_geral} no total):
+{lista}
+
+CONFIGURAÇÃO DAS TAREFAS DESTE BLOCO (tasks.yaml):
+```yaml
+{tasks_yaml_do_lote}
+```
+
+ESPECIFICAÇÃO DE AGENTES E TAREFAS (contexto):
+{agent_task_spec_document[:24000]}
+
+ESPECIFICAÇÃO FUNCIONAL (contexto de negócio):
+{specification_document[:12000]}
+
+{custom_instructions}
+
+FORMATO DE CADA TAREFA — repita para todas as tarefas do bloco, na ordem dada:
+
+### Task N: [nome_da_tarefa]
+
+**ID:** T-00N
+**Agente:** [nome_do_agente] (string, não objeto)
+**Ordem:** N
+**Tipo:** Inicial / Processamento / Final
+
+**Input Function:**
+```python
+def nome_input_func(state: ProjectState) -> Dict[str, Any]:
+    \"\"\"Extrai do state os campos que esta tarefa consome\"\"\"
+    return {{...}}
+```
+
+**Input Schema:**
+- **campo** — vem de: [seção 2.1 ou T-00X]
+
+**Process Steps:**
+1. [passo, com o SQL quando houver]
+
+**Output Function:**
+```python
+def nome_output_func(state: ProjectState, result: Any) -> Dict[str, Any]:
+    \"\"\"Grava no state o que esta tarefa produz\"\"\"
+    return {{...}}
+```
+
+**Output Schema:**
+- **campo** — consumido por: [T-00Y ou "final"]
+
+REGRAS:
+- Use os nomes de campo EXATAMENTE como estão no tasks.yaml — um nome por dado.
+- Toda saída prometida tem de ser gravada pela função de saída.
+- Ferramenta citada tem de estar declarada na tarefa correspondente do tasks.yaml.
+- Não invente tarefa que não está na lista, e não pule nenhuma da lista.
+"""
