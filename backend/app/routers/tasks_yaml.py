@@ -273,7 +273,7 @@ async def execute_tasks_yaml_generation(
         else:
             # ── Chunked per-task generation ──
             chunks, stats = await _generate_task_by_task(
-                task_blocks, tables, custom_instructions
+                task_blocks, tables, custom_instructions, agent_task_spec_document
             )
             fail_ratio = stats["failed"] / max(stats["total"], 1)
             if fail_ratio > 0.5:
@@ -391,12 +391,17 @@ async def _generate_task_by_task(
     task_blocks: list,
     tables: dict,
     custom_instructions: Optional[str],
+    ats_md: str = "",
 ):
     """
     Gera 1 task por chamada LLM, com sub-schema focado e retry.
     Retorna (chunks, stats).
     """
     chunks = []
+    # De quem cada tarefa recebe dado, lido do ATS. O programa escreve isso na entrada da tarefa
+    # porque pedir ao modelo não bastou (0 de 45 obedeceram).
+    dependencias = _dependencias_do_ats(ats_md)
+    print(f"[TASKS_YAML] dependências declaradas no ATS: {len(dependencias)} tarefa(s)")
     stats = {"total": len(task_blocks), "ok": 0, "retried": 0, "failed": 0, "with_sql": 0}
 
     for idx, task in enumerate(task_blocks, 1):
@@ -407,7 +412,8 @@ async def _generate_task_by_task(
 
         print(f"[TASKS_YAML] [{idx}/{stats['total']}] {task_name} persist={pers} tables={picked}")
 
-        result = await _generate_one_task_with_retry(task, sub_schema, pers, custom_instructions)
+        result = await _generate_one_task_with_retry(task, sub_schema, pers, custom_instructions,
+                                                     dependencias)
 
         if result is None:
             stats["failed"] += 1
@@ -431,6 +437,7 @@ async def _generate_one_task_with_retry(
     sub_schema: str,
     persistence: bool,
     custom_instructions: Optional[str],
+    dependencias: Optional[dict] = None,
 ):
     """
     Gera + valida + retenta 1x. Retorna (yaml_chunk, was_retried) ou None.
@@ -449,6 +456,7 @@ async def _generate_one_task_with_retry(
         max_tokens=3500,
     )
     chunk = extract_task_block(task_name, raw or "")
+    chunk = _escrever_procedencia(chunk, task_name, (dependencias or {}).get(task_name) or [])
     ok, reason = validate_task_yaml(task_name, chunk, persistence)
     if ok:
         return chunk, False
@@ -464,6 +472,7 @@ async def _generate_one_task_with_retry(
         max_tokens=3500,
     )
     chunk2 = extract_task_block(task_name, raw2 or "")
+    chunk2 = _escrever_procedencia(chunk2, task_name, (dependencias or {}).get(task_name) or [])
     ok2, reason2 = validate_task_yaml(task_name, chunk2, persistence)
     if ok2:
         return chunk2, True
@@ -475,6 +484,52 @@ async def _generate_one_task_with_retry(
         return chunk2, True
 
     return None
+
+
+def _dependencias_do_ats(ats_md: str) -> dict:
+    """Mapa {nome_da_tarefa: [tarefas de quem ela recebe dado]}, lido do ATS.
+
+    O ATS já declara isso: cada tarefa tem cabeçalho "#### T-CAS-002: encerrar_caso" e a linha
+    "| **Dependencies** | T-CAS-001 |". A informação não era levada ao tasks.yaml, e por isso a
+    Rede de Petri não sabia quem alimenta quem — desenhava em paralelo o que era sequencial.
+
+    O padrão do framework (framework/tasks.yaml, TropicalSales) exige a procedência escrita na
+    entrada da tarefa. Pedir isso ao modelo não bastou: medido em 22/09/2026, com a regra no
+    prompt, ZERO das 45 tarefas nomearam a produtora. Então quem escreve é o programa.
+    """
+    import re as _re
+    texto = ats_md or ""
+    id_para_nome = dict(_re.findall(r"####\s*(T-[A-Z]+-\d+)\s*:\s*([a-z][a-z0-9_]{2,60})", texto))
+    depende = {}
+    for m in _re.finditer(r"####\s*(T-[A-Z]+-\d+)\s*:\s*([a-z][a-z0-9_]{2,60})(.*?)(?=\n####|\Z)",
+                          texto, _re.S):
+        tid, nome, bloco = m.group(1), m.group(2), m.group(3)
+        m_dep = _re.search(r"\*\*(?:Dependencies|Depend[êe]ncias|Depende)\*\*\s*\|\s*([^|\n]+)", bloco)
+        if not m_dep:
+            continue
+        alvos = []
+        for ref in _re.findall(r"T-[A-Z]+-\d+", m_dep.group(1)):
+            alvo = id_para_nome.get(ref)
+            if alvo and alvo != nome and alvo not in alvos:
+                alvos.append(alvo)
+        if alvos:
+            depende[nome] = alvos
+    return depende
+
+
+def _escrever_procedencia(chunk: str, task_name: str, produtoras: list) -> str:
+    """Escreve na entrada da tarefa de quem ela recebe dado, no formato do framework."""
+    if not chunk or not produtoras or "JSON da task" in chunk:
+        return chunk
+    import re as _re
+    linhas = chunk.splitlines()
+    for i, l in enumerate(linhas):
+        if _re.match(r"\s*Input data format\s*:", l):
+            recuo = l[: len(l) - len(l.lstrip())]
+            novas = [f"{recuo}  - JSON da task {p} contendo os campos que ela entrega"
+                     for p in produtoras]
+            return "\n".join(linhas[: i + 1] + novas + linhas[i + 1:])
+    return chunk
 
 
 async def _fallback_single_shot(
