@@ -1121,6 +1121,8 @@ def resolver_nomes_de_linha(passos: List[dict],
             _op = _opcoes_de(str(_d).strip())
             if _op:
                 _lista.append(f"{_d}: exatamente um de " + ", ".join(_op))
+        _p["valores_aceitos"] = {str(_d).strip(): _opcoes_de(str(_d).strip())
+                                 for _d in _p["devolve"] if _opcoes_de(str(_d).strip())}
         if _lista and "exatamente um de" not in str(_p["instrucao"]):
             _p["instrucao"] = str(_p["instrucao"]).rstrip() + " Responda " + "; ".join(_lista) + "."
             trocas.append("o julgamento passou a dizer os valores aceitos ("
@@ -2060,8 +2062,9 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                     partes_usa.append(f"{rotulo!r}: {expr_u}")
                 dados = "{" + ", ".join(partes_usa) + "}"
                 linhas.append(f"{indent}# passo {n}: julgamento do modelo -> {', '.join(devolve)}")
+                _lim = {k: v for k, v in (p.get("valores_aceitos") or {}).items()}
                 linhas.append(f"{indent}_ctx.update(_rt_consultar_modelo({instr!r}, {dados}, "
-                              f"{devolve!r}, {_TAREFA_ATUAL()!r}, {n!r}))")
+                              f"{devolve!r}, {_TAREFA_ATUAL()!r}, {n!r}, {_lim!r}))")
             else:
                 raise ErroDeRegra(f"tipo «{tipo}» desconhecido")
             manifesto.append({"passo": n, "tipo": tipo, "emitido": True, "motivo": "",
@@ -2562,7 +2565,7 @@ def _rt_chamar_ferramenta(nome, argumentos):
         raise exc
     return saida
 
-def _rt_consultar_modelo(instrucao, dados, devolve, tarefa="", passo=""):
+def _rt_consultar_modelo(instrucao, dados, devolve, tarefa="", passo="", limites=None):
     """REGRA 3 — o programa consulta o modelo NUM PASSO, com os dados já apurados na mão.
 
     Por que assim e não deixando o modelo se virar: o modelo não tem acesso ao banco nem aos
@@ -2653,7 +2656,35 @@ def _rt_consultar_modelo(instrucao, dados, devolve, tarefa="", passo=""):
     if _faltam:
         raise _RegraExecucao(f"julgamento do passo {passo} incompleto — o modelo não respondeu: "
                              + ", ".join(_faltam))
-    return {c: _obj[c] for c in devolve}
+    # O QUE A COLUNA ACEITA É LEI: instruir o modelo não basta — modelo pequeno responde
+    # "Confirmada", "confirmado" ou uma frase. Aqui a resposta é encaixada na lista quando dá
+    # para reconhecer, e RECUSA com mensagem legível quando não dá. Sem isto, a gravação
+    # estourava com "valor truncado", um erro de banco que não diz nada a quem opera.
+    _saida = {c: _obj[c] for c in devolve}
+    for _c, _opcoes in (limites or {}).items():
+        if _c not in _saida or not _opcoes:
+            continue
+        _v = str(_saida[_c]).strip()
+        def _chave(x):
+            x = str(x).strip().lower()
+            for _a, _b in (("á","a"),("â","a"),("ã","a"),("é","e"),("ê","e"),("í","i"),
+                           ("ó","o"),("ô","o"),("õ","o"),("ú","u"),("ç","c")):
+                x = x.replace(_a, _b)
+            return x
+        _alvo = _chave(_v)
+        _casado = None
+        for _op in _opcoes:
+            if _chave(_op) == _alvo:
+                _casado = _op; break
+        if _casado is None:
+            for _op in _opcoes:
+                if _chave(_op) in _alvo or _alvo in _chave(_op) or _chave(_op)[:6] == _alvo[:6]:
+                    _casado = _op; break
+        if _casado is None:
+            raise _RegraExecucao(f"o modelo respondeu «{_v}» para {_c}, que só aceita: "
+                                 + ", ".join(_opcoes))
+        _saida[_c] = _casado
+    return _saida
 
 
 def _rt_valor(v):
