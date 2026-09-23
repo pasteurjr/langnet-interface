@@ -10782,11 +10782,20 @@ def _corrigir_registro_de_ferramentas(tools_py: str) -> str:
 
     def _conserta(m):
         chave, nome = m.group(1), m.group(2)
-        if nome in definidas and not nome.endswith("Schema"):
+        # O nome do esquema muda de vez em quando (…Schema, …Args, …Input, …Params): o que
+        # importa é que é a FICHA dos argumentos, não a ferramenta. Registrar a ficha derruba o
+        # servidor no arranque, pedindo os campos obrigatórios dela.
+        _sufixos = ("Schema", "Args", "Input", "Inputs", "Params", "Arguments")
+        _e_ficha = nome.endswith(_sufixos)
+        if nome in definidas and not _e_ficha:
             return m.group(0)
         alvo = None
-        if nome.endswith("Schema"):
-            base = nome[: -len("Schema")]
+        if _e_ficha:
+            base = nome
+            for _suf in _sufixos:
+                if base.endswith(_suf):
+                    base = base[: -len(_suf)]
+                    break
             for cand in (base + "Tool", base):
                 if cand in definidas:
                     alvo = cand
