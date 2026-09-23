@@ -3387,7 +3387,8 @@ def _conferir_e_reparar_estrutura(net: Dict[str, Any]) -> Dict[str, Any]:
         print("[PETRI PORTÃO] estrutura passou sem reparo")
     return net
 
-def _costurar_tarefas_pelo_dado(net: Dict[str, Any], fluxo_md: str = "") -> Dict[str, Any]:
+def _costurar_tarefas_pelo_dado(net: Dict[str, Any], fluxo_md: str = "",
+                                tasks_yaml: str = "") -> Dict[str, Any]:
     """Liga ao fluxo a tarefa que ficou solta, usando o DADO que ela consome.
 
     POR QUE: a rede é desenhada pelo modelo, e ele deixa de fora justamente as tarefas chamadas
@@ -3451,6 +3452,27 @@ def _costurar_tarefas_pelo_dado(net: Dict[str, Any], fluxo_md: str = "") -> Dict
                     produtor = id2nome.get(ref)
                     if produtor and produtor != consumidor:
                         declarado.append((produtor, consumidor, campo))
+
+    # A procedência escrita na PRÓPRIA tarefa ("Input data format: - JSON da task X contendo...")
+    # é a fonte do padrão do framework, e cobre pares que o documento de Sequência não declara.
+    # Medido em 22/09/2026: com só a Sequência, 5 dependências do tasks.yaml ficavam fora de ordem.
+    if tasks_yaml:
+        try:
+            import yaml as _yaml
+            _t = tasks_yaml.strip()
+            if _t.startswith("```"):
+                _t = _t[_t.index("\n") + 1:_t.rindex("```")]
+            _tk = _yaml.safe_load(_t) or {}
+            _tk = _tk.get("tasks", _tk)
+            for _nome, _cfg in (_tk.items() if isinstance(_tk, dict) else []):
+                if not isinstance(_cfg, dict):
+                    continue
+                for _m in re.finditer(r"JSON da task\s+([a-z][a-z0-9_]{2,60})",
+                                      str(_cfg.get("description") or ""), re.I):
+                    if _m.group(1) != _nome:
+                        declarado.append((_m.group(1), _nome, "procedência declarada na tarefa"))
+        except Exception as _e:
+            print(f"[PETRI] procedência do tasks.yaml não pôde ser lida: {_e}")
 
     # o que cada lugar entrega
     entrega = {}
@@ -3864,7 +3886,8 @@ def design_petri_net_output_func(state: LangNetFullState, result: Any) -> LangNe
     # Costura pelo dado: só agora a rede sabe o que cada lugar entrega e consome, então é aqui
     # que dá para ligar a tarefa que o modelo deixou solta.
     adapted = _costurar_tarefas_pelo_dado(
-        adapted, (state.get("dependencies") or {}).get("flow_document_md") or "")
+        adapted, (state.get("dependencies") or {}).get("flow_document_md") or "",
+        state.get("tasks_yaml") or "")
     print(
         f"[PETRI OUT] adapted: lugares={len(adapted.get('lugares', []))} "
         f"transicoes={len(adapted.get('transicoes', []))} "
