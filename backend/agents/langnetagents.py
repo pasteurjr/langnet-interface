@@ -7526,7 +7526,19 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
                 out.append(tok)  # literal string/número
             else:
                 out.append(_resolve_p_idents(tok))
-        return "[" + ", ".join(out) + "]"
+        # Trava: parâmetro que não é expressão Python válida vira leitura da entrada, em vez de
+        # ir cru e quebrar o arquivo inteiro. Um parâmetro estragado não pode derrubar 380 mil
+        # linhas de adaptadores.
+        _limpo = []
+        for _p in out:
+            try:
+                compile(_p, "<param>", "eval")
+                _limpo.append(_p)
+            except SyntaxError:
+                _nome = _re.sub(r"[^A-Za-z0-9_]", "", _p) or "valor"
+                print(f"[CODE-GEN][PARAMS] parâmetro inválido {_p!r} → input_data.get({_nome!r})")
+                _limpo.append("input_data.get(%r)" % _nome)
+        return "[" + ", ".join(_limpo) + "]"
 
     def _texpr(e):
         e = e.strip()
@@ -8537,6 +8549,10 @@ def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
     if not params_str or not params_str.strip():
         return "[]"
     import re as _re
+    # O modelo às vezes marca o campo com sinal de menor/maior em vez de chaves: `<destinatario>`.
+    # Sem normalizar, o nome ia CRU para o Python e o arquivo não compilava. Medido em
+    # 23/09/2026: `[input_data.get('alerta_id'), <destinatario>, <estado>]`.
+    params_str = _re.sub(r"<\s*([A-Za-z_][A-Za-z0-9_\.]*)\s*>", r"{\1}", params_str)
 
     def _date_col(name: str) -> bool:
         """Coluna semanticamente de DATA (default para hoje quando ausente, p/ não
