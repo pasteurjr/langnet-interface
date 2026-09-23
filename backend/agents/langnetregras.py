@@ -731,6 +731,28 @@ def resolver_nomes_de_linha(passos: List[dict],
              "params": [autor, acao_expr, alvo, "marca_anterior", "hash_atual"]},
         ]
 
+    def _renomear_campo(lista, dono: str, de: str, para: str) -> None:
+        """Troca `dono.de` por `dono.para` nas expressões dos passos seguintes."""
+        alvo = re.compile(rf"\b{re.escape(dono)}\.{re.escape(de)}\b")
+        def _troca(v):
+            return alvo.sub(f"{dono}.{para}", v) if isinstance(v, str) else v
+        for q in lista or []:
+            if not isinstance(q, dict):
+                continue
+            for k in ("recusa_se", "se", "condicao", "expressao", "em"):
+                if isinstance(q.get(k), str):
+                    q[k] = _troca(q[k])
+            if isinstance(q.get("params"), list):
+                q["params"] = [_troca(str(x)) for x in q["params"]]
+            for k in ("argumentos", "entrada"):
+                if isinstance(q.get(k), dict):
+                    q[k] = {kk: _troca(str(vv)) for kk, vv in q[k].items()}
+            if isinstance(q.get("campos"), list):
+                q["campos"] = [_troca(str(x)) for x in q["campos"]]
+            for c in ("passos", "senao", "passos_senao", "entao", "corpo"):
+                if isinstance(q.get(c), list):
+                    _renomear_campo(q[c], dono, de, para)
+
     def _escolher_servico(passo: dict, tarefa: str, resolvidas: Any) -> Optional[str]:
         """Qual serviço externo a chamada genérica queria? O que mais compartilha palavras com o
         assunto da tarefa e com os valores passados. Sem candidato, nada é escolhido."""
@@ -875,6 +897,12 @@ def resolver_nomes_de_linha(passos: List[dict],
                                             "expressao": "usuario"})
                                 produzidos.add(str(p["guarda_em"]))
                                 lista[i:i + 2] = par
+                            # o que vem da conferência é a LINHA do usuário: quem lia
+                            # «sessao.usuario_id» passa a ler «sessao.id», senão o passo seguinte
+                            # recusa por um campo que a linha não tem
+                            if p.get("guarda_em"):
+                                _renomear_campo(lista[i + len(par):], str(p["guarda_em"]),
+                                                "usuario_id", "id")
                             trocas.append(f"chamar «{alvo}» com {sorted(_tem)} não daria certo "
                                           f"(ela pede {sorted(_pede)}) — virou a conferência do "
                                           f"usuário")
@@ -902,8 +930,15 @@ def resolver_nomes_de_linha(passos: List[dict],
                             continue
                         if re.match(r"^(validar|conferir)_(usuario|sessao|token)", baixo) or baixo.startswith("t-aut"):
                             par = _conferir_usuario(ent)
+                            if p.get("guarda_em"):
+                                par.append({"tipo": "calculo", "atribui": str(p["guarda_em"]),
+                                            "expressao": "usuario"})
+                                produzidos.add(str(p["guarda_em"]))
                             lista[i:i + 1] = par
                             produzidos.add("usuario")
+                            if p.get("guarda_em"):
+                                _renomear_campo(lista[i + len(par):], str(p["guarda_em"]),
+                                                "usuario_id", "id")
                             trocas.append(f"«{alvo}» não é uma tarefa: virou a conferência do "
                                           f"usuário (consulta + recusa se inexistente ou inativo)")
                             i += len(par)
