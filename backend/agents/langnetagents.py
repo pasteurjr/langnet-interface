@@ -12977,7 +12977,18 @@ export default function %COMP%() {
             {INPUTS.map((fd) => (
               <div key={fd.key}>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">{fd.label}</label>
-                {fd.ref ? (
+                {fd.tipo === "checkbox" ? (
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input type="checkbox" checked={!!form[fd.key]} onChange={(e) => set(fd.key, e.target.checked)} />
+                    <span>{fd.label}</span>
+                  </label>
+                ) : fd.tipo === "date" ? (
+                  <input type="date" className={IN} value={form[fd.key] || ""} onChange={(e) => set(fd.key, e.target.value)} />
+                ) : fd.tipo === "number" ? (
+                  <input type="number" className={IN} value={form[fd.key] ?? ""} onChange={(e) => set(fd.key, e.target.value)} />
+                ) : fd.tipo === "textarea" ? (
+                  <textarea rows={3} className={IN} value={form[fd.key] || ""} onChange={(e) => set(fd.key, e.target.value)} />
+                ) : fd.ref ? (
                   <select className={IN} value={form[fd.key]} onChange={(e) => set(fd.key, e.target.value)}>
                     <option value="">Selecione…</option>
                     {(fkOpts[fd.key] || []).map((o) => (
@@ -13050,8 +13061,13 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
             else:
                 kpis.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
         elif c.get("type") in ("text", "number", "date", "select", "multiselect", "textarea",
-                               "rich-text", "richtext", "radio") and c.get("field"):
-            item = {"key": c["field"], "label": c.get("label", _humanize(c["field"]))}
+                               "rich-text", "richtext", "radio", "checkbox",
+                               "file-upload") and c.get("field"):
+            # O TIPO declarado viaja junto: sem isto, caixa de marcação, data e número viravam
+            # campo de texto. Medido em 23/09/2026 na tela de Consentimento: a caixa de marcação
+            # declarada era desenhada como caixa de digitação.
+            item = {"key": c["field"], "label": c.get("label", _humanize(c["field"])),
+                    "tipo": c.get("type")}
             if c.get("type") == "select" and c.get("refEntity"):
                 item["ref"] = c["refEntity"]        # P3: dropdown da entidade referenciada
                 fk_used.append(c["field"])
