@@ -6571,7 +6571,9 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
                                      r'Input data format:', desc) else ''), _re.M)
             _resolvidos = _rnl(_blk['steps'], _decl,
                                tarefas_do_sistema=set(_tarefas_sys),
-                               apelidos=APELIDOS_TAREFA_CG, tabelas=TABELAS_CG)
+                               apelidos=APELIDOS_TAREFA_CG, tabelas=TABELAS_CG,
+                               ferramentas_resolvidas=FERRAMENTAS_RESOLVIDAS_CG,
+                               nome_tarefa=task_name)
             for _r in _resolvidos:
                 print(f"[CODE-GEN][CONTRATO] {task_name}: {_r}")
             # REGRA 3 — programa busca, modelo julga, programa grava.
@@ -7176,6 +7178,28 @@ def _schema_model(schema_sql: str) -> Dict[str, dict]:
                     val_col = cn; break
                 model[ref]["children"].append((t, fk_col, val_col))
     return model
+
+
+def _schema_do_projeto(state) -> str:
+    """O DDL do modelo de dados corrente. O `state` costuma vir SEM ele (quem preenche é um
+    trecho mais adiante da geração), e por isso a lista de tabelas chegava vazia no tradutor de
+    regras — a gravação que o contrato descrevia não encontrava a tabela e o passo morria."""
+    ddl = state.get("data_model_schema_sql") or ""
+    if ddl and "CREATE TABLE" in ddl.upper():
+        return ddl
+    try:
+        from app.database import get_db_connection as _gdb
+        with _gdb() as _c:
+            _cur = _c.cursor(dictionary=True)
+            _cur.execute("SELECT schema_sql FROM data_model_sessions WHERE project_id=%s "
+                         "AND status IN ('completed','approved','draft') "
+                         "ORDER BY created_at DESC LIMIT 1",
+                         (str(state.get("project_id") or ""),))
+            _r = _cur.fetchone()
+            _cur.close()
+        return (_r or {}).get("schema_sql") or ""
+    except Exception:
+        return ""
 
 
 def _parse_schema_tables_full(schema_sql: str) -> Dict[str, str]:
@@ -11128,7 +11152,7 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
                 r'^\s*[`"]?(\w+)[`"]?\s+(?:VAR|CHAR|TEXT|INT|BIG|SMALL|TINY|DEC|NUM|FLOAT|DOUBLE|'
                 r'DATE|TIME|BOOL|ENUM|JSON|BLOB|UUID|SERIAL)',
                 ddl, _re_tab.I | _re_tab.M)]
-            for t, ddl in _parse_schema_tables_full(state.get("data_model_schema_sql") or "").items()}
+            for t, ddl in _parse_schema_tables_full(_schema_do_projeto(state)).items()}
     except Exception:
         globals()["TABELAS_CG"] = {}
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)

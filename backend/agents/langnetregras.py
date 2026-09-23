@@ -516,7 +516,9 @@ def resolver_nomes_de_linha(passos: List[dict],
                             entradas_declaradas: Optional[List[str]] = None,
                             tarefas_do_sistema: Optional[Any] = None,
                             apelidos: Optional[Dict[str, str]] = None,
-                            tabelas: Optional[Dict[str, List[str]]] = None) -> List[str]:
+                            tabelas: Optional[Dict[str, List[str]]] = None,
+                            ferramentas_resolvidas: Any = None,
+                            nome_tarefa: str = "") -> List[str]:
     """Liga nome solto ao campo da LINHA que um passo anterior capturou.
 
     POR QUE: o contrato consulta `SELECT id, senha_hash, papel, ativo ... guarda_em: usuario` e
@@ -727,6 +729,23 @@ def resolver_nomes_de_linha(passos: List[dict],
              "params": [autor, acao_expr, alvo, "marca_anterior", "hash_atual"]},
         ]
 
+    def _escolher_servico(passo: dict, tarefa: str, resolvidas: Any) -> Optional[str]:
+        """Qual serviço externo a chamada genérica queria? O que mais compartilha palavras com o
+        assunto da tarefa e com os valores passados. Sem candidato, nada é escolhido."""
+        nomes = [n for n in _res_nomes(resolvidas) if n not in ferramentas_da_biblioteca()]
+        if not nomes:
+            return None
+        def _palavras(t: str) -> set:
+            return {w for w in re.split(r"[^a-z0-9]+", str(t).lower()) if len(w) > 3}
+        alvo = _palavras(tarefa) | _palavras(" ".join(str(v) for v in (passo.get("argumentos") or {}).values())) \
+            | _palavras(str(passo.get("guarda_em") or ""))
+        melhor, pontos = None, 0
+        for n in nomes:
+            p_ = len(_palavras(n) & alvo)
+            if p_ > pontos:
+                melhor, pontos = n, p_
+        return melhor if pontos >= 1 else None
+
     def _gravacao_de(alvo: str, entrada: dict, guarda: str) -> Optional[List[dict]]:
         """«criar_alerta_multirresistencia» não é tarefa: é a GRAVAÇÃO numa tabela. O nome diz a
         tabela e a entrada diz as colunas — o resto é o INSERT que o contrato descreveu por
@@ -775,6 +794,32 @@ def resolver_nomes_de_linha(passos: List[dict],
                         _ajustar_encadeamentos(p[campo])
                 if str(p.get("tipo")) == "externo":
                     _f = str(p.get("ferramenta") or "").lower()
+                    # "chamar a API" não é ferramenta: o serviço externo tem nome e ficha, e é um
+                    # dos que a etapa Ferramentas resolveu (MCP). Aqui o programa escolhe o
+                    # serviço pelo assunto da tarefa e dos argumentos, e tira o envelope da
+                    # chamada (servico, timeout, endpoint), que não é dado do serviço.
+                    if _f in CHAMADORES_GENERICOS or _f.startswith("service_call") or _f == "api_call_tool":
+                        _cand = _escolher_servico(p, nome_tarefa, ferramentas_resolvidas)
+                        if _cand:
+                            _aceita = _res_args(ferramentas_resolvidas, _cand)
+                            _envelope = {"servico", "service", "endpoint", "url", "timeout",
+                                         "metodo", "method", "tempo_limite"}
+                            _args = {k: v for k, v in (p.get("argumentos") or {}).items()
+                                     if k not in _envelope}
+                            if _aceita:
+                                _sobra = [k for k in _args if k not in _aceita]
+                                _faltam = [k for k in _aceita if k not in _args]
+                                if len(_sobra) == 1 and len(_faltam) == 1:
+                                    _args[_faltam[0]] = _args.pop(_sobra[0])
+                                    trocas.append(f"o serviço {_cand} recebe «{_faltam[0]}» — "
+                                                  f"o contrato chamava de «{_sobra[0]}»")
+                                else:
+                                    for k in _sobra:
+                                        _args.pop(k, None)
+                            p["ferramenta"] = _cand
+                            p["argumentos"] = _args
+                            trocas.append(f"«{p.get('ferramenta')}»: a chamada genérica virou o "
+                                          f"serviço externo {_cand}")
                     _ar = p.get("argumentos") if isinstance(p.get("argumentos"), dict) else {}
                     # "ferramenta de auditoria" não é ferramenta: auditoria é gravar na trilha.
                     if "auditoria" in _f or _f.startswith("auditar"):
