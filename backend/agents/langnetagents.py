@@ -9197,8 +9197,64 @@ class JwtTool(BaseTool):
         return {"token_jwt": f"{cab}.{corpo}.{ass}", "expira_em_horas": float(exp_horas or 8)}
 
 
+class TokenTool(BaseTool):
+    """Emite um token de sessão com prazo de validade. REAL: o token é assinado (HS256) com o
+    segredo do ambiente e o instante de expiração é calculado de verdade."""
+    name: str = "token_tool"
+    description: str = ("Emite token de sessão com validade. Args: usuario_id, papel (opcional), "
+                        "minutos (padrão 30). Devolve token e expira_em.")
+
+    def _run(self, usuario_id: str = "", papel: str = "", minutos: float = 30, **kwargs) -> Dict[str, Any]:
+        import os, json, base64, hmac, hashlib, time, datetime
+        segredo = os.getenv("JWT_SECRET", "")
+        if not segredo:
+            raise RuntimeError("TokenTool: JWT_SECRET não configurado no ambiente — nenhum token emitido.")
+        def _b64(b): return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+        agora = int(time.time())
+        vence = agora + int(float(minutos or 30) * 60)
+        cab = _b64(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+        corpo = _b64(json.dumps({"sub": str(usuario_id), "role": str(papel),
+                                 "iat": agora, "exp": vence}).encode())
+        ass = _b64(hmac.new(segredo.encode(), f"{cab}.{corpo}".encode(), hashlib.sha256).digest())
+        return {"token": f"{cab}.{corpo}.{ass}",
+                "assinatura": ass,
+                "expira_em": datetime.datetime.fromtimestamp(vence).strftime("%Y-%m-%d %H:%M:%S"),
+                "minutos": float(minutos or 30)}
+
+
+class HashChainTool(BaseTool):
+    """Marca de integridade encadeada de um registro de auditoria: SHA-256 sobre os dados do
+    evento MAIS a marca do registro anterior. REAL: mudar qualquer evento quebra a cadeia."""
+    name: str = "hash_chain_tool"
+    description: str = ("Calcula a marca (SHA-256) de um evento de auditoria encadeada. Args: "
+                        "autor_id, acao, registro_afetado, data_hora, marca_anterior. Devolve hash_atual.")
+
+    def _run(self, autor_id: str = "", acao: str = "", registro_afetado: str = "",
+             data_hora: str = "", marca_anterior: str = "", **kwargs) -> Dict[str, Any]:
+        import hashlib
+        base = "|".join(str(x or "") for x in
+                        (marca_anterior, autor_id, acao, registro_afetado, data_hora))
+        return {"hash_atual": hashlib.sha256(base.encode("utf-8")).hexdigest(),
+                "marca_anterior": str(marca_anterior or "")}
+
+
+class PasswordHashTool(BaseTool):
+    """Resumo criptográfico de senha (SHA-256 com sal do ambiente, se houver). REAL: o mesmo
+    texto sempre dá o mesmo resumo, e o resumo nunca volta a ser a senha."""
+    name: str = "password_hash_tool"
+    description: str = "Calcula o resumo da senha. Args: senha. Devolve senha_hash."
+
+    def _run(self, senha: str = "", **kwargs) -> Dict[str, Any]:
+        import os, hashlib
+        sal = os.getenv("PASSWORD_SALT", "")
+        return {"senha_hash": hashlib.sha256((sal + str(senha or "")).encode("utf-8")).hexdigest()}
+
+
 STD_TOOLS = {
     "jwt_tool": JwtTool(),
+    "token_tool": TokenTool(),
+    "hash_chain_tool": HashChainTool(),
+    "password_hash_tool": PasswordHashTool(),
     "pdf_generator_tool": PdfGeneratorTool(),
     "csv_exporter_tool": CsvExporterTool(),
     "embedding_tool": EmbeddingTool(),

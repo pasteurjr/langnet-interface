@@ -68,6 +68,12 @@ BIBLIOTECA_ASSINATURAS = {
     "pdf_generator_tool": {"argumentos": ["data", "output_path"], "saida": ["status", "path", "filename"]},
     "csv_exporter_tool":  {"argumentos": ["data", "output_path"], "saida": ["status", "path", "filename", "rows"]},
     "email_sender_tool":  {"argumentos": ["to", "subject", "body", "attachment_path"], "saida": []},
+    "token_tool":         {"argumentos": ["usuario_id", "papel", "minutos"],
+                           "saida": ["token", "assinatura", "expira_em", "minutos"]},
+    "hash_chain_tool":    {"argumentos": ["autor_id", "acao", "registro_afetado", "data_hora",
+                                          "marca_anterior"],
+                           "saida": ["hash_atual", "marca_anterior"]},
+    "password_hash_tool": {"argumentos": ["senha"], "saida": ["senha_hash"]},
 }
 
 
@@ -123,7 +129,7 @@ class ErroDeRegra(ValueError):
 _TOKEN = re.compile(r"""
     (?P<num>\d+(?:\.\d+)?)
   | (?P<str>'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")
-  | (?P<op>==|!=|<=|>=|<|>|\+|-|\*|/|\(|\)|\[|\]|,|\.)
+  | (?P<op>==|!=|<=|>=|<|>|=|\+|-|\*|/|\(|\)|\[|\]|,|\.)
   | (?P<nome>[A-Za-zÀ-ÿ_][A-Za-z0-9À-ÿ_]*)
   | (?P<ws>\s+)
 """, re.X)
@@ -204,10 +210,11 @@ class _Parser:
     def _cmp(self) -> str:
         esq = self._add()
         t = self._olha()
-        if t[0] == "OP" and t[1] in ("==", "!=", "<", "<=", ">", ">="):
+        if t[0] == "OP" and t[1] in ("==", "=", "!=", "<", "<=", ">", ">="):
             self._come()
             dir_ = self._add()
-            return f"_rt_cmp({esq}, {t[1]!r}, {dir_})"
+            op = "==" if t[1] == "=" else t[1]   # o contrato costuma escrever «=» para comparar
+            return f"_rt_cmp({esq}, {op!r}, {dir_})"
         return esq
 
     def _add(self) -> str:

@@ -31,6 +31,9 @@ BIBLIOTECA_REAL = {
     "file_reader_tool": "lê arquivo do disco",
     "database_tool": "executa SQL parametrizado no banco do app",
     "jwt_tool": "emite token de sessão assinado (HS256) com segredo do ambiente",
+    "token_tool": "emite token de sessão com prazo de validade (assinado, HS256)",
+    "hash_chain_tool": "calcula a marca encadeada (SHA-256) de um evento de auditoria",
+    "password_hash_tool": "calcula o resumo criptográfico de uma senha",
 }
 
 # Sinônimos comuns que o ATS costuma usar para as ferramentas da biblioteca.
@@ -49,6 +52,13 @@ SINONIMOS = {
     "jwt_generator": "jwt_tool",
     "gerar_relatorio": "pdf_generator_tool",
     "report_generator_tool": "pdf_generator_tool",
+    "session_token_tool": "token_tool",
+    "gerar_token": "token_tool",
+    "token_generator": "token_tool",
+    "hash_tool": "hash_chain_tool",
+    "audit_hash_tool": "hash_chain_tool",
+    "hash_senha_tool": "password_hash_tool",
+    "password_hasher": "password_hash_tool",
 }
 
 
