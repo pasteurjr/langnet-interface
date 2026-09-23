@@ -75,6 +75,8 @@ BIBLIOTECA_ASSINATURAS = {
                            "saida": ["hash_atual", "marca_anterior"]},
     "password_hash_tool": {"argumentos": ["senha"], "saida": ["senha_hash"]},
     "pseudonimizar_tool": {"argumentos": ["valor", "sal"], "saida": ["pseudonimo", "hash"]},
+    "exportar_arquivo_tool": {"argumentos": ["dados", "formato", "caminho"],
+                              "saida": ["caminho", "formato", "linhas"]},
 }
 
 
@@ -274,6 +276,8 @@ class _Parser:
             nome = self._come()[1]
             if self._olha()[0] == "OP" and self._olha()[1] == "(":
                 py = self._chamada(nome)          # `.campo` depois da chamada é tratado abaixo
+            elif nome.lower() in ("vazio", "nada", "nenhum") and nome not in self.locais:
+                py = "None"                       # «vazio» sozinho quer dizer NADA, não um valor
             elif nome in self.locais:
                 py = f"_it_{nome}"        # item do "para cada": não é valor de entrada
             else:
@@ -865,6 +869,21 @@ def resolver_nomes_de_linha(passos: List[dict],
                                       "banco — virou consulta e recusa")
                         i += len(par)
                         continue
+                    # LER NÃO É ESCREVER: o contrato usa a ferramenta de LEITURA de arquivo
+                    # para PRODUZIR o relatório. A leitura pede um caminho e recebe dados —
+                    # a chamada falha com "falta file_path" e o relatório nunca sai.
+                    if (_f in ("pdf_reader", "docx_reader", "document_parser_tool",
+                               "file_reader_tool")
+                            and any(k in _ar for k in ("registros", "dados", "data", "linhas"))):
+                        _dados = next(_ar[k] for k in ("registros", "dados", "data", "linhas")
+                                      if k in _ar)
+                        p["ferramenta"] = "exportar_arquivo_tool"
+                        p["argumentos"] = {"dados": _dados,
+                                           "formato": _ar.get("formato", "'csv'")}
+                        if not p.get("mapeia"):
+                            p["mapeia"] = {"caminho": str(p.get("guarda_em") or "caminho_arquivo")}
+                        trocas.append("a ferramenta de LEITURA de arquivo estava sendo usada para "
+                                      "PRODUZIR o relatório — virou o exportador")
                     # Resumo de um valor com sal é pseudonimização, não marca de auditoria.
                     if _f == "hash_chain_tool" and ("valor" in _ar or "sal" in _ar):
                         p["ferramenta"] = "pseudonimizar_tool"

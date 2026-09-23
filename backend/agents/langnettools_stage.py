@@ -35,6 +35,7 @@ BIBLIOTECA_REAL = {
     "hash_chain_tool": "calcula a marca encadeada (SHA-256) de um evento de auditoria",
     "password_hash_tool": "calcula o resumo criptográfico de uma senha",
     "pseudonimizar_tool": "troca um identificador pessoal por um resumo estável (com sal)",
+    "exportar_arquivo_tool": "grava os dados em arquivo CSV ou PDF, conforme o formato pedido",
 }
 
 # Sinônimos comuns que o ATS costuma usar para as ferramentas da biblioteca.
@@ -62,6 +63,8 @@ SINONIMOS = {
     "password_hasher": "password_hash_tool",
     "pseudonymize_tool": "pseudonimizar_tool",
     "anonimizar_tool": "pseudonimizar_tool",
+    "exportador_tool": "exportar_arquivo_tool",
+    "export_tool": "exportar_arquivo_tool",
 }
 
 

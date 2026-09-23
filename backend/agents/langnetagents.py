@@ -9385,6 +9385,57 @@ class PasswordHashTool(BaseTool):
         return {"senha_hash": hashlib.sha256((sal + str(senha or "")).encode("utf-8")).hexdigest()}
 
 
+class ExportarArquivoToolSchema(BaseModel):
+    dados: Optional[Any] = None
+    formato: Optional[str] = "csv"
+    caminho: Optional[str] = None
+
+
+class ExportarArquivoTool(BaseTool):
+    """Grava os dados num arquivo CSV ou PDF, conforme o formato pedido. REAL: o arquivo fica no
+    disco e o caminho volta. Formato desconhecido falha explícito — nunca devolve caminho de
+    arquivo que não existe."""
+    name: str = "exportar_arquivo_tool"
+    description: str = ("Grava dados em arquivo. Args: dados (lista de registros), formato "
+                        "(csv|pdf), caminho (opcional). Devolve caminho, formato e linhas.")
+    args_schema: type[BaseModel] = ExportarArquivoToolSchema
+
+    def _run(self, dados: Any = None, formato: str = "csv", caminho: str = None,
+             **kwargs) -> Dict[str, Any]:
+        import os, csv, json, time
+        fmt = str(formato or "csv").strip().lower()
+        linhas = dados if isinstance(dados, list) else ([dados] if dados else [])
+        if isinstance(linhas, str):
+            try:
+                linhas = json.loads(linhas)
+            except Exception:
+                linhas = [{"conteudo": linhas}]
+        pasta = os.getenv("EXPORT_DIR", "./exports")
+        os.makedirs(pasta, exist_ok=True)
+        alvo = caminho or os.path.join(pasta, f"relatorio_{int(time.time())}.{fmt}")
+        if fmt == "csv":
+            campos = sorted({k for r in linhas if isinstance(r, dict) for k in r})
+            with open(alvo, "w", newline="", encoding="utf-8") as fh:
+                w = csv.DictWriter(fh, fieldnames=campos or ["conteudo"])
+                w.writeheader()
+                for r in linhas:
+                    w.writerow(r if isinstance(r, dict) else {"conteudo": r})
+        elif fmt == "pdf":
+            from reportlab.lib.pagesizes import A4
+            from reportlab.pdfgen import canvas as _canvas
+            c = _canvas.Canvas(alvo, pagesize=A4)
+            y = 800
+            for r in linhas:
+                c.drawString(40, y, str(r)[:110])
+                y -= 14
+                if y < 40:
+                    c.showPage(); y = 800
+            c.save()
+        else:
+            raise RuntimeError(f"ExportarArquivoTool: formato «{formato}» não é csv nem pdf.")
+        return {"caminho": alvo, "formato": fmt, "linhas": len(linhas)}
+
+
 class PseudonimizarToolSchema(BaseModel):
     valor: Optional[str] = None
     sal: Optional[str] = None
@@ -9407,6 +9458,7 @@ class PseudonimizarTool(BaseTool):
 STD_TOOLS = {
     "jwt_tool": JwtTool(),
     "pseudonimizar_tool": PseudonimizarTool(),
+    "exportar_arquivo_tool": ExportarArquivoTool(),
     "token_tool": TokenTool(),
     "hash_chain_tool": HashChainTool(),
     "password_hash_tool": PasswordHashTool(),

@@ -126,7 +126,7 @@ async def principal():
         "microrganismo": "Staphylococcus aureus", "multirresistente": 1,
         "paciente_id": paciente_id, "caso_id": caso_id}))
     conta("UC-006 classificar pelo critério NHSN",
-          await tarefa("classificar_caso_nhsn", {"caso_id": caso_id}))
+          await tarefa("classificar_caso_nhsn", {"caso_id": caso_id, "usuario_id": usuario_id}))
     conta("UC-007 detectar multirresistência",
           await tarefa("detectar_multirresistencia", {"usuario_id": usuario_id, "caso_id": caso_id}))
     conta("UC-007 abrir alerta", await tarefa("abrir_alerta_multirresistencia", {
@@ -174,8 +174,18 @@ async def principal():
     conta("UC-033 mapear terminologia da microbiologia",
           await tarefa("mapear_terminologia_microbiologia",
                        {"usuario_id": usuario_id, "resultado_id": resultado_id}))
+    with banco() as cn, cn.cursor() as c:
+        import hashlib
+        c.execute("SELECT id FROM usuarios WHERE papel='medico' LIMIT 1")
+        _m = c.fetchone()
+        if not _m:
+            c.execute("INSERT INTO usuarios(nome, email, senha_hash, papel, ativo) "
+                      "VALUES('Dr. Paulo Medico','medico@hospitalvidas.org.br',%s,'medico',1)",
+                      (hashlib.sha256(SENHA.encode()).hexdigest(),))
+            c.execute("SELECT id FROM usuarios WHERE papel='medico' LIMIT 1")
+            _m = c.fetchone()
     conta("UC-006 sobrescrever a classificação", await tarefa("sobrescrever_classificacao", {
-        "usuario_id": usuario_id, "caso_id": caso_id, "criterio_id": criterio_id,
+        "usuario_id": _m["id"], "caso_id": caso_id, "criterio_id": criterio_id,
         "novo_resultado": "descartada", "justificativa": "revisão da comissão"}))
     conta("UC-003 encerrar o caso", await tarefa("encerrar_caso", {
         "usuario_id": usuario_id, "caso_id": caso_id, "data_encerramento": "2026-09-23"}))
