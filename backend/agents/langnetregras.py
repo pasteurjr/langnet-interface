@@ -578,6 +578,10 @@ def resolver_nomes_de_linha(passos: List[dict],
                 return f"{linha}.id"
             if nome in cols:
                 return f"{linha}.{nome}"
+            # «criterio_nome» é a coluna `nome` da linha `criterio` — o contrato junta os dois
+            # nomes com um risco e depois ninguém acha o valor.
+            if nome.startswith(f"{linha}_") and nome[len(linha) + 1:] in cols:
+                return f"{linha}.{nome[len(linha) + 1:]}"
         return None
 
     produzidos: set = set()
@@ -1107,6 +1111,30 @@ def resolver_nomes_de_linha(passos: List[dict],
                     _p["usa"] = _citados[:8]
                     trocas.append("o julgamento ia sem dado nenhum — passa a receber "
                                   + ", ".join(_p["usa"]))
+            # O MODELO SÓ RESPONDE O QUE NINGUÉM TEM: pedir de volta o identificador de quem
+            # está operando, ou o nome do critério que a consulta já trouxe, é pedir que ele
+            # invente. Ele não responde — e a tarefa recusa por "julgamento incompleto".
+            if isinstance(_p.get("devolve"), list):
+                _fica, _tira = [], []
+                for _d in _p["devolve"]:
+                    _nd = str(_d).strip()
+                    if _nd in _ja or _resolver(_nd):
+                        _tira.append(_nd)
+                    else:
+                        _fica.append(_d)
+                if _tira and _fica:
+                    _p["devolve"] = _fica
+                    for _nd in _tira:
+                        _alvo2 = _resolver(_nd)
+                        if _alvo2 and _nd not in produzidos:
+                            _pos = passos.index(_p) if _p in passos else None
+                            if _pos is not None:
+                                passos.insert(_pos, {"tipo": "calculo", "atribui": _nd,
+                                                     "expressao": _alvo2})
+                                produzidos.add(_nd)
+                    trocas.append("o julgamento pedia de volta o que o programa já tem ("
+                                  + ", ".join(_tira) + ") — agora o modelo só responde "
+                                  + ", ".join(str(x) for x in _fica))
             if _p.get("devolve"):
                 continue
             _alvo = [n for n in _pendentes_depois(passos, _i, set(_ja)) if not _resolver(n)][:6]
