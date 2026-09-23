@@ -11313,13 +11313,26 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
                     if not _man or _man.get("entradas") is None:
                         continue
                     _campos = {c.get("field") for c in (_scr.get("components") or []) if c.get("field")}
+                    _declaradas = set(_tf.get(_alvo) or [])
                     for _e in _man["entradas"]:
                         if _e in ("ip_origem", "usuario_id") or _e.endswith("_id") or _e in _campos:
                             continue
-                        _contrato.setdefault("divergencias", []).append({
-                            "tela": _scr.get("name"), "tipo": "entrada", "campo": _e,
-                            "o_que": f"a tarefa {_alvo} exige a entrada «{_e}» e a tela não a envia "
-                                     f"(campos da tela: {', '.join(sorted(_campos)) or 'nenhum'})"})
+                        if _e in _declaradas:
+                            # a tarefa DECLARA que recebe este dado, e a tela não o envia:
+                            # defeito da tela.
+                            _contrato.setdefault("divergencias", []).append({
+                                "tela": _scr.get("name"), "tipo": "entrada", "campo": _e,
+                                "o_que": f"a tarefa {_alvo} exige a entrada «{_e}» e a tela não a envia "
+                                         f"(campos da tela: {', '.join(sorted(_campos)) or 'nenhum'})"})
+                        else:
+                            # o contrato LÊ um valor que a tarefa não declara receber e que nenhum
+                            # passo produz. Isso é defeito do CONTRATO DA TAREFA, não da tela —
+                            # cobrar da tela que envie `expira_em` ou `hash_atual` não faz sentido.
+                            # Medido em 23/09/2026: 31 divergências de tela eram todas disto.
+                            _contrato.setdefault("divergencias", []).append({
+                                "tela": _scr.get("name"), "tipo": "contrato", "campo": _e,
+                                "o_que": f"a tarefa {_alvo} usa «{_e}» sem declarar como entrada e "
+                                         f"sem nenhum passo que o produza — corrigir em Agentes & Tarefas"})
                         _contrato["ok"] = False
             except Exception as _ie:
                 print(f"[CODE-GEN][CONTRATO DE TELA] conferência de entradas pulada: {_ie}")
