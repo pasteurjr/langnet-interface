@@ -12880,7 +12880,33 @@ export default function %COMP%() {
       )}
 
       {/* Dashboard: cards de KPI (placeholder — populados pelo resultado do agente) */}
-      {IS_DASHBOARD && KPIS.length > 0 && (
+      {TABELAS.length > 0 && (
+        <div className="space-y-4 mb-4">
+          {TABELAS.map((t) => (
+            <div key={t.key} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+              <div className="px-4 py-2 border-b border-slate-100 text-sm font-medium text-slate-700">{t.label}</div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <tbody>
+                    {(Array.isArray(result?.[t.key]) ? result[t.key] : []).map((linha, i) => (
+                      <tr key={i} className="border-t border-slate-100">
+                        {Object.values(linha || {}).map((v, j) => (
+                          <td key={j} className="px-4 py-2 text-slate-700">{String(v ?? "—")}</td>
+                        ))}
+                      </tr>
+                    ))}
+                    {!(Array.isArray(result?.[t.key]) && result[t.key].length > 0) && (
+                      <tr><td className="px-4 py-3 text-slate-400">Sem registros para exibir.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {KPIS.length > 0 && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {KPIS.map((k) => (
             <div key={k.key} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm">
@@ -12922,7 +12948,7 @@ export default function %COMP%() {
       )}
 
       {err && <div className="mt-4 rounded-lg bg-red-50 border border-red-200 text-red-700 px-4 py-3 text-sm">⚠ {err}</div>}
-      {result != null && !(IS_DASHBOARD && KPIS.length > 0) && (
+      {result != null && !(KPIS.length > 0) && (
         <div className="mt-5">
           <h3 className="text-sm font-semibold text-slate-600 mb-2">Resultado</h3>
           <div className="bg-white rounded-2xl border border-slate-200 p-5">{renderResult(result)}</div>
@@ -12950,8 +12976,17 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
     kpis = []
     saidas = []     # campos de leitura SEM coluna do modelo: são o que a AÇÃO devolve (escore, fatores…)
     fk_used = []
+    tabelas = []    # componentes de tabela declarados na Especificação de Interface
     for c in (screen.get("components") or []):
-        if c.get("type") == "readonly" and c.get("field"):
+        # Cartão de indicador DECLARADO é indicador — antes só `readonly` com vínculo virava KPI,
+        # e os cartões caíam na lista de saídas, onde não são desenhados. Medido no BioByte em
+        # 23/09/2026: a tela de Estimativa de Redução de Risco declarava três cartões (redução
+        # absoluta, relativa e intervalo de confiança) e emitia KPIS vazio.
+        if c.get("type") in ("metric-card", "kpi", "indicator", "stat") and c.get("field"):
+            kpis.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
+        elif c.get("type") in ("table", "grid") and c.get("field"):
+            tabelas.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
+        elif c.get("type") == "readonly" and c.get("field"):
             if not c.get("bindTo"):
                 saidas.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
             else:
@@ -12968,7 +13003,8 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
     # apenas numa lista interna de metadados — ou seja, declarado e NAO desenhado (medido em
     # 13/09/2026: avisos do monitor, justificativa do tratamento, formato do relatorio). Aqui ele
     # vira bloco de leitura, para nunca sumir calado.
-    _ja = {x["key"] for x in inp} | {x["key"] for x in saidas} | {x["key"] for x in kpis}
+    _ja = ({x["key"] for x in inp} | {x["key"] for x in saidas}
+           | {x["key"] for x in kpis} | {x["key"] for x in tabelas})
     for c in (screen.get("components") or []):
         _f = c.get("field")
         if _f and _f not in _ja and (c.get("type") or "") not in ("table", "chart", "grid", "list"):
@@ -13131,6 +13167,7 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
         f'const TASK = {json.dumps(target)};\n'  # null se o alvo não é uma task real → botão desabilita
         f'const INPUTS = {json.dumps(inp, ensure_ascii=False)};\n'
         f'const KPIS = {json.dumps(kpis, ensure_ascii=False)};\n'
+        f'const TABELAS = {json.dumps(tabelas, ensure_ascii=False)};   // tabelas declaradas na Especificação de Interface\n'
         f'const SAIDAS = {json.dumps(saidas, ensure_ascii=False)};   // o que a ação devolve, com rótulo da especificação\n'
         f'const IS_DASHBOARD = {json.dumps(is_dashboard)};\n'
         f'const HAS_FK = {json.dumps(bool(fk_used))};\n'
