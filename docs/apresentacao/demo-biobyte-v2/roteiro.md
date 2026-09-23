@@ -1565,3 +1565,133 @@ O sistema não escondeu. Foi preciso dizer **sim, suba assim mesmo** — e essa 
 registrada.
 
 ---
+
+## Parte R — Ferramentas de verdade e serviços externos
+
+### Cena 90 — Cada ferramenta tem de dizer de onde vem
+
+**TELA:** `shots/683-ferramentas-inventario-com-servicos.png`
+
+**NARRAÇÃO:**
+Antes de gerar código de novo, o sistema volta uma etapa e faz uma pergunta que parece boba e é a
+mais importante: **cada ferramenta que os agentes usam, de onde vem a implementação?**
+
+A tela lista oito. Duas vêm de servidores externos de verdade — o laboratório e o serviço de escore
+de risco. Quatro vêm da biblioteca que o gerador embarca: emitir o token de sessão, calcular a marca
+da trilha de auditoria, trocar o prontuário por um identificador sem nome, gravar o relatório em
+arquivo. Uma é acesso ao banco, que não é ferramenta: vira consulta dentro da tarefa. E uma é regra
+interna, escrita em passos.
+
+Enquanto alguma estiver pendente, **a geração de código fica bloqueada**. Foi o que aconteceu: a
+leitura de JSON estava descrita só em texto. Pedimos os passos pela conversa, o sistema conferiu, e
+só então liberou.
+
+---
+
+### Cena 91 — Os serviços externos entram no projeto
+
+**TELA:** `shots/661-servicos-externos-habilitados.png` e `shots/664-ferramentas-atribuidas-aos-agentes.png`
+
+**NARRAÇÃO:**
+Aqui o projeto escolhe com quais sistemas de fora ele vai conversar: o laboratório, que devolve
+hemocultura e antibiograma, e o serviço que calcula o escore de risco pelo modelo de Cox.
+
+O sistema sugere quem usa o quê, comparando o que cada agente faz com o que cada serviço oferece —
+e acerta os três: o agente de microbiologia fica com a consulta ao laboratório, o agente de escore
+fica com o cálculo de risco, o agente de notificação fica com o envio de e-mail.
+
+Isso não é enfeite: é o que faz a tarefa **chamar o serviço certo com o nome de argumento certo**.
+Sem essa etapa, o contrato dizia só "chame a API" — e "chamar a API" não é ferramenta nenhuma.
+
+---
+
+## Parte S — O sistema funcionando, caso de uso por caso de uso
+
+### Cena 92 — A bateria: o caminho do operador, do começo ao fim
+
+**NARRAÇÃO:**
+Com o sistema no ar, percorremos os casos de uso na ordem em que um operador percorreria — cada
+passo alimentando o seguinte, como nas telas.
+
+**Entrar no sistema:** com a senha certa, entra e devolve o token e o papel. Com a senha errada,
+recusa com a frase que o caso de uso manda exibir: *"E-mail ou senha inválidos."* — a mesma para os
+dois casos, para não revelar se o e-mail existe.
+
+**Cadastrar paciente e caso clínico:** grava o paciente, abre o caso e registra a operação na trilha
+de auditoria, encadeada: cada evento carrega a marca do evento anterior.
+
+**Consultar o laboratório:** o sistema troca o número do prontuário por um identificador sem nome e
+pergunta ao **serviço externo de verdade**, que responde pelo protocolo MCP.
+
+**Calcular o escore de risco:** manda idade, APACHE II e tipo de cateter ao serviço de Cox e grava o
+escore que voltou — zero vírgula um três cinco sete, neste caso.
+
+**Classificar pelo critério NHSN:** o programa busca o critério vigente e os dados do caso, entrega
+os dois ao modelo, e o modelo responde apenas o que ninguém tem: o resultado e a justificativa. O
+programa grava.
+
+**Recomendar o bundle, exportar o relatório, registrar consentimento e operação de tratamento,
+encerrar o caso:** correm até o fim. O relatório sai como arquivo CSV de verdade, no disco.
+
+Quinze dos vinte e três passos da bateria correm inteiros. No começo do dia eram três.
+
+---
+
+### Cena 93 — E o que ainda não corre
+
+**NARRAÇÃO:**
+Sendo honesto, nem tudo passou — e o que não passou tem nome e motivo:
+
+O **envio de notificação** por e-mail para de pé: ninguém diz quem é o destinatário. É uma das
+tarefas que ainda não tem a receita escrita em passos — só a descrição em texto.
+
+A **importação de resultado de laboratório** grava sem dizer de qual paciente. O portão da geração
+já apontou isso antes de implantar, com o nome da tarefa, da tabela e da coluna.
+
+E o **cadastro de usuário** confunde o papel de quem está operando com o papel de quem está sendo
+cadastrado — os dois se chamam "papel" no contrato. É defeito de especificação, não de geração.
+
+Nenhum desses é surpresa: os três estão na lista que a implantação exigiu que alguém aprovasse
+explicitamente antes de subir.
+
+---
+
+## Parte T — Monitoramento: o que o sistema fez, dito por ele mesmo
+
+### Cena 94 — A última etapa fecha o ciclo
+
+**TELA:** `shots/930-monitoramento-tarefas.png`
+
+**NARRAÇÃO:**
+A última etapa do processo não gera nada: ela **olha**. E o que ela olha é o registro ao vivo da
+implantação — nada é simulado.
+
+Vinte e duas tarefas foram exercitadas. Dezessete execuções deram certo, seis falharam, a duração
+média foi de menos de um segundo.
+
+A tabela mostra, tarefa por tarefa: qual agente é o responsável, se ela roda por programa ou por
+julgamento do modelo, quantas vezes rodou, quantas falharam — e **qual foi o último erro, na frase
+que o operador veria**.
+
+"Entrar no sistema: duas execuções, uma deu certo, uma falhou — *E-mail ou senha inválidos*." É a
+bateria que acabamos de rodar, vista de dentro. A tentativa com a senha errada aparece como falha,
+porque é isso que ela é: uma recusa, e a recusa está funcionando.
+
+"Cadastrar usuário: uma execução, uma falha — *Operação permitida apenas para usuários com papel
+admin*." Essa é a que ainda está errada, e o painel não esconde.
+
+---
+
+### Cena 95 — O ciclo inteiro, numa frase
+
+**NARRAÇÃO:**
+Uma ata de reunião de doze quilobytes entrou no começo deste vídeo.
+
+Saíram: oitenta e três requisitos rastreados, trinta e três casos de uso, um modelo de dados com
+vinte e cinco tabelas, vinte e oito telas, quarenta e cinco tarefas com seus agentes, uma rede de
+fluxo conferida, trezentos e oitenta casos de teste, cento e sessenta e dois arquivos de código, um
+sistema no ar conversando com dois serviços externos de verdade — e este painel, que diz o que o
+sistema fez e o que ele ainda não faz.
+
+Nenhuma linha de código foi escrita à mão. E o que falta **está escrito**, com nome, motivo e o
+lugar onde se conserta.
