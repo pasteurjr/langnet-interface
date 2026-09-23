@@ -103,6 +103,24 @@ task_name:
       * subcampo2: descrição
 ```
 
+⚠️ REGRA DA ENTRADA — NOMEAR QUEM PRODUZ O DADO (padrão do framework, ver TropicalSales):
+`Input data format` não descreve só os campos: ele diz DE ONDE cada dado vem. Quando o dado é
+produzido por OUTRA task, a entrada nomeia essa task, exatamente assim:
+
+    Input data format:
+      - JSON da task <nome_da_task_produtora> contendo:
+        * campo: descrição do campo
+        * outro_campo: descrição
+      - campo_digitado: String (informado pelo operador na tela X)
+
+POR QUE ISTO É OBRIGATÓRIO: a Rede de Petri e a geração de código leem daqui quem alimenta quem.
+Sem o nome da task produtora, a rede desenha em PARALELO tarefas que são sequenciais — e o
+sistema executa na ordem errada. Medido no BioByte em 22/09/2026: das 45 tarefas, ZERO nomeavam a
+task produtora, e a rede precisou ser costurada depois, a partir de outro documento.
+
+Dado que NÃO vem de task anterior (digitado pelo operador, vindo da sessão ou de serviço externo)
+é declarado assim mesmo, dizendo a origem — nunca fica sem procedência.
+
 REGRAS CRÍTICAS:
 1. Nome da task: snake_case com verbo+objeto (ex: read_email, classify_message)
 2. Description: "fazendo o parametro X = {{X}}" para parametrização

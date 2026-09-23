@@ -3124,6 +3124,26 @@ def _campos_de_entrada_da_tarefa(cfg: dict) -> list:
     return campos
 
 
+def _tarefa_produtora_declarada(cfg: dict) -> list:
+    """De quais tarefas esta tarefa recebe dado, segundo a PRÓPRIA descrição dela.
+
+    O padrão do framework (ver `framework/tasks.yaml`, TropicalSales) declara a procedência na
+    entrada: "Input data format: - JSON da task read_email contendo: * email_id: ...". Ler isso
+    dá o grafo de dependências direto da fonte, sem adivinhar por nome de campo e sem depender de
+    outro documento. Medido no BioByte em 22/09/2026: nenhuma das 45 tarefas nomeava a produtora,
+    e a rede de Petri desenhava em paralelo o que era sequencial.
+    """
+    import re as _re
+    texto = str(cfg.get("description") or "")
+    nomes = []
+    for m in _re.finditer(r"(?:JSON|sa[íi]da|resultado|output)\s+d[ao]\s+task\s+[`\"']?([a-z][a-z0-9_]{2,60})",
+                          texto, _re.I):
+        n = m.group(1)
+        if n not in nomes:
+            nomes.append(n)
+    return nomes
+
+
 def _campos_de_saida_da_tarefa(cfg: dict) -> list:
     """O que a tarefa DECLARA entregar: os campos do passo de retorno, ou o esquema de saída.
 

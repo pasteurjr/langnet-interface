@@ -1119,7 +1119,15 @@ design_petri_net:
           P_A → T_AB → P_B
           Isso garante que P_B só dispara DEPOIS de P_A terminar, e P_B recebe o output de P_A.
 
-       b) Use o campo "dependencies" (`flow_document_md`) como FONTE DE VERDADE: ele lista quem alimenta quem. Reproduza essas dependências como arcos sequenciais.
+       b) FONTE DE VERDADE das dependências, nesta ordem:
+      1º) o campo `recebe_de` de cada task em tasks_json: lista, pelo NOME, as tasks que
+          produzem os dados que ela consome. Para cada nome ali, desenhe a cadeia
+          P_<produtora> → T_<consumidora> → P_<consumidora>. Isto não é sugestão: veio
+          escrito na descrição da própria tarefa.
+      2º) os campos `consome` e `entrega` de cada task: se B consome um campo que A
+          entrega, B vem DEPOIS de A.
+      3º) o campo "dependencies" (`flow_document_md`), que traz o documento de Sequência.
+      Havendo conflito, vale o que estiver declarado em `recebe_de`.
 
        c) ANTIPATTERN PROIBIDO: NÃO crie uma transição-fonte (sem entrada) que dispara 5+ lugares paralelos. Esse padrão faz com que todos os agentes executem com input vazio e ignorem o contexto.
           Errado: T0 sem entrada → [P1, P2, P3, P4, P5, P6, P7, P8]

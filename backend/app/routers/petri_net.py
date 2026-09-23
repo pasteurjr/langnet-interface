@@ -193,6 +193,7 @@ def _parse_tasks_yaml(content: str) -> list:
     from agents.langnetagents import (
         _campos_de_entrada_da_tarefa,
         _campos_de_saida_da_tarefa,
+        _tarefa_produtora_declarada,
     )
 
     saida = []
@@ -206,6 +207,9 @@ def _parse_tasks_yaml(content: str) -> list:
                 "agent": cfg.get("agent") or "",
                 "consome": _campos_de_entrada_da_tarefa(cfg),
                 "entrega": _campos_de_saida_da_tarefa(cfg),
+                # de quais tarefas esta recebe dado, pela própria descrição — é o grafo de
+                # dependências vindo da fonte, que o modelo deve reproduzir como arcos.
+                "recebe_de": _tarefa_produtora_declarada(cfg),
             }
         )
     return saida
