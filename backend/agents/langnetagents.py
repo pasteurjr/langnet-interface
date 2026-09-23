@@ -13037,7 +13037,11 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
         # 23/09/2026: a tela de Estimativa de Redução de Risco declarava três cartões (redução
         # absoluta, relativa e intervalo de confiança) e emitia KPIS vazio.
         if c.get("type") in ("metric-card", "kpi", "indicator", "stat") and c.get("field"):
-            kpis.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
+            # DECLARADO como indicador: não pode ser promovido a campo de digitação nem virar
+            # saída — a Especificação de Interface disse que é um cartão. Medido em 23/09/2026:
+            # a tela de Estimativa de Redução de Risco perdia os três cartões por causa disso.
+            kpis.append({"key": c["field"], "label": c.get("label", _humanize(c["field"])),
+                         "declarado": True})
         elif c.get("type") in ("table", "grid") and c.get("field"):
             tabelas.append({"key": c["field"], "label": c.get("label", _humanize(c["field"]))})
         elif c.get("type") == "readonly" and c.get("field"):
@@ -13076,8 +13080,9 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
                "recomendac", "resultado", "score", "justificativa", "status", "parecer",
                "destino", "encaminh")
     if interactive_agent and kpis:
+        _declarados = [k for k in kpis if k.get("declarado")]
         _promoted = []
-        for k in kpis:
+        for k in [x for x in kpis if not x.get("declarado")]:
             key_l = str(k["key"]).lower()
             if any(w in key_l for w in _out_kw):
                 if k["key"] not in {x["key"] for x in saidas}:
@@ -13087,7 +13092,7 @@ def _agent_screen(screen: dict, comp_name: str, task_fields: dict, model: Option
         # evita duplicar campos que já são inputs
         _have = {i["key"] for i in inp}
         inp = [i for i in inp] + [p for p in _promoted if p["key"] not in _have]
-        kpis = []
+        kpis = [{"key": k["key"], "label": k["label"]} for k in _declarados]
     # Dashboard = painel de KPIs (só quando explicitamente dashboard, OU há KPIs e NÃO é interativa).
     is_dashboard = explicit_dashboard or (len(kpis) > 0 and not interactive_agent)
     # VIEW_ENTITY: dashboard de VISUALIZAÇÃO ligado a uma entidade (ex.: Visualizar Prontuário).
