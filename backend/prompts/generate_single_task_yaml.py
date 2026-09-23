@@ -508,6 +508,16 @@ REGRA DA PROCEDÊNCIA DOS VALORES (a que mais falha):
   `assinatura` sem que nenhum passo os produzisse — a conferência então exigia que a TELA os
   enviasse, o que não faz sentido para valor interno da tarefa.
 
+DE ONDE VEM CADA TIPO DE VALOR INTERNO (os que mais somem):
+  - instante/agora/data de registro      → passo `calculo` com `hoje()`
+  - validade/expiração de token          → passo `externo` (token_tool), guardado com `guarda_em`,
+                                            e o instante de expiração vem do `mapeia` desse passo
+  - resumo criptográfico / assinatura    → passo `externo` (hash_chain_tool ou password_hash_tool)
+  - marca anterior / estado antes de mudar → passo `consulta` ANTES da escrita, com `guarda_em`
+  - identificador recém-criado           → `guarda_id_em` no passo de escrita
+  Nenhum desses valores é entrada de tela. Se aparecer numa expressão sem ter sido produzido, a
+  conferência acusa a tarefa — e com razão.
+
 REGRAS DO CONTRATO:
   - TODO passo da prosa tem de ter um passo correspondente aqui. Passo que sobrar na prosa vira
     pendência e some do aplicativo.
