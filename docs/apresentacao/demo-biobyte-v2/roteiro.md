@@ -1108,9 +1108,6 @@ conferindo a resposta.
 Até aqui tudo é documento para pessoa ler. Esta etapa traduz o documento de Agentes e Tarefas em
 **dois arquivos de configuração** que o sistema executa: um descreve os agentes, outro as tarefas.
 
-A origem é escolhida na lista, com a contagem à vista — *quinze agentes, quarenta e cinco
-tarefas* —, e a etapa registra de qual versão nasceu.
-
 ---
 
 ### Cena 65 — Quinze agentes, quarenta e cinco tarefas
@@ -1118,49 +1115,57 @@ tarefas* —, e a etapa registra de qual versão nasceu.
 **TELA:** `shots/406-yaml-agentes-gerando.png` e `shots/410-yaml-tarefas-pronto.png`
 
 **NARRAÇÃO:**
-Sai exatamente o que entrou: quinze agentes e quarenta e cinco tarefas. Nenhuma tarefa aponta para
+Sai exatamente o que entrou: quinze agentes e quarenta e cinco tarefas, nenhuma apontando para
 agente que não existe.
 
-E cada tarefa traz o campo que decide **como** ela roda: trinta e oito são determinísticas — o
+Cada tarefa traz o campo que decide **como** ela roda: trinta e oito são determinísticas — o
 programa executa, sem modelo de linguagem — e sete são de julgamento, que é quando o agente é
-chamado. É a arquitetura híbrida escrita no arquivo, não na intenção.
+chamado. Classificar pelo critério NHSN, recomendar o protocolo, estimar a redução de risco: isso
+é julgamento. Buscar no laboratório e gravar: isso é código.
 
 ---
 
 ### Cena 66 — O que faltava: as ferramentas
 
+**TELA:** `shots/452-yaml-agentes-com-ferramentas.png`
+
 **NARRAÇÃO:**
-E aqui esta etapa quase deixou passar o defeito mais caro do dia.
-
 Na primeira geração, os quinze agentes e as quarenta e cinco tarefas saíram **sem nenhuma
-ferramenta declarada**. O inventário da etapa anterior tinha cinco ferramentas resolvidas — e
-nenhuma chegava ao arquivo. Na prática: o aplicativo gerado não teria como chamar o laboratório,
-o escore de Cox nem o e-mail. As três integrações reais do sistema, mudas.
+ferramenta declarada**. O inventário da etapa anterior tinha cinco ferramentas resolvidas, e
+nenhuma chegava ao arquivo. Na prática: o aplicativo não teria como chamar o laboratório, o escore
+de Cox nem o e-mail.
 
-A informação que faltava já estava gravada: cada ferramenta do inventário diz **quem a usa**.
-Ninguém precisava perguntar ao modelo — bastava ler o que a etapa anterior tinha apurado.
-
-Agora o programa lê o inventário e escreve as ferramentas em cada agente e em cada tarefa. Com
-critério: a chamada externa vai só para os quatro que falam com fora; o leitor de JSON, para os
-dois que recebem resposta de serviço; o leitor de PDF, só para quem exporta relatório. Ferramenta
-não resolvida não entra — declarar o que ninguém implementa seria pior que a falta.
+A informação já estava gravada — cada ferramenta do inventário diz quem a usa. Agora o programa lê
+e escreve: a chamada externa vai só para os quatro agentes que falam com fora; o leitor de JSON,
+para os dois que recebem resposta de serviço; o leitor de PDF, só para quem exporta relatório.
 
 ---
 
-### Cena 67 — E a trava que nasceu do erro
+### Cena 67 — O padrão que veio do primeiro projeto
 
 **NARRAÇÃO:**
-A primeira versão dessa ligação **quebrou o arquivo de tarefas**: escreveu as ferramentas num
-nível de recuo errado, e o arquivo deixou de ser lido.
+E aqui está a correção mais importante desta etapa, que veio de olhar o **exemplo original** — o
+primeiro sistema que este gerador construiu, anos antes do BioByte.
 
-O erro apareceu porque o artefato foi conferido — não porque a tela disse "gerado com sucesso".
+Naquele exemplo, a descrição de cada tarefa tem três partes: o formato da entrada, os passos e o
+formato da saída. E na entrada há uma linha decisiva: quando o dado vem de outra tarefa, **ela é
+nomeada**. *"Entrada: o JSON da tarefa que lê os e-mails, contendo identificador, remetente,
+assunto."*
 
-Duas coisas saíram dali: o recuo passou a ser o da primeira linha do bloco, e o programa ganhou
-uma trava — depois de acrescentar as ferramentas, ele tenta ler o arquivo de volta; se não
-conseguir, descarta o acréscimo, mantém o original e **diz que descartou**.
+É dali que a rede de Petri sabe quem alimenta quem.
 
-Um arquivo de configuração quebrado derruba a geração de código inteira. Esta trava custa
-milissegundos.
+Medido no BioByte: das quarenta e cinco tarefas, vinte e oito tinham o formato da entrada, quarenta
+tinham os passos — e **nenhuma** nomeava a tarefa produtora. Por isso a rede desenhava em paralelo
+o que era sequencial.
+
+Pedir ao modelo não resolveu: com a regra escrita no pedido, **zero das quarenta e cinco**
+obedeceram. Então quem escreve é o programa, lendo o que o documento de Agentes e Tarefas já
+declarava. Resultado: **trinta e oito de trinta e oito**.
+
+Não foi invenção nova. Foi voltar ao padrão que existia desde o primeiro projeto e tinha se
+perdido pelo caminho.
+
+**NOTA DE PRODUÇÃO:** cena sem captura — narrar sobre a tela da cena 65.
 
 ---
 
