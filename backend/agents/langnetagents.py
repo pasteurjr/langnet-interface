@@ -11196,9 +11196,11 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
             for t, ddl in _parse_schema_tables_full(_schema_do_projeto(state)).items()}
         globals()["COLUNAS_OPCIONAIS_CG"] = {
             t.lower(): {m.group(1) for m in _re_tab.finditer(
-                r'^\s*[`"]?(\w+)[`"]?\s+[A-Za-z]+[^,\n]*$', ddl, _re_tab.M)
+                r'^\s*[`"]?(\w+)[`"]?\s+[A-Za-z]+[^\n]*$', ddl, _re_tab.M)
                 if "NOT NULL" not in m.group(0).upper()
-                and "PRIMARY KEY" not in m.group(0).upper()}
+                and "PRIMARY KEY" not in m.group(0).upper()
+                and not m.group(0).strip().upper().startswith(
+                    ("CREATE", "KEY", "INDEX", "UNIQUE", "CONSTRAINT", "FOREIGN", "PRIMARY"))}
             for t, ddl in _parse_schema_tables_full(_schema_do_projeto(state)).items()}
     except Exception:
         globals()["TABELAS_CG"] = {}
