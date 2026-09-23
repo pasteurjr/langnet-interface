@@ -4667,8 +4667,17 @@ def _msg_negocio(task_name, tipo, tecnico):
             _t = _t.replace(_a, _b)
         return {{_w for _w in _re.split(r"[^a-z0-9]+", _t) if len(_w) > 3}}
     _alvo = _termos(tecnico)
-    _melhor, _pontos = None, 0
+    def _e_frase(_m):
+        # título de tela ("Detalhe do Caso") não é mensagem: mensagem termina em ponto ou
+        # fala de um problema. Trocar o motivo por um título deixava o operador sem saber nada.
+        _t = str(_m).strip()
+        return _t.endswith((".", "!")) or bool(_re.search(
+            r"inv[áa]lid|incorret|obrigat|n[ãa]o encontrad|n[ãa]o conform|indispon|falh|erro|"
+            r"j[áa] cadastrad|sem permiss|expirad|preench", _t, _re.I))
+    _melhor, _pontos = None, 1
     for _m in _msgs:
+        if not _e_frase(_m):
+            continue
         _p = len(_termos(_m) & _alvo)
         if _p > _pontos:
             _melhor, _pontos = _m, _p
@@ -6509,6 +6518,7 @@ MANIFESTOS_REGRAS: Dict[str, dict] = {}
 FERRAMENTAS_RESOLVIDAS_CG: Optional[set] = None   # definido pelo fluxo antes de gerar os adapters
 APELIDOS_TAREFA_CG: Dict[str, str] = {}           # código no documento (T-NOT-001) -> nome da tarefa
 TABELAS_CG: Dict[str, List[str]] = {}             # tabela -> colunas (do modelo de dados)
+COLUNAS_OPCIONAIS_CG: Dict[str, set] = {}         # tabela -> colunas que aceitam vazio
 
 
 def _generate_deterministic_adapters(tasks_yaml: str) -> str:
@@ -6603,7 +6613,8 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
                                apelidos=APELIDOS_TAREFA_CG, tabelas=TABELAS_CG,
                                ferramentas_resolvidas=FERRAMENTAS_RESOLVIDAS_CG,
                                nome_tarefa=task_name,
-                               entradas_por_tarefa=_ENTRADAS_DECLARADAS)
+                               entradas_por_tarefa=_ENTRADAS_DECLARADAS,
+                               colunas_opcionais=COLUNAS_OPCIONAIS_CG)
             for _r in _resolvidos:
                 print(f"[CODE-GEN][CONTRATO] {task_name}: {_r}")
             # REGRA 3 — programa busca, modelo julga, programa grava.
@@ -11182,6 +11193,12 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
                 r'^\s*[`"]?(\w+)[`"]?\s+(?:VAR|CHAR|TEXT|INT|BIG|SMALL|TINY|DEC|NUM|FLOAT|DOUBLE|'
                 r'DATE|TIME|BOOL|ENUM|JSON|BLOB|UUID|SERIAL)',
                 ddl, _re_tab.I | _re_tab.M)]
+            for t, ddl in _parse_schema_tables_full(_schema_do_projeto(state)).items()}
+        globals()["COLUNAS_OPCIONAIS_CG"] = {
+            t.lower(): {m.group(1) for m in _re_tab.finditer(
+                r'^\s*[`"]?(\w+)[`"]?\s+[A-Za-z]+[^,\n]*$', ddl, _re_tab.M)
+                if "NOT NULL" not in m.group(0).upper()
+                and "PRIMARY KEY" not in m.group(0).upper()}
             for t, ddl in _parse_schema_tables_full(_schema_do_projeto(state)).items()}
     except Exception:
         globals()["TABELAS_CG"] = {}

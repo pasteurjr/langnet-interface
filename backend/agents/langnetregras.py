@@ -519,7 +519,8 @@ def resolver_nomes_de_linha(passos: List[dict],
                             tabelas: Optional[Dict[str, List[str]]] = None,
                             ferramentas_resolvidas: Any = None,
                             nome_tarefa: str = "",
-                            entradas_por_tarefa: Optional[Dict[str, List[str]]] = None) -> List[str]:
+                            entradas_por_tarefa: Optional[Dict[str, List[str]]] = None,
+                            colunas_opcionais: Optional[Dict[str, set]] = None) -> List[str]:
     """Liga nome solto ao campo da LINHA que um passo anterior capturou.
 
     POR QUE: o contrato consulta `SELECT id, senha_hash, papel, ativo ... guarda_em: usuario` e
@@ -909,6 +910,33 @@ def resolver_nomes_de_linha(passos: List[dict],
                             continue
             i += 1
     _ajustar_encadeamentos(passos)
+
+    # COLUNA QUE ACEITA VAZIO NÃO OBRIGA A TELA: o cadastro de um caso que está ABRINDO não tem
+    # data de encerramento, e o modelo de dados diz isso (a coluna aceita vazio). Mesmo assim a
+    # tarefa exigia o campo e recusava antes de começar. Aqui o valor passa a ser opcional —
+    # continua indo para a gravação, e vai vazio quando a tela não mandar.
+    if colunas_opcionais:
+        def _opcionalizar(lista):
+            for p in lista or []:
+                if not isinstance(p, dict):
+                    continue
+                if str(p.get("tipo")) in ("escrita", "consulta") and isinstance(p.get("params"), list):
+                    tab = re.search(r"(?is)\b(?:into|update)\s+`?(\w+)`?", str(p.get("sql") or ""))
+                    livres = colunas_opcionais.get(tab.group(1).lower()) if tab else None
+                    if livres:
+                        cols = dict(_colunas_com_marcador(str(p.get("sql") or "")))
+                        novos = list(p["params"])
+                        for col, idx in cols.items():
+                            if (col in livres and idx < len(novos)
+                                    and re.fullmatch(r"[A-Za-z_]\w*", str(novos[idx]))):
+                                novos[idx] = f"opcional({novos[idx]})"
+                                trocas.append(f"«{col}» aceita vazio no modelo de dados — a tela "
+                                              f"não é obrigada a mandar")
+                        p["params"] = novos
+                for campo in ("passos", "senao", "passos_senao", "entao", "corpo"):
+                    if isinstance(p.get(campo), list):
+                        _opcionalizar(p[campo])
+        _opcionalizar(passos)
 
     # PASSO DE JULGAMENTO SEM DIZER O QUE DEVOLVE: o contrato escreve a instrução ao modelo
     # ("determine o resultado, com justificativa") e esquece de listar o que ele devolve. Sem essa

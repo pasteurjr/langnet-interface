@@ -15,6 +15,7 @@ PORTA = sys.argv[1] if len(sys.argv) > 1 else "5005"
 BANCO = sys.argv[2] if len(sys.argv) > 2 else "biobyte_v4_app"
 EMAIL = "ana.ribeiro@hospitalvidas.org.br"
 SENHA = "Senha@123"
+ADMIN = "admin.sistema@hospitalvidas.org.br"
 
 def banco():
     return pymysql.connect(host="127.0.0.1", port=3308, user="producao",
@@ -70,7 +71,16 @@ def referencia():
                 c.execute("INSERT INTO bundles(nome, indicacao, reducao_media_risco, "
                           "intervalo_confianca_reducao) VALUES(%s,%s,%s,%s)",
                           (nome, ind, red, ic))
-        c.execute("SELECT id FROM usuarios WHERE email=%s", (EMAIL,))
+        # O PRIMEIRO administrador é semeado, como em qualquer sistema: não existe tela para
+        # criar o primeiro administrador antes de haver administrador.
+        import hashlib
+        c.execute("SELECT id FROM usuarios WHERE email=%s", (ADMIN,))
+        if not c.fetchone():
+            c.execute("INSERT INTO usuarios(nome, email, senha_hash, papel, ativo) "
+                      "VALUES(%s,%s,%s,'admin',1)",
+                      ("Administrador do Sistema", ADMIN,
+                       hashlib.sha256(SENHA.encode()).hexdigest()))
+        c.execute("SELECT id FROM usuarios WHERE email=%s", (ADMIN,))
         u = c.fetchone()
     return (u or {}).get("id")
 
@@ -79,11 +89,11 @@ async def principal():
     print(f"usuário da bateria: {uid}\n")
 
     r = conta("UC-001 entrar no sistema (senha certa)",
-              await tarefa("autenticar_usuario", {"email": EMAIL, "senha": SENHA}), ["token"])
+              await tarefa("autenticar_usuario", {"email": ADMIN, "senha": SENHA}), ["token"])
     token = r.get("token"); usuario_id = r.get("usuario_id") or uid
 
     conta("UC-001 entrar no sistema (senha errada recusa)",
-          {"recusou": (await tarefa("autenticar_usuario", {"email": EMAIL, "senha": "errada"}))})
+          {"recusou": (await tarefa("autenticar_usuario", {"email": ADMIN, "senha": "errada"}))})
     if token:
         conta("UC-001 conferir a sessão", await tarefa("validar_token_requisicao", {"token": token}))
 
