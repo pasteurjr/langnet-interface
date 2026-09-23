@@ -4656,9 +4656,28 @@ def _msg_negocio(task_name, tipo, tecnico):
         "erro":    r"^erro |erro ao",
     }}
     _pat = _padroes.get(tipo, r"erro")
+    # A frase do caso de uso só entra no lugar do motivo técnico se FALAR DA MESMA COISA. A
+    # escolha por "a primeira que se pareça com uma mensagem de erro" trocava "usuário inválido"
+    # por "Preencha o campo: Data de início." — o operador lia a frase errada e procurava um
+    # problema que não existia.
+    def _termos(_t):
+        _t = str(_t).lower()
+        for _a, _b in (("á","a"),("â","a"),("ã","a"),("é","e"),("ê","e"),("í","i"),
+                       ("ó","o"),("ô","o"),("õ","o"),("ú","u"),("ç","c")):
+            _t = _t.replace(_a, _b)
+        return {{_w for _w in _re.split(r"[^a-z0-9]+", _t) if len(_w) > 3}}
+    _alvo = _termos(tecnico)
+    _melhor, _pontos = None, 0
     for _m in _msgs:
-        if _re.search(_pat, str(_m), _re.I):
-            return _m
+        _p = len(_termos(_m) & _alvo)
+        if _p > _pontos:
+            _melhor, _pontos = _m, _p
+    if _melhor:
+        return _melhor
+    if not _alvo:
+        for _m in _msgs:
+            if _re.search(_pat, str(_m), _re.I):
+                return _m
     return tecnico
 
 
@@ -6545,6 +6564,16 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
     # determinística existente
     _tarefas_sys = {str(b.get('name') or ''): str(b.get('execution') or 'deterministic')
                     for b in blocks if b.get('name')}
+    # Entradas DECLARADAS de cada tarefa: é o que permite ver que um encadeamento não daria
+    # certo (chamar quem pede e-mail e senha passando só o identificador do usuário).
+    _ENTRADAS_DECLARADAS = {}
+    for _b in blocks:
+        _d = _b.get('description') or ''
+        _m = _re.search(r'Input data format:(.*?)(?:Process steps:|$)', _d, _re.S) if _d else None
+        if _m:
+            _ENTRADAS_DECLARADAS[_b.get('name') or ''] = _re.findall(
+                r'^\s*-\s*([A-Za-z_]\w*)\s*:', _m.group(1), _re.M)
+
     for _blk in blocks:
         task_name = _blk.get('name') or ''
         desc = _blk.get('description') or ""
@@ -6573,7 +6602,8 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
                                tarefas_do_sistema=set(_tarefas_sys),
                                apelidos=APELIDOS_TAREFA_CG, tabelas=TABELAS_CG,
                                ferramentas_resolvidas=FERRAMENTAS_RESOLVIDAS_CG,
-                               nome_tarefa=task_name)
+                               nome_tarefa=task_name,
+                               entradas_por_tarefa=_ENTRADAS_DECLARADAS)
             for _r in _resolvidos:
                 print(f"[CODE-GEN][CONTRATO] {task_name}: {_r}")
             # REGRA 3 — programa busca, modelo julga, programa grava.

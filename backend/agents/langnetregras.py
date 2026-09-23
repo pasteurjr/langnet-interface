@@ -518,7 +518,8 @@ def resolver_nomes_de_linha(passos: List[dict],
                             apelidos: Optional[Dict[str, str]] = None,
                             tabelas: Optional[Dict[str, List[str]]] = None,
                             ferramentas_resolvidas: Any = None,
-                            nome_tarefa: str = "") -> List[str]:
+                            nome_tarefa: str = "",
+                            entradas_por_tarefa: Optional[Dict[str, List[str]]] = None) -> List[str]:
     """Liga nome solto ao campo da LINHA que um passo anterior capturou.
 
     POR QUE: o contrato consulta `SELECT id, senha_hash, papel, ativo ... guarda_em: usuario` e
@@ -855,6 +856,29 @@ def resolver_nomes_de_linha(passos: List[dict],
                                       f"passa a chamar a tarefa {novo_nome}")
                         p["nome"] = novo_nome
                         alvo = novo_nome
+                    # ENCADEAR QUEM PEDE OUTRA COISA: o contrato manda "chamar autenticar_usuario"
+                    # passando só o identificador do usuário — e autenticar pede e-mail e senha.
+                    # A chamada nunca dá certo, e a tarefa inteira recusa logo no segundo passo.
+                    # Quando a intenção é claramente conferir quem está operando, isso vira a
+                    # consulta e a recusa que as outras tarefas fazem à mão.
+                    if (alvo in _nomes_sys and entradas_por_tarefa
+                            and entradas_por_tarefa.get(alvo)):
+                        _pede = {str(x) for x in entradas_por_tarefa[alvo]}
+                        _tem = {str(k) for k in ent}
+                        if _pede - _tem and _tem and _tem <= {"usuario_id", "id", "autor_id"}:
+                            par = _conferir_usuario(ent)
+                            lista[i:i + 1] = par
+                            produzidos.add("usuario")
+                            if p.get("guarda_em"):
+                                par.append({"tipo": "calculo", "atribui": str(p["guarda_em"]),
+                                            "expressao": "usuario"})
+                                produzidos.add(str(p["guarda_em"]))
+                                lista[i:i + 2] = par
+                            trocas.append(f"chamar «{alvo}» com {sorted(_tem)} não daria certo "
+                                          f"(ela pede {sorted(_pede)}) — virou a conferência do "
+                                          f"usuário")
+                            i += len(par)
+                            continue
                     if alvo and alvo not in _nomes_sys:
                         baixo = alvo.lower()
                         if baixo.startswith("ag-13") or "auditar" in baixo or "auditoria" in baixo:
@@ -1127,6 +1151,21 @@ def entradas_do_contrato(passos: List[dict]) -> Tuple[List[str], List[str]]:
 
 
 # ────────────────────────────── validação do contrato ───────────────────────────
+
+def _mensagem_legivel(msg: Any) -> str:
+    """A recusa é lida por uma pessoa. O contrato às vezes escreve um código no lugar da frase
+    («usuario_invalido»); aqui ele vira uma frase, para a tela não mostrar jargão."""
+    t = str(msg or "").strip()
+    if not t:
+        return "condição não atendida"
+    if " " in t or any(c in t for c in ".!?"):
+        return t
+    palavras = [w for w in re.split(r"[_\-]+", t) if w]
+    if not palavras:
+        return t
+    frase = " ".join(palavras)
+    return frase[:1].upper() + frase[1:] + "."
+
 
 def _erro(n: str, msg: str) -> dict:
     return {"passo": n, "motivo": msg}
@@ -1674,7 +1713,7 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                 else:
                     cond, _ = compilar_expressao(str(p["condicao"]))
                     teste = f"if not {cond}:"
-                msg = str(p.get("mensagem") or "condição não atendida")
+                msg = _mensagem_legivel(p.get("mensagem"))
                 linhas.append(f"{indent}# passo {n}: verificação")
                 linhas.append(f"{indent}{teste}")
                 if com_transacao:
