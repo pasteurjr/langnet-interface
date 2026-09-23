@@ -1152,6 +1152,21 @@ def resolver_nomes_de_linha(passos: List[dict],
                     _res2 = _resolver(_n)
                     if _res2 and _res2 not in _citados:
                         _citados.append(_res2)
+                if not _citados:
+                    # A instrução fala dos dados sem citar o nome que o contrato deu a eles.
+                    # O modelo não consulta nada: se o programa não entrega, ele não tem o que
+                    # julgar. Entrega-se então tudo o que a tarefa já apurou até aqui.
+                    _antes = set()
+                    for _q in passos[:_i]:
+                        if not isinstance(_q, dict):
+                            continue
+                        for _k in ("guarda_em", "atribui", "guarda_id_em"):
+                            if _q.get(_k):
+                                _antes.add(str(_q[_k]))
+                        for _mv in (_q.get("mapeia") or {}).values():
+                            _antes.add(str(_mv))
+                    _citados = [n for n in _antes if n not in ("marca_anterior", "hash_atual",
+                                                               "usuario", "sessao")][:8]
                 if _citados:
                     _p["usa"] = _citados[:8]
                     trocas.append("o julgamento ia sem dado nenhum — passa a receber "
