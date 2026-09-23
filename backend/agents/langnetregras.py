@@ -74,6 +74,7 @@ BIBLIOTECA_ASSINATURAS = {
                                           "marca_anterior"],
                            "saida": ["hash_atual", "marca_anterior"]},
     "password_hash_tool": {"argumentos": ["senha"], "saida": ["senha_hash"]},
+    "pseudonimizar_tool": {"argumentos": ["valor", "sal"], "saida": ["pseudonimo", "hash"]},
 }
 
 
@@ -117,6 +118,10 @@ FUNCOES: Dict[str, Tuple[str, int, int]] = {
     # contrato da ferramenta era recusado — a necessidade existia, faltava a palavra.
     "json_valido": ("_rt_json_valido", 1, 1),      # json_valido(texto) -> verdadeiro/falso
     "de_json": ("_rt_de_json", 1, 1),              # de_json(texto) -> objeto (recusa se inválido)
+    # Ordenar uma lista por um campo é necessidade real ("o bundle de maior redução"): sem a
+    # palavra, o contrato escrevia `ordenar(lista, por=campo, ordem=desc)` e `por`/`ordem`/`desc`
+    # viravam nomes de valor que ninguém produzia — a tarefa recusava antes de começar.
+    "ordenar": ("_rt_ordenar", 1, 3),              # ordenar(lista, por=campo, ordem=desc)
 }
 
 
@@ -129,7 +134,7 @@ class ErroDeRegra(ValueError):
 _TOKEN = re.compile(r"""
     (?P<num>\d+(?:\.\d+)?)
   | (?P<str>'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")
-  | (?P<op>==|!=|<=|>=|<|>|=|\+|-|\*|/|\(|\)|\[|\]|,|\.)
+  | (?P<op>==|!=|<=|>=|<|>|=|\?|:|\+|-|\*|/|\(|\)|\[|\]|,|\.)
   | (?P<nome>[A-Za-zÀ-ÿ_][A-Za-z0-9À-ÿ_]*)
   | (?P<ws>\s+)
 """, re.X)
@@ -171,6 +176,7 @@ class _Parser:
         self.toks = _tokenizar(texto)
         self.i = 0
         self.nomes_usados: List[str] = []
+        self.locais: set = set()          # nomes do "para cada", que não vêm do contexto
 
     def _olha(self) -> Tuple[str, str]:
         return self.toks[self.i]
@@ -185,10 +191,33 @@ class _Parser:
         return t
 
     def compilar(self) -> str:
-        py = self._ou()
+        py = self._ternario()
         if self._olha()[0] != "FIM":
             raise ErroDeRegra(f"sobrou «{self._olha()[1]}» no fim de «{self.texto}»")
         return py
+
+    def _ternario(self) -> str:
+        """«valor_a se CONDIÇÃO senao valor_b» — o jeito natural de escrever a escolha em
+        português. Sem isto, `se` e `senao` eram lidos como nomes de valor e a tarefa passava a
+        exigir da tela dois campos chamados «se» e «senao»."""
+        esq = self._ou()
+        t = self._olha()
+        if t[0] == "OP" and t[1] == "?":
+            self._come()
+            entao = self._ternario()
+            self._come("OP", ":")
+            senao = self._ternario()
+            return f"({entao} if {esq} else {senao})"
+        if t[0] == "NOME" and t[1].lower() == "se":
+            self._come()
+            cond = self._ou()
+            t2 = self._olha()
+            if not (t2[0] == "NOME" and t2[1].lower() in ("senao", "senão")):
+                raise ErroDeRegra(f"faltou «senao» na escolha em «{self.texto}»")
+            self._come()
+            alt = self._ternario()
+            return f"({esq} if {cond} else {alt})"
+        return esq
 
     def _ou(self) -> str:
         esq = self._e()
@@ -210,6 +239,11 @@ class _Parser:
     def _cmp(self) -> str:
         esq = self._add()
         t = self._olha()
+        # «x em [a, b]» é o jeito natural de perguntar se um valor está numa lista. Só existia
+        # como função, `em(x, lista)`, e a frase entre dois valores não era lida.
+        if t[0] == "NOME" and t[1].lower() == "em":
+            self._come()
+            return f"_rt_em({esq}, {self._add()})"
         if t[0] == "OP" and t[1] in ("==", "=", "!=", "<", "<=", ">", ">="):
             self._come()
             dir_ = self._add()
@@ -240,6 +274,8 @@ class _Parser:
             nome = self._come()[1]
             if self._olha()[0] == "OP" and self._olha()[1] == "(":
                 py = self._chamada(nome)          # `.campo` depois da chamada é tratado abaixo
+            elif nome in self.locais:
+                py = f"_it_{nome}"        # item do "para cada": não é valor de entrada
             else:
                 self.nomes_usados.append(nome)
                 py = f"_v({nome!r})"
@@ -257,21 +293,59 @@ class _Parser:
         fn, mn, mx = FUNCOES[nome]
         self._come("OP", "(")
         args: List[str] = []
-        if nome in ("existe", "opcional") and self._olha()[0] == "NOME":
+        if (nome in ("existe", "opcional") and self._olha()[0] == "NOME"
+                and not (self.toks[self.i + 1][0] == "OP" and self.toks[self.i + 1][1] == ".")):
             # existe(x)/opcional(x) perguntam pelo NOME, não pelo valor — senão x ausente já
             # daria erro antes. opcional(x) é o jeito de um filtro que pode vir vazio.
             alvo = self._come()[1]
             self._come("OP", ")")
             return f"_rt_{nome}_nome({alvo!r})"
         if not (self._olha()[0] == "OP" and self._olha()[1] == ")"):
-            args.append(self._ou())
+            args.append(self._arg_de_chamada())
             while self._olha()[0] == "OP" and self._olha()[1] == ",":
-                self._come(); args.append(self._ou())
+                self._come(); args.append(self._arg_de_chamada())
         self._come("OP", ")")
         if not (mn <= len(args) <= mx):
             raise ErroDeRegra(f"«{nome}» espera {mn}" + (f" a {mx}" if mx != mn else "")
                               + f" argumento(s), veio {len(args)}")
         return f"{fn}({', '.join(args)})"
+
+    def _var_de_compreensao(self) -> Optional[str]:
+        """Olha adiante: a lista aberta é uma compreensão «… para cada X em …»? Devolve X."""
+        prof = 0
+        j = self.i
+        while j < len(self.toks):
+            t = self.toks[j]
+            if t[0] == "OP" and t[1] in ("(", "["):
+                prof += 1
+            elif t[0] == "OP" and t[1] in (")", "]"):
+                if prof == 0:
+                    return None
+                prof -= 1
+            elif (prof == 0 and t[0] == "NOME" and t[1].lower() == "para"
+                  and j + 3 < len(self.toks)
+                  and self.toks[j + 1][1].lower() == "cada"
+                  and self.toks[j + 2][0] == "NOME"
+                  and self.toks[j + 3][1].lower() == "em"):
+                return self.toks[j + 2][1]
+            j += 1
+        return None
+
+    def _arg_de_chamada(self) -> str:
+        """Argumento de chamada. Aceita a forma com nome — `ordenar(lista, por=preco, ordem=desc)`
+        — em que o que vem depois do `=` é o NOME de um campo, e portanto texto."""
+        t, prox = self._olha(), self.toks[self.i + 1] if self.i + 1 < len(self.toks) else ("FIM", "")
+        if t[0] == "NOME" and prox[0] == "OP" and prox[1] == "=":
+            rotulo = self._come()[1].lower()
+            self._come("OP", "=")
+            alvo = self._olha()
+            if alvo[0] == "NOME" and not (self.toks[self.i + 1][0] == "OP"
+                                          and self.toks[self.i + 1][1] in ("(", ".")):
+                valor = repr(self._come()[1])
+            else:
+                valor = self._ternario()
+            return f"{rotulo}={valor}"
+        return self._ternario()
 
     def _prim(self) -> str:
         t = self._come()
@@ -286,13 +360,30 @@ class _Parser:
         if t[0] == "NULO":
             return "None"
         if t[0] == "OP" and t[1] == "(":
-            py = self._ou(); self._come("OP", ")"); return f"({py})"
+            py = self._ternario(); self._come("OP", ")"); return f"({py})"
         if t[0] == "OP" and t[1] == "[":
+            # «[b para cada b em lista se CONDIÇÃO]» — a lista filtrada, escrita em português.
+            # Sem isto, `para`, `cada`, `em` e `se` eram lidos como valores que a tela teria de
+            # mandar, e o passo não virava código.
+            _var = self._var_de_compreensao()
+            if _var:
+                self.locais.add(_var)
+                item = self._ternario()
+                self._come("NOME"); self._come("NOME")          # para cada
+                self._come("NOME"); self._come("NOME")          # <var> em
+                origem = self._ou()
+                cond = None
+                if self._olha()[0] == "NOME" and self._olha()[1].lower() == "se":
+                    self._come(); cond = self._ou()
+                self._come("OP", "]")
+                self.locais.discard(_var)
+                filtro = f" if {cond}" if cond else ""
+                return f"[{item} for _it_{_var} in _rt_lista({origem}){filtro}]"
             itens = []
             if not (self._olha()[0] == "OP" and self._olha()[1] == "]"):
-                itens.append(self._ou())
+                itens.append(self._ternario())
                 while self._olha()[0] == "OP" and self._olha()[1] == ",":
-                    self._come(); itens.append(self._ou())
+                    self._come(); itens.append(self._ternario())
             self._come("OP", "]")
             return "[" + ", ".join(itens) + "]"
         raise ErroDeRegra(f"não entendi «{t[1] or 'fim'}» em «{self.texto}»")
@@ -421,7 +512,11 @@ def conferir_chamadas_externas(tarefas: dict, fichas: dict, tipos_das_colunas: d
             _varrer(nome, cfg.get("steps"))
     return achados
 
-def resolver_nomes_de_linha(passos: List[dict]) -> List[str]:
+def resolver_nomes_de_linha(passos: List[dict],
+                            entradas_declaradas: Optional[List[str]] = None,
+                            tarefas_do_sistema: Optional[Any] = None,
+                            apelidos: Optional[Dict[str, str]] = None,
+                            tabelas: Optional[Dict[str, List[str]]] = None) -> List[str]:
     """Liga nome solto ao campo da LINHA que um passo anterior capturou.
 
     POR QUE: o contrato consulta `SELECT id, senha_hash, papel, ativo ... guarda_em: usuario` e
@@ -462,11 +557,15 @@ def resolver_nomes_de_linha(passos: List[dict]) -> List[str]:
                 if isinstance(p.get(campo), list):
                     _mapear(p[campo])
     _mapear(passos)
-    if not colunas_por_linha:
-        return trocas
 
-    def _resolver(nome: str) -> Optional[str]:
+    def _resolver(nome: str, disponiveis: Optional[set] = None) -> Optional[str]:
+        """`disponiveis` limita a busca às linhas JÁ capturadas. Sem esse limite, o programa
+        resolvia o nome pela linha que o PRÓPRIO passo ainda ia capturar — `usuario_id` virava
+        `usuario.id` dentro da consulta que busca o usuário, e a tarefa passava a exigir da tela
+        um valor chamado «usuario»."""
         for linha, cols in colunas_por_linha.items():
+            if disponiveis is not None and linha not in disponiveis:
+                continue
             if nome == f"{linha}_id" and "id" in cols:
                 return f"{linha}.id"
             if nome in cols:
@@ -474,6 +573,7 @@ def resolver_nomes_de_linha(passos: List[dict]) -> List[str]:
         return None
 
     produzidos: set = set()
+    _declaradas_ini = {str(x) for x in (entradas_declaradas or [])}
 
     def _reescrever(lista):
         for p in lista or []:
@@ -487,8 +587,9 @@ def resolver_nomes_de_linha(passos: List[dict]) -> List[str]:
                 novos = []
                 for arg in p["params"]:
                     a = str(arg)
-                    if re.fullmatch(r"[A-Za-z_]\w*", a) and a not in produzidos:
-                        alvo = _resolver(a)
+                    if (re.fullmatch(r"[A-Za-z_]\w*", a) and a not in produzidos
+                            and a not in _declaradas_ini):
+                        alvo = _resolver(a, produzidos)
                         if alvo:
                             trocas.append(f"{a} → {alvo}")
                             novos.append(alvo)
@@ -500,8 +601,8 @@ def resolver_nomes_de_linha(passos: List[dict]) -> List[str]:
                 novos = []
                 for c in p["campos"]:
                     a = str(c)
-                    if a not in produzidos:
-                        alvo = _resolver(a)
+                    if a not in produzidos and a not in _declaradas_ini:
+                        alvo = _resolver(a, produzidos)
                         if alvo:
                             # o retorno mantém o NOME curto, mas passa a existir como cálculo
                             trocas.append(f"retorno {a} ← {alvo}")
@@ -526,12 +627,35 @@ def resolver_nomes_de_linha(passos: List[dict]) -> List[str]:
                 for campo in ("passos", "senao", "passos_senao"):
                     if isinstance(p.get(campo), list):
                         _costurar_auditoria(p[campo])
-                usados = {str(x) for x in (p.get("params") or [])}
+                # A gravação da trilha pede a marca anterior e a marca deste evento. O contrato
+                # às vezes as nomeia (marca_anterior, hash_atual) e às vezes deixa o lugar EM
+                # BRANCO — e aí a gravação morre com "expressão vazia". Os dois casos são a mesma
+                # falta, e aqui os dois são costurados.
+                _cols = dict(_colunas_com_marcador(str(p.get("sql") or ""))) \
+                    if str(p.get("tipo")) == "escrita" else {}
+                _par = list(p.get("params") or [])
+                def _falta(col: str) -> bool:
+                    idx = _cols.get(col)
+                    if idx is None or idx >= len(_par):
+                        return False
+                    v = str(_par[idx]).strip()
+                    return (not v) or (re.fullmatch(r"[A-Za-z_]\w*", v) and v not in produzidos)
+                _precisa_marca = ("registros_auditoria" in str(p.get("sql") or "")
+                                  and (_falta("hash_atual") or _falta("marca_anterior")))
+                usados = {str(x) for x in _par}
                 if (str(p.get("tipo")) == "escrita"
                         and "registros_auditoria" in str(p.get("sql") or "")
-                        and ({"marca_anterior", "hash_atual"} & usados)
+                        and (({"marca_anterior", "hash_atual"} & usados) or _precisa_marca)
                         and "marca_anterior" not in produzidos):
-                    autor = next((str(x) for x in (p.get("params") or [])
+                    for _c in ("hash_atual", "marca_anterior"):
+                        _i = _cols.get(_c)
+                        if _i is not None and _i < len(_par) and not str(_par[_i]).strip():
+                            _par[_i] = _c
+                    _i = _cols.get("data_hora")
+                    if _i is not None and _i < len(_par) and not str(_par[_i]).strip():
+                        _par[_i] = "hoje()"
+                    p["params"] = _par
+                    autor = next((str(x) for x in _par
                                   if str(x).endswith(".id") or str(x).endswith("_id")), "usuario.id")
                     antes = [
                         {"tipo": "consulta",
@@ -568,7 +692,320 @@ def resolver_nomes_de_linha(passos: List[dict]) -> List[str]:
                 trocas += [f"{x['atribui']} = {x['expressao']} (acrescentado antes do retorno)"
                            for x in faltam]
             break
+
+    # CHAMAR QUEM NÃO EXISTE: o contrato encadeia "tarefas" que são, na verdade, o CÓDIGO da
+    # tarefa no documento de agentes e tarefas (T-AUT-002), o código do agente de auditoria
+    # (AG-13) ou um ajudante que ninguém escreveu (auditar_classificacao). Como o passo não vira
+    # código, a tarefa inteira recusa em runtime. Medido no BioByte em 23/09/2026: 15 das 22
+    # tarefas com contrato recusavam, e a causa mais comum era esta.
+    # Aqui o programa faz três coisas, sempre declarando o que fez:
+    #   · código do documento  -> nome da tarefa correspondente;
+    #   · auditoria            -> os três passos que a auditoria realmente é (marca anterior,
+    #                             marca deste evento pela ferramenta, gravação na trilha);
+    #   · conferir o usuário   -> a consulta e a recusa que as outras tarefas já fazem à mão.
+    _nomes_sys = set(tarefas_do_sistema or [])
+    _apelidos = {k.upper(): v for k, v in (apelidos or {}).items()}
+
+    def _auditoria_trio(entrada: dict, guarda: str) -> List[dict]:
+        autor = str(entrada.get("autor_id") or entrada.get("usuario_id") or "usuario_id")
+        acao = entrada.get("acao")
+        alvo = str(entrada.get("registro_afetado")
+                   or next((v for k, v in entrada.items()
+                            if k.endswith("_id") and k not in ("autor_id", "usuario_id")), autor))
+        acao_expr = f"'{acao}'" if acao and re.fullmatch(r"[A-Za-z_]\w*", str(acao)) else (acao or "'registro'")
+        return [
+            {"tipo": "consulta",
+             "sql": "SELECT hash_atual FROM registros_auditoria ORDER BY created_at DESC LIMIT 1",
+             "params": [], "guarda_em": "marca_anterior", "forma": "escalar"},
+            {"tipo": "externo", "ferramenta": "hash_chain_tool",
+             "argumentos": {"autor_id": autor, "acao": acao_expr, "registro_afetado": alvo,
+                            "data_hora": "hoje()", "marca_anterior": "marca_anterior"},
+             "guarda_em": guarda or "auditoria", "mapeia": {"hash_atual": "hash_atual"}},
+            {"tipo": "escrita",
+             "sql": ("INSERT INTO registros_auditoria(autor_id, acao, registro_afetado, "
+                     "marca_anterior, hash_atual) VALUES(%s,%s,%s,%s,%s)"),
+             "params": [autor, acao_expr, alvo, "marca_anterior", "hash_atual"]},
+        ]
+
+    def _gravacao_de(alvo: str, entrada: dict, guarda: str) -> Optional[List[dict]]:
+        """«criar_alerta_multirresistencia» não é tarefa: é a GRAVAÇÃO numa tabela. O nome diz a
+        tabela e a entrada diz as colunas — o resto é o INSERT que o contrato descreveu por
+        extenso. Sem tabela correspondente, nada é inventado."""
+        if not tabelas:
+            return None
+        assunto = re.sub(r"^(criar|inserir|gravar|registrar|adicionar)_", "", alvo.lower())
+        if not assunto:
+            return None
+        cand = [t for t in tabelas
+                if t.lower() in (assunto, assunto + "s", assunto + "es")
+                or re.sub(r"(s|es)$", "", t.lower()) == assunto
+                or t.lower().replace("_", "") == assunto.replace("_", "")]
+        if not cand:
+            # "resultado_hemocultura" -> "resultados_hemocultura"
+            partes = assunto.split("_")
+            alvo_plural = "_".join([partes[0] + "s"] + partes[1:])
+            cand = [t for t in tabelas if t.lower() == alvo_plural]
+        if not cand:
+            return None
+        tab = cand[0]
+        cols = [c for c in (tabelas.get(tab) or []) if c in entrada]
+        if not cols:
+            return None
+        return [{"tipo": "escrita",
+                 "sql": f"INSERT INTO {tab}({', '.join(cols)}) VALUES({', '.join(['%s'] * len(cols))})",
+                 "params": [str(entrada[c]) for c in cols],
+                 "guarda_id_em": guarda or f"{tab}_id"}]
+
+    def _conferir_usuario(entrada: dict) -> List[dict]:
+        quem = str(entrada.get("usuario_id") or "usuario_id")
+        return [
+            {"tipo": "consulta", "sql": "SELECT id, papel, ativo FROM usuarios WHERE id=%s",
+             "params": [quem], "guarda_em": "usuario", "forma": "linha"},
+            {"tipo": "verificacao", "recusa_se": "nao existe(usuario) ou usuario.ativo = 0",
+             "mensagem": "Usuário inválido ou inativo."},
+        ]
+
+    def _ajustar_encadeamentos(lista):
+        i = 0
+        while i < len(lista):
+            p = lista[i]
+            if isinstance(p, dict):
+                for campo in ("passos", "senao", "passos_senao", "entao", "corpo"):
+                    if isinstance(p.get(campo), list):
+                        _ajustar_encadeamentos(p[campo])
+                if str(p.get("tipo")) == "externo":
+                    _f = str(p.get("ferramenta") or "").lower()
+                    _ar = p.get("argumentos") if isinstance(p.get("argumentos"), dict) else {}
+                    # "ferramenta de auditoria" não é ferramenta: auditoria é gravar na trilha.
+                    if "auditoria" in _f or _f.startswith("auditar"):
+                        trio = _auditoria_trio(_ar, str(p.get("guarda_em") or "auditoria"))
+                        lista[i:i + 1] = trio
+                        produzidos.update({"marca_anterior", "hash_atual",
+                                           str(p.get("guarda_em") or "auditoria")})
+                        trocas.append(f"«{p.get('ferramenta')}» não é uma ferramenta: virou a "
+                                      f"gravação na trilha de auditoria")
+                        i += len(trio)
+                        continue
+                    # Pedir o usuário ao "banco como ferramenta" é, na verdade, conferir o usuário.
+                    if (_f in FERRAMENTAS_DE_BANCO or _canonizar_ferramenta(_f) in FERRAMENTAS_DE_BANCO) \
+                            and set(_ar) <= {"usuario_id", "id"} and _ar:
+                        par = _conferir_usuario(_ar)
+                        lista[i:i + 1] = par
+                        produzidos.add("usuario")
+                        trocas.append("a conferência do usuário estava escrita como chamada ao "
+                                      "banco — virou consulta e recusa")
+                        i += len(par)
+                        continue
+                    # Resumo de um valor com sal é pseudonimização, não marca de auditoria.
+                    if _f == "hash_chain_tool" and ("valor" in _ar or "sal" in _ar):
+                        p["ferramenta"] = "pseudonimizar_tool"
+                        trocas.append("o resumo de um valor com sal é pseudonimização → "
+                                      "pseudonimizar_tool")
+                if str(p.get("tipo")) == "tarefa":
+                    alvo = str(p.get("nome") or p.get("tarefa") or "").strip()
+                    ent = p.get("entrada") if isinstance(p.get("entrada"), dict) else {}
+                    if alvo and alvo not in _nomes_sys and alvo.upper() in _apelidos:
+                        novo_nome = _apelidos[alvo.upper()]
+                        trocas.append(f"o contrato chamava «{alvo}», que é o código no documento — "
+                                      f"passa a chamar a tarefa {novo_nome}")
+                        p["nome"] = novo_nome
+                        alvo = novo_nome
+                    if alvo and alvo not in _nomes_sys:
+                        baixo = alvo.lower()
+                        if baixo.startswith("ag-13") or "auditar" in baixo or "auditoria" in baixo:
+                            trio = _auditoria_trio(ent, str(p.get("guarda_em") or "auditoria"))
+                            lista[i:i + 1] = trio
+                            produzidos.update({"marca_anterior", "hash_atual",
+                                               str(p.get("guarda_em") or "auditoria")})
+                            trocas.append(f"«{alvo}» não é uma tarefa: virou a trilha de auditoria "
+                                          f"de verdade (marca anterior, marca deste evento, gravação)")
+                            i += len(trio)
+                            continue
+                        _grav = (_gravacao_de(alvo, ent, str(p.get("guarda_em") or ""))
+                                 if re.match(r"^(criar|inserir|gravar|adicionar)_", baixo) else None)
+                        if _grav:
+                            lista[i:i + 1] = _grav
+                            produzidos.add(str(_grav[0].get("guarda_id_em")))
+                            trocas.append(f"«{alvo}» não é uma tarefa: virou a gravação em "
+                                          f"{_grav[0]['sql'].split()[2].split('(')[0]}")
+                            i += len(_grav)
+                            continue
+                        if re.match(r"^(validar|conferir)_(usuario|sessao|token)", baixo) or baixo.startswith("t-aut"):
+                            par = _conferir_usuario(ent)
+                            lista[i:i + 1] = par
+                            produzidos.add("usuario")
+                            trocas.append(f"«{alvo}» não é uma tarefa: virou a conferência do "
+                                          f"usuário (consulta + recusa se inexistente ou inativo)")
+                            i += len(par)
+                            continue
+            i += 1
+    _ajustar_encadeamentos(passos)
+
+    # PASSO DE JULGAMENTO SEM DIZER O QUE DEVOLVE: o contrato escreve a instrução ao modelo
+    # ("determine o resultado, com justificativa") e esquece de listar o que ele devolve. Sem essa
+    # lista o passo não vira código e a tarefa recusa — e, pior, os nomes que os passos SEGUINTES
+    # usavam passavam a ser cobrados da tela. O que ele devolve está justamente aí: são os nomes
+    # que os passos seguintes usam e que ninguém produz.
+    def _pendentes_depois(lista: List[dict], desde: int, ja: set) -> List[str]:
+        falta: List[str] = []
+        def _varre(ps):
+            for q in ps or []:
+                if not isinstance(q, dict):
+                    continue
+                for expr in _expressoes_do_passo(q):
+                    try:
+                        _, nomes = compilar_expressao(str(expr))
+                    except Exception:
+                        continue
+                    for n in nomes:
+                        if n not in ja and n not in falta:
+                            falta.append(n)
+                for k in ("guarda_em", "atribui", "guarda_id_em", "para_cada"):
+                    if q.get(k):
+                        ja.add(str(q[k]))
+                for m in (q.get("mapeia") or {}).values():
+                    ja.add(str(m))
+                for c in ("passos", "senao", "passos_senao", "entao", "corpo"):
+                    if isinstance(q.get(c), list):
+                        _varre(q[c])
+                for campo in (q.get("campos") or []):
+                    n = str(campo).split(" como ")[0].strip()
+                    if "." not in n and n not in ja and n not in falta:
+                        falta.append(n)
+        _varre(lista[desde + 1:])
+        return falta
+
+    if entradas_declaradas is not None:
+        _ja = set(produzidos) | {str(x) for x in entradas_declaradas}
+        for _i, _p in enumerate(passos):
+            if not isinstance(_p, dict) or str(_p.get("tipo")) != "agente":
+                continue
+            if _p.get("devolve") or not _p.get("instrucao"):
+                continue
+            _alvo = [n for n in _pendentes_depois(passos, _i, set(_ja)) if not _resolver(n)][:6]
+            if _p.get("guarda_em") and str(_p["guarda_em"]) not in _alvo:
+                _alvo.insert(0, str(_p["guarda_em"]))
+            if _alvo:
+                _p["devolve"] = _alvo
+                produzidos.update(_alvo)
+                trocas.append("o passo de julgamento não dizia o que devolve — devolve "
+                              + ", ".join(_alvo) + " (o que os passos seguintes usam)")
+
+    # RECUSA QUE NÃO DÁ PARA CONFERIR: `recusa_se: "nao valido"` quando nenhum passo produz
+    # «valido» e a tela não manda nada com esse nome. A conferência não tem como ser feita — e,
+    # do jeito que estava, virava exigência de um campo fantasma na tela. Sai do código e fica
+    # declarada, para aparecer no portão.
+    if entradas_declaradas is not None:
+        _conhecidos = set(produzidos) | {str(x) for x in entradas_declaradas}
+        _sobra = []
+        for _p in passos:
+            if (isinstance(_p, dict) and str(_p.get("tipo")) == "verificacao"
+                    and _p.get("recusa_se")):
+                try:
+                    _, _ns = compilar_expressao(str(_p["recusa_se"]))
+                except Exception:
+                    _ns = []
+                _orfaos = [n for n in _ns if n not in _conhecidos and not _resolver(n)]
+                if _ns and len(_orfaos) == len(set(_ns)):
+                    trocas.append(f"a recusa «{_p['recusa_se']}» fala de "
+                                  f"{', '.join(sorted(set(_orfaos)))}, que ninguém produz e a tela "
+                                  f"não manda — a conferência não virou código")
+                    continue
+            _sobra.append(_p)
+        if len(_sobra) != len(passos):
+            passos[:] = _sobra
+
+    # TEXTO FIXO SEM ASPAS: o contrato escreve `params: [caso_id, auditoria_encerramento, baixa]`
+    # querendo dizer que as duas últimas são PALAVRAS — o tipo e a gravidade do registro. Sem as
+    # aspas elas viram nomes de valor que ninguém produz, e a tarefa passa a exigir da tela dois
+    # campos que a tela nunca teve. Medido no BioByte em 23/09/2026: 17 das 22 tarefas com
+    # contrato exigiam valores assim e recusavam antes de começar.
+    # A prova de que é palavra, e não valor: não está no `Input data format` da tarefa, nenhum
+    # passo a produz e não é coluna de nenhuma linha consultada. Aí, e só aí, vira texto.
+    if entradas_declaradas is not None:
+        _declaradas = {str(x) for x in entradas_declaradas}
+        _vistos: set = set(produzidos)
+
+        def _e_palavra(a: str) -> bool:
+            return (bool(re.fullmatch(r"[A-Za-z_]\w*", a))
+                    and a not in _vistos and a not in _declaradas
+                    and a not in FUNCOES and a not in _PALAVRAS
+                    and not _resolver(a) and a not in colunas_por_linha)
+
+        def _aspas(lista):
+            for p in lista or []:
+                if not isinstance(p, dict):
+                    continue
+                if isinstance(p.get("params"), list):
+                    novos = []
+                    for arg in p["params"]:
+                        a = str(arg)
+                        if _e_palavra(a):
+                            trocas.append(f"{a} é palavra fixa, não valor de tela → '{a}'")
+                            novos.append(f"'{a}'")
+                        else:
+                            novos.append(arg)
+                    p["params"] = novos
+                for _chave_dict in ("argumentos", "entrada"):
+                    if isinstance(p.get(_chave_dict), dict):
+                        for k, v in list(p[_chave_dict].items()):
+                            a = str(v)
+                            if _e_palavra(a):
+                                trocas.append(f"{a} é palavra fixa, não valor de tela → '{a}'")
+                                p[_chave_dict][k] = f"'{a}'"
+                for k in ("guarda_em", "atribui", "guarda_id_em", "para_cada"):
+                    if p.get(k):
+                        _vistos.add(str(p[k]))
+                for m in (p.get("mapeia") or {}).values():
+                    _vistos.add(str(m))
+                for campo in ("passos", "senao", "passos_senao", "entao", "corpo"):
+                    if isinstance(p.get(campo), list):
+                        _aspas(p[campo])
+        _aspas(passos)
+
+        # DEVOLVER O QUE NÃO EXISTE: campo de retorno que nenhum passo produz, que não é entrada
+        # e não é coluna de linha nenhuma. Antes ele obrigava a tela a mandar o próprio resultado.
+        _vistos = set(produzidos) | _declaradas
+        def _produzidos_todos(lista):
+            for p in lista or []:
+                if not isinstance(p, dict):
+                    continue
+                for k in ("guarda_em", "atribui", "guarda_id_em", "para_cada"):
+                    if p.get(k):
+                        _vistos.add(str(p[k]))
+                for m in (p.get("mapeia") or {}).values():
+                    _vistos.add(str(m))
+                for campo in ("passos", "senao", "passos_senao", "entao", "corpo"):
+                    if isinstance(p.get(campo), list):
+                        _produzidos_todos(p[campo])
+        _produzidos_todos(passos)
+        for p in passos:
+            if isinstance(p, dict) and str(p.get("tipo")) == "retorno" and isinstance(p.get("campos"), list):
+                mantem = []
+                for c in p["campos"]:
+                    a = str(c).split(" como ")[0].strip()
+                    if a in _vistos or "." in a or _resolver(a):
+                        mantem.append(c)
+                    else:
+                        trocas.append(f"o contrato mandava devolver «{a}», que nenhum passo "
+                                      f"produz — retirado do retorno")
+                p["campos"] = mantem or p["campos"]
     return trocas
+
+
+def _nomes_perguntados(expr: str) -> List[str]:
+    """Nomes que a expressão apenas PERGUNTA se existem — `existe(x)`, `opcional(x)`. Podem faltar
+    sem que a tarefa recuse."""
+    try:
+        toks = _tokenizar(re.sub(r"\{\{?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}?\}", r"\1", str(expr)))
+    except Exception:
+        return []
+    fora = []
+    for i in range(2, len(toks)):
+        if (toks[i][0] == "NOME" and toks[i - 1][1] == "("
+                and toks[i - 2][1] in ("existe", "opcional")):
+            fora.append(toks[i][1])
+    return fora
 
 
 def entradas_do_contrato(passos: List[dict]) -> Tuple[List[str], List[str]]:
@@ -588,6 +1025,24 @@ def entradas_do_contrato(passos: List[dict]) -> Tuple[List[str], List[str]]:
             if not isinstance(p, dict):
                 continue
             for expr in _expressoes_do_passo(p):
+                # Quem diz o que é NOME DE VALOR é o próprio leitor da mini-linguagem. A leitura
+                # por palavras soltas contava como valor a palavra da escolha («se», «senao») e o
+                # rótulo do argumento («por», «ordem», «desc»), e a tarefa passava a exigir da
+                # tela campos com esses nomes. Só se a expressão não for legível é que se cai na
+                # varredura antiga, para não perder o que ela pegava.
+                try:
+                    _, _nomes = compilar_expressao(str(expr))
+                except Exception:
+                    _nomes = None
+                if _nomes is not None:
+                    for _n in _nomes:
+                        if _n in produzidos or _n in ("verdadeiro", "falso", "nulo"):
+                            continue
+                        (opc if dentro_de_ramo else obrig).append(_n)
+                    for _n in _nomes_perguntados(str(expr)):
+                        if _n not in produzidos:
+                            opc.append(_n)
+                    continue
                 try:
                     toks = _tokenizar(re.sub(r"\{\{?\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}?\}", r"\1", str(expr)))
                 except Exception:
@@ -1700,6 +2155,23 @@ def _rt_media(lista, campo=None):
     return (sum(vals) / len(vals)) if vals else None
 def _rt_primeiro(lista):
     l = _rt_lista(lista); return l[0] if l else None
+def _rt_ordenar(lista, por=None, ordem="asc"):
+    """Ordena a lista pelo campo indicado. Sem campo, ordena pelos próprios valores. `ordem=desc`
+    inverte. Item sem o campo vai para o fim, e não derruba a ordenação."""
+    l = list(_rt_lista(lista))
+    desc = str(ordem or "asc").lower().startswith("desc")
+    def _chave(x):
+        v = _rt_campo(x, por) if por else x
+        if v is None:
+            return (1, 0)
+        try:
+            return (0, float(v))
+        except Exception:
+            return (0, str(v))
+    try:
+        return sorted(l, key=_chave, reverse=desc)
+    except TypeError:
+        return sorted(l, key=lambda x: str(_chave(x)), reverse=desc)
 def _rt_json_valido(texto):
     """Verdadeiro se o texto é um JSON legível. Objeto/lista já prontos contam como válidos."""
     if isinstance(texto, (dict, list)):

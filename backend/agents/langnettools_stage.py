@@ -34,6 +34,7 @@ BIBLIOTECA_REAL = {
     "token_tool": "emite token de sessão com prazo de validade (assinado, HS256)",
     "hash_chain_tool": "calcula a marca encadeada (SHA-256) de um evento de auditoria",
     "password_hash_tool": "calcula o resumo criptográfico de uma senha",
+    "pseudonimizar_tool": "troca um identificador pessoal por um resumo estável (com sal)",
 }
 
 # Sinônimos comuns que o ATS costuma usar para as ferramentas da biblioteca.
@@ -59,6 +60,8 @@ SINONIMOS = {
     "audit_hash_tool": "hash_chain_tool",
     "hash_senha_tool": "password_hash_tool",
     "password_hasher": "password_hash_tool",
+    "pseudonymize_tool": "pseudonimizar_tool",
+    "anonimizar_tool": "pseudonimizar_tool",
 }
 
 

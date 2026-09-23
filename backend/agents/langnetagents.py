@@ -6488,6 +6488,8 @@ def _extract_task_blocks(tasks_yaml: str) -> List[dict]:
 MANIFESTOS_STEPS: Dict[str, dict] = {}
 MANIFESTOS_REGRAS: Dict[str, dict] = {}
 FERRAMENTAS_RESOLVIDAS_CG: Optional[set] = None   # definido pelo fluxo antes de gerar os adapters
+APELIDOS_TAREFA_CG: Dict[str, str] = {}           # código no documento (T-NOT-001) -> nome da tarefa
+TABELAS_CG: Dict[str, List[str]] = {}             # tabela -> colunas (do modelo de dados)
 
 
 def _generate_deterministic_adapters(tasks_yaml: str) -> str:
@@ -6561,7 +6563,15 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
             # usuario_id → usuario.id) e o encadeamento da auditoria: o programa resolve do
             # próprio contrato, antes de conferir. Sem isto a tarefa recusava antes de começar —
             # o login do BioByte devolvia "E-mail ou senha inválidos" com a senha CERTA.
-            _resolvidos = _rnl(_blk['steps'])
+            # As entradas DECLARADAS na descrição ("Input data format") são o contrato com a
+            # tela: o que não está lá não pode ser cobrado da tela.
+            _decl = _re.findall(r'^\s*-\s*([A-Za-z_]\w*)\s*:',
+                                (_re.search(r'Input data format:(.*?)(?:Process steps:|$)', desc,
+                                            _re.S).group(1) if _re.search(
+                                     r'Input data format:', desc) else ''), _re.M)
+            _resolvidos = _rnl(_blk['steps'], _decl,
+                               tarefas_do_sistema=set(_tarefas_sys),
+                               apelidos=APELIDOS_TAREFA_CG, tabelas=TABELAS_CG)
             for _r in _resolvidos:
                 print(f"[CODE-GEN][CONTRATO] {task_name}: {_r}")
             # REGRA 3 — programa busca, modelo julga, programa grava.
@@ -9197,12 +9207,19 @@ class JwtTool(BaseTool):
         return {"token_jwt": f"{cab}.{corpo}.{ass}", "expira_em_horas": float(exp_horas or 8)}
 
 
+class TokenToolSchema(BaseModel):
+    usuario_id: Optional[str] = None
+    papel: Optional[str] = None
+    minutos: Optional[float] = 30
+
+
 class TokenTool(BaseTool):
     """Emite um token de sessão com prazo de validade. REAL: o token é assinado (HS256) com o
     segredo do ambiente e o instante de expiração é calculado de verdade."""
     name: str = "token_tool"
     description: str = ("Emite token de sessão com validade. Args: usuario_id, papel (opcional), "
                         "minutos (padrão 30). Devolve token e expira_em.")
+    args_schema: type[BaseModel] = TokenToolSchema
 
     def _run(self, usuario_id: str = "", papel: str = "", minutos: float = 30, **kwargs) -> Dict[str, Any]:
         import os, json, base64, hmac, hashlib, time, datetime
@@ -9222,12 +9239,23 @@ class TokenTool(BaseTool):
                 "minutos": float(minutos or 30)}
 
 
+class HashChainToolSchema(BaseModel):
+    """O primeiro registro da cadeia NÃO tem marca anterior — por isso cada campo aceita vazio.
+    Exigir texto aqui derrubava a gravação do primeiro evento de auditoria do sistema."""
+    autor_id: Optional[str] = None
+    acao: Optional[str] = None
+    registro_afetado: Optional[str] = None
+    data_hora: Optional[str] = None
+    marca_anterior: Optional[str] = None
+
+
 class HashChainTool(BaseTool):
     """Marca de integridade encadeada de um registro de auditoria: SHA-256 sobre os dados do
     evento MAIS a marca do registro anterior. REAL: mudar qualquer evento quebra a cadeia."""
     name: str = "hash_chain_tool"
     description: str = ("Calcula a marca (SHA-256) de um evento de auditoria encadeada. Args: "
                         "autor_id, acao, registro_afetado, data_hora, marca_anterior. Devolve hash_atual.")
+    args_schema: type[BaseModel] = HashChainToolSchema
 
     def _run(self, autor_id: str = "", acao: str = "", registro_afetado: str = "",
              data_hora: str = "", marca_anterior: str = "", **kwargs) -> Dict[str, Any]:
@@ -9250,8 +9278,28 @@ class PasswordHashTool(BaseTool):
         return {"senha_hash": hashlib.sha256((sal + str(senha or "")).encode("utf-8")).hexdigest()}
 
 
+class PseudonimizarToolSchema(BaseModel):
+    valor: Optional[str] = None
+    sal: Optional[str] = None
+
+
+class PseudonimizarTool(BaseTool):
+    """Troca um identificador pessoal (prontuário, CPF) por um resumo estável. O mesmo valor com
+    o mesmo sal dá sempre o mesmo resumo — dá para cruzar registros sem guardar o dado real."""
+    name: str = "pseudonimizar_tool"
+    description: str = "Pseudonimiza um identificador. Args: valor, sal. Devolve pseudonimo."
+    args_schema: type[BaseModel] = PseudonimizarToolSchema
+
+    def _run(self, valor: str = "", sal: str = "", **kwargs) -> Dict[str, Any]:
+        import os, hashlib
+        tempero = str(sal or "") or os.getenv("PSEUDONIM_SALT", "")
+        h = hashlib.sha256((tempero + str(valor or "")).encode("utf-8")).hexdigest()
+        return {"pseudonimo": h, "hash": h}
+
+
 STD_TOOLS = {
     "jwt_tool": JwtTool(),
+    "pseudonimizar_tool": PseudonimizarTool(),
     "token_tool": TokenTool(),
     "hash_chain_tool": HashChainTool(),
     "password_hash_tool": PasswordHashTool(),
@@ -11068,6 +11116,21 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         {t["nome"]: {"argumentos": list(t.get("entrada") or []), "saida": list(t.get("saida") or [])}
          for t in _td.get("tools", []) if t.get("resolvida") and t.get("origem") in ("biblioteca", "mcp")}
         if _td.get("tools") else {})
+    # Código da tarefa no documento de agentes e tarefas (T-NOT-001) -> nome da tarefa. O
+    # contrato encadeia pelo código, e sem essa tradução o passo não vira código.
+    globals()["APELIDOS_TAREFA_CG"] = {
+        m.group(1): m.group(2) for m in __import__("re").finditer(
+            r'\b(T-[A-Z]{2,5}-\d{3})\s*:\s*([a-z_][a-z0-9_]*)', spec_md or "")}
+    try:
+        import re as _re_tab
+        globals()["TABELAS_CG"] = {
+            t: [c.group(1) for c in _re_tab.finditer(
+                r'^\s*[`"]?(\w+)[`"]?\s+(?:VAR|CHAR|TEXT|INT|BIG|SMALL|TINY|DEC|NUM|FLOAT|DOUBLE|'
+                r'DATE|TIME|BOOL|ENUM|JSON|BLOB|UUID|SERIAL)',
+                ddl, _re_tab.I | _re_tab.M)]
+            for t, ddl in _parse_schema_tables_full(state.get("data_model_schema_sql") or "").items()}
+    except Exception:
+        globals()["TABELAS_CG"] = {}
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)
     _list_helper_added = False
     if _det_snippet:
