@@ -284,6 +284,17 @@ def validate_task_yaml(task_name: str, task_yaml: str, needs_sql: bool) -> Tuple
         return False, f"missing task_name '{task_name}'"
     if "description:" not in task_yaml or "expected_output:" not in task_yaml:
         return False, "missing description or expected_output"
+    # O bloco precisa ser YAML VÁLIDO. Sem esta conferência, um bloco malformado era concatenado
+    # ao arquivo e só quebrava lá na frente, na etapa seguinte — e o erro aparecia longe da causa.
+    # Medido em 23/09/2026: chave dobrada copiada do exemplo do prompt (`{{campo: valor}}`) tornou
+    # o tasks.yaml inteiro ilegível.
+    try:
+        import yaml as _yaml
+        _bloco = _yaml.safe_load(task_yaml)
+        if not isinstance(_bloco, dict):
+            return False, "bloco não é um mapeamento YAML"
+    except Exception as _e:
+        return False, f"YAML inválido: {str(_e)[:120]}"
     if needs_sql:
         # accept INSERT, UPDATE, DELETE, or explicit SELECT-after-INSERT pattern
         sql_ops = ("INSERT INTO", "UPDATE ", "DELETE FROM")
@@ -453,8 +464,8 @@ TIPOS DE PASSO (use SOMENTE estes):
   - tipo: calculo       | atribui, expressao
   - tipo: condicao      | se, passos: [...]
   - tipo: laco          | para_cada, em, passos: [...]
-  - tipo: externo       | ferramenta, argumentos: {{campo: expressao}}, guarda_em, mapeia (opcional)
-  - tipo: tarefa        | nome, entrada: {{campo: expressao}}, guarda_em   (encadeia outra tarefa)
+  - tipo: externo       | ferramenta, argumentos: {campo: expressao}, guarda_em, mapeia (opcional)
+  - tipo: tarefa        | nome, entrada: {campo: expressao}, guarda_em   (encadeia outra tarefa)
   - tipo: retorno       | campos: [...]
   - tipo: agente        | instrucao      (SÓ em tarefa com execution: agent)
 
@@ -478,7 +489,7 @@ EXEMPLO (autenticar usuário):
       mensagem: "E-mail ou senha inválidos."
     - tipo: externo
       ferramenta: token_tool
-      argumentos: {{usuario_id: usuario.id, minutos: 30}}
+      argumentos: {usuario_id: usuario.id, minutos: 30}
       guarda_em: token
     - tipo: escrita
       sql: "INSERT INTO tokens_acesso(usuario_id, token, expira_em) VALUES(%s,%s,%s)"
