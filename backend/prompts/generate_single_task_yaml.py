@@ -497,6 +497,17 @@ EXEMPLO (autenticar usuário):
     - tipo: retorno
       campos: [usuario_id, token, papel]
 
+REGRA DA PROCEDÊNCIA DOS VALORES (a que mais falha):
+  Todo nome usado numa expressão, num `params` ou num argumento TEM de ser uma destas coisas:
+    (a) uma ENTRADA da tarefa — e então está listada no `Input data format`; ou
+    (b) produzido por um passo ANTERIOR, com `guarda_em`, `atribui`, `guarda_id_em` ou `mapeia`.
+  Não existe valor que aparece do nada. Se a tarefa precisa de um instante, calcule com `hoje()`;
+  se precisa de um token ou de um resumo criptográfico, isso vem de um passo `externo` com a
+  ferramenta correspondente, guardado com `guarda_em`.
+  Medido no BioByte em 23/09/2026: passos usavam `expira_em`, `hash_atual`, `marca_anterior` e
+  `assinatura` sem que nenhum passo os produzisse — a conferência então exigia que a TELA os
+  enviasse, o que não faz sentido para valor interno da tarefa.
+
 REGRAS DO CONTRATO:
   - TODO passo da prosa tem de ter um passo correspondente aqui. Passo que sobrar na prosa vira
     pendência e some do aplicativo.
