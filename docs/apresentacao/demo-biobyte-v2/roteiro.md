@@ -1388,3 +1388,103 @@ Ela podia ter escondido — bastava não marcar. Preferiu entregar o caso com a 
 **NOTA DE PRODUÇÃO:** cena sem captura — narrar sobre a tela da Cena 76.
 
 ---
+
+## Parte P — Geração de Código
+
+### Cena 81 — Cento e sessenta e dois arquivos
+
+**TELA:** `shots/562-codigo-162-arquivos.png`
+
+**NARRAÇÃO:**
+Agora tudo o que foi especificado vira **um sistema**. Cento e sessenta e dois arquivos, a partir
+dos artefatos das etapas anteriores — nenhum deles escrito à mão.
+
+O aplicativo tem duas metades, e elas são diferentes de propósito.
+
+A metade de **cadastro e consulta**: vinte e oito telas de negócio vindas da etapa de Interface,
+mais uma tela de manutenção para cada tabela do banco, o esquema do banco e o servidor de dados.
+Essa parte não passa por agente nenhum — é formulário, tabela, botão de gravar.
+
+A metade **agêntica**: o servidor que recebe as tarefas, os adaptadores, as ferramentas, a rede de
+Petri embarcada e o executor que percorre a rede. É aqui que o CrewAI entra.
+
+---
+
+### Cena 82 — O que roda no servidor
+
+**TELA:** `shots/563-codigo-websocket-server.png` e `shots/564-codigo-adapters.png`
+
+**NARRAÇÃO:**
+O servidor escuta na porta cinco mil e dois e recebe um pedido por vez: *execute a tarefa tal, com
+estes dados*. Ele monta o agente e a tarefa do CrewAI a partir dos arquivos de configuração e
+devolve o resultado.
+
+Os adaptadores são a outra metade do contrato: para cada tarefa, o que ela tira do estado e o que
+ela grava de volta. Trezentos e cinquenta mil caracteres de código, escritos a partir dos passos
+declarados em cada tarefa.
+
+---
+
+### Cena 83 — A rede embarcada, com a lógica de cada posição
+
+**TELA:** `shots/566-codigo-petri-net.png`
+
+**NARRAÇÃO:**
+E a rede de Petri vai junto, dentro do pacote — com a lógica de cada posição já escrita.
+
+É o mesmo padrão do primeiro sistema que este gerador construiu: cada posição clona a entrada, lê
+o que as posições anteriores entregaram, funde tudo, chama a tarefa pelo WebSocket, funde o
+resultado e devolve. O que ela devolve vira a entrada da próxima.
+
+Quarenta e nove posições, todas com essa lógica.
+
+---
+
+### Cena 84 — Os portões, e o que eles pegaram
+
+**TELA:** `shots/562-codigo-162-arquivos.png`
+
+**NARRAÇÃO:**
+Repare no painel vermelho, à esquerda: **"esta versão não pode ser implantada sem decisão
+explícita"**.
+
+Os portões conferem o que foi pedido contra o que foi gerado, e nesta rodada eles pegaram sete
+defeitos — todos no próprio gerador, todos corrigidos antes de qualquer implantação:
+
+O arquivo de adaptadores, com seis mil e quinhentas linhas, **não compilava** por causa de uma
+linha: o extrator de parâmetros parava no primeiro colchete, e havia um colchete dentro de um
+texto. Em outra linha, uma anotação em português — *"nulo, a ser preenchido pela tarefa tal"* —
+virava conta aritmética.
+
+O servidor **não subia**: o registro de ferramentas citava uma classe que o modelo declarou mas não
+escreveu. Agora, ferramenta citada e não implementada avisa quando é chamada, em vez de derrubar
+o arranque.
+
+E oito componentes declarados na Especificação de Interface **não chegavam à tela**: três cartões
+de indicador, três tabelas e uma caixa de marcação. Três causas distintas — o tipo não era
+reconhecido, o indicador virava campo de digitação, e a caixa de marcação nem entrava na lista de
+campos.
+
+Ao fim: zero módulos com erro, zero divergências entre a interface declarada e a emitida, cinco
+ferramentas de cinco resolvidas.
+
+---
+
+### Cena 85 — O portão que continua vermelho, e por quê
+
+**NARRAÇÃO:**
+Um portão segue reprovando, e é o mais honesto de todos: **setenta e sete passos descritos nas
+tarefas não viraram código**.
+
+São os passos que não são consulta ao banco: gerar um token, pseudonimizar um número de prontuário,
+chamar o serviço externo, percorrer uma lista de antimicrobianos, pedir a um agente que componha
+uma mensagem de falha. O tradutor sabe transformar em código os passos de consulta e gravação;
+esses outros, ainda não.
+
+O sistema podia ter gerado o aplicativo em silêncio e deixado a regra faltando — foi assim que, numa
+rodada anterior, um login passou sem conferir senha. Em vez disso ele lista os setenta e sete, diz
+em qual tarefa cada um está, e oferece um atalho: **corrigir em Agentes e Tarefas**.
+
+É a diferença entre um sistema que entrega e um que entrega dizendo o que ainda falta.
+
+---
