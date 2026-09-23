@@ -10475,6 +10475,57 @@ def _inject_real_database_tool(tools_py: str) -> str:
     return tools_py
 
 
+def _corrigir_registro_de_ferramentas(tools_py: str) -> str:
+    """Conserta entrada do TOOL_REGISTRY que aponta para nome inexistente ou para um ESQUEMA.
+
+    POR QUE: o modelo escreve o registro de memória e às vezes cita a classe errada. Medido no
+    BioByte em 23/09/2026: `"pdf_reader": PdfReaderSchema()` — ele declarou o ESQUEMA (que exige
+    `file_path`) e esqueceu de escrever a classe da ferramenta. Não é erro de sintaxe: o arquivo
+    compila e estoura no import, derrubando o servidor inteiro antes de qualquer tarefa rodar.
+
+    Regra: nome terminado em `Schema` vira a classe `...Tool` correspondente, se existir. Se nem
+    ela existe, a entrada cai para uma ferramenta que FALA que não está implementada, em vez de
+    quebrar o arranque — o mesmo princípio de falhar dizendo, não em silêncio.
+    """
+    import re as _re
+    if "TOOL_REGISTRY" not in tools_py:
+        return tools_py
+    definidas = set(_re.findall(r"^class\s+(\w+)\s*\(", tools_py, _re.M))
+    trocas = []
+
+    def _conserta(m):
+        chave, nome = m.group(1), m.group(2)
+        if nome in definidas and not nome.endswith("Schema"):
+            return m.group(0)
+        alvo = None
+        if nome.endswith("Schema"):
+            base = nome[: -len("Schema")]
+            for cand in (base + "Tool", base):
+                if cand in definidas:
+                    alvo = cand
+                    break
+        if alvo:
+            trocas.append(f"{chave}: {nome}() → {alvo}()")
+            return f'{m.group(1)}: {alvo}()'
+        trocas.append(f"{chave}: {nome}() → ferramenta que avisa que falta implementação")
+        return f'{m.group(1)}: _FerramentaNaoImplementada("{chave.strip(chr(34)) or chave}")'
+
+    novo = _re.sub(r'("[\w\.]+"|\'[\w\.]+\')\s*:\s*(\w+)\(\)', _conserta, tools_py)
+    if trocas:
+        if "_FerramentaNaoImplementada" in novo and "class _FerramentaNaoImplementada" not in novo:
+            novo = novo.replace(
+                "TOOL_REGISTRY",
+                'class _FerramentaNaoImplementada:\n'
+                '    """Ferramenta citada no registro e não escrita: avisa em vez de quebrar o arranque."""\n'
+                '    def __init__(self, nome): self.name = nome\n'
+                '    def run(self, *a, **k):\n'
+                '        raise RuntimeError(f"A ferramenta {self.name} foi citada mas não está implementada.")\n'
+                '    _run = run\n\n\nTOOL_REGISTRY', 1)
+        for t in trocas:
+            print(f"[CODE-GEN][FERRAMENTAS] registro consertado: {t}")
+    return novo
+
+
 def _inject_tool_registry_stub(tools_py: str, all_tool_names: List[str]) -> str:
     """Garante que tools.py exporte TOOL_REGISTRY no final.
 
@@ -10852,6 +10903,9 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
 
     # Injeta TOOL_REGISTRY no tools.py (se LLM não incluiu) e AGENT_TOOLS/TASK_TOOLS no adapters.py
     tools_py = _inject_tool_registry_stub(tools_py, all_tool_names)
+    # Registro que cita classe inexistente ou esquema no lugar da ferramenta: conserta antes de
+    # entregar — senão o servidor não sobe e nenhuma tarefa roda.
+    tools_py = _corrigir_registro_de_ferramentas(tools_py)
     adapters_py = _inject_task_tools_into_adapters(adapters_py, agents_map, tasks_map)
 
     # Reescreve todos os `<task>_input_func` gerados pelo LLM pra sempre passar
