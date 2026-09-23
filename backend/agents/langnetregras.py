@@ -524,7 +524,8 @@ def resolver_nomes_de_linha(passos: List[dict],
                             ferramentas_resolvidas: Any = None,
                             nome_tarefa: str = "",
                             entradas_por_tarefa: Optional[Dict[str, List[str]]] = None,
-                            colunas_opcionais: Optional[Dict[str, set]] = None) -> List[str]:
+                            colunas_opcionais: Optional[Dict[str, set]] = None,
+                            valores_aceitos: Optional[Dict[str, List[str]]] = None) -> List[str]:
     """Liga nome solto ao campo da LINHA que um passo anterior capturou.
 
     POR QUE: o contrato consulta `SELECT id, senha_hash, papel, ativo ... guarda_em: usuario` e
@@ -1138,6 +1139,20 @@ def resolver_nomes_de_linha(passos: List[dict],
                     trocas.append("o julgamento pedia de volta o que o programa já tem ("
                                   + ", ".join(_tira) + ") — agora o modelo só responde "
                                   + ", ".join(str(x) for x in _fica))
+            # O MODELO RESPONDE DENTRO DO QUE A COLUNA ACEITA: a classificação vai para uma
+            # coluna que só admite confirmada, descartada ou pendente. Sem dizer isso na
+            # instrução, o modelo responde com outra palavra e a gravação falha com "valor
+            # truncado" — o operador vê um erro de banco no lugar do resultado.
+            if valores_aceitos and _p.get("devolve") and _p.get("instrucao"):
+                _lista = []
+                for _d in _p["devolve"]:
+                    _op = valores_aceitos.get(str(_d).strip())
+                    if _op:
+                        _lista.append(f"{_d}: exatamente um de " + ", ".join(_op))
+                if _lista and "exatamente um de" not in str(_p["instrucao"]):
+                    _p["instrucao"] = str(_p["instrucao"]).rstrip() + " Responda " + "; ".join(_lista) + "."
+                    trocas.append("o julgamento passou a dizer os valores aceitos ("
+                                  + "; ".join(_lista) + ")")
             if _p.get("devolve"):
                 continue
             _alvo = [n for n in _pendentes_depois(passos, _i, set(_ja)) if not _resolver(n)][:6]

@@ -63,6 +63,12 @@ def referencia():
                       "VALUES(%s,%s,%s,DATE_SUB(CURDATE(), INTERVAL 2 YEAR))",
                       ("ICSAC-CLABSI", "2024",
                        json.dumps({"dias_cateter_min": 2, "apache_ii_min": 10})))
+        c.execute("SELECT COUNT(*) n FROM criterios_nhsn WHERE nome LIKE 'ANVISA%'")
+        if not c.fetchone()["n"]:
+            c.execute("INSERT INTO criterios_nhsn(nome, versao, limiares, vigencia_inicio) "
+                      "VALUES(%s,%s,%s,DATE_SUB(CURDATE(), INTERVAL 3 YEAR))",
+                      ("ANVISA IPCS", "2023",
+                       json.dumps({"dias_cateter_min": 2, "hemocultura_positiva": True})))
         c.execute("SELECT COUNT(*) n FROM bundles")
         if not c.fetchone()["n"]:
             for nome, ind, red, ic in [
@@ -84,6 +90,23 @@ def referencia():
         c.execute("SELECT id FROM usuarios WHERE email=%s", (ADMIN,))
         u = c.fetchone()
     return (u or {}).get("id")
+
+def usuario_com_papel(papel: str) -> str:
+    """Cada ação é de quem a especificação diz que é: médico registra a escolha do bundle,
+    a coordenadora da comissão classifica pela ANVISA. Aqui a bateria entra com a pessoa certa."""
+    import hashlib
+    with banco() as cn, cn.cursor() as c:
+        c.execute("SELECT id FROM usuarios WHERE papel=%s AND ativo=1 LIMIT 1", (papel,))
+        u = c.fetchone()
+        if not u:
+            c.execute("INSERT INTO usuarios(nome, email, senha_hash, papel, ativo) "
+                      "VALUES(%s,%s,%s,%s,1)",
+                      (f"Usuario {papel}", f"{papel}@hospitalvidas.org.br",
+                       hashlib.sha256(SENHA.encode()).hexdigest(), papel))
+            c.execute("SELECT id FROM usuarios WHERE papel=%s LIMIT 1", (papel,))
+            u = c.fetchone()
+    return u["id"]
+
 
 async def principal():
     uid = referencia()
@@ -150,13 +173,14 @@ async def principal():
     with banco() as cn, cn.cursor() as c:
         c.execute("SELECT id FROM bundles LIMIT 1")
         bundle_id = (c.fetchone() or {}).get("id")
+    medico_id = usuario_com_papel("medico")
     conta("UC-008 registrar a escolha do bundle", await tarefa("registrar_escolha_bundle", {
-        "usuario_id": usuario_id, "recomendacao_id": recomendacao_id,
+        "usuario_id": medico_id, "recomendacao_id": recomendacao_id,
         "bundle_escolhido_id": bundle_id}))
     conta("UC-009 estimar redução de risco", await tarefa("estimar_reducao_risco", {
-        "usuario_id": usuario_id, "recomendacao_id": recomendacao_id, "horizonte_dias": 30}))
-    conta("UC-030 classificar pela ANVISA",
-          await tarefa("classificar_caso_anvisa", {"usuario_id": usuario_id, "caso_id": caso_id}))
+        "usuario_id": medico_id, "recomendacao_id": recomendacao_id, "horizonte_dias": "30"}))
+    conta("UC-030 classificar pela ANVISA", await tarefa("classificar_caso_anvisa", {
+        "usuario_id": usuario_com_papel("coordenadora_ccih"), "caso_id": caso_id}))
     conta("UC-012 exportar relatório de vigilância", await tarefa("exportar_relatorio_vigilancia", {
         "usuario_id": usuario_id, "data_inicio": "2026-09-01", "data_fim": "2026-09-30",
         "formato": "csv", "paciente_id": paciente_id}))
@@ -178,12 +202,6 @@ async def principal():
         import hashlib
         c.execute("SELECT id FROM usuarios WHERE papel='medico' LIMIT 1")
         _m = c.fetchone()
-        if not _m:
-            c.execute("INSERT INTO usuarios(nome, email, senha_hash, papel, ativo) "
-                      "VALUES('Dr. Paulo Medico','medico@hospitalvidas.org.br',%s,'medico',1)",
-                      (hashlib.sha256(SENHA.encode()).hexdigest(),))
-            c.execute("SELECT id FROM usuarios WHERE papel='medico' LIMIT 1")
-            _m = c.fetchone()
     conta("UC-006 sobrescrever a classificação", await tarefa("sobrescrever_classificacao", {
         "usuario_id": _m["id"], "caso_id": caso_id, "criterio_id": criterio_id,
         "novo_resultado": "descartada", "justificativa": "revisão da comissão"}))

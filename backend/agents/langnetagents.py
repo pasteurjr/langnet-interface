@@ -6525,6 +6525,7 @@ FERRAMENTAS_RESOLVIDAS_CG: Optional[set] = None   # definido pelo fluxo antes de
 APELIDOS_TAREFA_CG: Dict[str, str] = {}           # código no documento (T-NOT-001) -> nome da tarefa
 TABELAS_CG: Dict[str, List[str]] = {}             # tabela -> colunas (do modelo de dados)
 COLUNAS_OPCIONAIS_CG: Dict[str, set] = {}         # tabela -> colunas que aceitam vazio
+VALORES_ACEITOS_CG: Dict[str, List[str]] = {}     # coluna -> valores que ela aceita (ENUM)
 
 
 def _generate_deterministic_adapters(tasks_yaml: str) -> str:
@@ -6620,7 +6621,8 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
                                ferramentas_resolvidas=FERRAMENTAS_RESOLVIDAS_CG,
                                nome_tarefa=task_name,
                                entradas_por_tarefa=_ENTRADAS_DECLARADAS,
-                               colunas_opcionais=COLUNAS_OPCIONAIS_CG)
+                               colunas_opcionais=COLUNAS_OPCIONAIS_CG,
+                               valores_aceitos=VALORES_ACEITOS_CG)
             for _r in _resolvidos:
                 print(f"[CODE-GEN][CONTRATO] {task_name}: {_r}")
             # REGRA 3 — programa busca, modelo julga, programa grava.
@@ -11307,6 +11309,16 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
             for t, ddl in _parse_schema_tables_full(_schema_do_projeto(state)).items()}
     except Exception:
         globals()["TABELAS_CG"] = {}
+    try:
+        import re as _re_en
+        _aceitos: Dict[str, List[str]] = {}
+        for _t, _ddl in _parse_schema_tables_full(_schema_do_projeto(state)).items():
+            for _m in _re_en.finditer(r'[`"]?(\w+)[`"]?\s+ENUM\s*\(([^)]*)\)', _ddl, _re_en.I):
+                _aceitos.setdefault(_m.group(1), [v.strip().strip("'\"")
+                                                 for v in _m.group(2).split(",")])
+        globals()["VALORES_ACEITOS_CG"] = _aceitos
+    except Exception:
+        globals()["VALORES_ACEITOS_CG"] = {}
     _det_snippet = _generate_deterministic_adapters(tasks_yaml)
     _list_helper_added = False
     if _det_snippet:
