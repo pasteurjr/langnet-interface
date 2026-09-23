@@ -771,7 +771,18 @@ def _preparar_banco(run, files) -> None:
         cur.execute(f"USE `{base}`")
         cur.execute("SHOW TABLES")
         existentes = {r[0].lower() for r in cur.fetchall()}
-        comandos = [c.strip() for c in ddl.split(";") if c.strip()]
+        # Cortar em TODO ponto e vírgula parte o comando ao meio quando o ponto e vírgula está
+        # dentro de um texto — e está, nos comentários de tabela que o próprio gerador escreve:
+        # COMMENT='Pessoa que acessa o sistema; guarda nome, e-mail...'. Medido em 23/09/2026: a
+        # implantação do BioByte criou 22 das 25 tabelas; faltaram usuarios, pacientes e
+        # casos_clinicos — as três centrais — e o aplicativo subiu sem poder autenticar ninguém.
+        # O mesmo defeito já tinha sido corrigido no conferente do Modelo de Dados; a implantação
+        # tinha o seu próprio divisor, e ninguém olhou.
+        try:
+            from agents.langnetdatamodel import _comandos_do_script as _dividir
+            comandos = _dividir(ddl)
+        except Exception:
+            comandos = [c.strip() for c in ddl.split(";") if c.strip()]
         criadas, puladas, erros = [], [], []
         for cmd in comandos:
             m = _re.search(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`\"]?(\w+)", cmd, _re.I)
