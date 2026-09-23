@@ -11314,8 +11314,8 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         _aceitos: Dict[str, List[str]] = {}
         for _t, _ddl in _parse_schema_tables_full(_schema_do_projeto(state)).items():
             for _m in _re_en.finditer(r'[`"]?(\w+)[`"]?\s+ENUM\s*\(([^)]*)\)', _ddl, _re_en.I):
-                _aceitos.setdefault(_m.group(1), [v.strip().strip("'\"")
-                                                 for v in _m.group(2).split(",")])
+                _aceitos[f"{_t.lower()}.{_m.group(1)}"] = [v.strip().strip("'\"")
+                                                           for v in _m.group(2).split(",")]
         globals()["VALORES_ACEITOS_CG"] = _aceitos
     except Exception:
         globals()["VALORES_ACEITOS_CG"] = {}

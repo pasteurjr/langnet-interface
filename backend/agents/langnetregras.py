@@ -1092,6 +1092,40 @@ def resolver_nomes_de_linha(passos: List[dict],
         _varre(lista[desde + 1:])
         return falta
 
+    def _dizer_valores_aceitos(_p, _i):
+        """O MODELO RESPONDE DENTRO DO QUE A COLUNA ACEITA: a classificação vai para uma coluna
+        que só admite confirmada, descartada ou pendente. Sem dizer isso na instrução, o modelo
+        responde outra palavra e a gravação falha com "valor truncado" — o operador vê um erro de
+        banco no lugar do resultado. Qual coluna é decidido pela gravação que recebe o valor: o
+        mesmo nome existe em tabelas diferentes, com listas diferentes."""
+        if not (valores_aceitos and _p.get("devolve") and _p.get("instrucao")):
+            return
+        def _opcoes_de(nome):
+            for _q in passos[_i + 1:]:
+                if not isinstance(_q, dict) or str(_q.get("tipo")) != "escrita":
+                    continue
+                _sql = str(_q.get("sql") or "")
+                _tab = re.search(r"(?is)\b(?:into|update)\s+`?(\w+)`?", _sql)
+                if not _tab:
+                    continue
+                _cols = dict(_colunas_com_marcador(_sql))
+                _par = [str(x) for x in (_q.get("params") or [])]
+                for _c, _idx in _cols.items():
+                    _val = _par[_idx] if _idx < len(_par) else ""
+                    _val = re.sub(r"^(?:opcional|texto|numero)\(([^)]*)\)$", r"\1", _val).strip()
+                    if _val == nome:
+                        return valores_aceitos.get(f"{_tab.group(1).lower()}.{_c}")
+            return None
+        _lista = []
+        for _d in _p["devolve"]:
+            _op = _opcoes_de(str(_d).strip())
+            if _op:
+                _lista.append(f"{_d}: exatamente um de " + ", ".join(_op))
+        if _lista and "exatamente um de" not in str(_p["instrucao"]):
+            _p["instrucao"] = str(_p["instrucao"]).rstrip() + " Responda " + "; ".join(_lista) + "."
+            trocas.append("o julgamento passou a dizer os valores aceitos ("
+                          + "; ".join(_lista) + ")")
+
     if entradas_declaradas is not None:
         _ja = set(produzidos) | {str(x) for x in entradas_declaradas}
         for _i, _p in enumerate(passos):
@@ -1109,8 +1143,13 @@ def resolver_nomes_de_linha(passos: List[dict],
                 for _m in re.finditer(r"\b([a-z_][a-z0-9_]*)(?:\.[a-z_][a-z0-9_]*)?\b",
                                       str(_p.get("instrucao"))):
                     _n = _m.group(1)
-                    if _n in _disp and _n not in _citados:
+                    if _n in _disp and _m.group(0) not in _citados:
                         _citados.append(_m.group(0))
+                        continue
+                    # nome citado que é COLUNA de uma linha já capturada: entrega-se a linha
+                    _res2 = _resolver(_n)
+                    if _res2 and _res2 not in _citados:
+                        _citados.append(_res2)
                 if _citados:
                     _p["usa"] = _citados[:8]
                     trocas.append("o julgamento ia sem dado nenhum — passa a receber "
@@ -1139,20 +1178,7 @@ def resolver_nomes_de_linha(passos: List[dict],
                     trocas.append("o julgamento pedia de volta o que o programa já tem ("
                                   + ", ".join(_tira) + ") — agora o modelo só responde "
                                   + ", ".join(str(x) for x in _fica))
-            # O MODELO RESPONDE DENTRO DO QUE A COLUNA ACEITA: a classificação vai para uma
-            # coluna que só admite confirmada, descartada ou pendente. Sem dizer isso na
-            # instrução, o modelo responde com outra palavra e a gravação falha com "valor
-            # truncado" — o operador vê um erro de banco no lugar do resultado.
-            if valores_aceitos and _p.get("devolve") and _p.get("instrucao"):
-                _lista = []
-                for _d in _p["devolve"]:
-                    _op = valores_aceitos.get(str(_d).strip())
-                    if _op:
-                        _lista.append(f"{_d}: exatamente um de " + ", ".join(_op))
-                if _lista and "exatamente um de" not in str(_p["instrucao"]):
-                    _p["instrucao"] = str(_p["instrucao"]).rstrip() + " Responda " + "; ".join(_lista) + "."
-                    trocas.append("o julgamento passou a dizer os valores aceitos ("
-                                  + "; ".join(_lista) + ")")
+            _dizer_valores_aceitos(_p, _i)
             if _p.get("devolve"):
                 continue
             _alvo = [n for n in _pendentes_depois(passos, _i, set(_ja)) if not _resolver(n)][:6]
@@ -1163,20 +1189,7 @@ def resolver_nomes_de_linha(passos: List[dict],
                 produzidos.update(_alvo)
                 trocas.append("o passo de julgamento não dizia o que devolve — devolve "
                               + ", ".join(_alvo) + " (o que os passos seguintes usam)")
-            # O MODELO RESPONDE DENTRO DO QUE A COLUNA ACEITA: a classificação vai para uma
-            # coluna que só admite confirmada, descartada ou pendente. Sem dizer isso na
-            # instrução, o modelo responde com outra palavra e a gravação falha com "valor
-            # truncado" — o operador vê um erro de banco no lugar do resultado.
-            if valores_aceitos and _p.get("devolve") and _p.get("instrucao"):
-                _lista = []
-                for _d in _p["devolve"]:
-                    _op = valores_aceitos.get(str(_d).strip())
-                    if _op:
-                        _lista.append(f"{_d}: exatamente um de " + ", ".join(_op))
-                if _lista and "exatamente um de" not in str(_p["instrucao"]):
-                    _p["instrucao"] = str(_p["instrucao"]).rstrip() + " Responda " + "; ".join(_lista) + "."
-                    trocas.append("o julgamento passou a dizer os valores aceitos ("
-                                  + "; ".join(_lista) + ")")
+            _dizer_valores_aceitos(_p, _i)
 
 
     # RECUSA QUE NÃO DÁ PARA CONFERIR: `recusa_se: "nao valido"` quando nenhum passo produz
