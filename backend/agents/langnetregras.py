@@ -1911,10 +1911,12 @@ def emitir_passos(passos: List[dict], indent: str = "        ",
                               f"{devolve!r}, {_TAREFA_ATUAL()!r}, {n!r}))")
             else:
                 raise ErroDeRegra(f"tipo «{tipo}» desconhecido")
-            manifesto.append({"passo": n, "tipo": tipo, "emitido": True, "motivo": ""})
+            manifesto.append({"passo": n, "tipo": tipo, "emitido": True, "motivo": "",
+                              "sql": str(p.get("sql") or "")})
         except (ErroDeRegra, KeyError) as e:
             motivo = str(e) if isinstance(e, ErroDeRegra) else f"campo obrigatório ausente: {e}"
-            manifesto.append({"passo": n, "tipo": tipo, "emitido": False, "motivo": motivo})
+            manifesto.append({"passo": n, "tipo": tipo, "emitido": False, "motivo": motivo,
+                              "sql": str(p.get("sql") or "") if isinstance(p, dict) else ""})
     return linhas, manifesto
 
 
