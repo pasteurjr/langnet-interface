@@ -434,7 +434,66 @@ cadastrar_pessoa:
       - nome: String
       - telefones: List[String]
 
-    ⚠️ REGRA DA ENTRADA — NOMEAR QUEM PRODUZ O DADO (padrão do framework, ver TropicalSales):
+    ═══════════════════════════════════════════════════════════════
+CONTRATO DE PASSOS (`steps:`) — OBRIGATÓRIO, ALÉM DA PROSA
+═══════════════════════════════════════════════════════════════
+Depois de `expected_output`, escreva também `steps:` — a MESMA lógica da descrição, em passos
+estruturados. A prosa é para a pessoa ler; `steps:` é o que vira CÓDIGO.
+
+POR QUE ISTO É OBRIGATÓRIO: o tradutor só transforma em código o que está no contrato. O que fica
+só na prosa vira pendência e a regra FALTA no aplicativo. Medido no BioByte em 23/09/2026: 40
+passos ficaram de fora — gerar token, pseudonimizar prontuário, chamar o laboratório, validar
+campos obrigatórios, percorrer a lista de antimicrobianos. Um login já passou sem conferir senha
+por causa disso.
+
+TIPOS DE PASSO (use SOMENTE estes):
+  - tipo: consulta      | sql, params, guarda_em, forma: escalar|linha|linhas
+  - tipo: escrita       | sql, params, guarda_id_em (opcional)
+  - tipo: verificacao   | recusa_se (o que RECUSA) ou condicao (o que precisa valer), mensagem
+  - tipo: calculo       | atribui, expressao
+  - tipo: condicao      | se, passos: [...]
+  - tipo: laco          | para_cada, em, passos: [...]
+  - tipo: externo       | ferramenta, argumentos: {{campo: expressao}}, guarda_em, mapeia (opcional)
+  - tipo: tarefa        | nome, entrada: {{campo: expressao}}, guarda_em   (encadeia outra tarefa)
+  - tipo: retorno       | campos: [...]
+  - tipo: agente        | instrucao      (SÓ em tarefa com execution: agent)
+
+MINI-LINGUAGEM das expressões: nomes, `x.campo`, + - * /, comparações, `e`/`ou`/`nao` e as funções
+em português: arredonda, conta_valor, contem, de_json, dias_entre, em, entre, existe, hash_senha,
+confere_senha, hoje, json_valido, maiusculas, media, minusculas, numero, primeiro, soma, tamanho,
+texto, vazio, codigo_valido. NÃO invente função e NÃO use colchete de índice.
+
+EXEMPLO (autenticar usuário):
+  steps:
+    - tipo: consulta
+      sql: "SELECT id, senha_hash, papel, ativo FROM usuarios WHERE email=%s"
+      params: [email]
+      guarda_em: usuario
+      forma: linha
+    - tipo: verificacao
+      recusa_se: "nao existe(usuario)"
+      mensagem: "E-mail ou senha inválidos."
+    - tipo: verificacao
+      recusa_se: "nao confere_senha(senha, usuario.senha_hash)"
+      mensagem: "E-mail ou senha inválidos."
+    - tipo: externo
+      ferramenta: token_tool
+      argumentos: {{usuario_id: usuario.id, minutos: 30}}
+      guarda_em: token
+    - tipo: escrita
+      sql: "INSERT INTO tokens_acesso(usuario_id, token, expira_em) VALUES(%s,%s,%s)"
+      params: [usuario.id, token, expira_em]
+    - tipo: retorno
+      campos: [usuario_id, token, papel]
+
+REGRAS DO CONTRATO:
+  - TODO passo da prosa tem de ter um passo correspondente aqui. Passo que sobrar na prosa vira
+    pendência e some do aplicativo.
+  - Chamar ferramenta é `externo`, nunca prosa. Validar campo é `verificacao`. Percorrer lista é
+    `laco`. Pedir julgamento ao modelo é `agente`, e só em tarefa `execution: agent`.
+  - O passo `retorno` é obrigatório e lista exatamente as chaves do `expected_output`.
+
+⚠️ REGRA DA ENTRADA — NOMEAR QUEM PRODUZ O DADO (padrão do framework, ver TropicalSales):
 `Input data format` não descreve só os campos: ele diz DE ONDE cada dado vem. Quando o dado é
 produzido por OUTRA task, a entrada nomeia essa task, exatamente assim:
 
