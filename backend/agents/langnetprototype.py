@@ -645,10 +645,35 @@ def conferir_contrato_de_tela(ui_spec: dict, arquivos: List[Dict[str, str]]) -> 
             # estrutura só é cobrada dos tipos que têm forma própria.
             estruturais = ("chart", "table", "grid", "datagrid", "kanban", "list",
                            "checklist", "checkbox", "metric-card", "kpi", "metric", "select")
+            # A marca do protótipo é um estilo; o React gerado desenha a mesma coisa com outra
+            # marcação. Cobrar só a marca do protótipo dava FALSO POSITIVO: medido em 23/09/2026,
+            # três cartões de indicador estavam no código (na lista KPIS) e eram acusados de
+            # ausentes. Aqui vale qualquer prova de que a estrutura foi desenhada.
+            provas = {
+                "metric-card": ("KPIS", "metric-card", "indicador"),
+                "kpi":         ("KPIS", "metric-card", "indicador"),
+                "metric":      ("KPIS", "metric-card", "indicador"),
+                "table":       ("<table", "TABELAS", "DataGrid", "<tbody"),
+                "grid":        ("<table", "TABELAS", "DataGrid", "<tbody"),
+                "datagrid":    ("<table", "TABELAS", "DataGrid", "<tbody"),
+                "checkbox":    ('type="checkbox"', "type='checkbox'", "checkbox"),
+                "checklist":   ('type="checkbox"', "type='checkbox'", "checkbox"),
+                "select":      ("<select", "Selecione", "options"),
+                "list":        ("<ul", "<li", ".map("),
+                "chart":       ("Chart", "<svg", "serie("),
+                "kanban":      ("kanban", "coluna", "<ul"),
+            }
+            def _tem_estrutura() -> bool:
+                if marca and marca in src:
+                    return True
+                for p in provas.get(tipo, ()):
+                    if p in src:
+                        return True
+                return False
             if campo and campo not in src:
                 divergencias.append({"tela": nome, "tipo": tipo, "campo": campo,
                                      "o_que": f"campo declarado ({rotulo}) não aparece no código"})
-            elif tipo in estruturais and marca and marca not in src:
+            elif tipo in estruturais and not _tem_estrutura():
                 divergencias.append({"tela": nome, "tipo": tipo, "campo": campo,
                                      "o_que": f"{rotulo} declarado não foi emitido"})
     return {"ok": not divergencias, "divergencias": divergencias,
