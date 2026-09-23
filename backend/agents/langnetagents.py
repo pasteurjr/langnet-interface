@@ -9452,7 +9452,7 @@ class PseudonimizarTool(BaseTool):
         import os, hashlib
         tempero = str(sal or "") or os.getenv("PSEUDONIM_SALT", "")
         h = hashlib.sha256((tempero + str(valor or "")).encode("utf-8")).hexdigest()
-        return {"pseudonimo": h, "hash": h}
+        return {"pseudonimo": h}
 
 
 STD_TOOLS = {

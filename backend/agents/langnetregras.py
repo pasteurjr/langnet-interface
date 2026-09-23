@@ -74,7 +74,7 @@ BIBLIOTECA_ASSINATURAS = {
                                           "marca_anterior"],
                            "saida": ["hash_atual", "marca_anterior"]},
     "password_hash_tool": {"argumentos": ["senha"], "saida": ["senha_hash"]},
-    "pseudonimizar_tool": {"argumentos": ["valor", "sal"], "saida": ["pseudonimo", "hash"]},
+    "pseudonimizar_tool": {"argumentos": ["valor", "sal"], "saida": ["pseudonimo"]},
     "exportar_arquivo_tool": {"argumentos": ["dados", "formato", "caminho"],
                               "saida": ["caminho", "formato", "linhas"]},
 }
@@ -735,6 +735,39 @@ def resolver_nomes_de_linha(passos: List[dict],
              "params": [autor, acao_expr, alvo, "marca_anterior", "hash_atual"]},
         ]
 
+    def _acertar_campos_do_servico(lista, dono: str, saida: List[str]) -> None:
+        """O serviço devolve `escore_cox`; o contrato lê `resultado.escore`. Sem acertar, o valor
+        chega vazio e a gravação guarda nada — parecendo que o serviço não respondeu."""
+        if not saida:
+            return
+        lidos = set()
+        def _colher(ps):
+            for q in ps or []:
+                if not isinstance(q, dict):
+                    continue
+                for v in list(q.values()):
+                    if isinstance(v, str):
+                        for m in re.finditer(rf"\b{re.escape(dono)}\.(\w+)", v):
+                            lidos.add(m.group(1))
+                    elif isinstance(v, list):
+                        for x in v:
+                            for m in re.finditer(rf"\b{re.escape(dono)}\.(\w+)", str(x)):
+                                lidos.add(m.group(1))
+                    elif isinstance(v, dict):
+                        for x in v.values():
+                            for m in re.finditer(rf"\b{re.escape(dono)}\.(\w+)", str(x)):
+                                lidos.add(m.group(1))
+                for c in ("passos", "senao", "passos_senao", "entao", "corpo"):
+                    if isinstance(q.get(c), list):
+                        _colher(q[c])
+        _colher(lista)
+        for campo in sorted(lidos - set(saida)):
+            cand = [x for x in saida if x == campo or x.startswith(campo + "_")
+                    or x.endswith("_" + campo) or campo in x]
+            if len(cand) >= 1:
+                _renomear_campo(lista, dono, campo, cand[0])
+                trocas.append(f"o serviço devolve «{cand[0]}» — o contrato lia «{campo}»")
+
     def _renomear_campo(lista, dono: str, de: str, para: str) -> None:
         """Troca `dono.de` por `dono.para` nas expressões dos passos seguintes."""
         alvo = re.compile(rf"\b{re.escape(dono)}\.{re.escape(de)}\b")
@@ -846,8 +879,11 @@ def resolver_nomes_de_linha(passos: List[dict],
                                         _args.pop(k, None)
                             p["ferramenta"] = _cand
                             p["argumentos"] = _args
-                            trocas.append(f"«{p.get('ferramenta')}»: a chamada genérica virou o "
-                                          f"serviço externo {_cand}")
+                            trocas.append(f"a chamada genérica virou o serviço externo {_cand}")
+                            if p.get("guarda_em"):
+                                _acertar_campos_do_servico(
+                                    lista[i + 1:], str(p["guarda_em"]),
+                                    _res_saida(ferramentas_resolvidas, _cand) or [])
                     _ar = p.get("argumentos") if isinstance(p.get("argumentos"), dict) else {}
                     # "ferramenta de auditoria" não é ferramenta: auditoria é gravar na trilha.
                     if "auditoria" in _f or _f.startswith("auditar"):
@@ -2417,6 +2453,7 @@ def _rt_chamar_ferramenta(nome, argumentos):
     fn = getattr(tool, "run", None) or getattr(tool, "_run", None)
     if fn is None:
         raise _RegraExecucao(f"ferramenta «{nome}» não é chamável")
+    argumentos = {k: _rt_valor(v) for k, v in (argumentos or {}).items()}
     try:
         saida = fn(**argumentos) if argumentos else fn()
     except Exception as e:
@@ -2527,9 +2564,18 @@ def _rt_consultar_modelo(instrucao, dados, devolve, tarefa="", passo=""):
     return {c: _obj[c] for c in devolve}
 
 
+def _rt_valor(v):
+    """Pacote de um campo só é o próprio campo. Uma ferramenta devolve sempre um pacote; quando
+    ele tem UM valor, quem espera um valor recebe o pacote inteiro e o sistema externo recusa
+    ("identificador inválido"). Aqui o pacote de um campo vira o campo."""
+    if isinstance(v, dict) and len(v) == 1:
+        return next(iter(v.values()))
+    return v
+
 def _rt_sql(v):
     """Valor de parâmetro SQL: dict/list (ex.: antibiograma do laboratório) vira texto JSON para a
     coluna JSON; booleano vira 0/1; o resto passa como está."""
+    v = _rt_valor(v)
     if isinstance(v, bool): return 1 if v else 0
     if isinstance(v, (dict, list)): return _rt_json.dumps(v, ensure_ascii=False, default=str)
     return v
@@ -2548,10 +2594,19 @@ def _rt_chamar_tarefa(nome, entrada, contexto=None):
                              "(é executada por agente) — a interface a dispara na etapa seguinte")
     dados = dict(contexto or {}); dados.update(entrada or {})
     _lig = (contexto or {}).get("_conn_atual")
+    _aceita = False
     try:
-        saida = fn(dados, _lig) if _lig is not None else fn(dados)
-    except TypeError:
-        saida = fn(dados)
+        import inspect as _insp
+        _aceita = "_conn" in _insp.signature(fn).parameters
+    except Exception:
+        _aceita = False
+    if _lig is not None and not _aceita:
+        # A tarefa chamada abre a PRÓPRIA ligação e ficaria esperando as linhas que esta ainda
+        # não confirmou. Confirma-se o que já foi gravado antes de chamar — senão as duas
+        # esperam uma pela outra até estourar o tempo.
+        try: _lig.commit()
+        except Exception: pass
+    saida = fn(dados, _lig) if (_lig is not None and _aceita) else fn(dados)
     if isinstance(saida, dict) and saida.get("status") == "erro":
         raise _RegraExecucao(f"a tarefa encadeada «{nome}» recusou: {saida.get('error')}")
     return saida
