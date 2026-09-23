@@ -60,7 +60,7 @@ def referencia():
         c.execute("SELECT COUNT(*) n FROM criterios_nhsn")
         if not c.fetchone()["n"]:
             c.execute("INSERT INTO criterios_nhsn(nome, versao, limiares, vigencia_inicio) "
-                      "VALUES(%s,%s,%s,CURDATE())",
+                      "VALUES(%s,%s,%s,DATE_SUB(CURDATE(), INTERVAL 2 YEAR))",
                       ("ICSAC-CLABSI", "2024",
                        json.dumps({"dias_cateter_min": 2, "apache_ii_min": 10})))
         c.execute("SELECT COUNT(*) n FROM bundles")

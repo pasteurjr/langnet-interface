@@ -1089,7 +1089,25 @@ def resolver_nomes_de_linha(passos: List[dict],
         for _i, _p in enumerate(passos):
             if not isinstance(_p, dict) or str(_p.get("tipo")) != "agente":
                 continue
-            if _p.get("devolve") or not _p.get("instrucao"):
+            if not _p.get("instrucao"):
+                continue
+            # O QUE O PROGRAMA ENTREGA AO MODELO: a instrução cita nomes («aplique os limiares de
+            # criterio.limiares sobre dados_caso»), mas o contrato não lista o que entregar. O
+            # programa chamava o modelo DE MÃOS VAZIAS e ele respondia, com razão, que não tinha
+            # dados. Aqui os nomes citados que já existem viram a entrega.
+            if not _p.get("usa"):
+                _disp = set(produzidos) | {str(x) for x in entradas_declaradas}
+                _citados = []
+                for _m in re.finditer(r"\b([a-z_][a-z0-9_]*)(?:\.[a-z_][a-z0-9_]*)?\b",
+                                      str(_p.get("instrucao"))):
+                    _n = _m.group(1)
+                    if _n in _disp and _n not in _citados:
+                        _citados.append(_m.group(0))
+                if _citados:
+                    _p["usa"] = _citados[:8]
+                    trocas.append("o julgamento ia sem dado nenhum — passa a receber "
+                                  + ", ".join(_p["usa"]))
+            if _p.get("devolve"):
                 continue
             _alvo = [n for n in _pendentes_depois(passos, _i, set(_ja)) if not _resolver(n)][:6]
             if _p.get("guarda_em") and str(_p["guarda_em"]) not in _alvo:
