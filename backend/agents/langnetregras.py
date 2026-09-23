@@ -901,8 +901,11 @@ def resolver_nomes_de_linha(passos: List[dict],
                             # «sessao.usuario_id» passa a ler «sessao.id», senão o passo seguinte
                             # recusa por um campo que a linha não tem
                             if p.get("guarda_em"):
-                                _renomear_campo(lista[i + len(par):], str(p["guarda_em"]),
-                                                "usuario_id", "id")
+                                for _de, _para in (("usuario_id", "id"), ("valido", "ativo"),
+                                                   ("autorizado", "ativo"),
+                                                   ("autenticado", "ativo")):
+                                    _renomear_campo(lista[i + len(par):], str(p["guarda_em"]),
+                                                    _de, _para)
                             trocas.append(f"chamar «{alvo}» com {sorted(_tem)} não daria certo "
                                           f"(ela pede {sorted(_pede)}) — virou a conferência do "
                                           f"usuário")
@@ -953,8 +956,11 @@ def resolver_nomes_de_linha(passos: List[dict],
                             lista[i:i + 1] = par
                             produzidos.add("usuario")
                             if p.get("guarda_em"):
-                                _renomear_campo(lista[i + len(par):], str(p["guarda_em"]),
-                                                "usuario_id", "id")
+                                for _de, _para in (("usuario_id", "id"), ("valido", "ativo"),
+                                                   ("autorizado", "ativo"),
+                                                   ("autenticado", "ativo")):
+                                    _renomear_campo(lista[i + len(par):], str(p["guarda_em"]),
+                                                    _de, _para)
                             trocas.append(f"«{alvo}» não é uma tarefa: virou a conferência do "
                                           f"usuário (consulta + recusa se inexistente ou inativo)")
                             i += len(par)
@@ -2066,7 +2072,8 @@ def emitir_tarefa(nome: str, passos: List[dict], traceability_comment: str = "",
     tem_retorno = any(str(p.get("tipo")) == "retorno" for p in passos)
     if not tem_retorno:
         corpo.append("        _result = {'status': 'sucesso', **{k: v for k, v in _ctx.items() "
-                     "if k not in input_data and not isinstance(v, (list, dict))}}")
+                     "if k not in input_data and not str(k).startswith('_') "
+                     "and not isinstance(v, (list, dict))}}")
     recusa = ""
     if faltando:
         det = "; ".join(f"passo {m['passo']} ({m['tipo']}): {m['motivo']}" for m in faltando)
@@ -2077,18 +2084,23 @@ def emitir_tarefa(nome: str, passos: List[dict], traceability_comment: str = "",
             "            'tarefa_incompleta': True}\n"
         )
     src = (
-        f"def {nome}_deterministic(input_data):\n"
+        f"def {nome}_deterministic(input_data, _conn=None):\n"
         f'    """Gerada do contrato `steps:` da tarefa {nome} (tradutor de regras)."""\n'
         + (f"    {traceability_comment}\n" if traceability_comment else "")
         + recusa
         + "    import os\n"
         "    import mysql.connector\n"
-        "    conn = mysql.connector.connect(\n"
+        "    # Tarefa CHAMADA por outra reaproveita a mesma ligação com o banco. Abrindo a sua\n"
+        "    # própria, ela ficava esperando as linhas que a tarefa de fora ainda não gravou em\n"
+        "    # definitivo — e a operação inteira morria por espera esgotada.\n"
+        "    _proprio = _conn is None\n"
+        "    conn = _conn or mysql.connector.connect(\n"
         "        host=os.getenv('DB_HOST', 'localhost'), port=int(os.getenv('DB_PORT', '3306')),\n"
         "        user=os.getenv('DB_USER', 'root'), password=os.getenv('DB_PASSWORD', ''),\n"
         "        database=os.getenv('DB_NAME', ''),\n"
         "    )\n"
         "    _ctx = dict(input_data or {})\n"
+        "    _ctx['_conn_atual'] = conn\n"
         "    def _v(nome):\n"
         "        if nome in _ctx:\n"
         "            return _ctx[nome]\n"
@@ -2102,21 +2114,23 @@ def emitir_tarefa(nome: str, passos: List[dict], traceability_comment: str = "",
         "    try:\n"
         "        cur = conn.cursor(dictionary=True)\n"
         + "\n".join(corpo) + "\n"
-        "        conn.commit()\n"
+        "        if _proprio:\n"
+        "            conn.commit()\n"
         "        return _result if _result is not None else {'status': 'sucesso'}\n"
         "    except _RegraExecucao as _e:\n"
         "        if getattr(_e, 'sistema_externo', None):\n"
-        "            conn.rollback()\n"
+        "            if _proprio: conn.rollback()\n"
         "            return {'status': 'erro', 'error': str(_e), 'sistema_externo': _e.sistema_externo}\n"
-        "        conn.rollback()\n"
+        "        if _proprio: conn.rollback()\n"
         "        return {'status': 'erro', 'error': str(_e)}\n"
         "    except Exception as _e:\n"
-        "        conn.rollback()\n"
+        "        if _proprio: conn.rollback()\n"
         "        return {'status': 'erro', 'error': str(_e)}\n"
         "    finally:\n"
         "        try: cur.close()\n"
         "        except Exception: pass\n"
-        "        conn.close()\n"
+        "        if _proprio:\n"
+        "            conn.close()\n"
     )
     _obrig, _opc = entradas_do_contrato(passos)
     return src, {"tarefa": nome, "declarados": len(manifesto), "entradas": _obrig, "entradas_opcionais": _opc,
@@ -2514,7 +2528,11 @@ def _rt_chamar_tarefa(nome, entrada, contexto=None):
         raise _RegraExecucao(f"tarefa «{nome}» não tem regra determinística neste sistema "
                              "(é executada por agente) — a interface a dispara na etapa seguinte")
     dados = dict(contexto or {}); dados.update(entrada or {})
-    saida = fn(dados)
+    _lig = (contexto or {}).get("_conn_atual")
+    try:
+        saida = fn(dados, _lig) if _lig is not None else fn(dados)
+    except TypeError:
+        saida = fn(dados)
     if isinstance(saida, dict) and saida.get("status") == "erro":
         raise _RegraExecucao(f"a tarefa encadeada «{nome}» recusou: {saida.get('error')}")
     return saida

@@ -4666,6 +4666,12 @@ def _msg_negocio(task_name, tipo, tecnico):
                        ("ó","o"),("ô","o"),("õ","o"),("ú","u"),("ç","c")):
             _t = _t.replace(_a, _b)
         return {{_w for _w in _re.split(r"[^a-z0-9]+", _t) if len(_w) > 3}}
+    # Se o motivo JÁ É uma frase de gente ("Usuário não autorizado a sobrescrever
+    # classificação"), não se troca nada: a troca por outra frase parecida mandava o operador
+    # procurar um problema que não existia (pedia justificativa quando o caso era permissão).
+    _jargao = _re.search(r"verifica[çc][ãa]o|output_has|input|obrigat[óo]rio\(s\)|_|:", str(tecnico))
+    if not _jargao:
+        return tecnico
     _alvo = _termos(tecnico)
     def _e_frase(_m):
         # título de tela ("Detalhe do Caso") não é mensagem: mensagem termina em ponto ou
