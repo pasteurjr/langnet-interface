@@ -908,6 +908,22 @@ def resolver_nomes_de_linha(passos: List[dict],
                                           f"usuário")
                             i += len(par)
                             continue
+                    # A AUDITORIA É SEMPRE A TRILHA, AQUI: mesmo quando existe uma tarefa
+                    # «registrar_auditoria», encadeá-la obriga a passar a marca do evento — que
+                    # nenhum passo produz. O resultado era a gravação do caso morrer no fim, com
+                    # «Column 'hash_atual' cannot be null». A auditoria vira os três passos que
+                    # ela realmente é, dentro da própria tarefa.
+                    _baixo_alvo = alvo.lower()
+                    if alvo and ("auditar" in _baixo_alvo or "auditoria" in _baixo_alvo
+                                 or _baixo_alvo.startswith("ag-13")):
+                        trio = _auditoria_trio(ent, str(p.get("guarda_em") or "auditoria"))
+                        lista[i:i + 1] = trio
+                        produzidos.update({"marca_anterior", "hash_atual",
+                                           str(p.get("guarda_em") or "auditoria")})
+                        trocas.append(f"«{alvo}» virou a trilha de auditoria dentro da tarefa "
+                                      f"(marca anterior, marca deste evento, gravação)")
+                        i += len(trio)
+                        continue
                     if alvo and alvo not in _nomes_sys:
                         baixo = alvo.lower()
                         if baixo.startswith("ag-13") or "auditar" in baixo or "auditoria" in baixo:

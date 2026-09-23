@@ -16,6 +16,7 @@ BANCO = sys.argv[2] if len(sys.argv) > 2 else "biobyte_v4_app"
 EMAIL = "ana.ribeiro@hospitalvidas.org.br"
 SENHA = "Senha@123"
 ADMIN = "admin.sistema@hospitalvidas.org.br"
+PRONTUARIO = f"PRT-{int(time.time())}"
 
 def banco():
     return pymysql.connect(host="127.0.0.1", port=3308, user="producao",
@@ -86,6 +87,7 @@ def referencia():
 
 async def principal():
     uid = referencia()
+    global PRONTUARIO
     print(f"usuário da bateria: {uid}\n")
 
     r = conta("UC-001 entrar no sistema (senha certa)",
@@ -103,7 +105,7 @@ async def principal():
 
     r = conta("UC-003 cadastrar paciente e caso", await tarefa("cadastrar_paciente_e_caso", {
         "usuario_id": usuario_id, "nome": "Maria Souza", "data_nascimento": "1953-04-12",
-        "sexo": "F", "numero_prontuario": f"PRT-{int(time.time())}",
+        "sexo": "feminino", "numero_prontuario": f"PRT-{int(time.time())}",
         "medico_responsavel_id": usuario_id, "idade_na_data": 72, "dias_cateter": 12,
         "apache_ii": 18, "sitio_insercao": "jugular", "comorbidades_relevantes": "diabetes",
         "data_inicio": "2026-09-01", "data_encerramento": None, "estado": "ativo"}))
@@ -121,7 +123,8 @@ async def principal():
                        {"usuario_id": usuario_id, "paciente_id": paciente_id, "caso_id": caso_id}))
     conta("UC-005 importar resultado sem duplicar", await tarefa("importar_resultado_idempotente", {
         "identificador_amostra": "HMC-88213", "origem": "LIS", "situacao": "positivo",
-        "microrganismo": "Staphylococcus aureus", "multirresistente": 1}))
+        "microrganismo": "Staphylococcus aureus", "multirresistente": 1,
+        "paciente_id": paciente_id, "caso_id": caso_id}))
     conta("UC-006 classificar pelo critério NHSN",
           await tarefa("classificar_caso_nhsn", {"caso_id": caso_id}))
     conta("UC-007 detectar multirresistência",
@@ -158,19 +161,21 @@ async def principal():
         "usuario_id": usuario_id, "data_inicio": "2026-09-01", "data_fim": "2026-09-30",
         "formato": "csv", "paciente_id": paciente_id}))
     conta("UC-026 registrar consentimento", await tarefa("registrar_consentimento", {
-        "usuario_id": usuario_id, "numero_prontuario": "PRT-0001", "base_legal": "consentimento",
+        "usuario_id": usuario_id, "numero_prontuario": PRONTUARIO, "base_legal": "consentimento",
         "consentimento_obtido": 1, "data_consentimento": "2026-09-23"}))
     conta("UC-028 registrar operação de tratamento", await tarefa("registrar_operacao_tratamento", {
         "usuario_id": usuario_id, "finalidade": "vigilância epidemiológica",
-        "categorias_dados": "dados de saúde", "base_legal": "tutela_saude"}))
+        "categorias_dados": json.dumps(["dados de saude", "dados sensiveis"]), "base_legal": "tutela_saude"}))
     with banco() as cn, cn.cursor() as c:
+        c.execute("SELECT id FROM criterios_nhsn LIMIT 1")
+        criterio_id = (c.fetchone() or {}).get("id")
         c.execute("SELECT id FROM resultados_hemocultura ORDER BY created_at DESC LIMIT 1")
         resultado_id = (c.fetchone() or {}).get("id")
     conta("UC-033 mapear terminologia da microbiologia",
           await tarefa("mapear_terminologia_microbiologia",
                        {"usuario_id": usuario_id, "resultado_id": resultado_id}))
     conta("UC-006 sobrescrever a classificação", await tarefa("sobrescrever_classificacao", {
-        "usuario_id": usuario_id, "caso_id": caso_id, "criterio_id": None,
+        "usuario_id": usuario_id, "caso_id": caso_id, "criterio_id": criterio_id,
         "novo_resultado": "descartada", "justificativa": "revisão da comissão"}))
     conta("UC-003 encerrar o caso", await tarefa("encerrar_caso", {
         "usuario_id": usuario_id, "caso_id": caso_id, "data_encerramento": "2026-09-23"}))

@@ -7221,6 +7221,42 @@ def _schema_model(schema_sql: str) -> Dict[str, dict]:
     return model
 
 
+def _portao_gravacao(schema_sql: str) -> dict:
+    """Cada gravação do contrato preenche todas as colunas que o banco exige?
+
+    Coluna NOT NULL sem DEFAULT que o INSERT não cita faz a gravação falhar em uso, com uma
+    mensagem do banco que não diz nada ao operador. Aqui isso aparece ANTES de implantar,
+    dizendo a tarefa, a tabela e a coluna."""
+    import re as _re
+    faltas = []
+    tabelas = _parse_schema_tables_full(schema_sql or "")
+    exigidas = {}
+    for t, ddl in tabelas.items():
+        cols = set()
+        for m in _re.finditer(r'^\s*[`"]?(\w+)[`"]?\s+[A-Za-z]+[^\n]*$', ddl, _re.M):
+            linha = m.group(0).upper()
+            if linha.strip().startswith(("CREATE", "KEY", "INDEX", "UNIQUE", "CONSTRAINT",
+                                         "FOREIGN", "PRIMARY")):
+                continue
+            if "NOT NULL" in linha and "DEFAULT" not in linha and "PRIMARY KEY" not in linha:
+                cols.add(m.group(1))
+        exigidas[t.lower()] = cols
+    for tarefa, man in (MANIFESTOS_STEPS or {}).items():
+        for passo in (man.get("passos") or []):
+            sql = str(passo.get("sql") or "")
+            m = _re.search(r"(?is)insert\s+into\s+`?(\w+)`?\s*\(([^)]*)\)", sql)
+            if not m:
+                continue
+            tab = m.group(1).lower()
+            citadas = {c.strip().strip("`") for c in m.group(2).split(",")}
+            for col in sorted(exigidas.get(tab, set()) - citadas):
+                faltas.append({"tarefa": tarefa, "tabela": tab, "coluna": col,
+                               "motivo": f"a gravação em {tab} não preenche «{col}», que o banco "
+                                         f"exige e não tem valor padrão"})
+    return {"reprovado": bool(faltas), "quantidade": len(faltas), "itens": faltas[:40],
+            "descricao": "gravação que deixa de fora coluna obrigatória do banco"}
+
+
 def _schema_do_projeto(state) -> str:
     """O DDL do modelo de dados corrente. O `state` costuma vir SEM ele (quem preenche é um
     trecho mais adiante da geração), e por isso a lista de tabelas chegava vazia no tradutor de
@@ -11580,6 +11616,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         # MÓDULOS: cada arquivo Python do servidor gerado tem de IMPORTAR. Um NameError num deles
         # (ex.: `Union` sem import em tools_std.py) não derruba o servidor — só esvazia o registro
         # de ferramentas em silêncio, e a tarefa recusa em runtime com "ferramenta não disponível".
+        # GRAVAÇÃO INCOMPLETA: INSERT que deixa de fora uma coluna que o banco EXIGE e que não
+        # tem valor padrão. O erro só aparece quando alguém usa a tela ("Field 'paciente_id'
+        # doesn't have a default value") — e aí parece defeito do banco, não da tarefa.
+        state["portoes"]["gravacao"] = _portao_gravacao(_schema_do_projeto(state))
         state["portoes"]["modulos"] = _portao_modulos(files)
         # REDE: a planta do fluxo vai dentro do pacote. Se ela tem pendência que o portão da etapa
         # não conseguiu consertar (transição de tarefa solta, fim inalcançável, tarefa fora do
