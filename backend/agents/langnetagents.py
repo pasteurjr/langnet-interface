@@ -7917,14 +7917,11 @@ def _parse_task_description_to_python(desc: str, expected_output: str = "") -> s
 
         # Params: look on same line first, then next few lines
         params_str = ""
-        params_m = params_re.search(raw_lines[i])
-        if params_m:
-            params_str = params_m.group(1)
-        else:
+        params_str = _extrair_params(raw_lines[i])
+        if not params_str:
             for j in range(i + 1, min(i + 4, n)):
-                pm = params_re.search(raw_lines[j])
-                if pm:
-                    params_str = pm.group(1)
+                params_str = _extrair_params(raw_lines[j])
+                if params_str:
                     break
 
         # Detect a "Guarde em X" instruction — capture SELECT result as X
@@ -8474,6 +8471,37 @@ def _emit_sql_step(query: str, params_str: str, in_loop: bool, loop_item: str,
                 captured_vars.append(capture_var)
 
     return lines
+
+
+def _extrair_params(linha: str) -> str:
+    """Tira o conteúdo de `params=[...]` respeitando ASPAS e colchetes aninhados.
+
+    POR QUE: a expressão antiga (`params=\\[([^\\]]*)\\]`) parava no PRIMEIRO colchete de
+    fecho — e ele pode estar DENTRO de um texto. Medido no BioByte em 23/09/2026: o passo
+    `params=[{usuario_id}, 'Registro...', '["dados_pessoais","dados_de_saude"]', {base_legal}]`
+    era cortado no meio do terceiro parâmetro, a aspa de fecho se perdia, e o `adapters.py`
+    inteiro — 6.583 linhas — deixava de compilar por causa de uma linha.
+    """
+    i = linha.find("params=[")
+    if i < 0:
+        return ""
+    j = i + len("params=[")
+    prof, aspa, ini = 1, None, j
+    while j < len(linha):
+        c = linha[j]
+        if aspa:
+            if c == aspa:
+                aspa = None
+        elif c in ("'", '"'):
+            aspa = c
+        elif c == "[":
+            prof += 1
+        elif c == "]":
+            prof -= 1
+            if prof == 0:
+                return linha[ini:j]
+        j += 1
+    return linha[ini:]
 
 
 def _translate_params(params_str: str, captured_vars: List[str], loop_item: str,
