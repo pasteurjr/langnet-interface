@@ -518,17 +518,38 @@ def _dependencias_do_ats(ats_md: str) -> dict:
 
 
 def _escrever_procedencia(chunk: str, task_name: str, produtoras: list) -> str:
-    """Escreve na entrada da tarefa de quem ela recebe dado, no formato do framework."""
+    """Escreve na entrada da tarefa de quem ela recebe dado, no formato do framework.
+
+    Se a tarefa não tem a seção `Input data format`, ela é CRIADA — antes de `Process steps`, ou
+    no fim da descrição. Sem isso, 14 das 38 tarefas com dependência declarada ficavam de fora só
+    porque o modelo não escreveu a seção (medido em 22/09/2026: 24 de 38).
+    """
     if not chunk or not produtoras or "JSON da task" in chunk:
         return chunk
     import re as _re
     linhas = chunk.splitlines()
+
+    def _linhas_de_procedencia(recuo):
+        return [f"{recuo}  - JSON da task {p} contendo os campos que ela entrega" for p in produtoras]
+
     for i, l in enumerate(linhas):
         if _re.match(r"\s*Input data format\s*:", l):
             recuo = l[: len(l) - len(l.lstrip())]
-            novas = [f"{recuo}  - JSON da task {p} contendo os campos que ela entrega"
-                     for p in produtoras]
-            return "\n".join(linhas[: i + 1] + novas + linhas[i + 1:])
+            return "\n".join(linhas[: i + 1] + _linhas_de_procedencia(recuo) + linhas[i + 1:])
+
+    # não havia a seção: criar antes de "Process steps"
+    for i, l in enumerate(linhas):
+        if _re.match(r"\s*Process steps\s*:", l):
+            recuo = l[: len(l) - len(l.lstrip())]
+            bloco = [f"{recuo}Input data format:"] + _linhas_de_procedencia(recuo) + [""]
+            return "\n".join(linhas[:i] + bloco + linhas[i:])
+
+    # nem isso: pendurar no fim da descrição (antes de expected_output)
+    for i, l in enumerate(linhas):
+        if _re.match(r"\s*expected_output\s*:", l):
+            recuo = "    "
+            bloco = [f"{recuo}Input data format:"] + _linhas_de_procedencia(recuo) + [""]
+            return "\n".join(linhas[:i] + bloco + linhas[i:])
     return chunk
 
 
