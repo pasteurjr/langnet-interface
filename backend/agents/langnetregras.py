@@ -1163,6 +1163,21 @@ def resolver_nomes_de_linha(passos: List[dict],
                 produzidos.update(_alvo)
                 trocas.append("o passo de julgamento não dizia o que devolve — devolve "
                               + ", ".join(_alvo) + " (o que os passos seguintes usam)")
+            # O MODELO RESPONDE DENTRO DO QUE A COLUNA ACEITA: a classificação vai para uma
+            # coluna que só admite confirmada, descartada ou pendente. Sem dizer isso na
+            # instrução, o modelo responde com outra palavra e a gravação falha com "valor
+            # truncado" — o operador vê um erro de banco no lugar do resultado.
+            if valores_aceitos and _p.get("devolve") and _p.get("instrucao"):
+                _lista = []
+                for _d in _p["devolve"]:
+                    _op = valores_aceitos.get(str(_d).strip())
+                    if _op:
+                        _lista.append(f"{_d}: exatamente um de " + ", ".join(_op))
+                if _lista and "exatamente um de" not in str(_p["instrucao"]):
+                    _p["instrucao"] = str(_p["instrucao"]).rstrip() + " Responda " + "; ".join(_lista) + "."
+                    trocas.append("o julgamento passou a dizer os valores aceitos ("
+                                  + "; ".join(_lista) + ")")
+
 
     # RECUSA QUE NÃO DÁ PARA CONFERIR: `recusa_se: "nao valido"` quando nenhum passo produz
     # «valido» e a tela não manda nada com esse nome. A conferência não tem como ser feita — e,
