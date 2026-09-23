@@ -7530,9 +7530,25 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
 
     def _texpr(e):
         e = e.strip()
+        # Valor NULO escrito por extenso, muitas vezes com anotação em português:
+        #   "null (a ser preenchido por T-MDR-002)"  → None
+        # Sem isto o emissor tratava a frase como conta e escrevia
+        #   _num(null) (_num(a) _num(ser) _num(preenchido) ...) — que nem compila.
+        # Medido no BioByte em 23/09/2026: uma linha assim derrubava o adapters.py inteiro.
+        if _re.match(r'^(null|none|nulo|nil)\b', e, _re.I):
+            return "None"
+        # Anotação entre parênteses depois do valor: fica só o valor.
+        m_anot = _re.match(r'^([^(]+?)\s*\([^)]*\)\s*$', e)
+        if m_anot and not _re.search(r'[-+*/]', m_anot.group(1)):
+            e = m_anot.group(1).strip()
+            if _re.match(r'^(null|none|nulo|nil)$', e, _re.I):
+                return "None"
         md = _re.match(r'^([A-Za-z_]\w*)\s*/\s*([A-Za-z_]\w*)$', e)
         if md:
             return "_safe_div(%s, %s)" % (md.group(1), md.group(2))
+        # Frase em prosa (três ou mais palavras sem operador) não é conta: vira texto.
+        if not _re.search(r'[-+*/%<>=]', e) and len(e.split()) >= 3:
+            return repr(e)
         return _re.sub(r'[A-Za-z_]\w*', lambda mm: "_num(%s)" % mm.group(0), e)
 
     i = 0; n = len(raw)
