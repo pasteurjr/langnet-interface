@@ -1026,6 +1026,9 @@ def resolver_nomes_de_linha(passos: List[dict],
                             continue
             i += 1
     _ajustar_encadeamentos(passos)
+    # As consultas que acabaram de entrar (conferência do usuário, trilha de auditoria) também
+    # capturam linhas: sem reler, o programa não sabia que «usuario» já existe.
+    _mapear(passos)
 
     # COLUNA QUE ACEITA VAZIO NÃO OBRIGA A TELA: o cadastro de um caso que está ABRINDO não tem
     # data de encerramento, e o modelo de dados diz isso (a coluna aceita vazio). Mesmo assim a
