@@ -1488,3 +1488,80 @@ em qual tarefa cada um está, e oferece um atalho: **corrigir em Agentes e Taref
 É a diferença entre um sistema que entrega e um que entrega dizendo o que ainda falta.
 
 ---
+
+## Parte Q — Implantação e o sistema no ar
+
+### Cena 86 — A etapa se recusa a implantar
+
+**TELA:** `shots/612-deploy-pendencias-dos-portoes.png`
+
+**NARRAÇÃO:**
+A implantação pede o banco, o usuário, a senha e qual modelo de inteligência o sistema vai usar —
+aqui, o modelo local, que não custa por uso.
+
+E então acontece o que mais importa nesta etapa: ela **não deixa implantar**. O painel lista o que
+a conferência achou de pendente e diz onde se conserta.
+
+Para seguir mesmo assim é preciso uma decisão explícita, com uma pergunta direta: *"implantar mesmo
+com as pendências? O sistema vai subir com lacuna conhecida. A decisão fica registrada."*
+
+Nós dissemos sim — e isso ficou gravado no registro da implantação, junto com a lista do que
+faltava.
+
+---
+
+### Cena 87 — Três serviços no ar
+
+**TELA:** `shots/613-deploy-em-andamento.png` e `shots/614-deploy-resultado.png`
+
+**NARRAÇÃO:**
+A implantação instala as dependências e sobe três serviços:
+
+O **servidor de agentes**, na porta cinco mil e dois — é ele que recebe cada tarefa da rede de
+Petri e monta o agente.
+
+A **API do sistema**, na porta oito mil e um.
+
+A **interface**, na porta três mil e dois.
+
+E o banco de dados é criado **do zero**: vinte e duas tabelas, a partir do mesmo script que a etapa
+de Modelo de Dados gerou. Nada foi preparado à mão.
+
+---
+
+### Cena 88 — O sistema que nasceu da ata
+
+**TELA:** `shots/615-app-biobyte-no-ar.png`
+
+**NARRAÇÃO:**
+E aqui está o BioByte Sentinela, funcionando.
+
+O menu à esquerda é o que a etapa de Interface desenhou: Escore de Risco de Cox, Recomendação de
+Bundle, Estimativa de Redução de Risco, Consulta de Microbiologia, Classificação NHSN, Painel de
+Vigilância, Consentimento e Base Legal, Atendimento aos Direitos do Titular.
+
+Cada um desses nomes veio de um caso de uso. Cada caso de uso veio de um requisito. Cada requisito
+veio de uma frase da reunião com a comissão de controle de infecção — aquela ata de doze
+quilobytes que abriu este vídeo.
+
+Entre a frase *"o que mais nos custa é o tempo entre a hemocultura ficar pronta e alguém perceber"*
+e esta tela, não houve uma linha de código escrita à mão.
+
+---
+
+### Cena 89 — E o que ainda falta, dito por ele mesmo
+
+**NARRAÇÃO:**
+O sistema sobe, navega e grava. Mas ele subiu com lacuna conhecida, e é justo dizer qual:
+
+Sessenta passos descritos nas tarefas ainda não viraram código — gerar a validade do token,
+encadear o registro de auditoria, percorrer a lista de antimicrobianos. E vinte e cinco valores que
+os contratos usam sem que nenhum passo os produza.
+
+Nada disso impede o sistema de funcionar no que já está pronto. Mas são regras de negócio que, por
+enquanto, faltam — e estão listadas, uma a uma, com o nome da tarefa e o atalho para corrigir.
+
+O sistema não escondeu. Foi preciso dizer **sim, suba assim mesmo** — e essa decisão ficou
+registrada.
+
+---
