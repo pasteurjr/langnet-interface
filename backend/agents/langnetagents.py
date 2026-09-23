@@ -6554,8 +6554,16 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
         # TRADUTOR DE REGRAS: tarefa com `steps:` é emitida do CONTRATO, não da prosa. Cada passo
         # termina no manifesto como emitido ou não emitido com motivo — nada some em silêncio.
         if isinstance(_blk.get('steps'), list) and _blk.get('steps'):
-            from agents.langnetregras import validar_passos as _vp, emitir_tarefa as _et
+            from agents.langnetregras import (validar_passos as _vp, emitir_tarefa as _et,
+                                              resolver_nomes_de_linha as _rnl)
             _exec = str(_blk.get('execution') or 'deterministic')
+            # Nome solto que é campo de uma linha já consultada (papel → usuario.papel,
+            # usuario_id → usuario.id) e o encadeamento da auditoria: o programa resolve do
+            # próprio contrato, antes de conferir. Sem isto a tarefa recusava antes de começar —
+            # o login do BioByte devolvia "E-mail ou senha inválidos" com a senha CERTA.
+            _resolvidos = _rnl(_blk['steps'])
+            for _r in _resolvidos:
+                print(f"[CODE-GEN][CONTRATO] {task_name}: {_r}")
             # REGRA 3 — programa busca, modelo julga, programa grava.
             # ANTES: tarefa de julgamento tinha a receita DESCARTADA aqui e a prosa inteira ia ao
             # modelo, que era mandado "consultar o banco" e "gravar" — coisas que ele não faz. O

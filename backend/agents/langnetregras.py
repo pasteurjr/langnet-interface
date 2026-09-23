@@ -414,6 +414,156 @@ def conferir_chamadas_externas(tarefas: dict, fichas: dict, tipos_das_colunas: d
             _varrer(nome, cfg.get("steps"))
     return achados
 
+def resolver_nomes_de_linha(passos: List[dict]) -> List[str]:
+    """Liga nome solto ao campo da LINHA que um passo anterior capturou.
+
+    POR QUE: o contrato consulta `SELECT id, senha_hash, papel, ativo ... guarda_em: usuario` e
+    depois usa `usuario_id` e `papel` soltos — que são `usuario.id` e `usuario.papel`. Como
+    ninguém os produz com esse nome, a tarefa recusa antes de começar: medido no BioByte em
+    23/09/2026, o login devolvia "E-mail ou senha inválidos" com senha CERTA, e o detalhe técnico
+    dizia "inputs obrigatórios ausentes: hash_atual, marca_anterior, papel, usuario_id".
+
+    A informação para resolver está no próprio contrato: as colunas da consulta. Aqui o programa
+    reescreve `papel` → `usuario.papel` e `usuario_id` → `usuario.id`, e devolve a lista do que
+    resolveu. O que não casar continua pendente e é declarado — nada é adivinhado.
+    """
+    colunas_por_linha: Dict[str, List[str]] = {}
+    trocas: List[str] = []
+
+    def _colunas_do_select(sql: str) -> List[str]:
+        m = re.search(r"select\s+(.+?)\s+from\s", str(sql or ""), re.I | re.S)
+        if not m:
+            return []
+        cols = []
+        for parte in m.group(1).split(","):
+            parte = parte.strip()
+            if not parte or parte == "*":
+                continue
+            apelido = re.search(r"\bas\s+([A-Za-z_]\w*)\s*$", parte, re.I)
+            nome = apelido.group(1) if apelido else parte.split(".")[-1].strip("` ")
+            if re.fullmatch(r"[A-Za-z_]\w*", nome or ""):
+                cols.append(nome)
+        return cols
+
+    def _mapear(lista):
+        for p in lista or []:
+            if not isinstance(p, dict):
+                continue
+            if str(p.get("tipo")) == "consulta" and p.get("guarda_em"):
+                colunas_por_linha[str(p["guarda_em"])] = _colunas_do_select(p.get("sql"))
+            for campo in ("passos", "senao", "passos_senao"):
+                if isinstance(p.get(campo), list):
+                    _mapear(p[campo])
+    _mapear(passos)
+    if not colunas_por_linha:
+        return trocas
+
+    def _resolver(nome: str) -> Optional[str]:
+        for linha, cols in colunas_por_linha.items():
+            if nome == f"{linha}_id" and "id" in cols:
+                return f"{linha}.id"
+            if nome in cols:
+                return f"{linha}.{nome}"
+        return None
+
+    produzidos: set = set()
+
+    def _reescrever(lista):
+        for p in lista or []:
+            if not isinstance(p, dict):
+                continue
+            for k in ("guarda_em", "atribui", "guarda_id_em", "para_cada"):
+                if p.get(k):
+                    produzidos.add(str(p[k]))
+            # parâmetros de consulta/escrita
+            if isinstance(p.get("params"), list):
+                novos = []
+                for arg in p["params"]:
+                    a = str(arg)
+                    if re.fullmatch(r"[A-Za-z_]\w*", a) and a not in produzidos:
+                        alvo = _resolver(a)
+                        if alvo:
+                            trocas.append(f"{a} → {alvo}")
+                            novos.append(alvo)
+                            continue
+                    novos.append(arg)
+                p["params"] = novos
+            # campos devolvidos
+            if str(p.get("tipo")) == "retorno" and isinstance(p.get("campos"), list):
+                novos = []
+                for c in p["campos"]:
+                    a = str(c)
+                    if a not in produzidos:
+                        alvo = _resolver(a)
+                        if alvo:
+                            # o retorno mantém o NOME curto, mas passa a existir como cálculo
+                            trocas.append(f"retorno {a} ← {alvo}")
+                            novos.append(a)
+                            continue
+                    novos.append(c)
+                p["campos"] = novos
+            for campo in ("passos", "senao", "passos_senao"):
+                if isinstance(p.get(campo), list):
+                    _reescrever(p[campo])
+    _reescrever(passos)
+
+    # ENCADEAMENTO DA AUDITORIA: a gravação em registros_auditoria pede `marca_anterior` (a marca
+    # do registro anterior) e `hash_atual` (a marca deste). Nenhum dos dois é entrada de tela e
+    # nenhum passo os produzia — a tarefa recusava antes de começar. A ferramenta existe no pacote
+    # e devolve exatamente `hash_atual`; aqui o programa costura os dois passos que faltavam.
+    def _costurar_auditoria(lista):
+        i = 0
+        while i < len(lista):
+            p = lista[i]
+            if isinstance(p, dict):
+                for campo in ("passos", "senao", "passos_senao"):
+                    if isinstance(p.get(campo), list):
+                        _costurar_auditoria(p[campo])
+                usados = {str(x) for x in (p.get("params") or [])}
+                if (str(p.get("tipo")) == "escrita"
+                        and "registros_auditoria" in str(p.get("sql") or "")
+                        and ({"marca_anterior", "hash_atual"} & usados)
+                        and "marca_anterior" not in produzidos):
+                    autor = next((str(x) for x in (p.get("params") or [])
+                                  if str(x).endswith(".id") or str(x).endswith("_id")), "usuario.id")
+                    antes = [
+                        {"tipo": "consulta",
+                         "sql": "SELECT hash_atual FROM registros_auditoria ORDER BY created_at DESC LIMIT 1",
+                         "params": [], "guarda_em": "marca_anterior", "forma": "escalar"},
+                        {"tipo": "externo", "ferramenta": "hash_chain_tool",
+                         "argumentos": {"autor_id": autor, "acao": "'registro'",
+                                        "registro_afetado": autor, "data_hora": "hoje()",
+                                        "marca_anterior": "marca_anterior"},
+                         "guarda_em": "hash_atual", "mapeia": {"hash_atual": "hash_atual"}},
+                    ]
+                    lista[i:i] = antes
+                    produzidos.update({"marca_anterior", "hash_atual"})
+                    trocas.append("encadeamento da auditoria costurado "
+                                  "(marca anterior consultada + marca atual pela ferramenta)")
+                    i += len(antes)
+            i += 1
+    _costurar_auditoria(passos)
+
+    # o retorno precisa que o nome curto EXISTA: acrescenta um cálculo antes do retorno
+    for i, p in enumerate(list(passos)):
+        if isinstance(p, dict) and str(p.get("tipo")) == "retorno":
+            faltam = []
+            for c in (p.get("campos") or []):
+                a = str(c)
+                if a in produzidos:
+                    continue
+                alvo = _resolver(a)
+                if alvo:
+                    faltam.append({"tipo": "calculo", "atribui": a, "expressao": alvo})
+                    produzidos.add(a)
+            if faltam:
+                passos[i:i] = faltam
+                trocas += [f"{x['atribui']} = {x['expressao']} (acrescentado antes do retorno)"
+                           for x in faltam]
+            break
+    return trocas
+
+
 def entradas_do_contrato(passos: List[dict]) -> Tuple[List[str], List[str]]:
     """(entradas_obrigatorias, entradas_opcionais) que o contrato ESPERA receber: todo nome usado
     numa expressão que nenhum passo anterior produziu. Nome só dentro de existe()/opcional() é
