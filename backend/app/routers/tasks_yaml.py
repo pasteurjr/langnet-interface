@@ -288,14 +288,11 @@ async def execute_tasks_yaml_generation(
                 print(f"[TASKS_YAML] chunked OK: {stats['ok']} ok, {stats['retried']} retried, "
                       f"{stats['failed']} failed, {stats['with_sql']} with SQL")
 
-        # As ferramentas resolvidas na etapa anterior entram aqui — o inventário já
-        # diz quem usa cada uma; sem isto o YAML sai sem ferramenta nenhuma.
-        _uso = _ferramentas_do_inventario(_projeto_da_sessao("tasks_yaml_sessions", session_id))
-        if _uso:
-            _antes = tasks_yaml_content
-            tasks_yaml_content = _acrescentar_ferramentas_ao_yaml(tasks_yaml_content, _uso)
-            if tasks_yaml_content != _antes:
-                print(f"[YAML] ferramentas ligadas a partir do inventário: {len(_uso)} destinatário(s)")
+        # O tasks.yaml segue o padrão do framework (CrewAI): description e expected_output.
+        # Ferramenta, agente, natureza e rastreabilidade NÃO entram aqui — estão no documento de
+        # Agentes e Tarefas (colunas Tools, Agent, UC/RF Relacionado) e é de lá que a geração de
+        # código as lê. Foram desviadas para o YAML entre 16/07 e 23/09/2026 e revertidas em
+        # 24/09/2026 a pedido.
 
         end_time = datetime.now()
         generation_time_ms = int((end_time - start_time).total_seconds() * 1000)
@@ -422,7 +419,6 @@ async def _generate_task_by_task(
             continue
 
         chunk, was_retried = result
-        chunk = _inject_traceability(chunk, task)
         chunks.append(chunk)
         if was_retried:
             stats["retried"] += 1

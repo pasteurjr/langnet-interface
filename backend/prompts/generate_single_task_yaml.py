@@ -300,32 +300,6 @@ def validate_task_yaml(task_name: str, task_yaml: str, needs_sql: bool) -> Tuple
         sql_ops = ("INSERT INTO", "UPDATE ", "DELETE FROM")
         if not any(op in task_yaml for op in sql_ops):
             return False, "persistence task has no INSERT/UPDATE/DELETE"
-    # OS PASSOS SÃO OBRIGATÓRIOS. A descrição vem do documento de Agentes e Tarefas com a lógica
-    # numerada e o SQL escrito; `steps:` é essa mesma lógica formalizada, e é o ÚNICO campo que
-    # vira código com conferência. Sem exigir aqui, a tarefa entrava só com a prosa e a regra
-    # sumia no aplicativo: medido em 23/09/2026, 23 das 45 tarefas passaram assim — entre elas a
-    # notificação, que ficou sem saber para quem mandar o e-mail embora a própria descrição
-    # trouxesse o SELECT dos destinatários.
-    _passos = (_bloco.get(task_name) or {}) if isinstance(_bloco.get(task_name), dict) else {}
-    _steps = _passos.get("steps")
-    if not isinstance(_steps, list) or not _steps:
-        return False, ("falta `steps:` — formalize em passos a MESMA lógica que você escreveu em "
-                       "`Process steps` da descrição (um passo por item numerado)")
-    # PASSO É FICHA, NÃO FRASE. Medido em 23/09/2026: o modelo devolveu `steps:` como lista de
-    # frases ("- Chamar AG-14 para gerar a mensagem ...") — que não vira código, e cuja frase com
-    # dois-pontos ainda quebrou o arquivo inteiro. Cada passo tem de ser um item com `tipo:`.
-    _tipos = {"consulta", "escrita", "verificacao", "calculo", "condicao", "laco",
-              "externo", "tarefa", "retorno", "agente"}
-    _frases = [i + 1 for i, _p in enumerate(_steps) if not isinstance(_p, dict)]
-    if _frases:
-        return False, (f"`steps:` {len(_frases)} item(ns) vieram como FRASE (posições "
-                       f"{', '.join(map(str, _frases[:5]))}). Cada passo é um item com `tipo:` e "
-                       f"seus campos — nunca uma frase solta")
-    _maus = sorted({str(_p.get("tipo") or "sem tipo") for _p in _steps
-                    if str(_p.get("tipo") or "") not in _tipos})
-    if _maus:
-        return False, (f"`steps:` tipo inválido: {', '.join(_maus)}. Use somente: "
-                       + ", ".join(sorted(_tipos)))
     return True, "ok"
 
 
@@ -338,40 +312,20 @@ _BASE_INSTRUCTIONS = """Você é especialista em CrewAI e YAML. Gere APENAS o bl
 REGRAS ABSOLUTAS:
 1. Retorne SOMENTE o YAML da task solicitada. Sem markdown fences. Sem explicações.
    Começa em `{task_name}:` e termina antes da próxima chave top-level.
-2. Formato:
+2. Formato — O PADRÃO DO FRAMEWORK (CrewAI), DOIS CAMPOS, NADA MAIS:
      {task_name}:
-       execution: deterministic   # ou 'agent' — classifique pela natureza (ver REGRA 6)
-       agent: <agent_snake_case>
        description: >
-         <descrição + input format + Process steps numerados>
+         <descrição + Input data format + Process steps numerados>
        expected_output: >
-         <descrição textual em prosa dos campos do JSON>
+         <descrição textual em prosa das keys do JSON>
+   🔴 NÃO acrescente NENHUM outro campo. Nada de `agent:`, `tools:`, `execution:`,
+   `traceability:` nem `steps:`. Esses vêm do documento de Agentes e Tarefas, não do YAML.
 3. Indentação: 2 espaços. Use `>` para blocos multiline.
 4. Placeholders: uma chave só ao redor do nome, ex: substitua o nome do
    parametro por chave-abre + nome + chave-fecha, formato CrewAI oficial.
    Nunca use duas ou quatro chaves — o CrewAI trata isso como literal
    e a task quebra em runtime.
-6. execution (OBRIGATÓRIO em TODA task): classifique pela NATUREZA da task:
-   - `deterministic` → COMPUTAÇÃO ou CRUD de lógica FIXA: consultar/inserir/
-     atualizar/excluir dados; cálculo SQL/espacial/matemático EXATO (área,
-     sobreposição ST_Intersects/ST_Area, CA/TO, recuos, faixas por regra,
-     declividade). Não há julgamento — um algoritmo fixo resolve. Roda em
-     CÓDIGO, sem LLM: exato, auditável, reproduzível, barato.
-   - `agent` → exige JULGAMENTO/linguagem: classificar por interpretação (ex.:
-     classe de impacto COPAM do caso), COMPOR texto (laudo/parecer/narrativa),
-     decidir, tratar caso ambíguo, resumir.
-   Régua: se um algoritmo FIXO produz a resposta → `deterministic`; se precisa
-   "pensar"/redigir/interpretar → `agent`. Em documentos LEGAIS (laudos), os
-   🔴 TESTE DECISIVO (o erro mais comum é marcar `deterministic` só porque a task GRAVA no banco):
-   pergunte "quem PRODUZ o valor que esta task grava?". Se o valor NÃO é digitado por um ator, NÃO
-   vem de ferramenta externa e NÃO foi produzido por task anterior — isto é, esta task precisa
-   classificar/recomendar/estimar/decidir para OBTÊ-LO — então é `agent`, MESMO que depois grave o
-   resultado. Gravar é passo acessório; produzir o valor é julgamento. Ex.: "classificar o caso
-   pelos critérios da norma e gravar a classificação" → `agent`; "recomendar o protocolo de
-   tratamento" → `agent`; "estimar a redução de risco" → `agent`; "buscar o resultado no sistema
-   externo e gravar" → `deterministic` (o valor vem da ferramenta).
-   CÁLCULOS são SEMPRE `deterministic` (auditáveis); só a COMPOSIÇÃO do texto
-   do laudo é `agent`.
+
 """
 
 _SQL_RULES = """
@@ -472,57 +426,6 @@ cadastrar_pessoa:
       - telefones: List[String]
 
     ═══════════════════════════════════════════════════════════════
-CONTRATO DE PASSOS (`steps:`) — OBRIGATÓRIO, ALÉM DA PROSA
-═══════════════════════════════════════════════════════════════
-Depois de `expected_output`, escreva também `steps:` — a MESMA lógica da descrição, em passos
-estruturados. A prosa é para a pessoa ler; `steps:` é o que vira CÓDIGO.
-
-POR QUE ISTO É OBRIGATÓRIO: o tradutor só transforma em código o que está no contrato. O que fica
-só na prosa vira pendência e a regra FALTA no aplicativo. Medido no BioByte em 23/09/2026: 40
-passos ficaram de fora — gerar token, pseudonimizar prontuário, chamar o laboratório, validar
-campos obrigatórios, percorrer a lista de antimicrobianos. Um login já passou sem conferir senha
-por causa disso.
-
-TIPOS DE PASSO (use SOMENTE estes):
-  - tipo: consulta      | sql, params, guarda_em, forma: escalar|linha|linhas
-  - tipo: escrita       | sql, params, guarda_id_em (opcional)
-  - tipo: verificacao   | recusa_se (o que RECUSA) ou condicao (o que precisa valer), mensagem
-  - tipo: calculo       | atribui, expressao
-  - tipo: condicao      | se, passos: [...]
-  - tipo: laco          | para_cada, em, passos: [...]
-  - tipo: externo       | ferramenta, argumentos: {campo: expressao}, guarda_em, mapeia (opcional)
-  - tipo: tarefa        | nome, entrada: {campo: expressao}, guarda_em   (encadeia outra tarefa)
-  - tipo: retorno       | campos: [...]
-  - tipo: agente        | instrucao      (SÓ em tarefa com execution: agent)
-
-MINI-LINGUAGEM das expressões: nomes, `x.campo`, + - * /, comparações, `e`/`ou`/`nao` e as funções
-em português: arredonda, conta_valor, contem, de_json, dias_entre, em, entre, existe, hash_senha,
-confere_senha, hoje, json_valido, maiusculas, media, minusculas, numero, primeiro, soma, tamanho,
-texto, vazio, codigo_valido. NÃO invente função e NÃO use colchete de índice.
-
-EXEMPLO (autenticar usuário):
-  steps:
-    - tipo: consulta
-      sql: "SELECT id, senha_hash, papel, ativo FROM usuarios WHERE email=%s"
-      params: [email]
-      guarda_em: usuario
-      forma: linha
-    - tipo: verificacao
-      recusa_se: "nao existe(usuario)"
-      mensagem: "E-mail ou senha inválidos."
-    - tipo: verificacao
-      recusa_se: "nao confere_senha(senha, usuario.senha_hash)"
-      mensagem: "E-mail ou senha inválidos."
-    - tipo: externo
-      ferramenta: token_tool
-      argumentos: {usuario_id: usuario.id, minutos: 30}
-      guarda_em: token
-    - tipo: escrita
-      sql: "INSERT INTO tokens_acesso(usuario_id, token, expira_em) VALUES(%s,%s,%s)"
-      params: [usuario.id, token, expira_em]
-    - tipo: retorno
-      campos: [usuario_id, token, papel]
-
 REGRA DA PROCEDÊNCIA DOS VALORES (a que mais falha):
   Todo nome usado numa expressão, num `params` ou num argumento TEM de ser uma destas coisas:
     (a) uma ENTRADA da tarefa — e então está listada no `Input data format`; ou

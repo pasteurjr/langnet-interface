@@ -232,12 +232,11 @@ async def execute_agents_yaml_generation(
 
         # As ferramentas resolvidas na etapa anterior entram aqui — o inventário já
         # diz quem usa cada uma; sem isto o YAML sai sem ferramenta nenhuma.
-        _uso = _ferramentas_do_inventario(_projeto_da_sessao("agents_yaml_sessions", session_id))
-        if _uso:
-            _antes = agents_yaml_content
-            agents_yaml_content = _acrescentar_ferramentas_ao_yaml(agents_yaml_content, _uso)
-            if agents_yaml_content != _antes:
-                print(f"[YAML] ferramentas ligadas a partir do inventário: {len(_uso)} destinatário(s)")
+        # O agents.yaml segue o padrão do framework (CrewAI): role, goal, backstory,
+        # verbose, allow_delegation. As ferramentas do inventário NÃO entram aqui — quem
+        # precisa delas (geração de código) lê a coluna Tools do documento de Agentes e
+        # Tarefas, que é onde elas já estavam. Escrevê-las no YAML desviou o formato em
+        # 22/09/2026 e foi revertido em 24/09/2026 a pedido.
 
         end_time = datetime.now()
         generation_time_ms = int((end_time - start_time).total_seconds() * 1000)
