@@ -300,6 +300,16 @@ def validate_task_yaml(task_name: str, task_yaml: str, needs_sql: bool) -> Tuple
         sql_ops = ("INSERT INTO", "UPDATE ", "DELETE FROM")
         if not any(op in task_yaml for op in sql_ops):
             return False, "persistence task has no INSERT/UPDATE/DELETE"
+    # OS PASSOS SÃO OBRIGATÓRIOS. A descrição vem do documento de Agentes e Tarefas com a lógica
+    # numerada e o SQL escrito; `steps:` é essa mesma lógica formalizada, e é o ÚNICO campo que
+    # vira código com conferência. Sem exigir aqui, a tarefa entrava só com a prosa e a regra
+    # sumia no aplicativo: medido em 23/09/2026, 23 das 45 tarefas passaram assim — entre elas a
+    # notificação, que ficou sem saber para quem mandar o e-mail embora a própria descrição
+    # trouxesse o SELECT dos destinatários.
+    _passos = (_bloco.get(task_name) or {}) if isinstance(_bloco.get(task_name), dict) else {}
+    if not isinstance(_passos.get("steps"), list) or not _passos.get("steps"):
+        return False, ("falta `steps:` — formalize em passos a MESMA lógica que você escreveu em "
+                       "`Process steps` da descrição (um passo por item numerado)")
     return True, "ok"
 
 

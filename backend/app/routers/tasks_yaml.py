@@ -477,10 +477,32 @@ async def _generate_one_task_with_retry(
     if ok2:
         return chunk2, True
 
-    # If persistence retry failed but chunk2 is still a valid YAML structure,
-    # keep it (better than nothing — user can refine).
+    # TERCEIRA TENTATIVA quando o que falta são OS PASSOS. A lógica já está escrita na descrição
+    # que veio do documento de Agentes e Tarefas — é transcrição, não invenção; insistir resolve.
+    if "steps" in (reason2 or ""):
+        print(f"[TASKS_YAML]   ⚠️ attempt 2 sem steps: {reason2} — 3ª tentativa")
+        prompt3 = build_single_task_prompt(
+            task, sub_schema, persistence,
+            retry_hint=("VOCÊ ESQUECEU `steps:` DE NOVO. Não invente nada: pegue os itens "
+                        "numerados de `Process steps` da descrição e transcreva CADA UM como um "
+                        "passo, na ordem, usando os tipos permitidos. O YAML é RECUSADO sem isso."))
+        raw3 = await get_llm_response_async(
+            prompt=prompt3,
+            system="Você é especialista em CrewAI e YAML. Gere APENAS um bloco YAML de task.",
+            temperature=0.0,
+            max_tokens=3500,
+        )
+        chunk3 = extract_task_block(task_name, raw3 or "")
+        chunk3 = _escrever_procedencia(chunk3, task_name, (dependencias or {}).get(task_name) or [])
+        ok3, reason3 = validate_task_yaml(task_name, chunk3, persistence)
+        if ok3:
+            return chunk3, True
+        chunk2, reason2 = (chunk3 or chunk2), reason3
+
+    # Nem depois das tentativas: a tarefa ENTRA (senão some do aplicativo), mas a falta fica
+    # declarada aqui e é cobrada pelo portão da geração de código.
     if chunk2 and task_name in chunk2 and "description:" in chunk2:
-        print(f"[TASKS_YAML]   ⚠️ retry still no SQL, keeping chunk anyway ({reason2})")
+        print(f"[TASKS_YAML]   ❌ {task_name} entrou INCOMPLETA: {reason2}")
         return chunk2, True
 
     return None
