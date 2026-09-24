@@ -307,9 +307,25 @@ def validate_task_yaml(task_name: str, task_yaml: str, needs_sql: bool) -> Tuple
     # notificação, que ficou sem saber para quem mandar o e-mail embora a própria descrição
     # trouxesse o SELECT dos destinatários.
     _passos = (_bloco.get(task_name) or {}) if isinstance(_bloco.get(task_name), dict) else {}
-    if not isinstance(_passos.get("steps"), list) or not _passos.get("steps"):
+    _steps = _passos.get("steps")
+    if not isinstance(_steps, list) or not _steps:
         return False, ("falta `steps:` — formalize em passos a MESMA lógica que você escreveu em "
                        "`Process steps` da descrição (um passo por item numerado)")
+    # PASSO É FICHA, NÃO FRASE. Medido em 23/09/2026: o modelo devolveu `steps:` como lista de
+    # frases ("- Chamar AG-14 para gerar a mensagem ...") — que não vira código, e cuja frase com
+    # dois-pontos ainda quebrou o arquivo inteiro. Cada passo tem de ser um item com `tipo:`.
+    _tipos = {"consulta", "escrita", "verificacao", "calculo", "condicao", "laco",
+              "externo", "tarefa", "retorno", "agente"}
+    _frases = [i + 1 for i, _p in enumerate(_steps) if not isinstance(_p, dict)]
+    if _frases:
+        return False, (f"`steps:` {len(_frases)} item(ns) vieram como FRASE (posições "
+                       f"{', '.join(map(str, _frases[:5]))}). Cada passo é um item com `tipo:` e "
+                       f"seus campos — nunca uma frase solta")
+    _maus = sorted({str(_p.get("tipo") or "sem tipo") for _p in _steps
+                    if str(_p.get("tipo") or "") not in _tipos})
+    if _maus:
+        return False, (f"`steps:` tipo inválido: {', '.join(_maus)}. Use somente: "
+                       + ", ".join(sorted(_tipos)))
     return True, "ok"
 
 

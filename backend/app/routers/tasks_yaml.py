@@ -284,6 +284,7 @@ async def execute_tasks_yaml_generation(
             else:
                 tasks_yaml_content = "\n".join(chunks)
                 tasks_yaml_content = _sanitize_task_keys(tasks_yaml_content)
+                tasks_yaml_content = _garantir_arquivo_legivel(tasks_yaml_content)
                 print(f"[TASKS_YAML] chunked OK: {stats['ok']} ok, {stats['retried']} retried, "
                       f"{stats['failed']} failed, {stats['with_sql']} with SQL")
 
@@ -499,13 +500,59 @@ async def _generate_one_task_with_retry(
             return chunk3, True
         chunk2, reason2 = (chunk3 or chunk2), reason3
 
-    # Nem depois das tentativas: a tarefa ENTRA (senão some do aplicativo), mas a falta fica
-    # declarada aqui e é cobrada pelo portão da geração de código.
-    if chunk2 and task_name in chunk2 and "description:" in chunk2:
-        print(f"[TASKS_YAML]   ❌ {task_name} entrou INCOMPLETA: {reason2}")
-        return chunk2, True
+    # Nem depois das tentativas: a tarefa ENTRA (senão some do aplicativo), mas SÓ se o bloco
+    # for YAML legível. Medido em 23/09/2026: um bloco com uma frase contendo dois-pontos entrou
+    # por esta porta e deixou o arquivo INTEIRO ilegível — 45 tarefas perdidas por causa de uma.
+    # Tenta-se o melhor bloco disponível, da última tentativa para a primeira.
+    import yaml as _yaml_saida
+    for _cand, _mot in ((chunk2, reason2), (chunk, reason)):
+        if not (_cand and task_name in _cand and "description:" in _cand):
+            continue
+        try:
+            _yaml_saida.safe_load(_cand)
+        except Exception as _e:
+            print(f"[TASKS_YAML]   ⛔ bloco de {task_name} descartado (não é YAML legível): "
+                  f"{str(_e)[:80]}")
+            continue
+        print(f"[TASKS_YAML]   ❌ {task_name} entrou INCOMPLETA: {_mot}")
+        return _cand, True
 
+    print(f"[TASKS_YAML]   ⛔ {task_name} FICOU DE FORA — nenhuma tentativa devolveu YAML legível")
     return None
+
+
+def _garantir_arquivo_legivel(conteudo: str) -> str:
+    """O arquivo que sai da etapa TEM de abrir. Um bloco malformado tornava o tasks.yaml inteiro
+    ilegível — 45 tarefas perdidas por causa de uma. Aqui, se o arquivo não abre, os blocos são
+    conferidos um a um e o que não abre é retirado, dito pelo nome."""
+    import re as _re
+    import yaml as _y
+    try:
+        _y.safe_load(conteudo)
+        return conteudo
+    except Exception as _e:
+        print(f"[TASKS_YAML] ⛔ arquivo não abre ({str(_e)[:90]}) — conferindo bloco a bloco")
+    linhas = conteudo.split("\n")
+    cabecas = [i for i, l in enumerate(linhas) if _re.match(r"^[A-Za-z_]\w*:\s*$", l)]
+    blocos = []
+    for k, ini in enumerate(cabecas):
+        fim = cabecas[k + 1] if k + 1 < len(cabecas) else len(linhas)
+        blocos.append((linhas[ini].rstrip(":"), "\n".join(linhas[ini:fim])))
+    bons, ruins = [], []
+    for nome, txt in blocos:
+        try:
+            _y.safe_load(txt)
+            bons.append(txt)
+        except Exception:
+            ruins.append(nome)
+    if ruins:
+        print(f"[TASKS_YAML] ⛔ retirada(s) por não abrir: {', '.join(ruins)}")
+    saida = "\n".join(bons)
+    try:
+        _y.safe_load(saida)
+    except Exception as _e2:
+        print(f"[TASKS_YAML] ⛔ mesmo assim não abre: {str(_e2)[:90]}")
+    return saida
 
 
 def _dependencias_do_ats(ats_md: str) -> dict:
