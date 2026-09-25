@@ -9,6 +9,7 @@
 
 import { GuardEvaluator } from './GuardEvaluator';
 import { PlaceProcessor } from './PlaceProcessor';
+import { LogicaPlacesConcluida } from './LogicaPlacesConcluida';
 
 export class PetriNetSimulator {
   constructor(petriNet) {
@@ -22,6 +23,7 @@ export class PetriNetSimulator {
     
     // Inicializar módulos auxiliares
     this.guardEvaluator = new GuardEvaluator(petriNet, this.markingVector);
+    this.logicaPlacesConcluida = new LogicaPlacesConcluida(petriNet, this.markingVector);
     this.placeProcessor = new PlaceProcessor(petriNet, this.markingVector);
     
     // Configurar callbacks do processador de places
@@ -170,12 +172,26 @@ export class PetriNetSimulator {
       }
     }
     
-    // Segunda verificação: guard da transição (se existir)
     const transition = this.petriNet.transicoes.find(t => t.id === transitionId);
+
+    // Segunda verificação: DISPONIBILIDADE do token (rede temporizada).
+    // Ter token não basta — o token cujo place ainda está processando é um
+    // token indisponível e não habilita transição nenhuma. Responsabilidade
+    // separada do guard de propósito: disponibilidade é propriedade da rede,
+    // guard é predicado de negócio.
+    if (transition) {
+      this.logicaPlacesConcluida.updateContext(this.petriNet, this.markingVector);
+      if (!this.logicaPlacesConcluida.verificarExecucaoConcluida(transition)) {
+        console.log(`❌ ${transitionId} não apta: place de entrada ainda não concluiu`);
+        return false;
+      }
+    }
+
+    // Terceira verificação: guard da transição (se existir)
     if (transition) {
       // Atualizar contexto do avaliador de guards
       this.guardEvaluator.updateContext(this.petriNet, this.markingVector);
-      
+
       // Avaliar guard
       const guardResult = this.guardEvaluator.evaluateGuard(transition);
       if (!guardResult) {

@@ -43,13 +43,22 @@ export class PlaceProcessor {
     const place = this.petriNet.lugares.find(p => p.id === placeId);
     if (!place) {
       console.error(`Place ${placeId} não encontrado`);
-      return;
+      return Promise.resolve();
     }
 
-    // Se place não tem lógica, apenas atualiza tokens
+    // Rede temporizada: o token que acaba de chegar está INDISPONÍVEL enquanto
+    // o processo do place não termina. O status é a fonte de verdade que a
+    // LogicaPlacesConcluida consulta para liberar (ou não) a transição seguinte.
+    place.status = 'running';
+    place.execution_start = Date.now();
+    delete place.error;
+
+    // Se place não tem lógica, apenas atualiza tokens — já nasce disponível
     if (!place.logica || place.logica.trim() === '') {
       this.updatePlaceOutput(place, place.input_data || {});
-      return;
+      place.status = 'completed';
+      place.execution_end = Date.now();
+      return Promise.resolve();
     }
 
     // Cancelar processamento anterior se existir
@@ -62,14 +71,29 @@ export class PlaceProcessor {
 
     console.log(`🔄 Iniciando processamento do place ${placeId} com delay ${place.delay || 0}ms`);
 
-    // Aplicar delay antes do processamento
-    const delay = place.delay || 0;
-    const timeoutId = setTimeout(() => {
-      this.executePlaceLogic(place);
-      this.processingQueue.delete(placeId);
-    }, delay);
+    // Devolve Promise que só resolve quando a execução termina de fato — antes
+    // a lógica era disparada sem espera e a marca de "processando" era apagada
+    // na hora, fazendo isProcessing() mentir.
+    return new Promise((resolve) => {
+      const delay = place.delay || 0;
+      const timeoutId = setTimeout(async () => {
+        try {
+          await this.executePlaceLogic(place);
+          place.status = 'completed';
+          place.execution_end = Date.now();
+        } catch (error) {
+          place.status = 'error';
+          place.error = error.message;
+          place.execution_end = Date.now();
+          console.error(`❌ Erro no place ${placeId}:`, error);
+        } finally {
+          this.processingQueue.delete(placeId);
+          resolve();
+        }
+      }, delay);
 
-    this.processingQueue.set(placeId, timeoutId);
+      this.processingQueue.set(placeId, timeoutId);
+    });
   }
 
   /**

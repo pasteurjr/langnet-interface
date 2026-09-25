@@ -52,12 +52,25 @@ rede: é o interpretador.
 
 ### Defeito 2 — ninguém pergunta se o lugar anterior terminou
 
-A transição fica apta olhando **duas** coisas: se há token e se a condição passa. O executor de
-referência tem um **terceiro juiz**, num módulo separado de propósito, cuja única pergunta é:
-*"todos os lugares que alimentam esta transição concluíram sua execução?"*.
+**A regra.** Na rede de Petri clássica, a transição está apta quando todo lugar de entrada tem pelo
+menos o peso do arco em tokens; o disparo é atômico e consome esses tokens. **Mas a nossa rede não
+é pura — ela é temporizada:** cada lugar carrega um processo, e o token que chega dispara esse
+processo. Na rede temporizada, **o token em processamento é um token indisponível** — existe na
+marcação, mas não habilita nada enquanto o processo do lugar não termina.
 
-No nosso, esse juiz não existe. Quem segura a fila é uma espera ocupada escrita dentro do código do
-lugar seguinte, com prazo de 90 segundos.
+Portanto a aptidão tem **três** condições, nesta ordem:
+
+1. **Marcação** — há token suficiente em todo lugar de entrada *(clássico)*
+2. **Disponibilidade** — esse token está pronto, ou seja, o processo do lugar concluiu *(temporizada)*
+3. **Condição** — a guarda da transição é verdadeira *(extensão)*
+
+O nosso verificava só 1 e 3. Por isso o juiz da condição 2 é um **módulo separado** na referência:
+disponibilidade é propriedade da rede, guarda é predicado de negócio — misturar seria o erro.
+
+**E havia um segundo defeito, encadeado, que só apareceu ao escrever o teste:** o processador
+disparava a lógica **sem esperar** e apagava a marca de "estou processando" na hora. Ou seja, além
+de o simulador não perguntar, **o processador mentia quando perguntado**. Os dois foram corrigidos
+no passo 2.
 
 ### Defeito 3 — fracasso conta como sucesso
 
@@ -513,6 +526,8 @@ dos passos anteriores, para que uma correção não desfaça outra.
 |---|---|---|
 | **1 — destravar o executor** | `prova-lugar-espera.mjs` (5 casos: sem espera, espera simples, espera de conversa, laço por predecessor, falha) | antes **1 de 5**; depois **5 de 5** |
 | **1 — prova fim-a-fim** | `prova-logica-real.mjs` — lógica real do lugar, nosso processador, servidor de agentes real | **passou em 43,2s**, envelope completo, `status: completed` |
+| **2 — juiz de lugar concluído** | `prova-lugar-concluido.mjs` (7 casos: marcação, token chegou, processador sabe que está rodando, transição bloqueada, conclusão reconhecida, saída real, liberação) | antes **5 de 7**; depois **7 de 7** |
+| **2 — prova fim-a-fim** | `prova-concluido-real.mjs` — rede real, agente real, vigiando de segundo em segundo | **45 amostras** durante 45,2s de trabalho do agente; a transição seguinte **não ficou apta nenhuma vez**, e liberou só ao concluir |
 
 **Achado da prova fim-a-fim:** a tarefa levou **43,2 segundos**. O prazo original escrito no lugar
 era de **30 segundos** — ou seja, a lógica de referência estoura nesta máquina. Confirma o
