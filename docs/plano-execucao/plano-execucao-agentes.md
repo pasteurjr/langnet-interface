@@ -491,6 +491,36 @@ back-end novo** — precisamos passar a escrever no que já existe.
 
 ---
 
+## Regra de passagem — nenhuma etapa avança sem prova
+
+**Nenhum passo deste plano é dado por concluído sem caso de teste que comprove.** A regra, definida
+pelo usuário em 25/09/2026:
+
+1. Antes de corrigir, **escrever o caso de teste que reproduz o defeito** e rodá-lo, mostrando a
+   falha. Sem isso não se sabe o que se está consertando.
+2. Corrigir.
+3. Rodar de novo e mostrar a passagem.
+4. **Provar contra o sistema de verdade** — não basta teste de unidade: a prova final é a lógica
+   real do projeto rodando contra o servidor de agentes real.
+5. Só então passar ao próximo.
+
+Os casos de teste ficam em `tests/execucao/` e são **cumulativos**: cada passo novo roda também os
+dos passos anteriores, para que uma correção não desfaça outra.
+
+### Registro das provas
+
+| passo | caso de teste | resultado |
+|---|---|---|
+| **1 — destravar o executor** | `prova-lugar-espera.mjs` (5 casos: sem espera, espera simples, espera de conversa, laço por predecessor, falha) | antes **1 de 5**; depois **5 de 5** |
+| **1 — prova fim-a-fim** | `prova-logica-real.mjs` — lógica real do lugar, nosso processador, servidor de agentes real | **passou em 43,2s**, envelope completo, `status: completed` |
+
+**Achado da prova fim-a-fim:** a tarefa levou **43,2 segundos**. O prazo original escrito no lugar
+era de **30 segundos** — ou seja, a lógica de referência estoura nesta máquina. Confirma o
+dimensionamento que a nossa fábrica já faz (60s no caso comum, 180s para classificar, analisar,
+buscar e extrair) e reforça o Defeito 3: quando estoura, tem de reclamar, não seguir calado.
+
+---
+
 ## Parte 7 — Ordem de trabalho
 
 | # | passo | por quê nesta ordem |

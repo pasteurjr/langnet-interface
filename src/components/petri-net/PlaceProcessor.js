@@ -219,35 +219,42 @@ export class PlaceProcessor {
    * @returns {Promise<*>} - Resultado da execução
    */
   executeLogicCode(logicCode, context) {
-    // Timeout para prevenir loops infinitos
-    const timeout = 10000; // 10 segundos
-    
+    // Timeout para prevenir loops infinitos.
+    // 3 minutos: place.logica chama o servidor de agentes via WebSocket (~45s)
+    // e ainda pode aguardar predecessores num JOIN.
+    const timeout = 180000;
+
+    // AsyncFunction para permitir `await` dentro do código do place. A logica
+    // gerada pela fábrica é toda baseada em espera (WebSocket + laço por
+    // predecessor); new Function não suporta await e quebra com SyntaxError.
+    const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
+
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         reject(new Error('Logic execution timeout'));
       }, timeout);
-      
+
       try {
         // Criar função com contexto restrito sem conflito de variáveis
-        const restrictedEval = new Function(
+        const restrictedEval = new AsyncFunction(
           'context',
           `
             // Disponibilizar contexto no escopo
             const { input, tokens, places, self, utils } = context;
-            
+
             // Executar a lógica e retornar resultado
             ${logicCode}
-            
+
             // Se não houve return explícito, retornar input modificado
             return typeof output !== 'undefined' ? output : input;
           `
         );
-        
-        const result = restrictedEval(context);
-        
-        clearTimeout(timer);
-        resolve(result);
-        
+
+        // restrictedEval(context) devolve Promise — encadeamos no outer
+        Promise.resolve(restrictedEval(context)).then(
+          (result) => { clearTimeout(timer); resolve(result); },
+          (err)    => { clearTimeout(timer); reject(err); }
+        );
       } catch (error) {
         clearTimeout(timer);
         reject(error);
