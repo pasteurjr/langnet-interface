@@ -79,7 +79,19 @@ export class PlaceProcessor {
       const timeoutId = setTimeout(async () => {
         try {
           await this.executePlaceLogic(place);
-          place.status = 'completed';
+
+          // A lógica pode falhar de dois jeitos: lançando, ou DEVOLVENDO uma
+          // saída que se declara em erro (é o que o código gerado pela fábrica
+          // faz — ele captura a própria falha e retorna status 'error'). Os dois
+          // contam como falha; senão o place terminaria como 'completed' e
+          // liberaria a transição seguinte.
+          const saida = place.output_data || {};
+          if (saida.status === 'error' || saida.error) {
+            place.status = 'error';
+            place.error = saida.error || 'o lugar terminou em erro';
+          } else {
+            place.status = 'completed';
+          }
           place.execution_end = Date.now();
         } catch (error) {
           place.status = 'error';
@@ -135,14 +147,27 @@ export class PlaceProcessor {
 
     } catch (error) {
       console.error(`Erro ao processar lógica do place ${place.id}:`, error);
-      
-      // Fallback: copiar input para output em caso de erro
-      this.updatePlaceOutput(place, place.input_data || {});
+
+      // Falha é falha. NÃO copiar a entrada para a saída: um place que não
+      // conseguiu produzir não pode PARECER que produziu — era assim que o erro
+      // atravessava a rede calado e a task seguinte trabalhava sobre o que
+      // entrou. A saída passa a ser a marca do erro, que o place seguinte
+      // consegue distinguir de um resultado legítimo.
+      this.updatePlaceOutput(place, {
+        status: 'error',
+        error: error.message,
+        failed_at: new Date().toISOString()
+      });
 
       // Notificar erro se callback registrado
       if (this.callbacks.onError) {
         this.callbacks.onError(place.id, error);
       }
+
+      // Relançar: é assim que processPlace fica sabendo e marca o place como
+      // 'error'. Engolir aqui era o que fazia o place terminar como 'completed'
+      // mesmo tendo falhado, liberando a transição seguinte.
+      throw error;
     }
   }
 

@@ -72,7 +72,20 @@ disparava a lógica **sem esperar** e apagava a marca de "estou processando" na 
 de o simulador não perguntar, **o processador mentia quando perguntado**. Os dois foram corrigidos
 no passo 2.
 
-### Defeito 3 — fracasso conta como sucesso
+### Defeito 3 — fracasso conta como sucesso  `[corrigido no passo 3]`
+
+**Três mecanismos, não um** — só o terceiro eu conhecia quando escrevi este plano:
+
+1. **Quando a lógica do lugar falhava, o programa copiava a entrada para a saída.** O lugar
+   "produzia" exatamente o que recebeu, e quem olhasse de fora via saída preenchida.
+2. **O lugar terminava marcado como concluído mesmo tendo falhado** — porque o erro era engolido
+   e nunca chegava a quem marca o estado. Com isso a transição seguinte liberava.
+3. **Quem ia buscar o anterior aceitava o aviso de erro como dado bom**, porque "tem campo fora
+   dos campos de controle" contava como "produziu algo".
+
+E um quarto, descoberto ao escrever o teste: **o código que a fábrica gera captura a própria
+falha e devolve normalmente**, com o erro dentro da saída. Não lança. Então o motor precisa
+**olhar o que voltou**, não só esperar exceção.
 
 Essa espera decide "o anterior já produziu algo útil?" verificando se sobrou qualquer campo além de
 um punhado de campos de controle. Um lugar que **falhou** devolve o que recebeu **mais um aviso de
@@ -528,6 +541,9 @@ dos passos anteriores, para que uma correção não desfaça outra.
 | **1 — prova fim-a-fim** | `prova-logica-real.mjs` — lógica real do lugar, nosso processador, servidor de agentes real | **passou em 43,2s**, envelope completo, `status: completed` |
 | **2 — juiz de lugar concluído** | `prova-lugar-concluido.mjs` (7 casos: marcação, token chegou, processador sabe que está rodando, transição bloqueada, conclusão reconhecida, saída real, liberação) | antes **5 de 7**; depois **7 de 7** |
 | **2 — prova fim-a-fim** | `prova-concluido-real.mjs` — rede real, agente real, vigiando de segundo em segundo | **45 amostras** durante 45,2s de trabalho do agente; a transição seguinte **não ficou apta nenhuma vez**, e liberou só ao concluir |
+| **1 e 2 — verificação cética** | `prova-arestas-aptidao.mjs` (12 casos: marcação inicial, lugar sem lógica, **junção** de dois lugares, disparo com peso de arco, **transição-fonte**, busca da saída do anterior) | achou e fechou um buraco que **pulava o trabalho** de lugar com token inicial; agora **12 de 12** |
+| **3 — falha não passa calada** | `prova-falha-nao-passa.mjs` (6 casos: não copiar entrada, marcar erro, guardar motivo, bloquear transição, ser distinguível, e o controle do caminho feliz) | antes **1 de 6**; depois **6 de 6** |
+| **3 — prova do lado da fábrica** | `prova-falha-codigo-gerado.mjs` — o JavaScript que o **gerador emite**, rodando no nosso motor, com o lugar anterior falhando de verdade | **4 de 4**: o lugar fica em erro, o motivo fica registrado, a transição não libera e o seguinte não finge |
 
 **Achado da prova fim-a-fim:** a tarefa levou **43,2 segundos**. O prazo original escrito no lugar
 era de **30 segundos** — ou seja, a lógica de referência estoura nesta máquina. Confirma o

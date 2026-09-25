@@ -4060,8 +4060,14 @@ function deepMerge(target, source) {{
 }}
 
 // Distingue payload útil de só metadata do PlaceProcessor (from_transition, etc).
+function predecessorFalhou(o) {{
+  return !!(o && typeof o === 'object' && (o.status === 'error' || o.error));
+}}
+// Falha NÃO é payload útil. Sem esta checagem o aviso de erro do predecessor
+// conta como "produziu algo" e o erro atravessa a rede calado.
 function hasUsefulPayload(o) {{
   if (!o || typeof o !== 'object') return false;
+  if (predecessorFalhou(o)) return false;
   const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);
   return Object.keys(o).some(k => !meta.has(k));
 }}
@@ -4077,6 +4083,10 @@ try {{
       while (!hasUsefulPayload(prev) && Date.now() < deadline) {{
         await new Promise(r => setTimeout(r, 300));
         prev = utils.getPlaceOutput(pid);
+      }}
+      // Falha é falha: parar aqui, alto e claro, em vez de seguir com lixo.
+      if (predecessorFalhou(prev)) {{
+        throw new Error('lugar anterior ' + pid + ' falhou: ' + (prev.error || 'motivo nao informado'));
       }}
       if (prev && typeof prev === 'object') deepMerge(output, prev);
     }}
@@ -4170,8 +4180,13 @@ def _build_petri_net_with_real_logica(
         "  }\n"
         "  return target;\n"
         "}\n"
+        "function predecessorFalhou(o) {\n"
+        "  return !!(o && typeof o === 'object' && (o.status === 'error' || o.error));\n"
+        "}\n"
+        "// Falha NAO e payload util — senao o erro atravessa a rede calado.\n"
         "function hasUsefulPayload(o) {\n"
         "  if (!o || typeof o !== 'object') return false;\n"
+        "  if (predecessorFalhou(o)) return false;\n"
         "  const meta = new Set(['from_transition','received_at','tokens_received','status','timestamp']);\n"
         "  return Object.keys(o).some(k => !meta.has(k));\n"
         "}\n"
@@ -4183,6 +4198,9 @@ def _build_petri_net_with_real_logica(
         "  while (!hasUsefulPayload(prev) && Date.now() < WAIT_DEADLINE) {\n"
         "    await new Promise(r => setTimeout(r, 300));\n"
         "    prev = utils.getPlaceOutput(pid);\n"
+        "  }\n"
+        "  if (predecessorFalhou(prev)) {\n"
+        "    throw new Error('lugar anterior ' + pid + ' falhou: ' + (prev.error || 'motivo nao informado'));\n"
         "  }\n"
         "  if (prev && typeof prev === 'object') deepMerge(output, prev);\n"
         "}\n"
