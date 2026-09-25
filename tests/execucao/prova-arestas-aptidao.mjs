@@ -103,6 +103,57 @@ const demora = (ms, marca) =>
           `apta=${apta} D1=${sim.markingVector['D1']} D2=${sim.markingVector['D2']}`);
 }
 
+
+// ---------- E. transição SEM lugar de entrada (transição-fonte) ----------
+{
+  const sim = new PetriNetSimulator({
+    lugares: [ { id: 'E1', nome: 'so saida', tokens: 0, logica: '' } ],
+    transicoes: [{ id: 'TE', nome: 'fonte' }],
+    arcos: [ { origem: 'TE', destino: 'E1' } ]     // nenhum arco CHEGA em TE
+  });
+  const apta = sim.isTransitionEnabled('TE');
+  sim.fireTransition('TE');
+  confere('E. transição sem lugar de entrada dispara sempre (fonte)',
+          apta === true && sim.markingVector['E1'] === 1,
+          `apta=${apta} E1=${sim.markingVector['E1']} — uma transição-fonte não pode ficar bloqueada`);
+}
+
+// ---------- F. o lugar SEGUINTE busca a saída do anterior (é assim que o dado anda) ----------
+// O motor NÃO carrega o dado entre lugares — por desenho. Cada lugar vai buscar
+// a saída do anterior com utils.getPlaceOutput, como a nossa fábrica emite.
+{
+  const sim = new PetriNetSimulator({
+    lugares: [
+      { id: 'F1', nome: 'inicia e produz', tokens: 1, logica:
+          `return { execution_id: 'exec_123', system_initialized: true };` },
+      { id: 'F2', nome: 'busca o anterior', tokens: 0, logica:
+          `const output = utils.clone(input);
+           const limite = Date.now() + 3000;
+           let anterior = utils.getPlaceOutput('F1');
+           while (!anterior.execution_id && Date.now() < limite) {
+             await new Promise(x => setTimeout(x, 50));
+             anterior = utils.getPlaceOutput('F1');
+           }
+           Object.assign(output, anterior);
+           output.status = 'completed';
+           return output;` }
+    ],
+    transicoes: [{ id: 'TF', nome: 'tf' }],
+    arcos: [ { origem: 'F1', destino: 'TF' }, { origem: 'TF', destino: 'F2' } ]
+  });
+  sim.startSimulation();
+  await espera(200);
+  const produziu = sim.petriNet.lugares[0].output_data?.execution_id === 'exec_123';
+  confere('F1. o lugar da marcação inicial produziu', produziu);
+
+  sim.fireTransition('TF');
+  await espera(600);
+  const chegou = sim.petriNet.lugares[1].output_data?.execution_id === 'exec_123';
+  confere('F2. o lugar seguinte BUSCOU e recebeu a saída do anterior',
+          chegou,
+          `saída de F2: ${JSON.stringify(sim.petriNet.lugares[1].output_data || {}).slice(0,140)}`);
+}
+
 const ok = r.filter(Boolean).length;
 console.log(`\n  ${ok} de ${r.length} casos passaram, ${r.length - ok} falharam`);
 process.exit(ok === r.length ? 0 : 1);
