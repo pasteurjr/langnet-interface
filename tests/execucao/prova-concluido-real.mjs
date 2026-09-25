@@ -40,7 +40,13 @@ console.log('  rodada aberta no servidor de agentes.');
 const sim = new PetriNetSimulator(rede);
 const falhas = [];
 
-if (!sim.isTransitionEnabled(tAntes)) falhas.push(`${tAntes} deveria estar apta no início`);
+// Como o app real faz: iniciar a simulação primeiro. É isso que executa os
+// lugares que já nascem com token na marcação inicial.
+sim.startSimulation();
+for (let i = 0; i < 60 && !sim.isTransitionEnabled(tAntes); i++) await espera(500);
+
+if (!sim.isTransitionEnabled(tAntes)) falhas.push(`${tAntes} não ficou apta nem depois de iniciar a simulação`);
+else console.log(`  ${tAntes} ficou apta depois da marcação inicial ser executada.`);
 console.log(`  disparando ${tAntes}...`);
 sim.fireTransition(tAntes);
 

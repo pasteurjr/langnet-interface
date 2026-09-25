@@ -432,6 +432,34 @@ export class PetriNetSimulator {
   startSimulation() {
     this.isSimulating = true;
     this.clearSimulationLog();
+    this.processarLugaresDaMarcacaoInicial();
+  }
+
+  /**
+   * Executa a lógica dos places que JÁ nascem com token na marcação inicial.
+   *
+   * Sem isto, um place com token inicial e lógica ficaria 'pending' para sempre:
+   * a LogicaPlacesConcluida (com razão) não libera a transição seguinte de quem
+   * tem trabalho a fazer e não fez, e nada dispararia esse trabalho — porque
+   * processPlace() só é chamado depois de um disparo.
+   */
+  processarLugaresDaMarcacaoInicial() {
+    this.placeProcessor.updateContext(this.petriNet, this.markingVector);
+
+    (this.petriNet.lugares || []).forEach(place => {
+      const temToken = (this.markingVector[place.id] || 0) > 0;
+      const temExecucao = !!(place.agentId || (place.logica && place.logica.trim() !== ''));
+      const jaMexeu = place.status && place.status !== 'pending';
+
+      if (temToken && temExecucao && !jaMexeu) {
+        console.log(`🔄 Marcação inicial: executando place ${place.id}`);
+        this.placeProcessor.processPlace(place.id, {
+          from_transition: null,
+          received_at: Date.now(),
+          tokens_received: this.markingVector[place.id] || 0
+        });
+      }
+    });
   }
 
   /**

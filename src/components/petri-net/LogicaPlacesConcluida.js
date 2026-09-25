@@ -116,14 +116,17 @@ export class LogicaPlacesConcluida {
       };
     }
     
-    // ✅ CORREÇÃO: Status 'pending' com tokens = PRONTO para executar
+    // 'pending' com tokens significa "tem trabalho a fazer e ainda não fez".
+    // Este ramo só é alcançado por Places que TÊM execução (agentId ou logica),
+    // porque placeTemExecucao() já filtrou os demais. Liberar aqui faria a rede
+    // PULAR o trabalho do Place — foi o que o caso A da prova de arestas pegou,
+    // com um Place que nasce com token na marcação inicial.
     if (status === 'pending') {
-      // Verificar se o Place tem tokens (foi ativado por transição anterior)
       const tokens = this.markingVector[place.id] || 0;
       if (tokens > 0) {
         return {
-          concluida: true, // ✅ CONSIDERADO PRONTO se tem tokens
-          motivo: `Place ativo com ${tokens} token(s) - pronto para executar`,
+          concluida: false,
+          motivo: `Place tem token mas ainda não executou (status: pending) - bloqueando`,
           detalhes: {
             status,
             tokens,
