@@ -74,6 +74,10 @@ const ExecucaoPage: React.FC = () => {
 
   const simRef = useRef<any>(null);
   const editorRef = useRef<any>(null);
+  // Como a tela de referência faz: se mandarem iniciar antes de o desenho estar
+  // pronto, guardamos o pedido e disparamos quando o editor avisar que carregou.
+  const inicioPendenteRef = useRef(false);
+  const [editorPronto, setEditorPronto] = useState(false);
   const laçoRef = useRef<any>(null);
 
   const anotar = useCallback((texto: string) => {
@@ -169,12 +173,12 @@ const ExecucaoPage: React.FC = () => {
     return true;
   }, [anotar]);
 
-  const iniciar = useCallback(async () => {
+  const iniciarDeFato = useCallback(async () => {
     setRodando(true);
     anotar("execução iniciada");
 
-    // Como a tela de referência faz: abre a rodada no servidor de agentes e
-    // manda o próprio desenho da rede simular. Quem executa é o editor.
+    // Abre a rodada no servidor de agentes e manda o próprio desenho simular —
+    // quem executa é o editor, exatamente como na tela de referência.
     try {
       await Promise.race([
         CentralWSClient.getInstance().sendGenericCommand("iniciar_execucao", {
@@ -195,6 +199,15 @@ const ExecucaoPage: React.FC = () => {
       setRodando(false);
     }
   }, [anotar, rede]);
+
+  const iniciar = useCallback(() => {
+    if (!editorPronto) {
+      inicioPendenteRef.current = true;
+      anotar("o desenho da rede ainda está carregando — vou iniciar assim que ficar pronto");
+      return;
+    }
+    void iniciarDeFato();
+  }, [editorPronto, iniciarDeFato, anotar]);
 
   const reiniciar = useCallback(() => {
     if (laçoRef.current) clearInterval(laçoRef.current);
@@ -275,7 +288,15 @@ const ExecucaoPage: React.FC = () => {
         <PetriNetEditorExec
           ref={editorRef}
           externalData={sim?.petriNet || rede}
-          onDataLoad={() => anotar("rede desenhada e pronta")}
+          onDataLoad={() => {
+            anotar("rede desenhada e pronta");
+            setEditorPronto(true);
+            if (inicioPendenteRef.current) {
+              inicioPendenteRef.current = false;
+              anotar("o pedido de iniciar estava esperando o desenho — começando agora");
+              void iniciarDeFato();
+            }
+          }}
           compactMode={true}
           suppressVerbosePanel={false}
           onSimulationStart={() => {

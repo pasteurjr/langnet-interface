@@ -6,83 +6,15 @@
  * altura aumentada para acomodar mais conteúdo
  */
 
-import React, { useState, useEffect, forwardRef, useImperativeHandle, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 
-const SimulationPanel = forwardRef(({ 
+const SimulationPanel = ({ 
   simulator, 
   isOpen, 
   onClose, 
   onTransitionFired,
-  onTransitionHighlight,
-  onSimulationStart,
-  pausedByTask = false,
-  minimized: minimizedProp,
-  onToggleMinimize
-}, ref) => {
-  // Posição e arraste
-  const [pos, setPos] = useState(() => {
-    try {
-      const raw = localStorage.getItem('simPanel_pos');
-      if (raw) {
-        const saved = JSON.parse(raw);
-        if (saved && typeof saved.x === 'number' && typeof saved.y === 'number') {
-          return saved;
-        }
-      }
-    } catch (e) { /* ignore */ }
-    return { x: Math.max(window.innerWidth - 420, 20), y: 60 };
-  });
-  const dragRef = React.useRef(null);
-  const onHeaderMouseDown = (e) => {
-    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-  };
-  const onMouseMove = (e) => {
-    const drag = dragRef.current;
-    if (!drag) return;
-    const nx = drag.ox + (e.clientX - drag.sx);
-    const ny = drag.oy + (e.clientY - drag.sy);
-    setPos({ x: Math.max(0, Math.min(nx, window.innerWidth - 200)), y: Math.max(0, Math.min(ny, window.innerHeight - 40)) });
-  };
-  const onMouseUp = () => {
-    window.removeEventListener('mousemove', onMouseMove);
-    window.removeEventListener('mouseup', onMouseUp);
-    dragRef.current = null;
-  };
-  useEffect(() => {
-    try { localStorage.setItem('simPanel_pos', JSON.stringify(pos)); } catch (e) { /* ignore */ }
-  }, [pos.x, pos.y]);
-  useEffect(() => () => {
-    window.removeEventListener('mousemove', onMouseMove);
-    window.removeEventListener('mouseup', onMouseUp);
-  }, []);
-
-  // Minimizar/restaurar (controlado ou interno)
-  const [minimizedInternal, setMinimizedInternal] = useState(() => {
-    try {
-      const raw = localStorage.getItem('simPanel_min');
-      if (raw !== null) {
-        const saved = JSON.parse(raw);
-        if (typeof saved === 'boolean') return saved;
-      }
-    } catch (e) { /* ignore */ }
-    return false;
-  });
-  const minimized = typeof minimizedProp === 'boolean' ? minimizedProp : minimizedInternal;
-  const toggleMinimize = () => {
-    if (typeof onToggleMinimize === 'function') {
-      onToggleMinimize();
-    } else {
-      setMinimizedInternal(!minimizedInternal);
-    }
-  };
-  useEffect(() => {
-    // Apenas persiste quando controlado internamente
-    if (typeof minimizedProp !== 'boolean') {
-      try { localStorage.setItem('simPanel_min', JSON.stringify(minimizedInternal)); } catch (e) { /* ignore */ }
-    }
-  }, [minimizedInternal, minimizedProp]);
+  onTransitionHighlight
+}) => {
   const [simulationMode, setSimulationMode] = useState('step'); // 'step' ou 'auto'
   const [initialNetState, setInitialNetState] = useState(null); // Estado inicial da rede
   const [forceUpdate, setForceUpdate] = useState(0); // Para forçar re-render
@@ -122,44 +54,6 @@ const SimulationPanel = forwardRef(({
   const [simulationState, setSimulationState] = useState(null);
   const [isPaused, setIsPaused] = useState(false); // Para controlar pausa
   const [wasStarted, setWasStarted] = useState(false); // Para controlar se já foi iniciada
-
-  // Expor controles imperativos para o pai (Editor) iniciar em modo automático
-  useImperativeHandle(ref, () => ({
-    startAuto() {
-      try {
-        // Forçar modo automático e iniciar independente do estado assíncrono
-        setSimulationMode('auto');
-        // Iniciar simulação (liga onSimulationStart e estado interno)
-        handleStartSimulation();
-        // Garantir que a execução automática comece mesmo se o estado ainda não refletiu 'auto'
-        setTimeout(() => {
-          handleStartAutoSimulation();
-        }, 120);
-      } catch (e) {
-        console.error('Erro ao iniciar auto pelo ref:', e);
-      }
-    }
-    ,
-    pauseAuto() {
-      try {
-        handleStopAutoSimulation();
-      } catch (e) {
-        console.error('Erro ao pausar auto pelo ref:', e);
-      }
-    }
-    ,
-    resumeAuto() {
-      try {
-        // Garante que o modo automático esteja ativo e volta a rodar
-        setSimulationMode('auto');
-        setTimeout(() => {
-          handleStartAutoSimulation();
-        }, 60);
-      } catch (e) {
-        console.error('Erro ao retomar auto pelo ref:', e);
-      }
-    }
-  }));
 
   // Atualizar estado da simulação
   useEffect(() => {
@@ -216,21 +110,6 @@ const SimulationPanel = forwardRef(({
       setIsPaused(false);
       setWasStarted(true); // Marca como iniciada
       setSimulationState(simulator.getSimulationState());
-      
-      // ✨ CHAMAR CALLBACK PARA ATIVAR VERBOSEPANEL - CORRIGIDO!
-      console.log("🔥 DEBUG: handleStartSimulation executado!");
-      console.log("🔥 DEBUG: onSimulationStart existe?", !!onSimulationStart);
-      if (onSimulationStart) {
-        console.log("🔥 DEBUG: Chamando onSimulationStart callback!");
-        try {
-          onSimulationStart();
-          console.log("🔥 DEBUG: onSimulationStart callback executado com sucesso!");
-        } catch (error) {
-          console.error("🔥 DEBUG: Erro no callback:", error);
-        }
-      } else {
-        console.error("🔥 DEBUG: onSimulationStart callback NÃO está definido!");
-      }
       
       // Se estiver no modo automático, iniciar execução automática
       if (simulationMode === 'auto') {
@@ -353,26 +232,13 @@ const SimulationPanel = forwardRef(({
       return;
     }
     
-    // ✅ NOVA VERIFICAÇÃO: Aguardar Places executando JavaScript
-    const processingPlaces = simulator.getProcessingPlaces();
-    if (processingPlaces.length > 0) {
-      console.log("⏳ Auto step aguardando Places processando:", processingPlaces);
-      return; // Não continua até todos os Places terminarem
-    }
-    
     console.log("🎯 Executando auto step...");
     const selectedTransition = simulator.selectRandomEnabledTransition();
     if (selectedTransition) {
       console.log("🎯 Disparando transição:", selectedTransition.id);
       handleFireTransition(selectedTransition.id);
     } else {
-      // Não há transições aptas, verificar se ainda há Places processando
-      if (processingPlaces.length > 0) {
-        console.log("⏳ Aguardando Places processando antes de finalizar:", processingPlaces);
-        return;
-      }
-      
-      // Não há transições aptas nem Places processando, parar simulação completamente
+      // Não há transições aptas, parar simulação completamente
       console.log("🛑 Não há mais transições aptas - parando simulação completamente");
       
       // Primeiro para a execução automática e limpa interval
@@ -403,15 +269,6 @@ const SimulationPanel = forwardRef(({
     if (!isAutoRunning && simulator) {
       console.log("✅ Iniciando execução automática");
       
-      // 🧹 LIMPAR ESTADOS ANTES DE INICIAR EXECUÇÃO (LOCAL CORRETO)
-      console.log('🧹 [SIMULATION PANEL] Forçando limpeza de estados antes da execução...');
-      if (typeof window !== 'undefined' && window.__clearAllStates) {
-        window.__clearAllStates();
-        console.log('✅ [SIMULATION PANEL] Limpeza executada via ExecutorTarefasNew');
-      } else {
-        console.warn('⚠️ [SIMULATION PANEL] window.__clearAllStates não disponível');
-      }
-      
       // Limpar interval anterior se existir
       if (autoInterval) {
         clearInterval(autoInterval);
@@ -437,20 +294,11 @@ const SimulationPanel = forwardRef(({
 
   if (!isOpen) return null;
 
-  if (minimized) {
-    return (
-      <div style={{ position: 'fixed', left: pos.x, top: pos.y, zIndex: 1000, background: '#f5f5f5', border: '1px solid #ccc', borderRadius: '6px', padding: '6px 10px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'move' }} onMouseDown={onHeaderMouseDown}>
-        <span style={{ fontSize: '12px', color: '#333' }}>🧪 Simulador de Petri Net (minimizado)</span>
-        <button onClick={(e) => { e.stopPropagation(); toggleMinimize(); }} style={{ background: '#2196F3', color: 'white', border: 'none', borderRadius: '4px', padding: '4px 8px', fontSize: '12px', cursor: 'pointer' }}>Restaurar</button>
-      </div>
-    );
-  }
-
   return (
     <div style={{
       position: 'fixed',
-      top: pos.y,
-      left: pos.x,
+      top: '60px',
+      right: '20px',
       width: '400px',
       height: '840px',
       backgroundColor: 'white',
@@ -470,37 +318,9 @@ const SimulationPanel = forwardRef(({
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center'
-      }} onMouseDown={onHeaderMouseDown}>
-        <h3 style={{ margin: 0, fontSize: '16px', color: '#333333', cursor: 'move' }}>Simulador de Petri Net</h3>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {/* Botões de Aprovação no cabeçalho quando pausado por tarefa */}
-          {(() => {
-            const isPausedByTask = typeof pausedByTask === 'object' ? !!pausedByTask.paused : !!pausedByTask;
-            if (!isPausedByTask) return null;
-            return (
-              <>
-                <button onClick={(e) => { e.stopPropagation(); if (typeof window.__onApproveAndContinue === 'function') window.__onApproveAndContinue(); }} style={{ padding: '4px 8px', background: '#10b981', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>✅ Aprovar</button>
-                <button onClick={(e) => { e.stopPropagation(); if (typeof window.__onResubmitTask === 'function') window.__onResubmitTask(); }} style={{ padding: '4px 8px', background: '#f59e0b', color: 'white', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>🔁 Re‑submeter</button>
-              </>
-            );
-          })()}
-          <button 
-            onClick={(e) => { e.stopPropagation(); toggleMinimize(); }}
-            title="Minimizar"
-            style={{
-              background: 'none',
-              border: '1px solid #ccc',
-              fontSize: '14px',
-              cursor: 'pointer',
-              padding: '0 6px',
-              height: '24px',
-              color: '#333333',
-              borderRadius: '4px'
-            }}
-          >
-            —
-          </button>
-          <button 
+      }}>
+        <h3 style={{ margin: 0, fontSize: '16px' }}>Simulador de Petri Net</h3>
+        <button 
           onClick={onClose}
           style={{
             background: 'none',
@@ -509,25 +329,23 @@ const SimulationPanel = forwardRef(({
             cursor: 'pointer',
             padding: '0',
             width: '24px',
-            height: '24px',
-            color: '#333333'
+            height: '24px'
           }}
         >
           ×
         </button>
-        </div>
       </div>
 
       {/* Controles */}
       <div style={{ padding: '15px', borderBottom: '1px solid #eee' }}>
         <div style={{ marginBottom: '10px' }}>
-          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold', color: '#333333' }}>
+          <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
             Modo de Execução:
           </label>
           <select 
             value={simulationMode} 
             onChange={(e) => handleModeChange(e.target.value)}
-            style={{ width: '100%', padding: '5px', color: '#333333' }}
+            style={{ width: '100%', padding: '5px' }}
           >
             <option value="step">Passo a Passo</option>
             <option value="auto">Automático</option>
@@ -618,7 +436,7 @@ const SimulationPanel = forwardRef(({
           )}
         </div>
         
-        {/* Indicadores de Status */}
+        {/* Indicador de Status */}
         {simulationState?.isSimulating && (
           <div style={{ 
             marginTop: '10px', 
@@ -633,30 +451,12 @@ const SimulationPanel = forwardRef(({
             ▶️ Simulação Ativa
           </div>
         )}
-        {(() => {
-          const isPausedByTask = typeof pausedByTask === 'object' ? !!pausedByTask.paused : !!pausedByTask;
-          const pausedPlaceName = typeof pausedByTask === 'object' ? (pausedByTask.placeName || null) : null;
-          return isPausedByTask ? (
-          <div style={{ 
-            marginTop: '8px', 
-            padding: '5px 10px', 
-            backgroundColor: '#FFF3CD',
-            border: '1px solid #FFEEBA',
-            borderRadius: '4px',
-            fontSize: '12px',
-            fontWeight: 'bold',
-            color: '#856404'
-          }}>
-            🟡 Pausado por Tarefa{pausedPlaceName ? ` — ${pausedPlaceName}` : ' — aguardando aprovação'}
-          </div>
-          ) : null;
-        })()}
       </div>
 
       {/* Transições Aptas - AMBOS OS MODOS */}
       {simulationState?.isSimulating && (
         <div style={{ padding: '15px', borderBottom: '1px solid #eee' }}>
-          <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#333333' }}>Transições Aptas:</h4>
+          <h4 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>Transições Aptas:</h4>
           <div style={{ maxHeight: '120px', overflowY: 'auto' }}>
             {!simulationState?.enabledTransitions || simulationState.enabledTransitions.length === 0 ? (
               <p style={{ margin: 0, fontStyle: 'italic', color: '#666' }}>
@@ -678,8 +478,7 @@ const SimulationPanel = forwardRef(({
                     borderRadius: '4px',
                     cursor: simulationMode === 'auto' && isAutoRunning ? 'not-allowed' : 'pointer',
                     textAlign: 'left',
-                    opacity: simulationMode === 'auto' && isAutoRunning ? 0.6 : 1,
-                    color: '#333333'
+                    opacity: simulationMode === 'auto' && isAutoRunning ? 0.6 : 1
                   }}
                 >
                   {transition.id} - {transition.nome}
@@ -693,7 +492,7 @@ const SimulationPanel = forwardRef(({
       {/* Estado Atual */}
       {simulationState?.isSimulating && (
         <div style={{ padding: '15px', borderBottom: '1px solid #eee' }}>
-          <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#333333' }}>Estado Atual (Tokens):</h4>
+          <h4 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>Estado Atual (Tokens):</h4>
           <div style={{ maxHeight: '100px', overflowY: 'auto', fontSize: '12px' }}>
             {simulationState?.markingVector ? Object.entries(simulationState.markingVector)
               .filter(([placeId]) => !placeId.startsWith('VIRTUAL_'))
@@ -703,7 +502,7 @@ const SimulationPanel = forwardRef(({
                 const placeName = place ? place.nome : placeId;
                 
                 return (
-                  <div key={placeId} style={{ margin: '2px 0', color: '#333333' }}>
+                  <div key={placeId} style={{ margin: '2px 0' }}>
                     <strong>{placeId}</strong> ({placeName}): <span style={{ color: '#2196F3', fontWeight: 'bold' }}>{tokens} tokens</span>
                   </div>
                 );
@@ -718,7 +517,7 @@ const SimulationPanel = forwardRef(({
 
       {/* Log de Simulação */}
       <div style={{ flex: 1, padding: '15px', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px', color: '#333333' }}>Log de Disparos:</h4>
+        <h4 style={{ margin: '0 0 10px 0', fontSize: '14px' }}>Log de Disparos:</h4>
         <div style={{ flex: 1, overflowY: 'auto', fontSize: '12px', backgroundColor: '#f9f9f9', padding: '8px', borderRadius: '4px' }}>
           {!simulationState?.simulationLog || simulationState.simulationLog.length === 0 ? (
             <p style={{ margin: 0, fontStyle: 'italic', color: '#666' }}>
@@ -730,7 +529,7 @@ const SimulationPanel = forwardRef(({
                 <div style={{ fontWeight: 'bold', color: '#2196F3' }}>
                   [{logEntry.timestamp}] {logEntry.transitionId} - {logEntry.transitionName}
                 </div>
-                <div style={{ marginTop: '4px', color: '#333333' }}>
+                <div style={{ marginTop: '4px' }}>
                   <strong>Lugares afetados:</strong>
                   {logEntry.affectedPlaces.map((place, placeIndex) => (
                     <div key={placeIndex} style={{ marginLeft: '10px', color: '#666' }}>
@@ -745,6 +544,7 @@ const SimulationPanel = forwardRef(({
       </div>
     </div>
   );
-});
+};
 
 export default SimulationPanel;
+
