@@ -18,7 +18,12 @@ import { useParams } from "react-router-dom";
 import { PetriNetSimulator } from "../components/petri-net/PetriNetSimulator";
 import { CentralWSClient } from "../components/petri-net/utils_exec/centralWSClient";
 import { FakeWebSocket } from "../components/petri-net/utils_exec/fakeWebSocket";
-import VerbosePanelMovel from "../components/petri-net/VerbosePanelMovel";
+// Componente trazido INTEIRO da máquina de referência, em JavaScript. O
+// TypeScript não consegue inferir as propriedades de um forwardRef em JS, e
+// não vamos alterar o arquivo de lá só por isso — por isso o empréstimo de tipo.
+// @ts-ignore
+import PetriNetEditorExecOriginal from "../components/petri-net/PetriNetEditorExec";
+const PetriNetEditorExec: any = PetriNetEditorExecOriginal;
 import "./ExecucaoPage.css";
 
 const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000/api";
@@ -68,6 +73,7 @@ const ExecucaoPage: React.FC = () => {
   const [painelAberto, setPainelAberto] = useState(false);
 
   const simRef = useRef<any>(null);
+  const editorRef = useRef<any>(null);
   const laçoRef = useRef<any>(null);
 
   const anotar = useCallback((texto: string) => {
@@ -164,17 +170,17 @@ const ExecucaoPage: React.FC = () => {
   }, [anotar]);
 
   const iniciar = useCallback(async () => {
-    const sim = simRef.current;
-    if (!sim) return;
+    setRodando(true);
+    anotar("execução iniciada");
 
-    // O servidor de agentes só aceita tarefa depois que a rodada é aberta —
-    // é o que separa os passos desta execução dos da anterior.
-    // O cliente central espera a confirmação da abertura, mas a apresentação do
-    // servidor costuma chegar ANTES de ele instalar o ouvinte — e aí a espera
-    // vai até o prazo. Não deixamos isso segurar o início da execução.
+    // Como a tela de referência faz: abre a rodada no servidor de agentes e
+    // manda o próprio desenho da rede simular. Quem executa é o editor.
     try {
       await Promise.race([
-        CentralWSClient.getInstance().sendGenericCommand("iniciar_execucao", { projeto: rede?.nome || "" }),
+        CentralWSClient.getInstance().sendGenericCommand("iniciar_execucao", {
+          timestamp: new Date().toISOString(),
+          projeto: rede?.nome || "",
+        }),
         new Promise((r) => setTimeout(r, 4000)),
       ]);
       anotar("rodada aberta no servidor de agentes");
@@ -182,29 +188,13 @@ const ExecucaoPage: React.FC = () => {
       anotar(`não consegui abrir a rodada: ${e?.message || e}`);
     }
 
-    sim.startSimulation();
-    setRodando(true);
-    setPainelAberto(true);
-    anotar("execução iniciada");
-    if (modo === "continua") {
-      if (laçoRef.current) clearInterval(laçoRef.current);
-      laçoRef.current = setInterval(() => {
-        const s = simRef.current;
-        if (!s) return;
-        darUmPasso();
-        setTique((x) => x + 1);
-        const fim = (s.petriNet.lugares || []).every((l: any) =>
-          l.status === "completed" || l.status === "error" || (s.markingVector[l.id] || 0) === 0);
-        const aptas = s.getEnabledTransitions();
-        if (!aptas.length && fim) {
-          clearInterval(laçoRef.current);
-          setRodando(false);
-          anotar("execução terminou");
-          try { CentralWSClient.getInstance().sendGenericCommand("finalizar_execucao", {}); } catch { /* servidor já fechou */ }
-        }
-      }, 1500);
+    try {
+      editorRef.current?.startAutoSimulation();
+    } catch (e: any) {
+      anotar(`não consegui iniciar a simulação: ${e?.message || e}`);
+      setRodando(false);
     }
-  }, [modo, darUmPasso, anotar, rede]);
+  }, [anotar, rede]);
 
   const reiniciar = useCallback(() => {
     if (laçoRef.current) clearInterval(laçoRef.current);
@@ -278,34 +268,25 @@ const ExecucaoPage: React.FC = () => {
         </button>
       </section>
 
-      {/* A rede, com o token andando */}
+      {/* Desenho E execução: é o PetriNetEditor da máquina de referência, com as
+          mesmas propriedades que a tela de lá usa. Ele desenha com JointJS
+          (lugares, transições, ARCOS, faixas dos agentes) e roda a simulação. */}
       <section className="bancada-rede">
-        {lugares.map((l: any, i: number) => {
-          const tokens = sim?.markingVector?.[l.id] || 0;
-          const estado = l.status || "pendente";
-          const trans = (rede.transicoes || []).find((t: any) =>
-            (rede.arcos || []).some((a: any) => a.origem === l.id && a.destino === t.id));
-          return (
-            <React.Fragment key={l.id}>
-              <div className={`lugar ${estado} ${tokens > 0 ? "com-token" : ""}`} title={l.nome}>
-                <div className="lugar-bola">{tokens > 0 ? tokens : ""}</div>
-                <div className="lugar-id">{l.id}</div>
-                <div className="lugar-nome">{String(l.nome || "").replace(/\n/g, " ")}</div>
-                <div className={`lugar-estado ${estado}`}>{
-                  estado === "completed" ? "concluiu" :
-                  estado === "running" ? "trabalhando…" :
-                  estado === "error" ? "FALHOU" : "aguardando"}</div>
-                {l.status === "error" && <div className="lugar-erro">{l.error}</div>}
-              </div>
-              {trans && i < lugares.length - 1 && (
-                <div className={`transicao ${aptas.includes(trans.id) ? "apta" : ""}`}>
-                  <div className="barra" />
-                  <span>{trans.id}</span>
-                </div>
-              )}
-            </React.Fragment>
-          );
-        })}
+        <PetriNetEditorExec
+          ref={editorRef}
+          externalData={sim?.petriNet || rede}
+          onDataLoad={() => anotar("rede desenhada e pronta")}
+          compactMode={true}
+          suppressVerbosePanel={false}
+          onSimulationStart={() => {
+            anotar("simulação iniciada pelo painel da rede");
+            try {
+              CentralWSClient.getInstance().sendGenericCommand("iniciar_execucao", {
+                timestamp: new Date().toISOString(),
+              });
+            } catch { /* servidor de agentes indisponível */ }
+          }}
+        />
       </section>
 
       <nav className="bancada-abas">
@@ -405,19 +386,9 @@ const ExecucaoPage: React.FC = () => {
         )}
       </section>
 
-      {painelAberto && (
-        <VerbosePanelMovel
-          isOpen={painelAberto}
-          onClose={() => setPainelAberto(false)}
-          verboseSteps={passos}
-          mdContent={relatorio}
-          isExecuting={rodando}
-          position={{ x: 60, y: 120 }}
-          nomeDoProjeto={rede.nome || ""}
-          enderecoDoServidor={endereco || ""}
-          tarefasDoProjeto={tarefas}
-        />
-      )}
+      {/* O painel móvel de acompanhamento é aberto pelo próprio PetriNetViewer,
+          como na tela de referência — não abrimos um segundo aqui. */}
+
     </div>
   );
 };

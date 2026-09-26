@@ -8,13 +8,13 @@ import { CentralWSClient } from './utils_exec/centralWSClient';
  * Funcionalidades:
  * - ✅ Conexão WebSocket V8 (porta 6308)
  * - ✅ Display das 8 tags universais obrigatórias
- * - ✅ Etiquetas próprias do projeto que estiver rodando
+ * - ✅ Tags custom específicas do TropicalSales
  * - ✅ Métricas de performance em tempo real
  * - ✅ Design responsivo e moderno
  * - ✅ Auto-scroll e limpeza de logs
  */
 const VerbosePanel = ({ 
-    wsUrl = null   // vem do projeto; sem valor fixo,
+    wsUrl = 'ws://localhost:6308',
     maxLogEntries = 100,
     autoScroll = true 
 }) => {
@@ -571,9 +571,9 @@ const VerbosePanel = ({
                 </div>
             </div>
 
-            {/* Etiquetas próprias do projeto */}
+            {/* Tags Customizadas TropicalSales */}
             <div className="custom-tags-section">
-                <h3>🏷️ Etiquetas próprias do projeto</h3>
+                <h3>🌴 Tags Customizadas TropicalSales</h3>
                 <div className="tags-grid">
                     {Object.entries(tags)
                         .filter(([key]) => !UNIVERSAL_TAGS.includes(key) && key !== '_lastUpdate')
