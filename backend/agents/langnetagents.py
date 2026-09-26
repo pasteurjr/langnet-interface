@@ -4422,6 +4422,7 @@ e emite task_start / verbose / task_completed / error.
 import asyncio
 import json
 import os
+import time
 import traceback
 from datetime import datetime
 from typing import Any, Dict
@@ -4556,6 +4557,9 @@ def _load_yaml(path: str) -> Dict[str, Any]:
 
 AGENTS_CONFIG = _load_yaml("agents.yaml")
 TASKS_CONFIG = _load_yaml("tasks.yaml")
+
+# Nome exibido na apresentacao do servidor (a tela mostra no cabecalho).
+PROJECT_NAME = os.environ.get("PROJECT_NAME") or os.path.basename(os.getcwd()) or "LangNet App"
 
 
 TOOL_REGISTRY = getattr(tools_module, "TOOL_REGISTRY", {{}})
@@ -4912,7 +4916,124 @@ async def _send(ws, msg_type: str, data: Any) -> None:
     }}, default=str, ensure_ascii=False))
 
 
+# ===== Protocolo da bancada de execucao =====
+# A tela nao calcula nada: ela ROTEIA mensagem por tipo. Por isso o servidor
+# precisa contar o que esta fazendo, passo a passo, e consolidar as etiquetas
+# ao fim de cada tarefa. Sem isto os paineis ficam vazios.
+
+_EXEC_ATIVA = False          # gate: execute_task so vale depois de iniciar_execucao
+_PASSOS_DA_TAREFA = []       # passos acumulados da tarefa corrente
+_ETIQUETAS_VAZIAS = {{
+    "TASK_NAME": None, "AGENT_NAME": None, "TASK_INPUT": None, "TOOL_INPUT": None,
+    "USED_TOOL": None, "TASK_STEP": None, "TASK_OUTPUT": None, "TASK_OUTPUT_TYPE": None,
+    "AGENT_THOUGHT": None, "TOOL_OUTPUT": None, "TASK_COMPLETED": False,
+}}
+_ETIQUETAS = dict(_ETIQUETAS_VAZIAS)
+
+
+def _recorta(valor, limite: int = 4000):
+    """Texto longo vira texto cortado — a tela mostra, nao arquiva."""
+    if valor is None:
+        return None
+    s = valor if isinstance(valor, str) else json.dumps(valor, default=str, ensure_ascii=False)
+    return s if len(s) <= limite else s[:limite] + "…"
+
+
+async def _passo(ws, tipo: str, descricao: str, **extra) -> None:
+    """Um acontecimento da execucao, contado na hora em que acontece."""
+    passo = {{
+        "step_type": tipo,
+        "step_description": descricao,
+        "task_name": _ETIQUETAS.get("TASK_NAME"),
+        "timestamp": datetime.utcnow().isoformat(),
+    }}
+    for k, v in extra.items():
+        if v is not None:
+            passo[k] = _recorta(v)
+    _PASSOS_DA_TAREFA.append(passo)
+    await _send(ws, "execution_step", passo)
+
+
+def _etiqueta(nome: str, valor) -> None:
+    if valor is not None:
+        _ETIQUETAS[nome] = _recorta(valor)
+
+
+def _zerar_etiquetas(task_name: str) -> None:
+    global _ETIQUETAS, _PASSOS_DA_TAREFA
+    _ETIQUETAS = dict(_ETIQUETAS_VAZIAS)
+    _ETIQUETAS["TASK_NAME"] = task_name
+    _PASSOS_DA_TAREFA = []
+
+
+def _observador_de_agente(ws, loop):
+    """Liga o passo-a-passo do CrewAI ao fluxo da tela.
+
+    O CrewAI chama isto a cada acao do agente — inclusive quando ele usa uma
+    ferramenta. E dai que saem as etiquetas de ferramenta e de raciocinio.
+    """
+    def _ao_passo(saida):
+        try:
+            pensamento = getattr(saida, "thought", None) or getattr(saida, "log", None)
+            ferramenta = getattr(saida, "tool", None)
+            entrada_da_ferramenta = getattr(saida, "tool_input", None)
+            resultado = getattr(saida, "result", None) or getattr(saida, "output", None)
+            if ferramenta:
+                _etiqueta("USED_TOOL", str(ferramenta))
+                _etiqueta("TOOL_INPUT", entrada_da_ferramenta)
+                _etiqueta("TOOL_OUTPUT", resultado)
+            if pensamento:
+                _etiqueta("AGENT_THOUGHT", pensamento)
+            descricao = ("usou a ferramenta " + str(ferramenta)) if ferramenta else "raciocinou"
+            asyncio.run_coroutine_threadsafe(
+                _passo(ws, "agent_step", descricao,
+                       used_tool=str(ferramenta) if ferramenta else None,
+                       tool_input=entrada_da_ferramenta,
+                       tool_output=resultado,
+                       agent_thought=pensamento),
+                loop)
+        except Exception:
+            pass
+    return _ao_passo
+
+
+async def _concluir_tarefa(ws, task_name: str, resultado, inicio: float) -> None:
+    """Fecha a tarefa do jeito que a tela espera: etiquetas primeiro, depois o
+    envelope completo — com duracao, sucesso e as etiquetas junto."""
+    _etiqueta("TASK_OUTPUT", resultado)
+    _etiqueta("TASK_OUTPUT_TYPE", "json" if isinstance(resultado, (dict, list)) else "texto")
+    await _passo(ws, "task_output", "saida final da tarefa", output_data=resultado)
+    await _consolidar_etiquetas(ws, task_name, True)
+    await _send(ws, "task_completed", {{
+        "task_name": task_name,
+        "success": True,
+        "duration": round(time.time() - inicio, 3),
+        "adapter_version": "langnet-1.0",
+        "universal_tags": dict(_ETIQUETAS),
+        "result": resultado,
+        "timestamp": datetime.utcnow().isoformat(),
+    }})
+
+
+async def _consolidar_etiquetas(ws, task_name: str, concluiu: bool) -> None:
+    """Fecha a tarefa: manda as etiquetas exatamente como ficaram."""
+    _ETIQUETAS["TASK_COMPLETED"] = bool(concluiu)
+    _ETIQUETAS["TASK_STEP"] = _recorta([p.get("step_description") for p in _PASSOS_DA_TAREFA])
+    await ws.send(json.dumps({{
+        "type": "tags_extracted",
+        "task_name": task_name,
+        "tags": _ETIQUETAS,
+        "timestamp": datetime.utcnow().isoformat(),
+    }}, default=str, ensure_ascii=False))
+
+
 async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
+    # Abre a tarefa: zera as etiquetas da anterior e conta que comecou.
+    _inicio_tarefa = time.time()
+    _zerar_etiquetas(task_name)
+    await _passo(ws, "task_started", "tarefa iniciada: " + str(task_name),
+                 task_input=input_data)
+
     # Dado de SISTEMA: o endereço de origem é da conexão, não do formulário (auditoria).
     if isinstance(input_data, dict) and not input_data.get("ip_origem"):
         try:
@@ -5031,7 +5152,7 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                             "detalhe_tecnico": _tec, "verif_falha": _fails}}
                 await _send(ws, "error", _pay)
                 return
-            await _send(ws, "task_completed", {{"task_name": task_name, "result": det_result}})
+            await _concluir_tarefa(ws, task_name, det_result, _inicio_tarefa)
         except Exception as _exc:
             await _send(ws, "error", {{"task_name": task_name, "error": str(_exc), "traceback": traceback.format_exc()}})
         return
@@ -5134,9 +5255,21 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
         description = "\\n\\n".join(_blocks)
 
         task = _build_task(task_name, agent, description)
-        crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
 
         loop = asyncio.get_running_loop()
+        # Observar o agente: cada acao dele (inclusive uso de ferramenta) vira
+        # um passo na tela e alimenta as etiquetas da tarefa.
+        _etiqueta("AGENT_NAME", getattr(agent, "role", None) or task_name)
+        _etiqueta("TASK_INPUT", description)
+        await _passo(ws, "agent_started", "o agente comecou a trabalhar",
+                     agent_name=getattr(agent, "role", None))
+        try:
+            crew = Crew(agents=[agent], tasks=[task], process=Process.sequential,
+                        verbose=False, step_callback=_observador_de_agente(ws, loop))
+        except TypeError:
+            # CrewAI sem step_callback nesta versao — segue sem o passo a passo fino
+            crew = Crew(agents=[agent], tasks=[task], process=Process.sequential, verbose=False)
+
         # CrewAI 1.x: kickoff() exige event loop; rodar em thread executor quebra
         # (RuntimeError: no running event loop). Usa a API async nativa quando existir.
         if hasattr(crew, "kickoff_async"):
@@ -5190,7 +5323,7 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
             if _recusa:
                 _recusa.setdefault("status", "dados_insuficientes")
                 print(f"[task] DADOS INSUFICIENTES {{task_name}}: {{str(_recusa.get('motivo'))[:120]}}", flush=True)
-                await _send(ws, "task_completed", {{"task_name": task_name, "result": _recusa}})
+                await _concluir_tarefa(ws, task_name, _recusa, _inicio_tarefa)
                 return
             if _missing:
                 await _send(ws, "error", {{"task_name": task_name,
@@ -5254,13 +5387,24 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                 if parsed.get(_ck) is None:
                     parsed[_ck] = _cv
 
-        await _send(ws, "task_completed", {{"task_name": task_name, "result": parsed}})
+        await _concluir_tarefa(ws, task_name, parsed, _inicio_tarefa)
     except Exception as exc:
         await _send(ws, "error", {{"task_name": task_name, "error": str(exc), "traceback": traceback.format_exc()}})
 
 
 async def _handle_client(ws):
+    global _EXEC_ATIVA
+    # Apresentacao: quem sou, o que sei fazer. A tela usa isto para se montar.
+    await ws.send(json.dumps({{
+        "type": "welcome",
+        "project": PROJECT_NAME,
+        "version": "1.0",
+        "supported_tasks": list(TASKS_CONFIG.keys()),
+        "timestamp": datetime.utcnow().isoformat(),
+    }}, default=str, ensure_ascii=False))
+    # Mantido por compatibilidade com clientes antigos.
     await _send(ws, "connected", {{"available_tasks": list(TASKS_CONFIG.keys())}})
+
     async for message in ws:
         try:
             payload = json.loads(message)
@@ -5271,7 +5415,25 @@ async def _handle_client(ws):
         msg_type = payload.get("type")
         data = payload.get("data") or {{}}
 
-        if msg_type == "execute_task":
+        if msg_type == "iniciar_execucao":
+            # Abre a rodada. Tudo o que vier antes disto e recusado, para nao
+            # misturar os passos de uma rodada com os da anterior.
+            _EXEC_ATIVA = True
+            await ws.send(json.dumps({{
+                "type": "execucao_iniciada", "success": True,
+                "message": "Execução iniciada",
+                "timestamp": datetime.utcnow().isoformat(),
+            }}, default=str, ensure_ascii=False))
+        elif msg_type == "finalizar_execucao":
+            _EXEC_ATIVA = False
+            await ws.send(json.dumps({{
+                "type": "execucao_finalizada", "success": True,
+                "timestamp": datetime.utcnow().isoformat(),
+            }}, default=str, ensure_ascii=False))
+        elif msg_type == "execute_task":
+            if not _EXEC_ATIVA:
+                await _send(ws, "error", {{"error": "Execução não foi iniciada. Chame 'iniciar_execucao' primeiro."}})
+                continue
             await _execute_task(ws, data.get("task_name"), data.get("input_data") or {{}})
         elif msg_type == "ping":
             await _send(ws, "pong", {{"timestamp": datetime.utcnow().isoformat()}})
