@@ -13,6 +13,9 @@ export class PlaceProcessor {
     this.petriNet = petriNet;
     this.markingVector = markingVector;
     this.processingQueue = new Map(); // Place ID -> timeout
+    // Quem abre a conversa dentro da caixa do place. Na bancada e' o
+    // interceptador; fora dela, fica nulo e cai para o WebSocket do navegador.
+    this.WebSocketClass = null;
     this.callbacks = {
       onPlaceProcessed: null,
       onError: null
@@ -211,6 +214,13 @@ export class PlaceProcessor {
     const input = place.input_data || {};
 
     const context = {
+      // Quem abre a conversa quando o código do place chama "new WebSocket".
+      // Na bancada isto é o interceptador, que redireciona para a ligação única
+      // do cliente central. Injetado aqui, e NÃO no objeto global, para o
+      // próprio cliente central continuar usando o WebSocket de verdade.
+      WebSocket: this.WebSocketClass
+        || (typeof globalThis !== 'undefined' ? globalThis.WebSocket : undefined),
+
       // Dados de entrada específicos deste place
       input,
       
@@ -288,8 +298,13 @@ export class PlaceProcessor {
         const restrictedEval = new AsyncFunction(
           'context',
           `
-            // Disponibilizar contexto no escopo
+            // Disponibilizar contexto no escopo.
             const { input, tokens, places, self, utils } = context;
+            // Quem abre a conversa: na bancada e' o interceptador (injetado no
+            // contexto), que redireciona para a ligacao unica. Fora dela, cai
+            // para o WebSocket do navegador.
+            const WebSocket = context.WebSocket
+              || (typeof globalThis !== 'undefined' ? globalThis.WebSocket : undefined);
 
             // Executar a lógica e retornar resultado
             ${logicCode}

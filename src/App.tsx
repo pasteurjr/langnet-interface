@@ -23,6 +23,7 @@ import YamlGenerationPage from "./pages/YamlGenerationPage";
 import GenerateYamlPage from "./pages/GenerateYamlPage";
 import YamlPage from "./pages/YamlPage";
 import PetriNetPage from "./pages/PetriNetPage";
+import ExecucaoPage from "./pages/ExecucaoPage";
 import CodePage from "./pages/CodePage";
 import CodeGenerationPage from "./pages/CodeGenerationPage";
 import MonitoringPage from "./pages/MonitoringPage";
@@ -188,6 +189,10 @@ const App: React.FC = () => {
             <Route
               path="/project/:projectId/code-generation"
               element={<CodeGenerationPage />}
+            />
+            <Route
+              path="/project/:projectId/execucao"
+              element={<ExecucaoPage />}
             />
             <Route
               path="/project/:projectId/deploy"
