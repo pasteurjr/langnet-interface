@@ -170,6 +170,42 @@ const ExecutorTarefas = ({ project }) => {
   const [showEditOutputModal, setShowEditOutputModal] = useState(false);
   
   // Estado Enhanced Parser V8
+  // CABEÇALHO DO PROJETO QUE ESTÁ NA TELA — um só lugar.
+  // Vinha escrito à mão em DOIS pontos, com a lista de tarefas do TropicalSales e o
+  // endereço do servidor daquela máquina: num acompanhamento do BioByte apareciam, em
+  // cima da rede, as tarefas de outro sistema. Agora é montado do que a rede declara.
+  const montarCabecalho = React.useCallback((rodape = '') => {
+    const lugares = (petriNetData && (petriNetData.lugares || petriNetData.places)) || [];
+    const tarefas = lugares
+      .map((l) => {
+        const m = String((l && l.logica) || '').match(/const TASK_NAME\s*=\s*['"`]([^'"`]+)/);
+        return m ? m[1] : null;
+      })
+      .filter(Boolean);
+    const endereco = (typeof window !== 'undefined' && window.V7_WS_URI) || 'não informado';
+    const nome = (project && project.name) || (petriNetData && petriNetData.nome) || 'projeto sem nome';
+    const lista = tarefas.length
+      ? tarefas.map((t, i) => `${i + 1}. **${t}**`).join('\n')
+      : '_A rede carregada não declara tarefas._';
+    return `# ACOMPANHAMENTO DE EXECUÇÃO - INPUTS/EXECUÇÃO/OUTPUTS
+
+**Projeto:** ${nome}
+**Data:** ${new Date().toLocaleString()}
+**Servidor de agentes:** ${endereco}
+
+---
+
+## 🎯 TAREFAS DESTA REDE
+
+${lista}
+
+---
+
+## 🚀 EXECUÇÃO EM TEMPO REAL
+
+${rodape}`;
+  }, [petriNetData, project]);
+
   // ⭐ V10: Enhanced Parser V10 com 10 Universal Tags
   const [enhancedParserV8Tags, setEnhancedParserV8Tags] = useState({
     TASK_NAME: null,
@@ -557,12 +593,19 @@ const ExecutorTarefas = ({ project }) => {
       'outputs': '📦 OUTPUTS PRODUZIDOS'
     };
     
-    const taskNames = {
-      1: '📧 1. READ EMAIL',
-      2: '🏷️ 2. CLASSIFY MESSAGE', 
-      3: '📊 3. CHECK STOCK',
-      4: '📧 4. GENERATE RESPONSE'
-    };
+    // O nome de cada tarefa vem da rede da tela, não de uma lista fixa de outro sistema.
+    const taskNames = (() => {
+      const lugares = (petriNetData && (petriNetData.lugares || petriNetData.places)) || [];
+      const mapa = {};
+      lugares
+        .map((l) => {
+          const m = String((l && l.logica) || '').match(/const TASK_NAME\s*=\s*['"`]([^'"`]+)/);
+          return m ? m[1] : null;
+        })
+        .filter(Boolean)
+        .forEach((nome, i) => { mapa[i + 1] = `${i + 1}. ${nome}`; });
+      return mapa;
+    })();
 
     // Verificar se já existe header da task
     const taskHeader = `## ${taskNames[taskNum]}`;
@@ -1002,27 +1045,7 @@ const ExecutorTarefas = ({ project }) => {
       
       // ✨ INICIALIZAR MD CONTENT IDÊNTICO ao testar_interface_generica_v7_md.js
       const now = new Date().toLocaleString();
-      setMdContent(`# ACOMPANHAMENTO DE EXECUÇÃO - INPUTS/EXECUÇÃO/OUTPUTS
-
-**Data:** ${now}
-**WebSocket:** ws://localhost:6308
-**Adapter:** TropicalSalesAdapter
-**Parser:** CrewAIStructuredParser V1
-
----
-
-## 🎯 TASKS DISPONÍVEIS
-
-1. **📧 READ EMAIL** - Ler e processar emails
-2. **🏷️ CLASSIFY MESSAGE** - Classificar mensagens  
-3. **📊 CHECK STOCK** - Verificar estoque
-4. **📧 GENERATE RESPONSE** - Gerar resposta
-
----
-
-## 🚀 EXECUÇÃO EM TEMPO REAL
-
-Iniciando execução via ExecutionEngine...`);
+      setMdContent(montarCabecalho('Iniciando execução via ExecutionEngine...'));
       
       // Executa usando ExecutionEngine real
       await executionEngine.startExecution();
@@ -1753,29 +1776,7 @@ Iniciando execução via ExecutionEngine...`);
       session_type: 'tropical_sales_full_execution'
     });
 
-    // ✨ INICIALIZAR MD CONTENT IDÊNTICO ao testar_interface_generica_v10_md.js
-    const now = new Date().toLocaleString();
-    setMdContent(`# ACOMPANHAMENTO DE EXECUÇÃO - INPUTS/EXECUÇÃO/OUTPUTS
-
-**Data:** ${now}
-**WebSocket:** ws://localhost:6308
-**Adapter:** TropicalSalesAdapterV10
-**Parser:** Enhanced Parser V10 (10 Universal Tags)
-
----
-
-## 🎯 TASKS DISPONÍVEIS
-
-1. **📧 READ EMAIL** - Ler e processar emails
-2. **🏷️ CLASSIFY MESSAGE** - Classificar mensagens
-3. **📊 CHECK STOCK** - Verificar estoque
-4. **📧 GENERATE RESPONSE** - Gerar resposta
-
----
-
-## 🚀 EXECUÇÃO EM TEMPO REAL
-
-`);
+    setMdContent(montarCabecalho());
 
     addLog('🔍 VerbosePanel aberto para acompanhar execução em tempo real');
     addLog('🌐 [V10] Comando iniciar_execucao enviado via WebSocket generic');
@@ -1851,27 +1852,7 @@ Iniciando execução via ExecutionEngine...`);
       
       // ✨ INICIALIZAR MD CONTENT IDÊNTICO ao testar_interface_generica_v7_md.js
       const now = new Date().toLocaleString();
-      setMdContent(`# ACOMPANHAMENTO DE EXECUÇÃO - INPUTS/EXECUÇÃO/OUTPUTS
-
-**Data:** ${now}
-**WebSocket:** ws://localhost:6308
-**Adapter:** TropicalSalesAdapterV2
-**Parser:** CrewAIStructuredParser V1
-
----
-
-## 🎯 TASKS DISPONÍVEIS
-
-1. **📧 READ EMAIL** - Ler e processar emails
-2. **🏷️ CLASSIFY MESSAGE** - Classificar mensagens  
-3. **📊 CHECK STOCK** - Verificar estoque
-4. **📧 GENERATE RESPONSE** - Gerar resposta
-
----
-
-## 🚀 EXECUÇÃO EM TEMPO REAL
-
-`);
+      setMdContent(montarCabecalho());
       
       addLog('🔍 VerbosePanel aberto para acompanhar execução em tempo real');
       
@@ -2667,28 +2648,7 @@ Iniciando execução via ExecutionEngine...`);
 
                     setVerbosePanelVisible(true);
                     setVerboseSteps([]);
-                    const now = new Date().toLocaleString();
-                    setMdContent(`# ACOMPANHAMENTO DE EXECUÇÃO - INPUTS/EXECUÇÃO/OUTPUTS
-
-**Data:** ${now}
-**WebSocket:** ws://localhost:6308
-**Adapter:** TropicalSalesAdapterV10
-**Parser:** Enhanced Parser V10 (10 Universal Tags)
-
----
-
-## 🎯 TASKS DISPONÍVEIS
-
-1. **📧 READ EMAIL** - Ler e processar emails
-2. **🏷️ CLASSIFY MESSAGE** - Classificar mensagens
-3. **📊 CHECK STOCK** - Verificar estoque
-4. **📧 GENERATE RESPONSE** - Gerar resposta
-
----
-
-## 🚀 EXECUÇÃO EM TEMPO REAL
-
-Iniciando execução via Simulador de Petri Net...`);
+                    setMdContent(montarCabecalho('Iniciando execução via Simulador de Petri Net...'));
                   }}
                   onPlaceProcessed={({ placeId, inputData, outputData }) => {
                     try {
@@ -4739,7 +4699,9 @@ Iniciando execução via Simulador de Petri Net...`);
               overflow: 'hidden'
             }}>
               <VerbosePanelV8 
-                wsUrl="ws://localhost:6308"
+                // o painel de etiquetas ouve o servidor QUE ESTÁ NO AR, não o endereço
+                // fixo da máquina de referência (6308) — senão fica mudo no BioByte
+                wsUrl={(typeof window !== 'undefined' && window.V7_WS_URI) || 'ws://localhost:6308'}
                 maxLogEntries={100}
                 autoScroll={true}
               />

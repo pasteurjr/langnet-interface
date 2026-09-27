@@ -12,6 +12,48 @@ import ReactMarkdown from 'react-markdown';
 import { CentralWSClient } from './utils_exec/centralWSClient';
 import { inscrever } from './utils_exec/distribuidorDeAvisos';
 
+
+// CABEÇALHO DO PROJETO QUE ESTÁ NA TELA.
+// Este painel vinha da máquina de referência com a lista de tarefas do TropicalSales
+// escrita à mão ("READ EMAIL", "CHECK STOCK") e com o endereço do servidor dela.
+// Num acompanhamento do BioByte aparecia, em cima da rede, o nome das tarefas de
+// OUTRO sistema. Agora o cabeçalho é montado com o que a rede da tela declara.
+function cabecalhoDoProjeto() {
+  const agora = new Date().toLocaleString();
+  let projeto = null;
+  try { projeto = (typeof window !== 'undefined' && window.V7_PROJECT) || null; } catch (e) { /* sem window */ }
+  const rede = (projeto && (projeto.project_data || projeto.petriNet || projeto.petri_net_data)) || null;
+  const lugares = (rede && (rede.lugares || rede.places)) || [];
+  const tarefas = lugares
+    .map((l) => {
+      const m = String(l && l.logica || '').match(/const TASK_NAME\s*=\s*['"`]([^'"`]+)/);
+      return m ? m[1] : null;
+    })
+    .filter(Boolean);
+  let endereco = '';
+  try { endereco = (typeof window !== 'undefined' && window.V7_WS_URI) || ''; } catch (e) { /* sem window */ }
+
+  const linhas = [
+    '# ACOMPANHAMENTO DE EXECUÇÃO - INPUTS/EXECUÇÃO/OUTPUTS',
+    '',
+    `**Projeto:** ${(projeto && projeto.name) || (rede && rede.nome) || 'sem projeto carregado'}`,
+    `**Data:** ${agora}`,
+    `**Servidor de agentes:** ${endereco || 'não informado'}`,
+    '',
+    '---',
+    '',
+    '## 🎯 TAREFAS DESTA REDE',
+    '',
+  ];
+  if (tarefas.length) {
+    tarefas.forEach((t, i) => linhas.push(`${i + 1}. **${t}**`));
+  } else {
+    linhas.push('_A rede carregada não declara tarefas._');
+  }
+  linhas.push('', '---', '', '## 🚀 EXECUÇÃO EM TEMPO REAL', '');
+  return linhas.join('\n');
+}
+
 const VerbosePanel = ({ 
   isOpen = false,
   onClose,
@@ -173,12 +215,15 @@ const VerbosePanel = ({
   if (!isOpen) return null;
 
   // Mapeamento EXATO do teste MD
-  const taskNames = {
-    1: '📧 1. READ EMAIL',
-    2: '🏷️ 2. CLASSIFY MESSAGE', 
-    3: '📊 3. CHECK STOCK',
-    4: '📧 4. GENERATE RESPONSE'
-  };
+  // Os nomes vêm da rede carregada; sem rede, o número da tarefa já basta.
+  const taskNames = (() => {
+    const cab = cabecalhoDoProjeto();
+    const achados = (cab.match(/^\d+\. \*\*(.+)\*\*$/gm) || [])
+      .map((l) => l.replace(/^\d+\. \*\*|\*\*$/g, ''));
+    const mapa = {};
+    achados.forEach((nome, i) => { mapa[i + 1] = `${i + 1}. ${nome}`; });
+    return mapa;
+  })();
 
   const sectionMap = {
     'inputs': '📥 INPUTS SENDO USADOS',
@@ -188,30 +233,7 @@ const VerbosePanel = ({
 
   // ✨ CONTEÚDO MD AGORA VEM VIA PROPS do ExecutorTarefasNew
 
-  const generateHeader = () => {
-    const now = new Date().toLocaleString();
-    return `# ACOMPANHAMENTO DE EXECUÇÃO - INPUTS/EXECUÇÃO/OUTPUTS
-
-**Data:** ${now}
-**WebSocket:** ws://localhost:6308
-**Adapter:** TropicalSalesAdapter
-**Parser:** CrewAIStructuredParser V1
-
----
-
-## 🎯 TASKS DISPONÍVEIS
-
-1. **📧 READ EMAIL** - Ler e processar emails
-2. **🏷️ CLASSIFY MESSAGE** - Classificar mensagens  
-3. **📊 CHECK STOCK** - Verificar estoque
-4. **📧 GENERATE RESPONSE** - Gerar resposta
-
----
-
-## 🚀 EXECUÇÃO EM TEMPO REAL
-
-`;
-  };
+  const generateHeader = () => cabecalhoDoProjeto();
 
   const generateTaskSection = (section) => {
     let content = `## ${section.name}
@@ -490,27 +512,8 @@ ${step.step_description || step.output_data}`;
         color: '#333333'
       }}>
         <ReactMarkdown>
-          {(mdContent + '\n' + localMd) || `# ACOMPANHAMENTO DE EXECUÇÃO - INPUTS/EXECUÇÃO/OUTPUTS
-
-**Data:** ${new Date().toLocaleString()}
-**WebSocket:** ws://localhost:6308
-**Adapter:** TropicalSalesAdapter
-**Parser:** CrewAIStructuredParser V1
-
----
-
-## 🎯 TASKS DISPONÍVEIS
-
-1. **📧 READ EMAIL** - Ler e processar emails
-2. **🏷️ CLASSIFY MESSAGE** - Classificar mensagens  
-3. **📊 CHECK STOCK** - Verificar estoque
-4. **📧 GENERATE RESPONSE** - Gerar resposta
-
----
-
-## 🚀 EXECUÇÃO EM TEMPO REAL
-
-Aguardando início da execução da Petri Net...`}
+          {(mdContent + '\n' + localMd)
+            || (cabecalhoDoProjeto() + '\nAguardando início da execução da rede...')}
         </ReactMarkdown>
         
         {/* Auto-scroll anchor */}
