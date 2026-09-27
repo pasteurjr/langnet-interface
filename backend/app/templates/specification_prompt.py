@@ -344,11 +344,38 @@ Para CADA caso de uso (MÍNIMO 10):
 |-------|---------|
 | **Ator Principal** | [nome real do perfil de usuário] |
 | **Atores Secundários** | [outros envolvidos ou "Nenhum"] |
+| **Natureza** | **convencional** OU **agêntica** — ver regra abaixo, é OBRIGATÓRIO |
+| **Decisão do Agente** | só quando agêntica: o julgamento que o agente faz, em uma frase. Quando convencional, escreva "Não se aplica". |
 | **Objetivo** | [objetivo real baseado no requisito funcional] |
 | **Pré-condições** | [condições reais necessárias] |
 | **Pós-condições** | [estado real do sistema após execução bem-sucedida] |
 | **RFs Relacionados** | RF-XXX, RF-YYY |
 | **RNs Aplicáveis** | RN-XXX ou "Nenhum" |
+
+🔴 **NATUREZA — classifique TODO caso de uso, sem exceção.**
+
+O sistema tem duas metades, e confundi-las é o erro mais caro do projeto:
+
+**convencional** — o computador executa uma regra fechada, sempre igual, e ninguém precisa
+julgar nada. Entram aqui: login e sessão; cadastrar, alterar, listar e apagar registro;
+gravar em log ou em trilha de auditoria; emitir relatório ou painel a partir do que está no
+banco; enviar notificação; conferir configuração ou conexão de serviço; e o tratamento de erro
+de qualquer uma dessas. **Isto é tela, banco e função de sistema — NUNCA vira tarefa de agente.**
+
+**agêntica** — alguém precisa INTERPRETAR, CLASSIFICAR, DECIDIR, RECOMENDAR, ESTIMAR ou
+REDIGIR a partir de informação que não cabe numa regra fechada. É aqui que a inteligência
+artificial trabalha.
+
+**Teste prático, aplique a cada caso de uso:** *"um programa comum, sem modelo de linguagem,
+resolveria isso lendo o banco e seguindo uma regra escrita?"*
+Se **sim** → convencional. Se **não** → agêntica.
+
+Exemplos do teste: "cadastrar paciente" → sim, é convencional. "classificar o caso pelo
+critério clínico" → não, exige julgamento, é agêntica. "exibir campo vazio quando falta dado"
+→ sim, convencional. "recomendar o pacote de prevenção" → não, é agêntica.
+
+⚠️ Espere que a **maioria** dos casos de uso seja convencional. Um sistema com 30 casos de uso
+costuma ter menos de 10 agênticos. Se você classificar quase tudo como agêntico, você errou.
 
 #### Fluxo Principal
 

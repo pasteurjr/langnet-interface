@@ -119,13 +119,37 @@ Regras derivadas deste schema (aplique em cada task que persiste dados):
 
 ## INSTRUÇÕES CRÍTICAS
 
-🔴🔴 COBERTURA TOTAL DOS CASOS DE USO (REGRA DOMINANTE — acima de tudo):
-A Seção 5 (Casos de Uso) da especificação lista TODOS os UCs. Você DEVE gerar PELO MENOS UMA task
-para CADA UC — sem exceção. Antes de fechar o documento, LISTE os UC-XXX da spec e confirme que
-cada um tem uma task com "UC Relacionado: UC-XXX". NÃO descarte UCs por parecerem "abstratos"
-(cálculo, simulação, relatório, exportação, auditoria): eles TAMBÉM viram task. O nº de tasks NÃO
-é limitado — gere quantas forem necessárias (uma por UC, no mínimo). A Matriz de Rastreabilidade
-(Seção 4) tem de cobrir 100% dos UCs; um UC sem task é ERRO.
+🔴🔴 SÓ O QUE É AGÊNTICO VIRA TAREFA (REGRA DOMINANTE — acima de tudo):
+
+O sistema tem duas metades, e esta etapa cuida de UMA só.
+
+Cada caso de uso da Seção 5 traz o campo **Natureza**: `convencional` ou `agêntica`.
+
+• **Natureza = agêntica** → gere a tarefa. O campo "Decisão do Agente" do UC diz qual é o
+  julgamento; a tarefa existe para fazer esse julgamento.
+
+• **Natureza = convencional** → **NÃO gere tarefa.** Esse caso de uso é tela, cadastro,
+  consulta, relatório, registro em trilha de auditoria, envio de notificação ou conferência de
+  configuração. Ele é resolvido por código comum e já está coberto pela etapa de Interface e pelo
+  Modelo de Dados. Criar agente para isso é o erro mais caro do projeto: enche a rede de
+  execução de lugares que só empurram dado, e faz um modelo de linguagem ser chamado para
+  gravar uma linha no banco.
+
+• **Caso de uso SEM o campo Natureza** (especificação antiga): aplique você mesmo o teste —
+  *"um programa comum, sem modelo de linguagem, resolveria isso lendo o banco e seguindo uma
+  regra escrita?"*. Se sim, é convencional e não vira tarefa.
+
+**NUNCA vire tarefa:** login e sessão; cadastrar/alterar/listar/apagar; gravar auditoria ou
+consentimento; emitir relatório ou painel a partir do banco; enviar ou reenviar notificação;
+verificar configuração, conexão ou nomenclatura; e o tratamento de erro de qualquer uma dessas
+— erro é **caminho de exceção DENTRO** da tarefa que falhou, nunca tarefa própria.
+
+**Antes de fechar o documento**, liste as tarefas que você criou e confirme, uma a uma, que cada
+uma exige julgamento. Se a proporção passar de um terço dos casos de uso, revise: quase certo que
+você transformou função convencional em agente.
+
+A Matriz de Rastreabilidade (Seção 4) cobre os UCs **agênticos**. Um UC convencional sem tarefa
+está CORRETO e deve aparecer na matriz com a anotação "convencional — sem agente".
 
 🔴🔴 FIDELIDADE DE CÁLCULO (REGRA DOMINANTE): quando o UC é de COMPUTAÇÃO — nome com
 Calcular/Simular/Avaliar/Verificar/Estimar, OU o RF pede cálculo (coeficiente de aproveitamento/CA,

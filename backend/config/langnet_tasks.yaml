@@ -153,6 +153,24 @@ extract_requirements:
     [Requirements Extraction] Extract requirements from DOCUMENTS + INSTRUCTIONS, then INFER technical needs.
 
     ═══════════════════════════════════════════════════════════
+    REGRA DE NATUREZA (obrigatória — classifique CADA requisito funcional):
+
+    O sistema tem duas metades e elas NAO podem se misturar:
+
+    - convencional: o computador executa regra fechada, sempre igual, sem ninguem julgar nada.
+      Cadastro, consulta, alteracao, exclusao, login e sessao, relatorio e painel a partir do
+      banco, registro em trilha de auditoria, envio de notificacao, conferencia de configuracao
+      ou de conexao, e o tratamento de erro de qualquer uma dessas. E tela, banco e funcao de
+      sistema — NUNCA sera tarefa de agente.
+
+    - agentica: exige INTERPRETAR, CLASSIFICAR, DECIDIR, RECOMENDAR, ESTIMAR ou REDIGIR a partir
+      de informacao que nao cabe em regra fechada. E onde a inteligencia artificial trabalha.
+
+    Teste, aplique a cada requisito: "um programa comum, sem modelo de linguagem, resolveria isso
+    lendo o banco e seguindo uma regra escrita?" Sim = convencional. Nao = agentica.
+
+    Espere que a MAIORIA seja convencional. Se quase tudo sair agentica, voce errou.
+
     REGRA DE EXAUSTIVIDADE (obrigatória):
     ═══════════════════════════════════════════════════════════
     Extraia TODOS os requisitos de TODOS os documentos e instruções — NÃO resuma, NÃO
@@ -462,6 +480,13 @@ extract_requirements:
       * evidence: string with verbatim quote (if from doc/instructions)
       * rationale: string with explanation (if inferred or suggested)
       * priority: string value "high" or "medium" or "low"
+      * natureza: string value "convencional" or "agentica" — OBRIGATORIO. "convencional" para
+        o que um programa comum resolve lendo o banco e seguindo regra escrita (cadastro,
+        consulta, relatorio, login, auditoria, notificacao, conferencia de configuracao, e o
+        tratamento de erro dessas). "agentica" SO quando exige interpretar, classificar,
+        decidir, recomendar, estimar ou redigir.
+      * decisao_do_agente: string — so quando natureza = "agentica": qual julgamento o agente
+        faz, em uma frase. Quando convencional, use "" (vazio).
 
     - non_functional_requirements: array with same structure as functional_requirements
 

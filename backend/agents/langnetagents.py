@@ -2291,11 +2291,11 @@ def _build_requirements_doc_fallback(state: LangNetFullState) -> str:
         numa célula tornava a tabela ilegível."""
         if not itens:
             return titulo_vazio
-        linhas = ["| ID | Origem | Nome | Descrição | Prioridade | Atores | Dependências | Critérios de aceite |",
-                  "|----|--------|------|-----------|------------|--------|--------------|---------------------|"]
+        linhas = ["| ID | Origem | Natureza | Nome | Descrição | Prioridade | Atores | Dependências | Critérios de aceite |",
+                  "|----|--------|----------|------|-----------|------------|--------|--------------|---------------------|"]
         for i, it in enumerate(itens, 1):
             if not isinstance(it, dict):
-                linhas.append(f"| — | — | — | {_texto(it, 300)} | — | — | — | — |")
+                linhas.append(f"| — | — | — | — | {_texto(it, 300)} | — | — | — | — |")
                 continue
             rid  = _campo(it, "id", "req_id", "code", padrao=f"REQ-{i:03d}")
             orig = _rotulo_origem.get(str(_campo(it, "source", "origem")), "—")
@@ -2305,7 +2305,13 @@ def _build_requirements_doc_fallback(state: LangNetFullState) -> str:
             ator = _texto(_campo(it, "actors", "atores", padrao="—"), 70)
             dep  = _texto(_campo(it, "depends_on", "dependencias", "dependencies", padrao="—"), 60)
             crit = _texto(_campo(it, "acceptance", "criterios", "acceptance_criteria", padrao="—"), 180)
-            linhas.append(f"| **{rid}** | {orig} | {nome} | {desc} | {prio} | {ator} | {dep} | {crit} |")
+            # Natureza: separa o que um programa comum resolve do que exige julgamento de
+            # agente. É esta marca que decide, lá na frente, o que vira tarefa de agente e o
+            # que vira tela ou função de sistema — sem ela, tudo virava agente.
+            _nat = str(_campo(it, "natureza", "nature", padrao="") or "").strip().lower()
+            nat = {"agentica": "🤖 agêntica", "agêntica": "🤖 agêntica",
+                   "convencional": "⚙️ convencional"}.get(_nat, "— não classificado")
+            linhas.append(f"| **{rid}** | {orig} | {nat} | {nome} | {desc} | {prio} | {ator} | {dep} | {crit} |")
         # evidências abaixo da tabela, uma por requisito — é o que sustenta cada linha
         evid = []
         for it in itens:
