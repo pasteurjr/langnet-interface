@@ -131,6 +131,19 @@
 
 ---
 
+### Cena 10b · A tela do hospital, por dentro
+
+**Tela:** `telas/22-app-tela-de-agente.png`
+
+**Narração:**
+> Esta é uma tela de dentro. Classificação do caso pelo critério da norma — indicadores no topo, o resultado da decisão campo a campo, e embaixo os seletores de caso e de critério. Não é um formulário genérico: cada campo veio do caso de uso.
+>
+> E aqui está a parte honesta. Os campos estão vazios. A tela está desenhada, mas o que a alimenta — listar os casos, carregar os critérios — ainda não tem quem execute. Ao separar o que é trabalho de agente, a versão 5 deixou de gerar tarefa para o que é convencional; e o lado convencional ainda não ganhou o seu próprio executor. É o item mais importante da lista do que falta.
+
+**Produção:** 26 segundos. Destaque um indicador vazio e um seletor vazio. Não esconda: esta cena é o motivo de a versão 6 existir.
+
+---
+
 ### Cena 11 · A Bancada de Execução
 
 **Tela:** `telas/30-bancada-rede.png`
@@ -144,7 +157,7 @@
 
 ### Cena 12 · A marca andando
 
-**Telas:** `telas/31-bancada-passo.png`, `telas/32-bancada-passo.png`, `telas/33-bancada-passo.png`
+**Telas:** `telas/31-bancada-passo.png`, `telas/32-bancada-passo.png`, `telas/33-bancada-passo.png`, `telas/41-bancada-log-disparos.png`
 
 **Narração:**
 > A marca sai do início e entra na primeira tarefa: traduzir o resultado do laboratório. Concluída, a transição libera a próxima: classificar o caso. Depois, avaliar multirresistência. Cada passagem dessas é uma tarefa de verdade sendo executada, contra o banco de verdade.
@@ -157,7 +170,7 @@
 
 ### Cena 13 · A pergunta que não admite conversa
 
-**Tela:** `telas/50-prova-multirresistencia.png`
+**Telas:** `telas/32-bancada-passo.png` (o painel com as cinco tarefas e o servidor no ar) e `telas/41-bancada-log-disparos.png` (o log de disparos)
 
 **Narração:**
 > Aqui está a prova. Plantamos no banco dois casos. No primeiro, o germe é resistente a quatro classes de antimicrobianos — pela regra, é multirresistente. No segundo, é resistente a uma só — não é. Se o sistema responder a mesma coisa nos dois, ele está inventando.
@@ -170,7 +183,7 @@
 
 ### Cena 14 · O que ainda falta, dito na cara
 
-**Tela:** `telas/51-portao-logica.png`
+**Tela:** `telas/40-bancada-fim.png`
 
 **Narração:**
 > E aqui está o que ainda não funciona. A conta saiu certa: quatro classes. Mas o campo que diz "é multirresistente, sim ou não" voltou vazio. A regra prática — resistência a três ou mais classes — não virou código, e o modelo também não a aplicou.
@@ -183,7 +196,7 @@
 
 ### Cena 15 · Falha não passa calada
 
-**Tela:** `telas/34-bancada-falha-bloqueia.png`
+**Tela:** `telas/34-bancada-passo.png`
 
 **Narração:**
 > E quando uma tarefa falha, a rede para. Esta tarefa não recebeu o que precisava e devolveu erro; a transição seguinte não disparou. É assim que tem de ser: um sistema que segue em frente com dado ruim entrega um laudo errado com cara de laudo certo.
@@ -200,3 +213,22 @@
 > Do documento do hospital até o sistema rodando, sem ninguém escrever código. O que mudou nesta versão não foi o modelo nem a ferramenta: foi ter declarado, desde o requisito, o que é trabalho de inteligência artificial e o que é trabalho de sempre. Cinco tarefas em vez de quarenta e cinco. E o que ainda falta está apontado, não escondido.
 
 **Produção:** 18 segundos. Fecha na rede.
+
+---
+
+## Anexo de produção — o que está provado e o que não está
+
+Para quem monta o vídeo: só narre como funcionando o que está nesta lista.
+
+**Provado, com tela:**
+- A separação entre agêntico e convencional percorre requisitos, casos de uso, agentes e tarefas, interface e menu do sistema gerado.
+- Cinco tarefas em dois agentes, contra quarenta e cinco da versão anterior.
+- A rede roda inteira na Bancada: a marca sai do início, passa pelas cinco tarefas e chega ao fim.
+- As tarefas consultam o banco de verdade. A contagem de classes resistentes bate com o gabarito plantado: quatro numa amostra, uma na outra.
+- Quando uma tarefa falha, a transição seguinte não dispara.
+
+**Não provado — não narre como pronto:**
+- A decisão de multirresistência (a regra das três classes) não é preenchida: a conta sai, o veredito não.
+- Das cinco tarefas de agente, só duas são alcançáveis pelas telas do hospital; as outras três só rodam pela Bancada.
+- As telas convencionais não têm executor: os botões não estão ligados a nada.
+- A conferência de qualidade das tarefas aponta quatro elementos faltando em todas as cinco.
