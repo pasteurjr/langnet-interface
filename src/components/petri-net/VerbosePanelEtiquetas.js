@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './VerbosePanelEtiquetas.css';
 import { CentralWSClient } from './utils_exec/centralWSClient';
+import { inscrever } from './utils_exec/distribuidorDeAvisos';
 
 /**
  * VerbosePanel V8 - Interface Visual para Tags em Tempo Real
@@ -417,7 +418,7 @@ const VerbosePanel = ({
         };
         
         console.log('🔗 [VERBOSE PANEL] Registrando callback - tipo:', typeof verboseCallbackFunction);
-        central.setVerboseCallback(verboseCallbackFunction);
+        const __desinscrever = inscrever(verboseCallbackFunction);
         
         // Expor função de limpeza globalmente
         window.__clearVerbosePanel = clearVerbosePanelStates;
@@ -426,7 +427,7 @@ const VerbosePanel = ({
         
         return () => {
             // Cleanup - remover callback
-            central.setVerboseCallback(null);
+            __desinscrever && __desinscrever();
             delete window.__clearVerbosePanel;
         };
     }, []);

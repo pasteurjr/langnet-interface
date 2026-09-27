@@ -10,6 +10,7 @@ import ReactMarkdown from 'react-markdown';
 
 // IMPORTAÇÃO ADICIONADA PARA CORREÇÕES DO CODEX
 import { CentralWSClient } from './utils_exec/centralWSClient';
+import { inscrever } from './utils_exec/distribuidorDeAvisos';
 
 const VerbosePanel = ({ 
   isOpen = false,
@@ -158,13 +159,13 @@ const VerbosePanel = ({
     };
     
     // ✅ REATIVADO: Receber dados WebSocket V8
-    central.setVerboseCallback(handleVerboseStep);
+    const __desinscrever = inscrever(handleVerboseStep);
     console.log('🔗 [VERBOSE PANEL] Callback V8 registrado para receber dados WebSocket');
     
     // CLEANUP
     return () => {
       console.log('🧹 [VERBOSE PANEL] Cleanup callback V8');
-      central.setVerboseCallback(null);
+      __desinscrever && __desinscrever();
     };
   }, []); // Executar apenas uma vez
 

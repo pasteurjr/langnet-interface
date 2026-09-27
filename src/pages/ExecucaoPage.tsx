@@ -24,6 +24,9 @@ import { FakeWebSocket } from "../components/petri-net/utils_exec/fakeWebSocket"
 // @ts-ignore
 import PetriNetEditorExecOriginal from "../components/petri-net/PetriNetEditorExec";
 const PetriNetEditorExec: any = PetriNetEditorExecOriginal;
+// @ts-ignore — painel de etiquetas trazido da máquina de referência, em JavaScript
+import VerbosePanelEtiquetasOriginal from "../components/petri-net/VerbosePanelEtiquetas";
+const VerbosePanelEtiquetas: any = VerbosePanelEtiquetasOriginal;
 import "./ExecucaoPage.css";
 
 const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000/api";
@@ -144,12 +147,13 @@ const ExecucaoPage: React.FC = () => {
     // Ouvir o que o servidor conta, e distribuir por gaveta.
     try {
       const central = CentralWSClient.getInstance();
-      const ouvir = (p: any) => {
+      // O painel de etiquetas de referência usa setVerboseCallback e o anula ao
+      // sair de cena. Se disputássemos esse canal, um derrubaria o outro — foi
+      // o que aconteceu. A tela de referência usa o OUTRO canal; fazemos igual.
+      central.setOperationCallback((p: any) => {
         setPassos((lista) => [...lista.slice(-300), p]);
         if (p?.type === "tags_extracted" || p?.tags) setEtiquetas(p.tags || p?.data?.tags || {});
-      };
-      central.setVerboseCallback(ouvir);
-      central.setOperationCallback(ouvir);
+      });
     } catch { /* cliente central indisponível — a bancada ainda mostra a rede */ }
 
     return () => { if (laçoRef.current) clearInterval(laçoRef.current); };
@@ -383,28 +387,17 @@ const ExecucaoPage: React.FC = () => {
 
         {aba === "registro" && <pre className="caixa-log alto">{registro.join("\n") || "nada ainda"}</pre>}
 
-        {aba === "etiquetas" && (
-          <div>
-            <h3>Etiquetas da última tarefa</h3>
-            {Object.keys(etiquetas).length ? (
-              <table className="tabela-etiquetas">
-                <tbody>
-                  {Object.entries(etiquetas).map(([k, v]) => (
-                    <tr key={k}>
-                      <th>{k}</th>
-                      <td><pre>{typeof v === "string" ? v : JSON.stringify(v, null, 2)}</pre></td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p className="vazio">
-                As etiquetas aparecem quando o servidor de agentes as envia ao fim de cada tarefa
-                (nome do agente, ferramenta usada, o que ele pensou, o que a ferramenta respondeu).
-              </p>
-            )}
-          </div>
-        )}
+        {/* Sempre montado, apenas escondido: se desmontasse ao trocar de aba,
+            ele desligaria do servidor e perderia as etiquetas da rodada. */}
+        <div className="aba-etiquetas" style={{ display: aba === "etiquetas" ? "block" : "none" }}>
+            {/* Painel das 11 etiquetas trazido da máquina de referência. Antes
+                havia aqui uma tabela que eu tinha escrito — bem mais pobre. */}
+            <VerbosePanelEtiquetas
+              wsUrl={(endereco || "").replace("//localhost:", "//127.0.0.1:")}
+              maxLogEntries={200}
+            autoScroll={true}
+          />
+        </div>
       </section>
 
       {/* O painel móvel de acompanhamento é aberto pelo próprio PetriNetViewer,
