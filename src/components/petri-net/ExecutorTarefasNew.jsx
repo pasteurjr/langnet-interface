@@ -427,7 +427,7 @@ const ExecutorTarefas = ({ project }) => {
         
         // ✅ WebSocket V8 é gerenciado via CentralWSClient no FakeWebSocket
         // Criar instância do CentralWSClient para ExecutionEngine
-        const { CentralWSClient } = await import('../../utils/centralWSClient');
+        const { CentralWSClient } = await import('./utils_exec/centralWSClient');
         const centralClient = CentralWSClient.getInstance();
         
         // Registrar callback para receber dados V8 na aba Operação

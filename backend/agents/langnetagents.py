@@ -6183,12 +6183,17 @@ def _inject_task_tools_into_adapters(adapters_py: str, agents_map: Dict[str, Lis
     block_lines = ["", "", "# ─── Bindings de tools (deterministic, extraído do agent_task_spec) ───"]
     block_lines.append("AGENT_TOOLS = {")
     for agent_id, tools in sorted(agents_map.items()):
-        block_lines.append(f"    {agent_id!r}: {tools!r},")
+        block_lines.append(f"    {str(agent_id).strip().strip('`').strip()!r}: {tools!r},")
     block_lines.append("}")
     block_lines.append("")
     block_lines.append("TASK_TOOLS = {")
     for task_id, tools in sorted(tasks_map.items()):
-        block_lines.append(f"    {task_id!r}: {tools!r},")
+        # O nome da tarefa vem do DOCUMENTO de Agentes e Tarefas, onde aparece em
+        # `crase` de markdown. A crase viajava para dentro da chave e o servidor,
+        # que procura pelo nome puro, NUNCA achava as ferramentas da tarefa — o
+        # agente era montado sem ferramenta e respondia que não conseguiu obter o dado.
+        limpo = str(task_id).strip().strip("`").strip()
+        block_lines.append(f"    {limpo!r}: {tools!r},")
     block_lines.append("}")
     block_lines.append("")
     return adapters_py.rstrip() + "\n" + "\n".join(block_lines) + "\n"
@@ -7862,6 +7867,13 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
         # Medido no BioByte em 23/09/2026: uma linha assim derrubava o adapters.py inteiro.
         if _re.match(r'^(null|none|nulo|nil)\b', e, _re.I):
             return "None"
+        # VERDADEIRO/FALSO escritos como no JSON. `false` é nome válido em Python — passava
+        # pela checagem de sintaxe e saía como `_num(false)`, que estoura em execução com
+        # "name 'false' is not defined" e derruba a tarefa inteira. Medido no BioByte v5 em
+        # 27/09/2026: a recomendação de pacote falhava e travava a rede.
+        m_bool = _re.match(r'^(false|true|falso|verdadeiro)\b', e, _re.I)
+        if m_bool:
+            return "False" if m_bool.group(1).lower() in ("false", "falso") else "True"
         # Anotação entre parênteses depois do valor: fica só o valor.
         m_anot = _re.match(r'^([^(]+?)\s*\([^)]*\)\s*$', e)
         if m_anot and not _re.search(r'[-+*/]', m_anot.group(1)):
@@ -7873,6 +7885,20 @@ def _parse_computation_task(desc: str, expected_output: str = "") -> str:
             return "_safe_div(%s, %s)" % (md.group(1), md.group(2))
         # Frase em prosa (três ou mais palavras sem operador) não é conta: vira texto.
         if not _re.search(r'[-+*/%<>=]', e) and len(e.split()) >= 3:
+            return repr(e)
+        # Guarda definitiva: o que NÃO compila como expressão Python é prosa, e vira texto.
+        # A checagem por operador acima não bastava — uma barra dentro da frase
+        # ("pendente/com erro") fazia a prosa passar por divisão, e cada palavra virava
+        # _num(palavra). Medido no BioByte v5 em 27/09/2026: derrubou o adapters.py inteiro
+        # e com ele o servidor de agentes.
+        import ast as _ast_chk
+        try:
+            _ast_chk.parse(e, mode='eval')
+        except SyntaxError:
+            return repr(e)
+        # Literal do JSON solto no meio (false/true/null) não é variável do programa:
+        # a expressão inteira é texto da descrição, não conta.
+        if _re.search(r'\b(false|true|null)\b', e):
             return repr(e)
         return _re.sub(r'[A-Za-z_]\w*', lambda mm: "_num(%s)" % mm.group(0), e)
 
@@ -8051,6 +8077,33 @@ def _rewrite_spatial_overlap_flag(desc: str) -> str:
 
 
 # Passos de LÓGICA da descrição da tarefa que não viraram código (para o portão avisar).
+def _passo_e_instrucao_ao_agente(linha: str) -> bool:  # noqa: C901
+    """O passo é instrução ao agente (não vira código) ou lacuna de implementação?
+
+    É instrução ao agente: proibição, recebimento de entrada, e julgamento em texto
+    (escolher/justificar/citar/redigir/explicar). NÃO é instrução — é lacuna de verdade —
+    o passo que manda CONTAR, COMPARAR, CALCULAR ou CONSULTAR o banco: o agente erra essas,
+    e foi por elas que o portão nasceu.
+    """
+    import re as _re_p
+    t = linha.strip()
+    corpo = _re_p.sub(r"^\s*(?:\d+\.|[a-z]\.)\s*", "", t)
+    # conta/comparação/consulta continuam cobradas, ainda que a frase pareça de conduta
+    if _re_p.search(r"(?i)\b(cont(ar|e|agem)|som(ar|e)|calcul|percentual|média|media|"
+                  r"maior que|menor que|>=|<=|SELECT |INSERT |UPDATE |JOIN |"
+                  r"consultar a tabela|gravar (em|na tabela))\b", corpo):
+        return False
+    if _re_p.match(r"(?i)N[ÃA]O\s", corpo):                      # proibição
+        return True
+    if _re_p.match(r"(?i)(receber|receba|ler a entrada)\b", corpo):   # entrada
+        return True
+    if _re_p.search(r"(?i)\b(escolher|escolha|citar|cite|justific|redigir|redija|"
+                  r"explicar|explique|descrever|descreva|classificar em|"
+                  r"marcar\b|adicionar em)\b", corpo):           # julgamento em texto
+        return True
+    return False
+
+
 PASSOS_SEM_CODIGO: List[tuple] = []
 
 
@@ -8251,7 +8304,15 @@ def _parse_task_description_to_python(desc: str, expected_output: str = "") -> s
                     _ja_coberto = _re.search(r"(?i)retorn|chame database_tool|guarde o resultado",
                                              _ln_txt)
                     if not (_cabecalho or _conduta or _ja_coberto):
-                        PASSOS_SEM_CODIGO.append((_task_atual, _ln_txt.strip()[:160]))
+                        # NATUREZA DO PASSO: numa tarefa de IA a maior parte dos passos é
+                        # INSTRUÇÃO AO AGENTE — proibição ("NÃO inventar microrganismo"),
+                        # recebimento de entrada, julgamento ("escolher o mais recente e citar
+                        # na justificativa"). Nada disso vira código, e cobrar isso do tradutor
+                        # era medir tarefa de IA com régua de função convencional: o portão
+                        # reprovava por construção. Continua sendo LACUNA de verdade só o passo
+                        # que descreve CONTA, COMPARAÇÃO ou CONSULTA — esses o agente erra.
+                        if not _passo_e_instrucao_ao_agente(_ln_txt):
+                            PASSOS_SEM_CODIGO.append((_task_atual, _ln_txt.strip()[:160]))
             i += 1
             continue
         query = query_m.group(1).strip()
@@ -11773,6 +11834,15 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Gera componentes React por tela e SUBSTITUI o App.jsx do template para
     # que a UI de negócio seja a principal e o executor de Petri vire aba Admin.
     ui_spec = state.get("ui_spec") or {}
+    # A aba de Execução do molde LÊ o contexto corrente (quem entrou, caso aberto) e fala
+    # com o servidor de agentes. Esses dois módulos são base do molde, não das telas de
+    # negócio: sem eles o frontend NÃO COMPILA quando o projeto ainda não tem Especificação
+    # de Interface. Por isso saem sempre; se houver telas, o emissor delas reescreve.
+    if not (ui_spec and ui_spec.get("screens")):
+        add("frontend/src/screens/wsClient.js", _template_ws_client(ws_port), "javascript")
+        add("frontend/src/screens/currentAttendance.js", _template_current_attendance(), "javascript")
+        print("[CODE-GEN] sem Especificacao de Interface: emitidos so os modulos-base de tela")
+
     # Matriz de rastreabilidade consolidada (FR → UC → Task → Tela) + FRs sem cobertura.
     try:
         add("docs/RASTREABILIDADE.md", _emit_traceability_matrix(tasks_yaml or "", ui_spec, spec_md or ""), "markdown")

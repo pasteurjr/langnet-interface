@@ -24,14 +24,19 @@ export const useProjectLoader = () => {
 
       console.log('🔄 Carregando projeto do backend_generic:', targetId);
 
-      const response = await fetch(`${BACKEND_URL}/api/projects/${targetId}`);
-      
-      if (!response.ok) {
-        throw new Error(`Erro carregando projeto: ${response.status}`);
+      // DENTRO DO LANGNET o projeto JÁ foi carregado pela moldura (Bancada de Execução),
+      // do banco do próprio LangNet. Buscar de novo no back-end da máquina de referência
+      // (porta 8000) só encontrava outro serviço, e o motor ficava repetindo
+      // "Projeto não encontrado na resposta da API" sem nunca iniciar.
+      let project = (typeof window !== 'undefined' && window.V7_PROJECT) || null;
+      if (!project) {
+        const response = await fetch(`${BACKEND_URL}/api/projects/${targetId}`);
+        if (!response.ok) {
+          throw new Error(`Erro carregando projeto: ${response.status}`);
+        }
+        const data = await response.json();
+        project = data.project;
       }
-
-      const data = await response.json();
-      const project = data.project;
 
       if (!project) {
         throw new Error('Projeto não encontrado na resposta da API');
