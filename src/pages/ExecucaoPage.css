@@ -94,3 +94,7 @@ em.error { color: #f85149; font-weight: 700; }
 
 /* O painel de etiquetas veio da máquina de referência com fundo claro. */
 .aba-etiquetas { background: #fff; border-radius: 8px; overflow: auto; max-height: 640px; }
+
+/* A tela de referência tem estilo próprio (fundo claro, variáveis CSS dela). */
+.bancada-referencia { background: #0d1117; padding: 0; }
+.bancada-referencia .joint-paper { background: #fff; }
