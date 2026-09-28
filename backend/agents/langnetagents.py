@@ -13537,8 +13537,22 @@ __STATE__  const [form, setForm] = useState(() => getCarry());   // pré-preench
           const r = await runTask("listar_" + tabela, {});
           const linhas = (r && (r.rows || r.items || r.dados)) || [];
           mapa[campo] = linhas.slice(0, 200).map((l) => {
-            const rotulo = l.nome || l.titulo || l.descricao || l.identificador_amostra
-              || l.numero_prontuario || l.versao || l.email || String(l.id || "");
+            // ROTULO QUE O OPERADOR RECONHECE. Um identificador de 36 caracteres não diz
+            // nada a quem está na UTI: a lista tem de mostrar o nome, o prontuário, a
+            // amostra. Quando a linha não tem campo de nome, monta o rótulo com os
+            // primeiros campos legíveis (data, situação), nunca com o identificador cru.
+            const direto = l.nome || l.titulo || l.descricao || l.identificador_amostra
+              || l.numero_prontuario || l.versao || l.email;
+            let rotulo = direto;
+            if (!rotulo) {
+              const tecnicos = /(^id$|_id$|_at$|hash|uuid|senha|token|created|updated)/i;
+              const partes = Object.entries(l)
+                .filter(([k, v]) => !tecnicos.test(k) && v != null && typeof v !== "object"
+                                    && String(v).length < 60)
+                .slice(0, 3)
+                .map(([, v]) => String(v));
+              rotulo = partes.length ? partes.join(" · ") : String(l.id || "");
+            }
             return { valor: String(l.id != null ? l.id : rotulo), rotulo: String(rotulo) };
           });
         } catch (e) { /* a tela segue sem a lista; o campo fica vazio, não inventado */ }

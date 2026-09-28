@@ -44,3 +44,17 @@ if "resistente" not in jsx:
 print(f"casos: 8 | passaram: {8-len(falhas)} | falharam: {len(falhas)}")
 for m in falhas: print("  X", m)
 sys.exit(1 if falhas else 0)
+
+# O rótulo do seletor tem de ser reconhecível: identificador de 36 caracteres não diz nada
+# a quem está na UTI. Sem campo de nome, monta com os primeiros campos legíveis.
+import re as _re2, sys as _sys2, os as _os2
+_fonte = open(_os2.path.join(_os2.path.dirname(_os2.path.dirname(_os2.path.dirname(
+    _os2.path.abspath(__file__)))), "backend/agents/langnetagents.py"), encoding="utf-8").read()
+_falhas2 = []
+if "ROTULO QUE O OPERADOR RECONHECE" not in _fonte:
+    _falhas2.append("o seletor nao monta rotulo legivel")
+if "tecnicos = /(^id$|_id$|_at$|hash|uuid|senha|token|created|updated)/i" not in _fonte:
+    _falhas2.append("o rotulo nao exclui campos tecnicos (hash, senha, token)")
+print(f"casos extras: 2 | falharam: {len(_falhas2)}")
+for m in _falhas2: print("  X", m)
+if _falhas2: _sys2.exit(1)
