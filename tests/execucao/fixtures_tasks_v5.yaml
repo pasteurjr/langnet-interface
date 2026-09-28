@@ -1,0 +1,233 @@
+```yaml
+translate_lab_result_to_hospital_vocabulary:
+  description: >
+    Ler o resultado bruto do laboratório (microrganismo, origem da amostra, antibiograma com antimicrobiano + classe + resultado), interpretar o que é, traduzir a nomenclatura própria do laboratório para o vocabulário adotado pelo hospital e decidir se o resultado é aproveitável para classificação. Quando o resultado estiver pendente ou contiver erro, marcar como NÃO aproveitável e sinalizar a condição — sem gerar valor clínico inventado.
+    Input data format:
+      - JSON da task importar_hemocultura_laboratorio contendo:
+        * caso_id: identificador único do caso
+        * resultado_bruto: objeto com os campos:
+          - situacao: "pendente" | "disponivel" | "erro"
+          - identificador_amostra: identificador da amostra no laboratório
+          - origem: "hemocultura" | "ponta_cateter" | "outra"
+          - microrganismo: nome do microrganismo ou null
+          - antibiograma: lista de antimicrobianos, onde cada item contém:
+            * antimicrobiano: nome do antimicrobiano
+            * classe: classe do antimicrobiano
+            * resultado: "sensivel" | "intermediario" | "resistente"
+          - mensagem_erro: texto do erro ou null
+      - vocabulario_hospital_versao: String (versão do vocabulário do hospital, informada pelo operador na tela de configuração)
+
+    Process steps:
+      1. Receber o resultado bruto do laboratório e a versão do vocabulário do hospital.
+      2. Verificar a situacao do resultado:
+         - Se situacao = "pendente": marcar aproveitavel = false, motivo_nao_aproveitavel = "resultado pendente no laboratório", sem antibiograma.
+         - Se situacao = "erro": marcar aproveitavel = false, motivo_nao_aproveitavel = "erro de cadastro: <mensagem_erro>".
+         - Se resultado_bruto vazio ou ilegível: marcar aproveitavel = false, motivo_nao_aproveitavel = "resultado bruto vazio ou ilegível".
+      3. Se situacao = "disponivel", consultar o vocabulário do hospital (via vector_search_tool e database_tool) para traduzir cada termo do laboratório (microrganismo, origem, antimicrobiano, classe) para a nomenclatura adotada pelo hospital.
+      4. Para cada termo sem correspondência no vocabulário, adicionar em termos_nao_mapeados e marcar aproveitavel = false.
+      5. Para cada antimicrobiano sem classe, adicionar em termos_nao_mapeados e marcar aproveitavel = false.
+      6. NÃO inventar microrganismo, antibiograma ou classe quando situacao = "pendente" ou "erro".
+      7. NÃO mapear termo ambíguo para correspondência inventada.
+      8. NÃO truncar nomes longos de microrganismos ou antimicrobianos.
+      9. NÃO consultar tabelas fora do schema biobyte.
+      10. NÃO persistir nada — apenas retornar o JSON (a persistência é feita pelo código comum).
+      11. NÃO chamar serviço externo — o resultado já foi importado antes.
+      12. Em caso de falha do LLM, retornar erro explícito (não retornar tradução parcial como final).
+
+  expected_output: >
+    Retornar um texto em formato JSON contendo as seguintes keys:
+    - aproveitavel: booleano indicando se o resultado é aproveitável para classificação
+    - resultado_traduzido: objeto com os campos:
+      * microrganismo: nome do microrganismo no vocabulário do hospital
+      * origem: origem da amostra no vocabulário do hospital
+      * antibiograma: lista de antimicrobianos traduzidos, onde cada item deve conter as keys:
+        - antimicrobiano: nome do antimicrobiano no vocabulário do hospital
+        - classe: classe do antimicrobiano no vocabulário do hospital
+        - resultado: "sensivel" | "intermediario" | "resistente"
+    - termos_nao_mapeados: lista de termos do laboratório sem correspondência no vocabulário do hospital
+    - justificativa: texto explicando a decisão de aproveitabilidade e as traduções realizadas
+    - motivo_nao_aproveitavel: texto com o motivo quando aproveitavel = false, ou null
+    - versao_prompt: versão do prompt utilizada
+
+classify_case_by_nhsn_criterion:
+  description: >
+    Aplicar o critério NHSN vigente à época do caso (não o atual) aos dados microbiológicos traduzidos, decidir se o caso configura infecção de corrente sanguínea associada a cateter, atribuir a classificação confirmada, descartada ou pendente, e registrar qual critério e qual versão sustentaram a decisão. Quando os dados não sustentarem classificação, retornar "pendente" com justificativa explícita.
+    Input data format:
+      - JSON da task translate_lab_result_to_hospital_vocabulary contendo:
+        * aproveitavel: booleano indicando se o resultado é aproveitável
+        * resultado_traduzido: objeto com microrganismo, origem e antibiograma traduzidos
+        * termos_nao_mapeados: lista de termos sem correspondência
+        * justificativa: texto da tradução
+        * motivo_nao_aproveitavel: motivo quando não aproveitável
+        * versao_prompt: versão do prompt da tradução
+      - caso_id: String (identificador do caso, informado pelo operador na tela de classificação)
+      - data_inicio_caso: String no formato YYYY-MM-DD (data de início do caso, informada pelo operador na tela de classificação)
+      - criterios_candidatos: lista de critérios NHSN filtrados por vigência, onde cada item contém:
+        * criterio_id: identificador único do critério
+        * versao: versão do critério
+        * nome: nome do critério
+        * limiares: objeto com os limiares do critério
+        * vigencia_inicio: data de início da vigência (YYYY-MM-DD)
+        * vigencia_fim: data de fim da vigência (YYYY-MM-DD) ou null
+
+    Process steps:
+      1. Verificar se resultado_traduzido.aproveitavel = false: se sim, não classificar; retornar classificacao = "pendente" com o motivo herdado.
+      2. Selecionar, entre criterios_candidatos, o critério cuja vigência cobre data_inicio_caso (vigencia_inicio <= data_inicio_caso < vigencia_fim ou vigencia_fim = null).
+      3. Se nenhum critério cobrir a data: retornar classificacao = "pendente", justificativa = "Não há critério vigente para a data do caso", criterio_id = null.
+      4. Se múltiplos critérios cobrirem a data: escolher o de vigência mais recente e citar na justificativa.
+      5. Verificar se os dados de microbiologia estão completos (microrganismo e antibiograma presentes): se faltar, retornar classificacao = "pendente", justificativa = "Dados de microbiologia insuficientes".
+      6. Aplicar o critério selecionado aos dados microbiológicos traduzidos e decidir a classificação: "confirmada", "descartada" ou "pendente".
+      7. NÃO aplicar o critério ATUAL a caso antigo — usar sempre o critério cuja vigência cobre data_inicio_caso.
+      8. NÃO classificar como "confirmada" ou "descartada" sem citar o critério e a versão aplicados.
+      9. NÃO inventar limiar que não esteja no critério fornecido.
+      10. NÃO consultar tabelas fora do schema biobyte.
+      11. NÃO persistir — apenas retornar o JSON.
+      12. Em caso de falha do LLM, retornar erro explícito, sem classificação parcial.
+
+  expected_output: >
+    Retornar um texto em formato JSON contendo as seguintes keys:
+    - classificacao: "confirmada" | "descartada" | "pendente"
+    - criterio_aplicado: nome do critério NHSN aplicado
+    - criterio_id: identificador único do critério aplicado, ou null
+    - versao_criterio: versão do critério aplicado
+    - justificativa: texto explicando a classificação, citando o critério e a versão
+    - evidencia: objeto com os campos e valores que sustentaram a decisão
+    - versao_prompt: versão do prompt utilizada
+
+evaluate_multidrug_resistance:
+  description: >
+    Examinar a lista de antimicrobianos do antibiograma traduzido, agrupar por classe distinta, contar quantas classes apresentam resultado resistente e decidir se o microrganismo é multirresistente aplicando a regra de três ou mais classes resistentes. Resultados "intermediário" NÃO contam como resistência. Produzir justificativa que cita as classes resistentes encontradas.
+    Input data format:
+      - JSON da task translate_lab_result_to_hospital_vocabulary contendo:
+        * aproveitavel: booleano indicando se o resultado é aproveitável
+        * resultado_traduzido: objeto com microrganismo, origem e antibiograma traduzidos, onde cada item do antibiograma contém:
+          - antimicrobiano: nome do antimicrobiano
+          - classe: classe do antimicrobiano
+          - resultado: "sensivel" | "intermediario" | "resistente"
+        * termos_nao_mapeados: lista de termos sem correspondência
+        * justificativa: texto da tradução
+        * motivo_nao_aproveitavel: motivo quando não aproveitável
+        * versao_prompt: versão do prompt da tradução
+      - caso_id: String (identificador do caso, informado pelo operador na tela de classificação)
+
+    Process steps:
+      1. Receber o antibiograma traduzido do caso.
+      2. Verificar se o antibiograma está vazio: se sim, retornar erro explícito "Antibiograma sem antimicrobianos — não foi possível avaliar".
+      3. Verificar se algum antimicrobiano está sem classe: se sim, retornar erro explícito "Classe ausente em um ou mais antimicrobianos".
+      4. Deduplicar antimicrobianos por nome (não contar o mesmo antimicrobiano duas vezes se aparecer repetido).
+      5. Agrupar os antimicrobianos por classe distinta.
+      6. Para cada classe, verificar se QUALQUER representante tem resultado = "resistente": se sim, contar a classe como resistente.
+      7. NÃO contar "intermediario" como resistência.
+      8. NÃO contar "antimicrobiano" como "classe" — agrupar por classe distinta.
+      9. Calcular contagem_classes_resistentes e decidir multirresistente = (contagem_classes_resistentes >= 3).
+      10. Registrar na justificativa as classes resistentes encontradas e, quando houver classe repetida com resultados diferentes, registrar que a classe foi contada como resistente por ter qualquer representante resistente.
+      11. NÃO consultar tabelas fora do schema biobyte.
+      12. NÃO persistir — apenas retornar o JSON.
+      13. Em caso de falha do LLM, retornar erro explícito, sem decisão parcial.
+
+  expected_output: >
+    Retornar um texto em formato JSON contendo as seguintes keys:
+    - multirresistente: booleano indicando se o germe é multirresistente (três ou mais classes resistentes)
+    - classes_resistentes: lista de nomes das classes com resultado resistente
+    - contagem_classes_resistentes: número inteiro de classes resistentes
+    - justificativa: texto explicando a decisão, citando as classes resistentes e o tratamento dado a intermediários e repetições
+    - versao_prompt: versão do prompt utilizada
+
+draft_alert_text_for_care_team:
+  description: >
+    Redigir, em linguagem clara e legível por enfermeiro na UTI, o texto do alerta de multirresistência que informa o que houve (microrganismo multirresistente identificado no antibiograma, com origem da amostra) e por que importa (risco para o paciente com cateter venoso central). O texto é acompanhado da fundamentação (critério e versão) e da versão do prompt usada. Quando os dados não sustentarem texto afirmativo, retornar mensagem de insuficiência — nunca inventar.
+    Input data format:
+      - JSON da task classify_case_by_nhsn_criterion contendo:
+        * classificacao: "confirmada" | "descartada" | "pendente"
+        * criterio_aplicado: nome do critério NHSN aplicado
+        * criterio_id: identificador único do critério aplicado
+        * versao_criterio: versão do critério aplicado
+        * justificativa: texto da classificação
+        * evidencia: objeto com os campos e valores que sustentaram a decisão
+        * versao_prompt: versão do prompt da classificação
+      - JSON da task evaluate_multidrug_resistance contendo:
+        * multirresistente: booleano indicando se o germe é multirresistente
+        * classes_resistentes: lista de classes resistentes
+        * contagem_classes_resistentes: número inteiro de classes resistentes
+        * justificativa: texto da avaliação de resistência
+        * versao_prompt: versão do prompt da avaliação
+      - alerta_id: String (identificador do alerta, informado pelo operador na tela de alertas)
+      - caso_id: String (identificador do caso, informado pelo operador na tela de alertas)
+      - microrganismo: String (nome do microrganismo, informado pelo operador na tela de alertas)
+      - origem_amostra: String (origem da amostra, informada pelo operador na tela de alertas)
+      - antibiograma: lista de antimicrobianos, onde cada item contém antimicrobiano, classe e resultado (informado pelo operador na tela de alertas)
+
+    Process steps:
+      1. Verificar se multirresistencia.multirresistente = false: se sim, retornar completo = false, motivo_insuficiencia = "Caso sem multirresistência registrada".
+      2. Verificar se o antibiograma está pendente ou com erro: se sim, retornar completo = false, motivo_insuficiencia = "Resultado do laboratório pendente ou com erro".
+      3. Redigir o texto do alerta em linguagem clara, informando o que houve (microrganismo multirresistente identificado no antibiograma, com origem da amostra) e por que importa (risco para o paciente com cateter venoso central).
+      4. Validar que o texto gerado cita o microrganismo E a origem da amostra: se faltar qualquer um dos dois, descartar o texto, retornar completo = false, motivo_insuficiencia = "Texto incompleto — redação não aceita".
+      5. NÃO redigir texto afirmativo quando multirresistencia.multirresistente = false ou quando o antibiograma estiver pendente/com erro.
+      6. NÃO usar jargão técnico incompreensível para enfermeiro (ex.: "preditor linear", "coeficiente de Cox").
+      7. NÃO inventar dado clínico que não esteja no input.
+      8. NÃO persistir — apenas retornar o JSON.
+      9. NÃO consultar tabelas fora do schema biobyte.
+      10. Em caso de falha do LLM, retornar erro explícito, sem texto parcial.
+
+  expected_output: >
+    Retornar um texto em formato JSON contendo as seguintes keys:
+    - texto_alerta: texto do alerta em linguagem clara para a equipe assistencial
+    - fundamentacao: objeto com os campos:
+      * criterio: nome do critério NHSN aplicado
+      * versao: versão do critério aplicado
+      * multirresistencia: texto descrevendo a situação de multirresistência
+    - completo: booleano indicando se o texto foi produzido integralmente
+    - motivo_insuficiencia: texto com o motivo quando completo = false, ou null
+    - versao_prompt: versão do prompt utilizada
+
+recommend_bundle_with_justification:
+  description: >
+    Selecionar, entre os bundles cadastrados, o pacote de medidas preventivas aplicável ao caso confirmado, considerando o resultado do NHSN e a presença/ausência de multirresistência, e redigir justificativa textual que cite explicitamente o resultado do NHSN e a situação de multirresistência. Nunca recomendar bundle de germe multirresistente para caso sem multirresistência registrada. Quando os dados não sustentarem recomendação, declarar insuficiência.
+    Input data format:
+      - JSON da task classify_case_by_nhsn_criterion contendo:
+        * classificacao: "confirmada" | "descartada" | "pendente"
+        * criterio_aplicado: nome do critério NHSN aplicado
+        * criterio_id: identificador único do critério aplicado
+        * versao_criterio: versão do critério aplicado
+        * justificativa: texto da classificação
+        * evidencia: objeto com os campos e valores que sustentaram a decisão
+        * versao_prompt: versão do prompt da classificação
+      - JSON da task evaluate_multidrug_resistance contendo:
+        * multirresistente: booleano indicando se o germe é multirresistente
+        * classes_resistentes: lista de classes resistentes
+        * contagem_classes_resistentes: número inteiro de classes resistentes
+        * justificativa: texto da avaliação de resistência
+        * versao_prompt: versão do prompt da avaliação
+      - caso_id: String (identificador do caso, informado pelo operador na tela de recomendação)
+      - bundles_disponiveis: lista de bundles cadastrados, onde cada item contém:
+        * bundle_id: identificador único do bundle
+        * nome: nome do bundle
+        * indicacao: indicação clínica do bundle
+        * reducao_media_risco: valor numérico da redução média de risco
+        * intervalo_confianca: texto do intervalo de confiança
+        * para_germe_multirresistente: booleano indicando se o bundle é para germe multirresistente
+
+    Process steps:
+      1. Verificar se classificacao_nhsn.resultado != "confirmada": se sim, retornar decisao = "insuficiente", motivo_insuficiencia = "Recomendação disponível apenas para caso confirmado".
+      2. Verificar se bundles_disponiveis está vazio: se sim, retornar decisao = "insuficiente", motivo_insuficiencia = "Nenhum bundle compatível cadastrado".
+      3. Selecionar, entre bundles_disponiveis, o bundle compatível com o caso, considerando o resultado do NHSN e a presença/ausência de multirresistência.
+      4. NÃO recomendar bundle com para_germe_multirresistente = true quando multirresistencia.multirresistente = false (BR-012).
+      5. NÃO recomendar bundle que não esteja em bundles_disponiveis.
+      6. Redigir justificativa textual que cite explicitamente o resultado do NHSN E a situação de multirresistência.
+      7. Validar que a justificativa cita o resultado do NHSN E a situação de multirresistência: se faltar qualquer um dos dois, descartar, retornar decisao = "insuficiente", motivo_insuficiencia = "Justificativa incompleta — recomendação não aceita".
+      8. Se nenhum bundle compatível for encontrado, retornar decisao = "insuficiente", motivo_insuficiencia = "Nenhum bundle compatível cadastrado".
+      9. NÃO persistir — apenas retornar o JSON.
+      10. NÃO consultar tabelas fora do schema biobyte.
+      11. Em caso de falha do LLM, retornar erro explícito, sem recomendação parcial.
+
+  expected_output: >
+    Retornar um texto em formato JSON contendo as seguintes keys:
+    - decisao: "recomendar" | "insuficiente"
+    - bundle_recomendado_id: identificador único do bundle recomendado, ou null
+    - bundle_recomendado_nome: nome do bundle recomendado, ou null
+    - justificativa: texto da justificativa citando explicitamente o resultado do NHSN e a situação de multirresistência
+    - cita_nhsn: booleano indicando se a justificativa cita o resultado do NHSN
+    - cita_multirresistencia: booleano indicando se a justificativa cita a situação de multirresistência
+    - motivo_insuficiencia: texto com o motivo quando decisao = "insuficiente", ou null
+    - versao_prompt: versão do prompt utilizada
+```

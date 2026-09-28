@@ -1,0 +1,20 @@
+APROVADO  | UC-011 · conta as classes resistentes (caso multirresistente)
+            contagem=4.0, classes=['Aminoglicosídeo', 'Betalactâmico', 'Cefalosporina', 'Fluoroquinolona'] (gabarito: 4)
+APROVADO  | UC-011 · conta as classes resistentes (caso NÃO multirresistente)
+            contagem=1.0 (gabarito: 1)
+REPROVADO | UC-011 · aplica a regra das três classes (deve dizer SIM)
+            veredito vazio — a regra das três classes não foi aplicada
+REPROVADO | UC-011 · aplica a regra das três classes (deve dizer NÃO)
+            veredito vazio — a regra das três classes não foi aplicada
+APROVADO  | UC-008 · traduz o resultado do laboratório inteiro
+            6 antimicrobianos, 6 com classe, microrganismo=Staphylococcus aureus (gabarito: 6/6/Staphylococcus aureus)
+APROVADO  | UC-008 · recusa amostra inexistente sem inventar
+            aproveitavel=False, justificou em 1673 caracteres
+APROVADO  | UC-009 · classifica pelo critério da norma
+            classificacao=pendente (aceitos: confirmada/descartada/pendente)
+APROVADO  | UC-015 · recomenda bundle que existe no cadastro
+            bundle=Bundle de precaução de contato + descalonamento, existe no cadastro=True, justificativa=1055 car
+APROVADO  | UC-013 · redige o texto do alerta citando o achado
+            1499 caracteres; cita o achado clínico=True
+
+=== BATERIA: 7 aprovados / 2 reprovados, em 9 casos ===

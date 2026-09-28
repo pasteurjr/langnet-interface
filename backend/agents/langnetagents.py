@@ -6178,6 +6178,86 @@ from typing import Any, Dict
 '''
 
 
+def _reforcar_leitura_de_json(adapters_py: str) -> str:
+    """Garante que a saída do modelo seja lida mesmo vindo ENVOLVIDA em texto.
+
+    O leitor de saída é escrito pelo PRÓPRIO modelo, e muda a cada geração: numa
+    rodada ele trata bloco de código e chave equilibrada; na seguinte só aceita a
+    resposta que COMEÇA com chave. Quando calha a versão fraca, o modelo explica antes
+    de responder, a resposta inteira é descartada e a tarefa devolve "saída não
+    parseável" com justificativa vazia — jogando fora uma resposta boa. Medido no
+    BioByte v5 em 28/09/2026: a tradução do resultado do laboratório falhava de forma
+    intermitente, conforme o humor do modelo.
+
+    Em vez de remendar o texto que ele escreveu (que muda de nome e de forma), o leitor
+    do LangNet é acrescentado no FIM do arquivo e passa à frente dos que existirem:
+    tenta ler primeiro, e só cai no original quando não acha JSON nenhum.
+    """
+    if "def " not in adapters_py:
+        return adapters_py
+    reforco = '''
+
+# ─── Leitura da saída do modelo, reforçada pelo LangNet ───
+# O leitor que o modelo escreve muda a cada geração; este vem sempre, e passa à frente.
+def _json_de_dentro_do_texto(texto):
+    """Acha o JSON dentro de uma resposta que veio com texto em volta.
+
+    Procura o bloco ```json, depois o bloco ``` simples, depois o primeiro objeto ou
+    lista com chaves equilibradas — o que aparecer primeiro no texto manda. Devolve
+    None quando não há JSON algum, e aí quem chamou segue com o leitor original.
+    """
+    import json as _j, re as _r
+    if not isinstance(texto, str):
+        return None
+    t = texto.strip()
+    for padrao in (r"```json\s*(.+?)```", r"```\s*(\{.+?\}|\[.+?\])\s*```"):
+        m = _r.search(padrao, t, _r.S)
+        if m:
+            try:
+                return _j.loads(m.group(1).strip())
+            except Exception:
+                pass
+    pares = [("{", "}"), ("[", "]")]
+    pares.sort(key=lambda par: (t.find(par[0]) if par[0] in t else len(t) + 1))
+    for abre, fecha in pares:
+        i = t.find(abre)
+        while i >= 0:
+            nivel = 0
+            for k in range(i, len(t)):
+                if t[k] == abre:
+                    nivel += 1
+                elif t[k] == fecha:
+                    nivel -= 1
+                    if nivel == 0:
+                        try:
+                            return _j.loads(t[i:k + 1])
+                        except Exception:
+                            break
+            i = t.find(abre, i + 1)
+    return None
+
+
+def _com_leitura_reforcada(_original):
+    def _leitor(valor, *args, **kwargs):
+        achado = _json_de_dentro_do_texto(valor)
+        if achado is not None:
+            return achado
+        return _original(valor, *args, **kwargs)
+    return _leitor
+
+
+for _nome_leitor in ("_coerce_json", "_coerce_result", "_safe_json_loads",
+                     "_extract_json_block", "_parse_json", "_to_json"):
+    _orig = globals().get(_nome_leitor)
+    if callable(_orig):
+        globals()[_nome_leitor] = _com_leitura_reforcada(_orig)
+'''
+    if "_json_de_dentro_do_texto" in adapters_py:
+        return adapters_py
+    print("[CODE-GEN][LEITURA] leitor do LangNet acrescentado — passa à frente do que o modelo escreveu")
+    return adapters_py.rstrip() + "\n" + reforco + "\n"
+
+
 def _inject_task_tools_into_adapters(adapters_py: str, agents_map: Dict[str, List[str]], tasks_map: Dict[str, List[str]]) -> str:
     """Anexa AGENT_TOOLS e TASK_TOOLS dicts no fim do adapters.py.
 
@@ -6855,6 +6935,23 @@ def _generate_deterministic_adapters(tasks_yaml: str) -> str:
 
         body = _parse_task_description_to_python(desc, _blk.get('expected_output') or "")
         if not body:
+            continue
+
+        # SUBSTITUTO MECÂNICO SÓ PARA TRABALHO MECÂNICO.
+        # O servidor de agentes prefere a função determinística ao agente. Quando a tarefa
+        # é de JULGAMENTO (recomendar um pacote com justificativa, redigir o texto do
+        # alerta), o tradutor não tem o que traduzir e emite um corpo vazio de substância:
+        # abre conexão, atribui uma constante e devolve {'status': 'sucesso'}. O agente
+        # nunca era chamado e a tarefa relatava SUCESSO sem ter produzido nada — medido no
+        # BioByte v5 em 28/09/2026 em recommend_bundle_with_justification e
+        # draft_alert_text_for_care_team. Agora: sem consulta ao banco e sem conta de
+        # verdade, a função NÃO é emitida, e a tarefa cai no agente, que é quem sabe fazê-la.
+        _tem_consulta = "cur.execute(" in body
+        _tem_conta = _re.search(r"_num\(|_flt\(\s*[a-z_]+\s*[-+*/]|_safe_div\(", body)
+        if not (_tem_consulta or _tem_conta):
+            PASSOS_SEM_CODIGO_JULGAMENTO.append(task_name)
+            print(f"[CODE-GEN][ADAPTADOR] {task_name}: tarefa de julgamento — sem substituto "
+                  f"mecânico, vai para o agente")
             continue
 
         # Rastreabilidade FR/UC (do bloco traceability do tasks.yaml, derivado do ATS).
@@ -8109,6 +8206,8 @@ def _passo_e_instrucao_ao_agente(linha: str) -> bool:  # noqa: C901
 
 
 PASSOS_SEM_CODIGO: List[tuple] = []
+# Tarefas que ficaram SEM substituto mecânico por serem de julgamento — vão para o agente.
+PASSOS_SEM_CODIGO_JULGAMENTO: List[str] = []
 
 
 def _emit_logic_step(linha: str, captured_vars: List[str]):
@@ -9195,6 +9294,83 @@ def _fix_common_tool_imports(tools_py: str) -> str:
     return tools_py
 
 
+def _garantir_registro_de_ferramentas(tools_py: str, nomes: List[str]) -> str:
+    """Toda ferramenta declarada na etapa Ferramentas TEM de estar no registro.
+
+    O `tools.py` é escrito pelo modelo, e numa rodada ele monta o registro
+    (`TOOL_REGISTRY = {'database_tool': database_tool, ...}`) e na seguinte simplesmente
+    esquece. Sem registro, o servidor monta o agente sem ferramenta e toda tarefa devolve
+    "não executado — falha de ferramenta". Medido no BioByte v5 em 28/09/2026: a MESMA
+    entrada gerou um pacote que passou em 6 de 9 casos e outro que passou em 2, e a única
+    diferença era o registro ausente.
+
+    A etapa Ferramentas já diz quais existem. Aqui o registro é COMPLETADO mecanicamente:
+    o que faltar é acrescentado depois da definição do registro, sem tocar no que o modelo
+    escreveu certo.
+    """
+    import re as _re
+    if not nomes:
+        return tools_py
+    tem_registro = _re.search(r"^TOOL_REGISTRY\s*(:[^=]+)?=", tools_py, _re.M) is not None
+    faltando = [n for n in dict.fromkeys(nomes)
+                if (not tem_registro
+                    or not _re.search(rf"""["']{_re.escape(n)}["']\s*:""", tools_py))]
+    if not faltando:
+        return tools_py
+    linhas = ["", "", "# ─── Registro completado pelo LangNet ───",
+              "# A etapa Ferramentas declarou estas ferramentas; o tools.py escrito pelo modelo",
+              "# não as registrou, e sem registro o agente é montado SEM ferramenta.",
+              "# Em algumas gerações o modelo nem CRIA o registro — aí ele nasce aqui, senão",
+              "# tudo que o usa estoura com \"name 'TOOL_REGISTRY' is not defined\".",
+              "try:",
+              "    TOOL_REGISTRY",
+              "except NameError:",
+              "    TOOL_REGISTRY = {}",
+              "for _nome_ferramenta in %r:" % (faltando,),
+              "    if _nome_ferramenta in TOOL_REGISTRY and TOOL_REGISTRY.get(_nome_ferramenta):",
+              "        continue",
+              "    # O CrewAI exige um OBJETO de ferramenta, não uma função solta: registrar a",
+              "    # função crua derruba o agente com 'Input should be a valid dictionary or",
+              "    # instance of BaseTool'. Procura, nesta ordem: o objeto já pronto, uma",
+              "    # instância cujo .name seja o nome pedido, e a classe correspondente.",
+              "    def _e_ferramenta(o):",
+              "        return o is not None and hasattr(o, '_run') and hasattr(o, 'name')",
+              "    _impl = globals().get(_nome_ferramenta)",
+              "    if not _e_ferramenta(_impl):",
+              "        _impl = None",
+              "    if _impl is None:",
+              "        for _o in list(globals().values()):",
+              "            if _e_ferramenta(_o) and getattr(_o, 'name', None) == _nome_ferramenta:",
+              "                _impl = _o",
+              "                break",
+              "    if _impl is None:",
+              "        for _o in list(globals().values()):",
+              "            if isinstance(_o, type) and hasattr(_o, '_run'):",
+              "                try:",
+              "                    _cand = _o()",
+              "                except Exception:",
+              "                    continue",
+              "                if getattr(_cand, 'name', None) == _nome_ferramenta:",
+              "                    _impl = _cand",
+              "                    break",
+              "    if _impl is None:",
+              "        try:",
+              "            from tools_std import _STD_TOOLS as _std_reg",
+              "            _cand = _std_reg.get(_nome_ferramenta)",
+              "            _impl = _cand if _e_ferramenta(_cand) else None",
+              "        except Exception:",
+              "            _impl = None",
+              "    if _impl is not None:",
+              "        TOOL_REGISTRY[_nome_ferramenta] = _impl",
+              "        print(f'[tools] registro completado pelo LangNet: {_nome_ferramenta}')",
+              "    else:",
+              "        print(f'[tools] ATENCAO: {_nome_ferramenta} declarada na etapa Ferramentas "
+              "e sem implementacao encontrada')",
+              ""]
+    print(f"[CODE-GEN][FERRAMENTAS] registro completado: {faltando}")
+    return tools_py.rstrip() + "\n" + "\n".join(linhas)
+
+
 def _fix_pydantic_type_hint_typos(tools_py: str) -> str:
     """Corrige padrão inválido que o LLM comumente gera em classes BaseTool:
     ``field: "string"`` ou ``field: '''texto'''`` (sem ``str = ``). Pydantic
@@ -9416,7 +9592,12 @@ class VectorSearchTool(BaseTool):
 
     def _run(self, query: Any, top_k: int = 5) -> List[Dict[str, Any]]:
         table = os.getenv("VECTOR_TABLE")
-        text_col = os.getenv("VECTOR_TEXT_COL", "texto")
+        # VÁRIAS COLUNAS: o que dá sentido a um termo do vocabulário quase nunca cabe numa
+        # coluna só. Indexando apenas o nome do antimicrobiano, a busca por "antibiótico
+        # betalactâmico" não achava a Oxacilina — o nome sozinho não diz a classe. Aceita
+        # lista separada por vírgula e junta as colunas num texto só antes de embedar.
+        text_cols = [c.strip() for c in os.getenv("VECTOR_TEXT_COL", "texto").split(",") if c.strip()]
+        text_col = text_cols[0]
         id_col = os.getenv("VECTOR_ID_COL", "id")
         if not table:
             raise RuntimeError(
@@ -9431,7 +9612,8 @@ class VectorSearchTool(BaseTool):
             charset='utf8mb4', collation='utf8mb4_general_ci')
         try:
             cur = conn.cursor(dictionary=True)
-            cur.execute(f"SELECT `{id_col}`, `{text_col}` FROM `{table}` LIMIT 500")
+            _cols = ", ".join(f"`{c}`" for c in dict.fromkeys([id_col] + text_cols))
+            cur.execute(f"SELECT {_cols} FROM `{table}` LIMIT 500")
             rows = cur.fetchall()
         finally:
             conn.close()
@@ -9443,9 +9625,10 @@ class VectorSearchTool(BaseTool):
 
         scored = []
         for r in rows:
-            rv = _embed(str(r.get(text_col) or ""))
+            texto = " — ".join(str(r.get(c)) for c in text_cols if r.get(c) is not None)
+            rv = _embed(texto)
             scored.append({"id": r.get(id_col), "similarity": round(cos(qv, rv), 4),
-                           "texto": r.get(text_col)})
+                           "texto": texto})
         scored.sort(key=lambda x: -x["similarity"])
         return scored[:top_k]
 
@@ -11429,6 +11612,10 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Corrige typo comum do LLM: ``field: "string"`` sem ``str = `` (quebra Pydantic).
     tools_py = _fix_common_tool_imports(tools_py)
     tools_py = _fix_pydantic_type_hint_typos(tools_py)
+    # o registro vem da etapa Ferramentas (via AGENT_TOOLS/TASK_TOOLS), não do modelo
+    _nomes_declarados = sorted({n for _l in list(agents_map.values()) + list(tasks_map.values())
+                                for n in (_l or [])})
+    tools_py = _garantir_registro_de_ferramentas(tools_py, _nomes_declarados)
     # Robustez: garante args_schema válido em toda tool (senão CrewAI quebra o startup).
     tools_py = _ensure_tools_have_args_schema(tools_py)
     # GARANTIA de que o app SOBE: o tools.py é LLM-heavy e às vezes sai com erro de sintaxe
@@ -11460,6 +11647,7 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # Reescreve todos os `<task>_input_func` gerados pelo LLM pra sempre passar
     # o `state["input_data"]` como inputs do agente (evita hardcode/exemplo do LLM).
     adapters_py = _rewrite_input_funcs_pass_input_data(adapters_py)
+    adapters_py = _reforcar_leitura_de_json(adapters_py)
 
     # Gera funções <task>_deterministic(input_data) parseando os passos SQL
     # canonicais das descriptions do tasks.yaml. O websocket_server chama
