@@ -7185,6 +7185,62 @@ def _derive_output_schema(task_name: str, task_cfg: dict, model: Optional[dict])
     return {"type": "object", "required": required, "properties": props}
 
 
+def _injetar_rastreabilidade_do_documento(tasks_yaml: str, ats_md: str) -> str:
+    """Traz do documento de Agentes e Tarefas o caso de uso e o requisito de cada tarefa.
+
+    O documento diz, por tarefa, "UC Relacionado" e "RF Relacionado". Quando o formato do
+    tasks.yaml voltou ao padrão do CrewAI (24/09/2026), a injeção desse bloco saiu do
+    prompt — e nada a repôs. Consequências medidas no BioByte v5 em 28/09/2026:
+      · a matriz de rastreabilidade do pacote saía VAZIA (99 requisitos, zero ligações);
+      · o casamento tela↔tarefa, que usa o caso de uso como ponte entre o português da
+        interface e o inglês das tarefas, nunca disparava — e quatro das cinco telas de
+        agente ficavam com o botão de executar apagado.
+
+    A informação sempre esteve no documento. Aqui ela é copiada, mecanicamente.
+    """
+    import re as _re
+    if not tasks_yaml or not ats_md:
+        return tasks_yaml
+    # Cada bloco de tarefa do documento: nome + UC + RF
+    mapa = {}
+    for bloco in _re.split(r"(?m)^#{3,4}\s+", ats_md):
+        mn = _re.search(r"\|\s*\*\*Nome\*\*\s*\|\s*`?([a-z_][\w]*)`?\s*\|", bloco)
+        if not mn:
+            continue
+        nome = mn.group(1)
+        muc = _re.search(r"\|\s*\*\*UC[^|]*\|([^|]*)\|", bloco)
+        ucs = _re.findall(r"UC-\d+", muc.group(1)) if muc else []
+        frs = []
+        mrf = _re.search(r"\|\s*\*\*(?:RF|FR)[^|]*\|([^|]*)\|", bloco)
+        if mrf:
+            frs = _re.findall(r"(?:FR|RF)-\d+", mrf.group(1))
+        if ucs or frs:
+            mapa[nome] = {"uc": sorted(set(ucs)), "fr": sorted(set(frs))}
+    if not mapa:
+        print("[CODE-GEN][RASTREABILIDADE] o documento não trouxe UC/RF por tarefa")
+        return tasks_yaml
+
+    # Insere `traceability:` logo após o nome da tarefa no YAML, sem tocar no resto.
+    linhas = tasks_yaml.split("\n")
+    saida, i, postas = [], 0, 0
+    while i < len(linhas):
+        l = linhas[i]
+        saida.append(l)
+        m = _re.match(r"^([a-z_][\w]*):\s*$", l)
+        if m and m.group(1) in mapa and "traceability" not in tasks_yaml.split(m.group(1) + ":")[1][:400]:
+            t = mapa[m.group(1)]
+            saida.append("  traceability:")
+            if t["uc"]:
+                saida.append("    uc: [%s]" % ", ".join(t["uc"]))
+            if t["fr"]:
+                saida.append("    fr: [%s]" % ", ".join(t["fr"]))
+            postas += 1
+        i += 1
+    print(f"[CODE-GEN][RASTREABILIDADE] caso de uso e requisito copiados do documento "
+          f"para {postas} tarefa(s) do tasks.yaml")
+    return "\n".join(saida)
+
+
 def _annotate_tasks_output_schema(tasks_yaml: str, schema_sql: str) -> str:
     """Injeta `output_schema:` por task no tasks.yaml (para o ws-server validar a saída do agente)."""
     if not tasks_yaml or not schema_sql:
@@ -11904,6 +11960,7 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # agente contra esse schema (fail-loud se faltar obrigatório). O tasks.yaml anotado flui abaixo.
     if tasks_yaml and _schema_looks_real(_schema_sql_cg):
         _before = tasks_yaml
+        tasks_yaml = _injetar_rastreabilidade_do_documento(tasks_yaml, spec_md or "")
         tasks_yaml = _annotate_tasks_output_schema(tasks_yaml, _schema_sql_cg)
         if tasks_yaml != _before:
             print("[CODE-GEN][CONTRATO] output_schema injetado nas tasks agênticas do tasks.yaml")
@@ -12644,7 +12701,7 @@ def _generate_business_screens(ui_spec: dict, ws_port: int, project_name: str, t
         module = _infer_module(s, kind)
 
         if kind == "rich":
-            src = _rich_screen(s, comp_name, entity, model, task_fields)
+            src = _rich_screen(s, comp_name, entity, model, task_fields, schema_sql)
         elif kind == "crud":
             src = _crud_screen(s, comp_name, entity, model.get(entity, {}))
         elif kind == "report":
@@ -12829,7 +12886,16 @@ def _template_ws_client(ws_port: int) -> str:
         '    let ws;\n'
         '    try { ws = new WebSocket(WS_URL); } catch (e) { reject(e); return; }\n'
         '    const timer = setTimeout(() => { try { ws.close(); } catch (e) {} reject(new Error("timeout")); }, 300000);\n'
-        '    ws.onopen = () => ws.send(JSON.stringify({ type: "execute_task", data: { task_name: taskName, input_data: inputData || {} } }));\n'
+        '    // ABRIR A RODADA ANTES DE PEDIR A TAREFA.\n'
+        '    // O servidor de agentes só aceita `execute_task` depois de `iniciar_execucao`;\n'
+        '    // sem isso toda tela de agente respondia "Execução não foi iniciada. Chame\n'
+        '    // \'iniciar_execucao\' primeiro." e o operador via um erro técnico sem saída.\n'
+        '    // Medido no BioByte v5 em 28/09/2026: nenhuma das cinco tarefas de IA rodava\n'
+        '    // pela interface do hospital, embora rodassem pela Bancada.\n'
+        '    ws.onopen = () => {\n'
+        '      ws.send(JSON.stringify({ type: "iniciar_execucao", data: {} }));\n'
+        '      setTimeout(() => ws.send(JSON.stringify({ type: "execute_task", data: { task_name: taskName, input_data: inputData || {} } })), 300);\n'
+        '    };\n'
         '    ws.onmessage = (ev) => {\n'
         '      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }\n'
         '      if (m.type === "task_completed" || m.type === "task_result") {\n'
@@ -12855,6 +12921,27 @@ _CRUD_VERBS = {"novo": "criar", "cadastrar": "criar", "criar": "criar", "adicion
                "editar": "atualizar", "atualizar": "atualizar", "salvar": "atualizar", "alterar": "atualizar",
                "excluir": "excluir", "remover": "excluir", "deletar": "excluir", "apagar": "excluir",
                "listar": "listar", "consultar": "listar", "buscar": "listar", "visualizar": "listar", "ver": "listar"}
+
+
+def _tabela_da_chave_estrangeira(campo: str, schema_sql: str) -> Optional[str]:
+    """A tabela que o campo aponta, lida do DDL. `caso_id` → `casos_clinicos`.
+
+    Procura a declaração `FOREIGN KEY (campo) REFERENCES tabela`. Sem isso, cai no
+    palpite pelo nome (`<algo>_id` → tabela no plural), que cobre os casos em que o DDL
+    não declara a chave.
+    """
+    import re as _re
+    if not campo or not campo.endswith("_id") or not schema_sql:
+        return None
+    m = _re.search(rf"FOREIGN KEY\s*\(\s*`?{_re.escape(campo)}`?\s*\)\s*REFERENCES\s*`?(\w+)`?",
+                   schema_sql, _re.I)
+    if m:
+        return m.group(1)
+    base = campo[:-3]
+    for cand in (base + "s", base + "es", base):
+        if _re.search(rf"CREATE TABLE\s+`?{_re.escape(cand)}`?", schema_sql, _re.I):
+            return cand
+    return None
 
 
 def _resolve_task_target(target, task_fields, screen_name=None, screen_ucs=None, entity=None, kind=None):
@@ -13130,7 +13217,7 @@ def _screen_rich_types(screen: dict) -> set:
 
 
 
-def _componentes_jsx(comps, action_label):
+def _componentes_jsx(comps, action_label, schema_sql=""):
     """Renderiza TODOS os tipos de componente que a Especificação de Interface declara.
 
     O emissor antigo desenhava só campos de texto/número/data/seleção. Todo o resto que a
@@ -13151,6 +13238,7 @@ def _componentes_jsx(comps, action_label):
     campo_upload = next((c.get("field") for c in comps
                          if (c.get("type") or "").lower() == "file-upload" and c.get("field")), "")
 
+    _lista_fk = []   # campos que apontam para outra tabela: a lista vem do banco
     def _lbl(c):
         return (c.get("label") or _humanize(c.get("field") or "")).replace('"', "'")
 
@@ -13172,12 +13260,30 @@ def _componentes_jsx(comps, action_label):
             opcoes = (c.get("props") or {}).get("options") or c.get("options") or []
             opts = "".join('<option key="' + str(o) + '" value="' + str(o) + '">' + str(o) + '</option>'
                            for o in opcoes if isinstance(o, (str, int, float)))
-            partes.append(
-                '<div style={{marginBottom:12}}><label style={{display:"block",fontSize:13,fontWeight:600,color:"#334155",marginBottom:4}}>'
-                + _lbl(c) + '</label>'
-                + '<select value={form["' + campo + '"]||""} onChange={(e)=>setForm({...form,["' + campo + '"]:e.target.value})} '
-                + 'style={{width:"100%",padding:"9px 12px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:14}}>'
-                + '<option value="">Selecione…</option>' + opts + '</select></div>')
+            # CAMPO QUE APONTA PARA OUTRA TABELA: a lista vem do BANCO, não de exemplo.
+            # A Especificação de Interface traz opções ILUSTRATIVAS ("CASO-2024-0148 —
+            # Hemocultura · Leito UTI-07"). Emitidas como estão, o operador escolhia um caso
+            # que não existe e o agente respondia, com razão, que não achou o registro.
+            # Medido no BioByte v5 em 28/09/2026: nenhuma tarefa de IA conseguia trabalhar
+            # pela tela porque o caso escolhido nunca batia com o banco.
+            _tab_fk = _tabela_da_chave_estrangeira(campo, schema_sql)
+            if _tab_fk:
+                _lista_fk.append((campo, _tab_fk))
+                partes.append(
+                    '<div style={{marginBottom:12}}><label style={{display:"block",fontSize:13,fontWeight:600,color:"#334155",marginBottom:4}}>'
+                    + _lbl(c) + '</label>'
+                    + '<select value={form["' + campo + '"]||""} onChange={(e)=>setForm({...form,["' + campo + '"]:e.target.value})} '
+                    + 'style={{width:"100%",padding:"9px 12px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:14}}>'
+                    + '<option value="">Selecione…</option>'
+                    + '{(opcoesDe["' + campo + '"]||[]).map((o)=>(<option key={o.valor} value={o.valor}>{o.rotulo}</option>))}'
+                    + '</select></div>')
+            else:
+                partes.append(
+                    '<div style={{marginBottom:12}}><label style={{display:"block",fontSize:13,fontWeight:600,color:"#334155",marginBottom:4}}>'
+                    + _lbl(c) + '</label>'
+                    + '<select value={form["' + campo + '"]||""} onChange={(e)=>setForm({...form,["' + campo + '"]:e.target.value})} '
+                    + 'style={{width:"100%",padding:"9px 12px",border:"1px solid #cbd5e1",borderRadius:8,fontSize:14}}>'
+                    + '<option value="">Selecione…</option>' + opts + '</select></div>')
         elif t == "checkbox":
             partes.append(
                 '<label style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,fontSize:14,color:"#334155"}}>'
@@ -13277,10 +13383,11 @@ def _componentes_jsx(comps, action_label):
             for campo, lbl in indicadores)
         bloco_ind = '<div style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:8,marginBottom:6}}>' + cartoes + '</div>'
 
-    return (bloco_ind + bloco_leitura + "".join(partes)), precisa_grafico, precisa_upload
+    return (bloco_ind + bloco_leitura + "".join(partes)), precisa_grafico, precisa_upload, _lista_fk
 
 
-def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fields: dict) -> str:
+def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fields: dict,
+                 schema_sql: str = "") -> str:
     """Renderiza uma tela RICA (mapa Leaflet com desenho, gráfico Recharts, upload) que dispara a
     task via wsClient. MVP genérico: geoespacial é um tipo entre vários. Carrega data-uc/data-fr."""
     comps = screen.get("components") or []
@@ -13327,7 +13434,8 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
             break
     # TODOS os componentes declarados na Especificação de Interface viram interface de verdade
     # (indicadores, valores de leitura, gráficos, tabelas, listas, marcações), não só os campos.
-    inputs_jsx, _quer_grafico, _quer_upload = _componentes_jsx(comps, action_label)
+    inputs_jsx, _quer_grafico, _quer_upload, _campos_fk = _componentes_jsx(
+        comps, action_label, schema_sql)
     has_chart = has_chart or _quer_grafico
     has_upload = has_upload and _quer_upload
 
@@ -13359,7 +13467,9 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
                  '</BarChart></ResponsiveContainer>}</div>') if (has_chart and not _quer_grafico) else ""
 
     # Imports: só puxa Leaflet/hooks de mapa quando a tela TEM mapa (senão 'L is not defined' quebra o build).
-    react_hooks = ["useEffect", "useRef", "useState"] if has_map else ["useState"]
+    # `useEffect` é sempre necessário: a tela busca no banco a lista dos campos que
+    # apontam para outra tabela (caso, critério, antimicrobiano) assim que abre.
+    react_hooks = ["useEffect", "useRef", "useState"] if has_map else ["useEffect", "useState"]
     imports = ['import React, { ' + ", ".join(react_hooks) + ' } from "react";',
                'import { runTask } from "./wsClient";',
                # Contexto compartilhado entre telas (atendimento/caso corrente): a tela rica HERDA
@@ -13414,6 +13524,29 @@ def _rich_screen(screen: dict, comp_name: str, entity: str, model: dict, task_fi
 // Traceability: UC __UC__ | FR __FR__  (tela rica auto-gerada por LangNet)
 export default function __COMP__() {
 __STATE__  const [form, setForm] = useState(() => getCarry());   // pré-preenche com o contexto (caso/paciente corrente)
+  // OPÇÕES QUE VÊM DO BANCO. Um campo que aponta para outra tabela (caso, critério,
+  // antimicrobiano) não pode oferecer exemplo ilustrativo: o operador escolheria um
+  // registro que não existe e o agente responderia, com razão, que não o encontrou.
+  const [opcoesDe, setOpcoesDe] = useState({});
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      const mapa = {};
+      for (const [campo, tabela] of __CAMPOS_FK__) {
+        try {
+          const r = await runTask("listar_" + tabela, {});
+          const linhas = (r && (r.rows || r.items || r.dados)) || [];
+          mapa[campo] = linhas.slice(0, 200).map((l) => {
+            const rotulo = l.nome || l.titulo || l.descricao || l.identificador_amostra
+              || l.numero_prontuario || l.versao || l.email || String(l.id || "");
+            return { valor: String(l.id != null ? l.id : rotulo), rotulo: String(rotulo) };
+          });
+        } catch (e) { /* a tela segue sem a lista; o campo fica vazio, não inventado */ }
+      }
+      if (vivo) setOpcoesDe(mapa);
+    })();
+    return () => { vivo = false; };
+  }, []);
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -13536,6 +13669,8 @@ __GEOMSUBMIT__      if (!tarefa) { setErr("Ação não vinculada a uma tarefa do
         "__CHART__": chart_jsx,
         "__SECUNDARIAS__": secundarias_jsx,
         "__RESULTFALLBACK__": result_fallback,
+        # os campos que apontam para outra tabela, para a tela buscar a lista no banco
+        "__CAMPOS_FK__": json.dumps([[c, t] for c, t in (_campos_fk or [])], ensure_ascii=False),
     }
     for k, v in repl.items():
         tmpl = tmpl.replace(k, v)
