@@ -72,6 +72,19 @@
 
 ---
 
+### Cena 5b · Quem implementa cada ferramenta
+
+**Tela:** `telas/61-ferramentas-resultado.png`
+
+**Narração:**
+> Antes de gerar o sistema, uma pergunta precisa de resposta: cada ferramenta que os agentes vão usar, de onde vem? Esta etapa faz o inventário. Três ferramentas — consulta ao banco, leitura de dados estruturados e busca por semelhança — e as três com implementação declarada, nenhuma pendente.
+>
+> Isso não é burocracia. Sem essa declaração, quem monta o sistema improvisa; e um agente montado sem ferramenta responde, educadamente, que não conseguiu obter o dado.
+
+**Produção:** 20 segundos. Destaque a coluna de origem e o contador "3 com implementação · 0 pendentes".
+
+---
+
 ### Cena 6 · O modelo de dados
 
 **Tela:** `telas/06b-modelo-antibiograma.png`
@@ -116,6 +129,30 @@
 
 ---
 
+### Cena 9b · De onde saem os casos de teste
+
+**Tela:** `telas/64-grafo-causa-efeito.png`
+
+**Narração:**
+> Os casos de teste não são escritos à mão. Esta etapa lê cada caso de uso e monta um grafo de causa e efeito. À esquerda, as causas: as ações do ator e as condições do mundo. À direita, os efeitos: o que o sistema responde. No meio, as combinações — este efeito só acontece se estas causas forem verdadeiras e aquela for falsa.
+
+**Produção:** 22 segundos. Destaque um efeito e siga os arcos até as causas que o disparam. Mostre um círculo de negação.
+
+---
+
+### Cena 9c · A tabela de decisão e o caso pronto
+
+**Telas:** `telas/65-tabela-de-decisao.png` e `telas/66-casos-de-teste-texto.png`
+
+**Narração:**
+> Do grafo sai a tabela de decisão. Cada coluna é uma combinação possível — e cada coluna vira um caso de teste. Trinta e um casos de uso, quatrocentos e vinte e três casos de teste.
+>
+> E cada caso vem escrito: as entradas, que são as ações do ator, e a resposta esperada do sistema. É contra isso que o sistema vai ser cobrado.
+
+**Produção:** 24 segundos. Corte da tabela para o caso escrito, mostrando que a coluna virou o caso.
+
+---
+
 ## Bloco 3 — As duas interfaces
 
 > Nota de produção: este bloco existe porque há **duas** coisas para ver, e elas são diferentes. A interface do hospital é o que o médico usa. A Bancada de Execução é o nosso instrumento — é onde se vê a rede rodando por dentro.
@@ -141,6 +178,19 @@
 > E aqui está a parte honesta. Os campos estão vazios. A tela está desenhada, mas o que a alimenta — listar os casos, carregar os critérios — ainda não tem quem execute. Ao separar o que é trabalho de agente, a versão 5 deixou de gerar tarefa para o que é convencional; e o lado convencional ainda não ganhou o seu próprio executor. É o item mais importante da lista do que falta.
 
 **Produção:** 26 segundos. Destaque um indicador vazio e um seletor vazio. Não esconda: esta cena é o motivo de a versão 6 existir.
+
+---
+
+### Cena 10c · O protótipo, antes de existir sistema
+
+**Tela:** `telas/73-prototipo-tela.png`
+
+**Narração:**
+> Antes de gerar o sistema, as telas já podem ser navegadas. Isto é o protótipo: as mesmas trinta telas, ligadas pelo menu, com dados de exemplo. Aqui está a trilha de auditoria — filtros por período e por usuário, a verificação de integridade do encadeamento, e as entradas com a marca da entrada anterior.
+>
+> É o que a tela deve fazer. Guarde esta imagem: daqui a pouco veremos a mesma tela no sistema gerado.
+
+**Produção:** 22 segundos. Destaque o selo "Encadeamento íntegro · 1.284 entradas verificadas".
 
 ---
 
@@ -181,6 +231,21 @@
 
 ---
 
+### Cena 13b · A bateria, contra o gabarito
+
+**Tela:** `telas/64-grafo-causa-efeito.png` (retomada) — narração sobre o resultado da bateria
+
+**Narração:**
+> Os casos de teste não servem de enfeite. Plantamos no banco dois casos com gabarito conhecido e rodamos as tarefas do sistema contra eles. Sete dos nove casos passam, e passam três vezes seguidas — não é sorte.
+>
+> Passa a contagem das classes resistentes: quatro num caso, uma no outro. Passa a tradução do resultado do laboratório, com os seis antimicrobianos e as suas classes. Passa a recusa de uma amostra que não existe, sem inventar nada. Passa a recomendação do pacote, com a justificativa que o médico vai ler. E passa o texto do alerta.
+>
+> Falham dois, e são o mesmo: a regra das três classes. O sistema conta certo e não conclui.
+
+**Produção:** 30 segundos. Mostre o resultado da bateria em texto sobre a tela. Destaque o "7 de 9" e, logo depois, o "falham dois, e são o mesmo".
+
+---
+
 ### Cena 14 · O que ainda falta, dito na cara
 
 **Tela:** `telas/40-bancada-fim.png`
@@ -218,17 +283,32 @@
 
 ## Anexo de produção — o que está provado e o que não está
 
-Para quem monta o vídeo: só narre como funcionando o que está nesta lista.
+Para quem monta o vídeo: só narre como funcionando o que está nesta lista. Medido no
+sistema implantado em 28/09/2026, com dois casos clínicos plantados no banco.
 
-**Provado, com tela:**
-- A separação entre agêntico e convencional percorre requisitos, casos de uso, agentes e tarefas, interface e menu do sistema gerado.
+**Provado, com tela e com gabarito:**
+- A separação entre agêntico e convencional percorre requisitos, casos de uso, agentes e
+  tarefas, interface e o menu do sistema gerado.
 - Cinco tarefas em dois agentes, contra quarenta e cinco da versão anterior.
-- A rede roda inteira na Bancada: a marca sai do início, passa pelas cinco tarefas e chega ao fim.
-- As tarefas consultam o banco de verdade. A contagem de classes resistentes bate com o gabarito plantado: quatro numa amostra, uma na outra.
+- As três ferramentas têm implementação declarada; a busca por semelhança acerta as três
+  consultas de prova em primeiro lugar.
+- Trinta e um casos de uso viram quatrocentos e vinte e três casos de teste, pelo grafo de
+  causa e efeito.
+- O protótipo navega as trinta telas com dados de exemplo.
+- A rede roda inteira na Bancada: a marca passa pelas cinco tarefas e chega ao fim.
+- **A bateria passa em 7 dos 9 casos, três rodadas seguidas**: a contagem das classes
+  resistentes (4 e 1), a tradução completa do laboratório (6 antimicrobianos com classe),
+  a recusa de amostra inexistente sem inventar, a classificação pela norma, a recomendação
+  do pacote com justificativa e o texto do alerta.
 - Quando uma tarefa falha, a transição seguinte não dispara.
 
 **Não provado — não narre como pronto:**
-- A decisão de multirresistência (a regra das três classes) não é preenchida: a conta sai, o veredito não.
-- Das cinco tarefas de agente, só duas são alcançáveis pelas telas do hospital; as outras três só rodam pela Bancada.
-- As telas convencionais não têm executor: os botões não estão ligados a nada.
+- **A regra das três classes não é aplicada**: a contagem sai certa e o veredito volta
+  vazio. São os 2 casos que a bateria reprova.
+- As telas convencionais não têm executor: os botões não estão ligados a nada. A mesma
+  trilha de auditoria que o protótipo navega aparece vazia no sistema gerado.
+- Das cinco tarefas de agente, só duas são alcançáveis pelas telas do hospital; as outras
+  três só rodam pela Bancada.
+- A etapa de casos de teste aponta 36 casos contraditórios, onde falta na tabela a causa
+  que dispara a exceção.
 - A conferência de qualidade das tarefas aponta quatro elementos faltando em todas as cinco.
