@@ -7601,6 +7601,55 @@ def _parse_schema_tables_full(schema_sql: str) -> Dict[str, str]:
     return tables
 
 
+_AJUDA_DERIVADAS = '''
+
+def _colunas_derivadas(tabela):
+    """Colunas NOT NULL sem valor padrão que o SISTEMA preenche, não o operador.
+
+    Identificador anônimo e marca de conteúdo são derivados: ninguém os digita numa tela.
+    Sem isto o cadastro morria com "Field 'x' doesn't have a default value".
+    """
+    import os, mysql.connector
+    conn = mysql.connector.connect(
+        host=os.getenv('DB_HOST', 'localhost'), port=int(os.getenv('DB_PORT', '3306')),
+        user=os.getenv('DB_USER', 'root'), password=os.getenv('DB_PASSWORD', ''),
+        database=os.getenv('DB_NAME', ''), charset='utf8mb4', collation='utf8mb4_general_ci')
+    try:
+        cur = conn.cursor(dictionary=True)
+        cur.execute(
+            "SELECT COLUMN_NAME, DATA_TYPE FROM information_schema.COLUMNS "
+            "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=%s AND IS_NULLABLE='NO' "
+            "AND COLUMN_DEFAULT IS NULL AND EXTRA NOT LIKE '%%auto%%' AND COLUMN_KEY<>'PRI'",
+            [tabela])
+        return {r['COLUMN_NAME']: r['DATA_TYPE'] for r in cur.fetchall()}
+    except Exception:
+        return {}
+    finally:
+        try: conn.close()
+        except Exception: pass
+
+
+_DERIVADAS_CACHE = {}
+
+
+def _completar_derivadas(tabela, valores, entrada):
+    """Preenche o que o sistema deriva e o operador não tem como informar."""
+    import re as _r, uuid as _u, hashlib as _h, json as _j
+    if tabela not in _DERIVADAS_CACHE:
+        _DERIVADAS_CACHE[tabela] = _colunas_derivadas(tabela)
+    for col, tipo in _DERIVADAS_CACHE[tabela].items():
+        if col in valores and valores[col] is not None:
+            continue
+        if _r.search(r'uuid|guid', col, _r.I):
+            valores[col] = str(_u.uuid4())
+        elif _r.search(r'hash|marca|fingerprint', col, _r.I) and not _r.search(r'senha|password', col, _r.I):
+            base = _j.dumps({k: str(v) for k, v in sorted((entrada or {}).items())}, ensure_ascii=False)
+            valores[col] = _h.sha256(base.encode('utf-8')).hexdigest()
+    return valores
+
+'''
+
+
 def _generate_crud_adapters(entities: List[str], schema_sql: str,
                             existing_fns: Optional[set] = None) -> str:
     """Gera listar_/obter_/atualizar_/excluir_<entidade>_deterministic pra cada
@@ -7690,6 +7739,11 @@ def _generate_crud_adapters(entities: List[str], schema_sql: str,
             # do schema (ex.: usuarios.status DEFAULT 'Ativo' virava NULL → NOT NULL violado).
             f"        _vals = {{{ins_pairs}}}\n"
             "        _ins = {k: v for k, v in _vals.items() if v is not None}\n"
+            # COLUNA QUE O SISTEMA DERIVA, não o operador: identificador anônimo, marca de
+            # conteúdo. São obrigatórias e não têm valor padrão — o cadastro pela tela morria
+            # com \"Field 'uuid_anonimo' doesn't have a default value\" e o operador via um erro
+            # de banco sem entender o que fazer. Medido no BioByte v5 em 28/09/2026.
+            f"        _ins = _completar_derivadas('{ent}', _ins, input_data)\n"
             f"        cur.execute(\"INSERT INTO {ent}(\" + \", \".join(_ins) + \") VALUES(\" + \", \".join([\"%s\"] * len(_ins)) + \")\", list(_ins.values()))\n"
             f"        cur.execute(\"SELECT {pk} AS id FROM {ent} WHERE {uniq}=%s ORDER BY created_at DESC LIMIT 1\", [input_data.get('{uniq}')])\n"
             "        _row = cur.fetchone(); _new_id = _row['id'] if _row else None\n"
@@ -11827,6 +11881,8 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         import re as _re_fns
         _existing_fns = set(_re_fns.findall(r"def\s+(\w+)\s*\(", adapters_py))
         _crud_snippet = _generate_crud_adapters(_entities, _schema_sql_cg, _existing_fns)
+        if _crud_snippet and "_completar_derivadas" not in adapters_py:
+            _crud_snippet = _AJUDA_DERIVADAS + _crud_snippet
         if _crud_snippet:
             if not _list_helper_added:
                 adapters_py = adapters_py.rstrip() + "\n" + _LIST_HELPER

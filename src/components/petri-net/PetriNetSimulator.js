@@ -10,6 +10,7 @@
 import { GuardEvaluator } from './GuardEvaluator';
 import { PlaceProcessor } from './PlaceProcessor';
 import { LogicaPlacesConcluida } from './LogicaPlacesConcluida';
+import { FakeWebSocket } from './utils_exec/fakeWebSocket';
 
 export class PetriNetSimulator {
   constructor(petriNet) {
@@ -25,6 +26,14 @@ export class PetriNetSimulator {
     this.guardEvaluator = new GuardEvaluator(petriNet, this.markingVector);
     this.logicaPlacesConcluida = new LogicaPlacesConcluida(petriNet, this.markingVector);
     this.placeProcessor = new PlaceProcessor(petriNet, this.markingVector);
+    // O INTERCEPTADOR DA CONVERSA.
+    // O código de cada lugar abre a sua própria conversa com o servidor de agentes
+    // (`new WebSocket(...)`). Sem interceptar, essa conversa passa direto pelo navegador e
+    // o cliente central nunca a vê — por isso os painéis de Inputs, Execução e Etiquetas
+    // ficavam em "Aguardando...", mesmo com a rede inteira rodando e as tarefas
+    // respondendo. Com o interceptador, toda conversa passa pelo cliente central, que
+    // distribui as etiquetas para os painéis. Medido no BioByte v5 em 28/09/2026.
+    this.placeProcessor.WebSocketClass = FakeWebSocket;
     
     // Configurar callbacks do processador de places
     this.placeProcessor.setCallbacks({
