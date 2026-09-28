@@ -4350,7 +4350,11 @@ def _parse_tools_from_spec(md: str) -> Dict[str, Dict[str, List[str]]]:
             tools = _re.search(r"\|\s*\*\*\s*Tools\s*\*\*\s*\|\s*([^|]+?)\s*\|", block)
             if not (nome and tools):
                 continue
-            name = nome.group(1).strip()
+            # O documento de Agentes e Tarefas é markdown: o nome vem em `crase`.
+            # A crase viajava para dentro da chave e TUDO que procura pelo nome puro
+            # errava — a etapa Ferramentas mostrava "tarefa:`nome`" e o servidor de
+            # agentes montava o agente sem ferramenta. Limpo na ORIGEM, uma vez só.
+            name = nome.group(1).strip().strip("`").strip()
             raw_tools = tools.group(1)
             # PRIMEIRO remove parênteses com conteúdo (evita quebrar vírgulas
             # internas em nomes tipo "database_tool (CRUD, histórico)").
