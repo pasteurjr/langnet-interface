@@ -6477,7 +6477,14 @@ _LIST_HELPER = (
     "        return None\n"
     "    t = (t or '').upper()\n"
     "    if t in ('INT', 'BIGINT', 'TINYINT'):\n"
-    "        try: return int(float(str(v).strip().replace('%', '')))\n"
+    "        if isinstance(v, bool):\n"
+    "            return int(v)\n"
+    "        _s = str(v).strip().lower()\n"
+    "        if _s in ('true', 'verdadeiro', 'sim', 'yes'):\n"
+    "            return 1\n"
+    "        if _s in ('false', 'falso', 'nao', 'não', 'no'):\n"
+    "            return 0\n"
+    "        try: return int(float(_s.replace('%', '')))\n"
     "        except Exception: return None\n"
     "    if t in ('FLOAT', 'DOUBLE', 'DECIMAL'):\n"
     "        s = str(v).strip().lower().replace('%', '')\n"
@@ -6565,11 +6572,21 @@ _LIST_HELPER = (
     "        if obj.get(k) is None:\n"
     "            continue\n"
     "        t = spec.get('type'); types = t if isinstance(t, list) else [t]\n"
-    "        if 'number' in types or 'integer' in types:\n"
+    "        if 'boolean' in types:\n"
+    "            _b = str(obj[k]).strip().lower()\n"
+    "            if isinstance(obj[k], bool):\n"
+    "                pass\n"
+    "            elif _b in ('true', 'verdadeiro', 'sim', 'yes', '1'):\n"
+    "                obj[k] = True\n"
+    "            elif _b in ('false', 'falso', 'nao', 'não', 'no', '0'):\n"
+    "                obj[k] = False\n"
+    "        elif 'number' in types or 'integer' in types:\n"
     "            _n = _cv(obj[k], 'FLOAT' if 'number' in types else 'INT')\n"
     "            if _n is None:\n"
     "                _n = (spec.get('coerce_from_enum') or {}).get(str(obj[k]).strip().lower())\n"
-    "            obj[k] = _n\n"
+    "            # o que não se converte fica como veio: apagar o valor esconderia a falha\n"
+    "            if _n is not None:\n"
+    "                obj[k] = _n\n"
     "        elif 'string' in types and isinstance(obj[k], (dict, list)):\n"
     "            obj[k] = _json.dumps(obj[k], ensure_ascii=False)\n"
     "    missing = [k for k in ((schema or {}).get('required') or []) if obj.get(k) in (None, '', [])]\n"
@@ -7157,7 +7174,12 @@ def _derive_output_schema(task_name: str, task_cfg: dict, model: Optional[dict])
     props, required = {}, []
     for f, hint in raw_fields.items():
         h = (hint or "").lower()
-        if f in coltype:
+        if "bool" in h:
+            # O documento diz "booleano": vale o que a tarefa decide, não o tipo físico da
+            # coluna. TINYINT(1) é como o MySQL guarda booleano; tratá-lo como inteiro fazia
+            # a coerção apagar o `true` do agente (medido no BioByte v5, 29/09/2026).
+            jt = "boolean"
+        elif f in coltype:
             jt = _JT.get(coltype[f], "string")
         elif any(k in h for k in ("json", "objeto", "array", "lista")):
             jt = "string"          # objeto/array serão persistidos como JSON string (coluna TEXT)
