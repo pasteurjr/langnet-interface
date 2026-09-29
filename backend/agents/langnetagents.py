@@ -10487,12 +10487,26 @@ def _emit_declared_tools(tools_py: str, tools_doc: dict) -> str:
         # As classes têm de vir ANTES do TOOL_REGISTRY, que as instancia: emitidas no fim do
         # arquivo, o import quebrava com NameError na subida do servidor de agentes.
         bloco = "\n\n".join(blocos_novos)
-        _m_reg = _re.search(r"(?m)^TOOL_REGISTRY\s*=", tools_py)
+        # O modelo às vezes anota o tipo — `TOOL_REGISTRY: Dict[str, BaseTool] = {` — e a
+        # busca por `TOOL_REGISTRY =` não achava: a classe ia para o FIM do arquivo, depois do
+        # laço que completa o registro, e a ferramenta nunca era registrada. O agente recebia
+        # o substituto "não configurada" no lugar da regra real (BioByte v5, 29/09/2026).
+        _m_reg = _re.search(r"(?m)^TOOL_REGISTRY\s*(?::[^=\n]*)?=", tools_py)
         if _m_reg:
             corte = _m_reg.start()
             tools_py = tools_py[:corte] + bloco + "\n\n" + tools_py[corte:]
         else:
             tools_py = tools_py.rstrip() + "\n\n\n" + bloco
+        # E, de qualquer forma, no FIM do arquivo: a ferramenta com regra declarada prevalece
+        # sobre o que tiver sido registrado antes com o mesmo nome (substituto, stub, padrão).
+        _decl = [(_classe_de(n), n) for n, t in sorted(por_origem.items())
+                 if (t.get("origem") or "").lower() not in ("biblioteca", "mcp")]
+        if _decl:
+            tools_py = (tools_py.rstrip() + "\n\n\n"
+                        "# LangNet: as ferramentas declaradas na etapa Ferramentas prevalecem sobre\n"
+                        "# qualquer substituto registrado antes com o mesmo nome.\n"
+                        "try:\n    TOOL_REGISTRY\nexcept NameError:\n    TOOL_REGISTRY = {}\n"
+                        + "".join(f"TOOL_REGISTRY[{n!r}] = {c}()\n" for c, n in _decl))
     return tools_py
 
 
