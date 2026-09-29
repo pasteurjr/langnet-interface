@@ -1,0 +1,420 @@
+{
+ "00-projetos": {
+  "botoes": [
+   "+ Novo Projeto",
+   "Criar Novo Projeto"
+  ],
+  "selects": [
+   [
+    "Todos os Status",
+    "Rascunho",
+    "Em Progresso",
+    "Concluído",
+    "Arquivado"
+   ],
+   [
+    "Todos os Domínios"
+   ]
+  ],
+  "textareas": [
+   "Buscar projetos por nome ou descrição..."
+  ],
+  "titulos": [
+   "Projetos",
+   "Criar Novo Projeto",
+   "Nenhum projeto encontrado"
+  ]
+ },
+ "01-documentos": {
+  "botoes": [
+   "+ Upload",
+   "📜 Histórico",
+   "×",
+   "🚀 Iniciar Análise",
+   "📤 Enviar"
+  ],
+  "selects": [],
+  "textareas": [
+   "Ex: Focar em requisitos de segurança...",
+   "Digite sua mensagem para refinar a análise..."
+  ],
+  "titulos": [
+   "📄 Análise de Requisitos - BioByte Sentinela v5",
+   "📁 Documentos (1)",
+   "💬 Conversa com Agente IA",
+   "Bem-vindo ao Assistente de Requisitos",
+   "Documento não gerado"
+  ]
+ },
+ "02-requisitos": {
+  "botoes": [
+   "⬇️ Download MD",
+   "📑 Download PDF",
+   "💬 Refine with Agent",
+   "✕ Close"
+  ],
+  "selects": [],
+  "textareas": [],
+  "titulos": [
+   "📄 Documento de Requisitos",
+   "Documento de Requisitos",
+   "Análise de Requisitos - Projeto 1bf5043d-d848-4ca6-b417-1c6502bdc670",
+   "1. Informações do Projeto",
+   "1.1 Visão Geral",
+   "1.2 Contexto e Justificativa",
+   "1.3 Escopo",
+   "2. Fontes de Informação",
+   "2.1 Documentos Analisados",
+   "2.2 Estatísticas da Análise",
+   "3. Requisitos Funcionais — FR (99)",
+   "3.1 Requisitos — Extraído dos documentos (🔴 RED)",
+   "3.2 Requisitos — Extraído das instruções do usuário (📘 REI)",
+   "3.3 Requisitos — Inferido pelo modelo, com justificativa (🔧 RI)",
+   "3.4 Requisitos — Vindo da pesquisa complementar (🌐 RW)",
+   "3.5 Requisitos — Sugerido pela IA — precisa de aprovação (🤖 RIA)",
+   "3.6 CONSOLIDADO — todos, em ordem de identificador",
+   "4. Requisitos Não-Funcionais — NFR (25)",
+   "4.1 Requisitos — Extraído dos documentos (🔴 RED)",
+   "4.2 Requisitos — Extraído das instruções do usuário (📘 REI)"
+  ]
+ },
+ "03-especificacao": {
+  "botoes": [
+   "+ Upload",
+   "📜 Histórico",
+   "📋 Requisitos",
+   "×",
+   "🚀 Gerar Especificação",
+   "🔍 Revisar Especificação",
+   "🔍 Analisar",
+   "✏️ Refinar",
+   "✏️ Editar",
+   "👁️ Visualizar",
+   "📄 Exportar PDF"
+  ],
+  "selects": [],
+  "textareas": [
+   "Ex: Focar em requisitos de segurança, detalhar casos de uso...",
+   "Digite sua mensagem..."
+  ],
+  "titulos": [
+   "📝 Especificação Funcional - BioByte Sentinela v5",
+   "📁 Docs Complementares (1)",
+   "💬 Conversa com Agente IA"
+  ]
+ },
+ "04-modelo": {
+  "botoes": [
+   "📜 Histórico",
+   "🧪 Conferir o esquema de novo",
+   "↻ Regenerar do zero",
+   "🔍 Revisar",
+   "💬 Refinar com o agente",
+   "✓ Aprovar",
+   "Entidades",
+   "Schema SQL",
+   "models.py",
+   "Alembic",
+   "YAML"
+  ],
+  "selects": [
+   [
+    "📋 Especificacao BioByte v5 — 2026-09-27 14:19"
+   ],
+   [
+    "MySQL",
+    "PostgreSQL",
+    "SQLite"
+   ]
+  ],
+  "textareas": [
+   "Ex: focar em cenários de erro, detalhar validações…"
+  ],
+  "titulos": [
+   "🗄️ Modelo de Dados",
+   "📋 Especificação",
+   "📊 usuarios",
+   "📊 pacientes",
+   "📊 casos_clinicos",
+   "📊 sitios_insercao",
+   "📊 faixas_risco",
+   "📊 dados_risco",
+   "📊 escores_cox",
+   "📊 resultados_hemocultura",
+   "📊 antimicrobianos",
+   "📊 antibiogramas",
+   "📊 criterios_nhsn",
+   "📊 classificacoes",
+   "📊 alertas",
+   "📊 notificacoes",
+   "📊 bundles",
+   "📊 recomendacoes",
+   "📊 estimativas_reducao_risco",
+   "📊 ciclos_integrados"
+  ]
+ },
+ "05-interface": {
+  "botoes": [
+   "📜 Histórico",
+   "⚡ Gerar UI Spec",
+   "💬 Refinar com o agente",
+   "🧪 Protótipo",
+   "🔎 Verificar coerência",
+   "✓ Aprovar",
+   "▶ Renderizar protótipo",
+   "✏️ Editar interação no spec"
+  ],
+  "selects": [
+   [
+    "📋 Especificacao BioByte v5 — 2026-09-27 14:19"
+   ]
+  ],
+  "textareas": [
+   "Ex: focar em cenários de erro, detalhar validações…"
+  ],
+  "titulos": [
+   "🎨 Interface & Protótipo",
+   "🎨 Telas",
+   "UC-001 · 1 tela"
+  ]
+ },
+ "06-agentes": {
+  "botoes": [
+   "📜 Histórico",
+   "📝 Especificação",
+   "📝 Selecionar Especificação",
+   "🚀 Gerar Agentes & Tarefas",
+   "🔍 Revisar",
+   "📤 Enviar",
+   "✏️ Editar",
+   "👁️ Visualizar",
+   "📄 Exportar PDF"
+  ],
+  "selects": [
+   [
+    "Conciso",
+    "Balanceado",
+    "Detalhado"
+   ]
+  ],
+  "textareas": [
+   "Ex: focar em cenários de erro, detalhar validações…",
+   "Digite sua mensagem para refinar a análise..."
+  ],
+  "titulos": [
+   "⚙️ Agentes & Tarefas — BioByte Sentinela v5",
+   "📋 Configuração",
+   "💬 Conversa com Agente IA",
+   "Bem-vindo ao Assistente de Requisitos"
+  ]
+ },
+ "07-ferramentas": {
+  "botoes": [
+   "Gerar a partir do ATS",
+   "Aprovar etapa",
+   "Enviar",
+   "v1"
+  ],
+  "selects": [
+   [
+    "Sessões desta etapa…",
+    "v1 · 3/3 resolvidas · 27/09/2026, 23:35:18"
+   ]
+  ],
+  "textareas": [
+   "Ex.: a validação de senha é determinística; a regra é conferir o hash"
+  ],
+  "titulos": [
+   "🧰 Ferramentas"
+  ]
+ },
+ "08-yaml": {
+  "botoes": [
+   "📜 Histórico",
+   "📝 Doc MD",
+   "📝 Selecionar Documento MD",
+   "🤖 Agents YAML",
+   "📋 Tasks YAML",
+   "🚀 Gerar agents.yaml",
+   "🔍 Revisar",
+   "💬 Refinar com o agente"
+  ],
+  "selects": [
+   [
+    "Conciso",
+    "Balanceado",
+    "Detalhado"
+   ]
+  ],
+  "textareas": [
+   "Ex: focar em cenários de erro, detalhar validações…"
+  ],
+  "titulos": [
+   "📦 YAML de Agentes e Tarefas",
+   "📋 Configuração",
+   "Nenhum agents.yaml Gerado"
+  ]
+ },
+ "09-sequencia": {
+  "botoes": [
+   "📜 Histórico",
+   "+ Upload",
+   "📋 Specs & Docs",
+   "×",
+   "🚀 Gerar Sequência de Tarefas",
+   "🔍 Revisar",
+   "🔍 Analisar",
+   "✏️ Refinar",
+   "✏️ Editar",
+   "👁️ Visualizar",
+   "📄 Exportar PDF"
+  ],
+  "selects": [],
+  "textareas": [
+   "Ex: focar em cenários de erro, detalhar validações…",
+   "Digite sua mensagem..."
+  ],
+  "titulos": [
+   "🔄 Sequência de Tarefas - BioByte Sentinela v5",
+   "📁 Docs Complementares (1)",
+   "💬 Conversa com Agente IA",
+   "Bem-vindo ao Assistente de Requisitos"
+  ]
+ },
+ "10-petri": {
+  "botoes": [
+   "⚙️ Configuração",
+   "📜 Histórico",
+   "🔗 Gerar Rede / Origem",
+   "🔗 Gerar Rede",
+   "🔍 Revisar",
+   "💬 Refinar com o agente",
+   "🔗 Gerar Rede",
+   "💾 Salvar no Banco",
+   "Adicionar Lugar",
+   "Adicionar Transição",
+   "Adicionar Arco",
+   "Adicionar Agente",
+   "Rotacionar Transição",
+   "Visualizar JSON",
+   "Simular",
+   "▶ Execução Real",
+   "🎯 Disparar task",
+   "🖨️ Imprimir"
+  ],
+  "selects": [],
+  "textareas": [
+   "Ex: focar em cenários de erro, detalhar validações…"
+  ],
+  "titulos": [
+   "🔗 Rede de Petri",
+   "🔗 Rede"
+  ]
+ },
+ "11-codigo": {
+  "botoes": [
+   "📜 Histórico",
+   "⚡ Nova geração",
+   "⚡ Gerar Código",
+   "💬 Refinar com o agente",
+   "💾 Salvar Arquivo",
+   "📦 Baixar ZIP",
+   "▶ Executar"
+  ],
+  "selects": [],
+  "textareas": [
+   "Ex: focar em cenários de erro, detalhar validações…",
+   ""
+  ],
+  "titulos": [
+   "💻 Geração de Código",
+   "💻 Geração"
+  ]
+ },
+ "12-testes": {
+  "botoes": [
+   "📜 Histórico",
+   "🚀 Gerar casos de teste",
+   "🔍 Revisar",
+   "💬 Refinar com o agente",
+   "📄 Documento",
+   "UC-001 Autenticar Usuário com E-mail e Senha 12 casos",
+   "UC-002 Gerenciar Cadastro e Desativação de Usuários 18 casos",
+   "UC-003 Registrar Ações Relevantes em Trilha de Auditoria 16 casos",
+   "UC-004 Cadastrar Paciente com Cateter Venoso Central 14 casos",
+   "UC-005 Registrar Episódio e Dados de Risco do Caso Clínico 10 casos",
+   "UC-006 Consultar Escore de Risco de Cox no Serviço Externo 12 casos",
+   "UC-007 Importar Resultado de Hemocultura do Laboratório 13 casos",
+   "UC-008 Traduzir Resultado do Laboratório para Nomenclatura do Hospital",
+   "UC-009 Classificar Caso pelo Critério NHSN 15 casos",
+   "UC-010 Sobrescrever Classificação Automática com Justificativa 11 caso",
+   "UC-011 Identificar Multirresistência no Antibiograma 13 casos",
+   "UC-012 Abrir e Gerenciar Alerta de Multirresistência 13 casos",
+   "UC-013 Redigir Texto do Alerta para a Equipe 13 casos",
+   "UC-014 Notificar Coordenadora e Enfermeiro por E-mail 10 casos",
+   "UC-015 Recomendar Bundle ao Caso Confirmado 17 casos",
+   "UC-016 Cadastrar Bundles com Dados de Risco 8 casos",
+   "UC-017 Registrar Escolha Médica de Outro Bundle 9 casos",
+   "UC-018 Estimar Redução de Risco do Tratamento Escolhido 7 casos",
+   "UC-019 Executar Ciclo Integrado de um Caso 18 casos",
+   "UC-020 Consultar Painel de Vigilância por Período 8 casos",
+   "UC-021 Exportar Relatório de Vigilância em PDF ou CSV 20 casos",
+   "UC-022 Sinalizar Falhas e Dados Faltantes ao Usuário 16 casos",
+   "UC-023 Proteger Credenciais e Chamadas Externas do Sistema 14 casos",
+   "UC-024 Padronizar Nomes de Dados entre Telas e Banco 13 casos",
+   "UC-025 Sinalizar Hemocultura Pronta e Suspeita de ICSAC 17 casos",
+   "UC-026 Executar Backup Automatizado com RTO e RPO 12 casos",
+   "UC-027 Monitorar Disponibilidade dos Serviços Externos 20 casos",
+   "UC-028 Registrar Erros com Correlação por Requisição 11 casos",
+   "UC-029 Criptografar Dados de Paciente em Repouso 16 casos",
+   "UC-030 Aplicar Política de Retenção e Descarte de Dados 12 casos",
+   "UC-031 Gerenciar Segredos e Rotação de Credenciais 21 casos"
+  ],
+  "selects": [
+   [
+    "📋 Spec v1 (a304ffa0…)"
+   ]
+  ],
+  "textareas": [
+   "Ex: focar em cenários de erro, detalhar validações…"
+  ],
+  "titulos": [
+   "🧪 Casos de Teste & Validação",
+   "📋 Casos de Uso",
+   "UC-001 — Autenticar Usuário com E-mail e Senha",
+   "Grafo de Causa-Efeito",
+   "Tabela de Decisão",
+   "Casos de Teste (12)"
+  ]
+ },
+ "13-execucao": {
+  "botoes": [
+   "Contínua",
+   "Pausar por Tarefa",
+   "▶️ Iniciar",
+   "🔄 Reiniciar",
+   "🎭Modo Simulação",
+   "🧪 Testar Verbose Parser",
+   "⚡ Operação",
+   "⚙️ Execução",
+   "📄 Inputs",
+   "📊 Outputs",
+   "📄 Logs",
+   "🤖 VerbosePanel V8"
+  ],
+  "selects": [
+   [
+    "⚡ Execução Contínua",
+    "⏸️ Pausar por Tarefa"
+   ]
+  ],
+  "textareas": [
+   "Instruções específicas ou ajustes solicitados..."
+  ],
+  "titulos": [
+   "Rede de Petri — Vigilância de ICSAC (BioByte)",
+   "🔗 Petri Net - Rede de Petri — Vigilância de ICSAC (BioByte)",
+   "Tarefas em Execução"
+  ]
+ }
+}
