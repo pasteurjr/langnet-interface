@@ -20,10 +20,55 @@ import "./ExecucaoPage.css";
 const ExecutorTarefas: any = ExecutorTarefasOriginal;
 const API_BASE = process.env.REACT_APP_API_URL || "http://localhost:8000/api";
 
+// Campos de controle que a rede acrescenta sozinha — não são entrada do operador.
+const CAMPOS_DE_CONTROLE = new Set(["from_transition", "received_at", "tokens_received", "status", "timestamp"]);
+
+/**
+ * O que a execução precisa receber de quem a dispara.
+ *
+ * A rede nasce com os lugares de tarefa já declarando os campos que esperam
+ * (`input_data` com os valores em branco). Até aqui ninguém os preenchia: a Bancada
+ * não tinha onde o operador dizer QUAL caso analisar, a primeira tarefa recebia tudo
+ * vazio, respondia "não aproveitável" e a cadeia inteira seguia com "sem dado"
+ * (medido no BioByte v5 em 29/09/2026). Os campos pedidos são os das primeiras
+ * tarefas — as que a transição de início alimenta — lidos da própria rede.
+ */
+function camposDeEntrada(rede: any): string[] {
+  const lugares: any[] = rede?.lugares || [];
+  const arcos: any[] = rede?.arcos || [];
+  const inicio = new Set(lugares.filter((l) => Number(l?.tokens) > 0).map((l) => l.id));
+  const transicoesDeInicio = new Set(arcos.filter((a) => inicio.has(a.origem)).map((a) => a.destino));
+  const primeiras = new Set(arcos.filter((a) => transicoesDeInicio.has(a.origem)).map((a) => a.destino));
+  const campos: string[] = [];
+  lugares.filter((l) => primeiras.has(l.id)).forEach((l) => {
+    Object.keys(l?.input_data || {}).forEach((k) => {
+      if (!CAMPOS_DE_CONTROLE.has(k) && !campos.includes(k)) campos.push(k);
+    });
+  });
+  // identificadores primeiro: são eles que dizem sobre QUEM a execução trabalha
+  return campos.sort((a, b) => Number(/_id$|^id_/.test(b)) - Number(/_id$|^id_/.test(a)));
+}
+
+/** Copia os valores para todo lugar que espera o mesmo campo. Só nesta execução. */
+function aplicarEntrada(rede: any, valores: Record<string, string>): any {
+  const nova = JSON.parse(JSON.stringify(rede));
+  (nova.lugares || []).forEach((l: any) => {
+    if (!l?.input_data || typeof l.input_data !== "object") return;
+    Object.entries(valores).forEach(([k, v]) => {
+      if (String(v).trim() !== "" && k in l.input_data) l.input_data[k] = String(v).trim();
+    });
+  });
+  return nova;
+}
+
 const ExecucaoPage: React.FC = () => {
   const { projectId } = useParams<{ projectId: string }>();
   const [projeto, setProjeto] = useState<any>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [redeOriginal, setRedeOriginal] = useState<any>(null);
+  const [valores, setValores] = useState<Record<string, string>>({});
+  const [aplicado, setAplicado] = useState<Record<string, string>>({});
+  const [montagem, setMontagem] = useState(0);
 
   useEffect(() => {
     if (!projectId) return;
@@ -100,6 +145,7 @@ const ExecucaoPage: React.FC = () => {
           petriNet: rede,   // nome que o carregador da tela de referência procura
         };
         try { (window as any).V7_PROJECT = carregado; } catch { /* sem window */ }
+        setRedeOriginal(JSON.parse(JSON.stringify(rede)));
         setProjeto({
           id: projectId,
           name: rede.nome || "Projeto",
@@ -113,9 +159,52 @@ const ExecucaoPage: React.FC = () => {
   if (erro) return <div className="bancada"><div className="bancada-aviso">⚠️ {erro}</div></div>;
   if (!projeto) return <div className="bancada"><div className="bancada-aviso">Carregando a rede do projeto…</div></div>;
 
+  const campos = camposDeEntrada(redeOriginal);
+  const aplicar = () => {
+    const rede = aplicarEntrada(redeOriginal, valores);
+    const carregado = {
+      id: projectId, name: rede.nome || "Projeto", description: rede.description || "",
+      project_data: rede, petri_net_data: rede, petriNet: rede,
+    };
+    try { (window as any).V7_PROJECT = carregado; } catch { /* sem window */ }
+    setProjeto({ ...projeto, project_data: rede });
+    setAplicado(Object.fromEntries(Object.entries(valores).filter(([, v]) => String(v).trim() !== "")));
+    setMontagem((m) => m + 1);   // a tela de execução relê a rede com a entrada preenchida
+  };
+
   return (
     <div className="bancada bancada-referencia">
-      <ExecutorTarefas project={projeto} />
+      {campos.length > 0 && (
+        <div className="bancada-entrada">
+          <div className="bancada-entrada-titulo">
+            📥 Entrada da execução
+            <span>o que esta execução vai analisar — vale para todas as tarefas que esperam o mesmo campo</span>
+          </div>
+          <div className="bancada-entrada-campos">
+            {campos.map((c) => (
+              <label key={c}>
+                <span>{c}</span>
+                <input
+                  value={valores[c] || ""}
+                  onChange={(e) => setValores({ ...valores, [c]: e.target.value })}
+                  placeholder="(em branco)"
+                />
+              </label>
+            ))}
+          </div>
+          <div className="bancada-entrada-acoes">
+            <button onClick={aplicar}>Aplicar à execução</button>
+            {Object.keys(aplicado).length > 0 ? (
+              <span className="bancada-entrada-ok">
+                ✓ aplicado: {Object.entries(aplicado).map(([k, v]) => `${k} = ${v}`).join(" · ")}
+              </span>
+            ) : (
+              <span className="bancada-entrada-vazia">nenhum valor aplicado — a execução roda com a entrada em branco</span>
+            )}
+          </div>
+        </div>
+      )}
+      <ExecutorTarefas key={montagem} project={projeto} />
     </div>
   );
 };

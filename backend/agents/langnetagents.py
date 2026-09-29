@@ -5374,6 +5374,20 @@ async def _execute_task(ws, task_name: str, input_data: Dict[str, Any]) -> None:
                 await _send(ws, "error", {{"task_name": task_name,
                     "error": "persistência (Attested Computation) falhou: " + str(_pe)}})
                 return
+        else:
+            # A tarefa é só julgamento (não tem gravação própria): o programa grava a DECISÃO
+            # na tabela que o documento de Agentes e Tarefas designou. O resultado da gravação
+            # vai junto da resposta — gravou (com o id) ou por que não gravou.
+            _reg = getattr(adapters_module, "_registrar_decisao", None)
+            if callable(_reg) and isinstance(parsed, dict):
+                try:
+                    _rr = await asyncio.get_running_loop().run_in_executor(
+                        None, _reg, task_name, input_data, parsed)
+                except Exception as _re_:
+                    _rr = {{"registrado": False, "motivo": "decisão não gravada: " + str(_re_)}}
+                parsed = dict(parsed)
+                parsed["registro_decisao"] = _rr
+                print(f"[task] REGISTRO {{task_name}}: {{_rr}}", flush=True)
 
         # VERIFICAÇÃO (Inserção B): PÓS-condição da saída agêntica (output_has / row_check).
         _vf = getattr(adapters_module, "_run_verifications", None)
@@ -7206,6 +7220,172 @@ def _derive_output_schema(task_name: str, task_cfg: dict, model: Optional[dict])
         return None
     return {"type": "object", "required": required, "properties": props}
 
+
+
+def _sem_acento(t: str) -> str:
+    import unicodedata as _ud
+    return "".join(c for c in _ud.normalize("NFD", t or "") if _ud.category(c) != "Mn").lower()
+
+
+def _tabela_de_decisoes(ats_md: str, schema_sql: str):
+    """Onde o documento de Agentes e Tarefas manda registrar as decisões dos agentes.
+
+    O documento declara, numa premissa, que "toda decisão agêntica é persistida em
+    `<tabela>` ... pelo código comum que chama a tarefa". Nada no gerador lia essa frase:
+    as tarefas de julgamento respondiam, a tela mostrava, e nada era gravado (medido no
+    BioByte v5 em 29/09/2026 — os registros do banco eram todos da carga de demonstração).
+
+    Devolve {tabela, colunas: [(nome, tipo, notnull, default, enum)]} ou None.
+    """
+    import re as _re
+    if not ats_md or not schema_sql:
+        return None
+    tabelas = {m.group(1): m.group(2) for m in _re.finditer(
+        r"CREATE TABLE\s+[`\"]?(\w+)[`\"]?\s*\((.*?)\n\)\s*(?:COMMENT|;)", schema_sql, _re.S)}
+    if not tabelas:
+        return None
+    def _norm(n):
+        n = _sem_acento(n)
+        # plural do português: decisoes → decisao, paes → pao, casos → caso
+        return "_".join(_re.sub(r"s$", "", _re.sub(r"[oa]es$", "ao", p)) for p in n.split("_"))
+    candidato = None
+    for frase in _re.split(r"(?<=[.;\n])", ats_md):
+        f = _sem_acento(frase)
+        if "decis" in f and _re.search(r"persist|registrad|gravad", f):
+            for nome in _re.findall(r"`(\w+)`", frase):
+                for t in tabelas:
+                    if _norm(t) == _norm(nome):
+                        candidato = t
+                        break
+                if candidato:
+                    break
+        if candidato:
+            break
+    if not candidato:
+        return None
+    colunas = []
+    for linha in tabelas[candidato].split("\n"):
+        m = _re.match(r"\s*[`\"](\w+)[`\"]\s+([A-Za-z]+)(\([^)]*\))?(.*)", linha)
+        if not m:
+            continue
+        nome, tipo, args, resto = m.group(1), m.group(2).upper(), m.group(3) or "", m.group(4) or ""
+        enum = _re.findall(r"'([^']*)'", args) if tipo == "ENUM" else []
+        colunas.append((nome, tipo, "NOT NULL" in resto.upper(), "DEFAULT" in resto.upper(), enum))
+    return {"tabela": candidato, "colunas": colunas}
+
+
+def _emitir_registro_de_decisoes(ats_md: str, schema_sql: str, tasks_yaml: str) -> str:
+    """Código (para o adapters.py) que grava cada resposta de agente na tabela de decisões.
+
+    Regras, todas lidas do modelo de dados — nada do projeto escrito à mão:
+      · coluna JSON (ou texto) → a resposta inteira do agente;
+      · colunas `*_id` obrigatórias → procuradas na entrada da tarefa e nas saídas anteriores;
+      · coluna ENUM obrigatória → a opção cujo radical mais aparece na descrição da tarefa;
+      · coluna de origem → nome da tarefa e versão do prompt;
+      · data obrigatória sem padrão → agora.
+    Se falta um identificador obrigatório, NÃO grava e diz o motivo na resposta: registro
+    que não aponta para o caso não serve para auditoria.
+    """
+    import re as _re, json as _json
+    info = _tabela_de_decisoes(ats_md, schema_sql)
+    if not info:
+        return ""
+    cols = [c for c in info["colunas"] if c[0] not in ("id", "created_at", "updated_at")]
+    valor = next((c[0] for c in cols if c[1] == "JSON"), None) or next(
+        (c[0] for c in cols if c[1] in ("TEXT", "LONGTEXT") and _re.search(r"valor|saida|resultado|conteudo", c[0])), None)
+    if not valor:
+        return ""
+    ids = [c[0] for c in cols if c[0].endswith("_id") and c[2]]
+    enum_col = next((c for c in cols if c[1] == "ENUM" and c[2] and not c[3]), None)
+    origem = next((c[0] for c in cols if c[0].startswith("origem")), None)
+    data = next((c[0] for c in cols if c[1] in ("TIMESTAMP", "DATETIME", "DATE") and c[2] and not c[3]), None)
+    # tipo por tarefa, decidido na geração (fica visível no arquivo e no log)
+    tipos = {}
+    if enum_col:
+        try:
+            import yaml as _yaml
+            _limpo = "\n".join(l for l in (tasks_yaml or "").split("\n") if not l.strip().startswith("```"))
+            tk = _yaml.safe_load(_limpo) or {}
+        except Exception:
+            tk = {}
+        for nome, cfg in (tk.items() if isinstance(tk, dict) else []):
+            if not isinstance(cfg, dict):
+                continue
+            desc = _sem_acento(str(cfg.get("description", "")) + " " + nome)
+            contagem = {op: desc.count(_sem_acento(op)[:6]) for op in enum_col[4]}
+            melhor = max(contagem, key=contagem.get) if contagem else None
+            tipos[nome] = melhor if melhor and contagem[melhor] > 0 else enum_col[4][0]
+    cfg = {"tabela": info["tabela"], "valor": valor, "ids": ids,
+           "tipo_col": enum_col[0] if enum_col else None, "tipos": tipos,
+           "tipo_padrao": enum_col[4][0] if enum_col and enum_col[4] else None,
+           "origem": origem, "data": data}
+    print(f"[CODE-GEN][DECISÕES] respostas dos agentes serão gravadas em `{info['tabela']}` "
+          f"(valor={valor}, ids={ids}, tipo por tarefa={tipos})")
+    return (
+        "\n\n# ---------------------------------------------------------------------------\n"
+        "# REGISTRO DAS DECISÕES DOS AGENTES (auto-gerado pelo LangNet)\n"
+        "# O documento de Agentes e Tarefas manda gravar toda decisão agêntica nesta tabela,\n"
+        "# pelo código comum. O agente decide; quem grava é este programa.\n"
+        "# ---------------------------------------------------------------------------\n"
+        "_REGISTRO_DECISOES = " + _json.dumps(cfg, ensure_ascii=False, indent=4) + "\n\n\n"
+        "def _procura_valor(dados, chave, _prof=0):\n"
+        "    \"\"\"Acha `chave` na entrada da tarefa ou em qualquer saída anterior acumulada.\"\"\"\n"
+        "    if _prof > 6 or dados is None:\n"
+        "        return None\n"
+        "    if isinstance(dados, dict):\n"
+        "        v = dados.get(chave)\n"
+        "        if v not in (None, ''):\n"
+        "            return v\n"
+        "        for _v in dados.values():\n"
+        "            r = _procura_valor(_v, chave, _prof + 1)\n"
+        "            if r not in (None, ''):\n"
+        "                return r\n"
+        "    elif isinstance(dados, list):\n"
+        "        for _v in dados:\n"
+        "            r = _procura_valor(_v, chave, _prof + 1)\n"
+        "            if r not in (None, ''):\n"
+        "                return r\n"
+        "    return None\n\n\n"
+        "def _registrar_decisao(task_name, input_data, saida):\n"
+        "    \"\"\"Grava a resposta do agente. Devolve o que aconteceu — gravou, ou por que não.\"\"\"\n"
+        "    import os, json, mysql.connector\n"
+        "    cfg = _REGISTRO_DECISOES\n"
+        "    colunas, valores = [cfg['valor']], [json.dumps(saida, ensure_ascii=False, default=str)]\n"
+        "    for c in cfg['ids']:\n"
+        "        v = _procura_valor(input_data, c) or _procura_valor(saida, c)\n"
+        "        if v in (None, ''):\n"
+        "            return {'registrado': False, 'tabela': cfg['tabela'],\n"
+        "                    'motivo': 'decisão não gravada: falta ' + c + ' na entrada da tarefa'}\n"
+        "        colunas.append(c); valores.append(v)\n"
+        "    if cfg.get('tipo_col'):\n"
+        "        colunas.append(cfg['tipo_col']); valores.append(cfg['tipos'].get(task_name) or cfg.get('tipo_padrao'))\n"
+        "    if cfg.get('origem'):\n"
+        "        _versao = (saida or {}).get('versao_prompt') if isinstance(saida, dict) else None\n"
+        "        colunas.append(cfg['origem']); valores.append((task_name + (' · ' + str(_versao) if _versao else ''))[:200])\n"
+        "    if cfg.get('data'):\n"
+        "        from datetime import datetime\n"
+        "        colunas.append(cfg['data']); valores.append(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))\n"
+        "    conn = mysql.connector.connect(host=os.getenv('DB_HOST','localhost'),\n"
+        "        port=int(os.getenv('DB_PORT','3306')), user=os.getenv('DB_USER','root'),\n"
+        "        password=os.getenv('DB_PASSWORD',''), database=os.getenv('DB_NAME',''),\n"
+        "        charset='utf8mb4', collation='utf8mb4_general_ci')\n"
+        "    try:\n"
+        "        cur = conn.cursor(dictionary=True)\n"
+        "        cur.execute('SELECT UUID() AS id')\n"
+        "        _id = cur.fetchone()['id']\n"
+        "        cur.execute('INSERT INTO ' + cfg['tabela'] + ' (id, ' + ', '.join(colunas) + ') VALUES (%s, '\n"
+        "                    + ', '.join(['%s'] * len(colunas)) + ')', [_id] + valores)\n"
+        "        conn.commit()\n"
+        "        return {'registrado': True, 'tabela': cfg['tabela'], 'id': _id}\n"
+        "    except Exception as _e:\n"
+        "        try: conn.rollback()\n"
+        "        except Exception: pass\n"
+        "        return {'registrado': False, 'tabela': cfg['tabela'], 'motivo': 'decisão não gravada: ' + str(_e)}\n"
+        "    finally:\n"
+        "        try: cur.close()\n"
+        "        except Exception: pass\n"
+        "        conn.close()\n"
+    )
 
 def _injetar_rastreabilidade_do_documento(tasks_yaml: str, ats_md: str) -> str:
     """Traz do documento de Agentes e Tarefas o caso de uso e o requisito de cada tarefa.
@@ -12112,6 +12292,8 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # nome original). Corrige o mismatch nome-do-placeholder × coluna (ex.: is_icsac×classificacao_
     # nhsn, admin_id×usuario_id) que fazia SET/INSERT gravar NULL e quebrar a cadeia clínica.
     # Roda ANTES do postgresify (ambos usam %s; postgresify só troca dialeto/geo).
+    # Decisões dos agentes: gravadas na tabela que o documento de Agentes e Tarefas designa.
+    adapters_py = adapters_py.rstrip() + _emitir_registro_de_decisoes(spec_md or "", _schema_sql_cg or "", tasks_yaml or "")
     _before_align = adapters_py
     # Parada explícita quando a consulta não acha o registro (antes do alinhamento de params).
     adapters_py = _guard_missing_lookups(adapters_py)
