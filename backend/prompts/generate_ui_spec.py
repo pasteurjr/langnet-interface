@@ -281,7 +281,12 @@ Retorne APENAS um objeto JSON válido (sem markdown, sem cercas ```), no formato
       "props": {{}} }}
   ],
   "actions": [
-    {{"label": "Salvar", "kind": "task|crud|navigate", "target": "nome_task_ou_rota", "primary": true|false}}
+    {{"id": "acao-1", "label": "Salvar", "passo": "principal 3", "primary": true}},
+    {{"id": "acao-2", "label": "Voltar", "navegar_para": "id-da-outra-tela", "primary": false}}
+  ],
+  "agentes": [
+    {{"passo": "principal 4", "forma": "decisao|campo|tela", "rotulo": "Identificar multirresistência",
+      "posicao": "onde fica na tela — ex.: 'seção Multirresistência, abaixo do antibiograma'"}}
   ],
   "mockup_html": "<!doctype html><html>...página completa e estilizada...</html>"
 }}
@@ -297,12 +302,13 @@ REGRAS:
    🔵 CHAVE ESTRANGEIRA: campo que é FK (ex.: `persona_id`, `pilar_conteudo_id`) → type
    "select" e no mockup_html renderize um <select> (dropdown) com opções de exemplo da
    entidade referenciada — NUNCA uma caixa de texto de ID crua.
-2. `actions`: o botão principal de salvar/criar deve ter kind "task" e target no
-   formato verbo_objeto snake_case DERIVADO DO CASO DE USO (verbo do UC + entidade —
-   ex.: UC "Cadastrar Persona-Alvo" → target "cadastrar_persona_alvo"). Esse target é uma
-   DICA que será reconciliada com a task real na geração de código; por isso, mantenha o
-   padrão verbo_objeto consistente com o NOME do UC (não invente verbos alheios ao UC).
-   Botões de cancelar/voltar usam kind "navigate".
+2. 🔴 `actions` — CADA BOTÃO APONTA PARA UM PASSO DO CASO DE USO. NÃO invente nome de tarefa.
+   Em `passo`, escreva EXATAMENTE a chave entre colchetes da lista "PASSOS DO CASO DE USO" abaixo
+   (ex.: "principal 3", "alternativo A2", "excecao E1") — o passo cuja "Resposta do Sistema" é o
+   que acontece quando o usuário clica. Quem executa o passo já está declarado lá; o programa
+   copia. Botão que só leva a outra tela (Voltar, Cancelar, Abrir detalhe) usa `navegar_para` e
+   NÃO tem `passo`. Botão que não corresponde a nenhum passo NÃO deve existir na tela.
+   Todo botão tem `id` único ("acao-1", "acao-2"…).
 3. `mockup_html`: HTML COMPLETO e AUTOCONTIDO usando **Tailwind CSS via CDN**,
    com aparência de PRODUTO SaaS moderno e profissional — não um formulário cru.
    Comece SEMPRE com:
@@ -336,9 +342,17 @@ REGRAS:
      uppercase border-b"> e linhas com hover:bg-slate-50.
    Preencha com dados de EXEMPLO plausíveis (não deixe tudo vazio) pra parecer real.
    SEM JavaScript. Largura do main confortável (~1000px de conteúdo).
-4. Se a tela for de ação agêntica (gerar/classificar/coletar), o layout pode ser
-   "detail" ou "dashboard": inputs necessários + botão de disparo (indigo) + uma área
-   de resultado estilizada (bg-slate-50 rounded-xl border p-5 com texto de placeholder).
+4. ✦ AGENTE NA TELA — para CADA passo marcado (agente) na lista de passos, emita um item em
+   `agentes` e desenhe o bloco na tela, NA POSIÇÃO DO PASSO (onde o fluxo diz que o resultado
+   aparece). Escolha a forma:
+   - "decisao": cartão de decisão — veredito em destaque (ex.: Multirresistente: Sim), os números,
+     a justificativa SEMPRE visível e o link "ver registro";
+   - "campo": auxílio de um campo — botão ✦ ao lado do campo que o agente preenche/sugere
+     (ex.: "✦ Sugerir"), com a sugestão abaixo para aceitar ou editar;
+   - "tela": a ação principal da tela é do agente — botão "✦ <ação>" + área de resultado.
+   Marque o bloco com o selo ✦ e um rótulo do que o agente faz. O resultado mostra os PASSOS do
+   que o sistema está fazendo, nunca o raciocínio do agente. Antes de gravar decisão clínica ou
+   enviar algo para fora, o bloco tem "Confirmar" e "Refazer com observação".
 5. 🔴 DADOS DE EXIBIÇÃO vs CAMPOS DE ENTRADA — regra crítica:
    - Em telas "dashboard" (métricas, KPIs, relatórios), os valores são EXIBIÇÃO:
      type "readonly", renderizados como CARDS Tailwind:
@@ -381,6 +395,16 @@ REGRAS:
    e com os RFs relacionados; se o UC é claramente de mapa/gráfico/importação, é ERRO entregar só um
    formulário.
 
+7. 🔴 MARCAS NO DESENHO (o protótipo e o aplicativo leem estas marcas):
+   - cada botão do mockup_html tem `data-acao="<id da ação>"` (o mesmo id de `actions`);
+   - cada bloco de agente tem `data-agente="<passo>"`;
+   - cada valor mostrado que vem de um campo de `components` tem `data-campo="<field>"`, e o
+     valor de exemplo é plausível PARA AQUELE CAMPO (nome de paciente em nome, data em data,
+     microrganismo real em microrganismo) — nunca "Exemplo A", "Valor 1", "—" em tudo.
+8. 🔴 NADA SENSÍVEL EM TELA: senha, hash de senha, token, segredo e chave de API NUNCA aparecem
+   em tabela, cartão ou campo de exibição. Senha só como campo de ENTRADA (type "password") na
+   tela de login ou de troca de senha.
+
 {agentic_note}
 
 ## CASO DE USO
@@ -400,12 +424,16 @@ Tela declarada: {screen_title}
 {flow_exc}
 
 ⚠️ OS TRÊS FLUXOS SÃO OBRIGATÓRIOS NA TELA. Os fluxos alternativos e de exceção NÃO são
-detalhe: cada mensagem que eles citam entre aspas — "laboratório fora do ar", "tentar
-novamente", "não consegui calcular", "E-mail ou senha inválidos" — precisa existir como
-componente da tela (um aviso, um estado vazio explicado, um botão de repetir). Uma tela que só
-sabe o caminho feliz mente para quem a usa: ela mostra campo vazio sem dizer por quê.
-Se um fluxo de exceção diz que o sistema exibe uma mensagem, emita um componente para ela.
-Se diz que oferece um botão, emita o botão.
+detalhe — mas a MENSAGEM que eles citam entre aspas ("E-mail ou senha inválidos", "Não há
+antibiograma disponível…") é TEXTO QUE APARECE QUANDO O CASO ACONTECE, não campo:
+- NÃO a coloque em `components` (nada de campo "readonly" com a mensagem);
+- desenhe-a no mockup_html no lugar em que apareceria, como aviso, num elemento com
+  `data-mensagem="<chave do passo>"` (ex.: data-mensagem="excecao E1"); o protótipo a mostra
+  quando o usuário escolhe a situação;
+- se o fluxo oferece um botão ("Tentar novamente"), esse botão é uma ação com o `passo` dele.
+
+## PASSOS DO CASO DE USO (chave · quem executa · o que acontece)
+{passos}
 
 ### Wireframe ASCII (referência visual — reproduza como HTML limpo)
 {wireframe}
@@ -415,8 +443,8 @@ Se diz que oferece um botão, emita o botão.
 Gere agora o JSON da tela (apenas o JSON):"""
 
 _AGENTIC_NOTE = (
-    "OBS: esta tela dispara trabalho de um AGENTE de IA (não é CRUD simples). "
-    "Modele um botão de disparo (kind 'task') e uma área de resultado."
+    "OBS: este caso de uso tem passo de AGENTE de IA (não é CRUD simples). "
+    "Desenhe o bloco do agente (regra 4) na posição do passo."
 )
 
 
@@ -448,6 +476,7 @@ def infer_screen_capabilities(uc: Dict[str, str], sub_schema: str) -> str:
 def build_single_screen_prompt(uc: Dict[str, str], sub_schema: str,
                                project_name: str = "Sistema",
                                nav_items: Optional[str] = None) -> str:
+    from agents.langnetfichatela import passos_para_prompt  # adiado: evita import circular
     schema_block = ""
     if sub_schema:
         schema_block = f"## SCHEMA REAL DAS TABELAS RELEVANTES\n\n```sql\n{sub_schema}\n```"
@@ -465,6 +494,7 @@ def build_single_screen_prompt(uc: Dict[str, str], sub_schema: str,
         flow_alt=uc.get("flow_alt", "(o caso de uso não declara fluxo alternativo)"),
         flow_exc=uc.get("flow_exc", "(o caso de uso não declara fluxo de exceção)"),
         wireframe=uc.get("wireframe", "(sem wireframe)"),
+        passos=passos_para_prompt(uc.get("raw", "")),
         schema_block=schema_block,
     )
 

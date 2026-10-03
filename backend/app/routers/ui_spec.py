@@ -548,10 +548,35 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
     """Refina a UI Spec via chat (LLM re-gera o JSON)."""
     row = _fetch_session(session_id)
     current_json = row.get("ui_spec_json") or "{}"
+    # o caso de uso da tela vem da Especificação de origem: é dele que sai quem executa cada botão
+    spec_doc = ""
+    if row.get("specification_session_id"):
+        try:
+            spec_doc, _pid = _fetch_spec_content(row["specification_session_id"])
+        except Exception:
+            spec_doc = ""
     try:
-        result = refine_ui_spec(current_json, req.content, screen_id=req.screen_id)
+        result = refine_ui_spec(current_json, req.content, screen_id=req.screen_id,
+                                specification_document=spec_doc or "")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Falha no refino: {e}")
+
+    mudancas = result.get("mudancas") or []
+    if not mudancas:
+        # a etapa não afirma sucesso sem conferir: nada mudou → nada é gravado, e diz-se isso
+        with get_db_connection() as conn:
+            cur = conn.cursor()
+            try:
+                for papel, texto in (("user", req.content),
+                                     ("assistant", f"Nada mudou na tela '{result.get('refined_screen')}'. "
+                                                   "O pedido não foi aplicado; reformule ou indique o elemento.")):
+                    cur.execute("INSERT INTO ui_spec_chat_messages (id, ui_spec_session_id, role, content) "
+                                "VALUES (%s,%s,%s,%s)", (str(uuid.uuid4()), session_id, papel, texto))
+                conn.commit()
+            finally:
+                cur.close()
+        return {"status": "sem_mudanca", "refined_screen": result.get("refined_screen"),
+                "ui_spec": json.loads(current_json), "mockup_update": {}, "mudancas": []}
 
     new_spec = result["ui_spec"]
     # As mesmas conferências da geração valem no refino: um pedido pela conversa pode criar tela
@@ -581,7 +606,9 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
             )
             cur.execute(
                 "INSERT INTO ui_spec_chat_messages (id, ui_spec_session_id, role, content) VALUES (%s,%s,%s,%s)",
-                (str(uuid.uuid4()), session_id, "assistant", f"Tela '{refined}' atualizada."),
+                (str(uuid.uuid4()), session_id, "assistant",
+                 f"Tela '{refined}': " + "; ".join(mudancas)
+                 + (" · ⚠️ pendências: " + "; ".join(_pend) if (_pend := ((next((x for x in new_spec.get("screens", []) if x.get("id") == refined), {}).get("ficha") or {}).get("problemas") or [])) else "")),
             )
             conn.commit()
         finally:
@@ -597,7 +624,7 @@ def chat_refine(session_id: str, req: ChatMessageRequest, current_user=Depends(g
     )
 
     return {"status": "ok", "refined_screen": refined, "ui_spec": new_spec,
-            "mockup_update": mockup_update}
+            "mockup_update": mockup_update, "mudancas": mudancas}
 
 
 @router.get("/{session_id}/chat")
@@ -695,6 +722,59 @@ def _apply_regenerated_screen(session_id: str, row: Dict[str, Any], screens: lis
         finally:
             cur.close()
     return {"ui_spec": ui_spec, "mockup_update": {new_screen["id"]: png} if png else {}}
+
+
+@router.get("/{session_id}/ucs-sem-tela")
+def ucs_sem_tela(session_id: str, current_user=Depends(get_current_user)):
+    """Casos de uso da Especificação de origem que ficaram sem tela nesta versão da Interface."""
+    from prompts.generate_ui_spec import parse_uc_blocks
+    row = _fetch_session(session_id)
+    spec_doc, _pid = _fetch_spec_content(row["specification_session_id"])
+    ui_spec = json.loads(row["ui_spec_json"]) if row.get("ui_spec_json") else {}
+    com_tela = {u for s in ui_spec.get("screens", []) for u in (s.get("uc") or [])}
+    faltam = [{"uc": u["id"], "nome": u.get("name")} for u in parse_uc_blocks(spec_doc) if u["id"] not in com_tela]
+    return {"session_id": session_id, "sem_tela": faltam}
+
+
+@router.post("/{session_id}/uc/{uc_id}/gerar-tela")
+def gerar_tela_do_uc(session_id: str, uc_id: str, current_user=Depends(get_current_user)):
+    """Gera a tela de UM caso de uso que ficou sem tela, sem regerar as outras; grava versão nova."""
+    row = _fetch_session(session_id)
+    ui_spec = json.loads(row["ui_spec_json"]) if row.get("ui_spec_json") else {}
+    screens = ui_spec.get("screens", [])
+    if any(uc_id in (s.get("uc") or []) for s in screens):
+        raise HTTPException(409, f"{uc_id} já tem tela — use a re-sincronização da tela")
+    spec_doc, project_id = _fetch_spec_content(row["specification_session_id"])
+    schema_sql, _dm_id, _dm_v = _fetch_schema_sql(project_id, row.get("data_model_session_id"))
+    try:
+        result = regenerate_one_screen_from_spec(spec_doc, uc_id, schema_sql, True,
+                                                 project_name=_project_name(project_id))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Falha ao gerar a tela do {uc_id}: {e}")
+    nova = result["screen"]
+    if any(s.get("id") == nova.get("id") for s in screens):
+        nova["id"] = f"{nova.get('id')}-{uc_id.lower()}"
+    screens.append(nova)
+    ui_spec["screens"] = screens
+    _unificar_telas_repetidas(ui_spec)
+    _amarrar_menu_as_telas(ui_spec)
+    mockups = json.loads(row["mockups_json"]) if row.get("mockups_json") else {}
+    if result.get("png"):
+        mockups[nova["id"]] = result["png"]
+    with get_db_connection() as conn:
+        cur = conn.cursor()
+        try:
+            cur.execute("UPDATE ui_spec_sessions SET ui_spec_json=%s, mockups_json=%s, screens_count=%s, "
+                        "version=version+1 WHERE id=%s",
+                        (json.dumps(ui_spec, ensure_ascii=False), json.dumps(mockups, ensure_ascii=False),
+                         len(ui_spec.get("screens", [])), session_id))
+            conn.commit()
+        finally:
+            cur.close()
+    _save_ui_spec_version(session_id, json.dumps(ui_spec, ensure_ascii=False), "ai_refinement",
+                          f"Tela do {uc_id} gerada (caso de uso estava sem tela)", current_user["id"])
+    return {"status": "ok", "uc_id": uc_id, "screen_id": nova.get("id"),
+            "ficha": nova.get("ficha"), "screens_count": len(ui_spec.get("screens", []))}
 
 
 @router.get("/{session_id}/screen/{screen_id}/source")

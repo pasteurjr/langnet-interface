@@ -315,9 +315,16 @@ const UISpecPage: React.FC = () => {
       // Atualiza só o mockup da tela refinada, sem recarregar tudo.
       if (d.mockup_update) setMockups((m) => ({ ...m, ...d.mockup_update }));
       if (d.ui_spec) setSession((s) => (s ? { ...s, ui_spec: d.ui_spec } : s));
-      const msg = `Tela "${d.refined_screen || selected}" atualizada`;
+      // A resposta diz O QUE mudou (comparação feita pelo programa); se nada mudou, diz isso.
+      if (d.status === "sem_mudanca") {
+        const msg = `Nada mudou na tela "${d.refined_screen || selected}". Reformule o pedido ou aponte o elemento.`;
+        setChatMessages((m) => [...m, { role: "assistant", content: msg }]);
+        toast.info(msg);
+        return;
+      }
+      const msg = `Tela "${d.refined_screen || selected}": ${(d.mudancas || []).join("; ") || "alterada"}`;
       setChatMessages((m) => [...m, { role: "assistant", content: msg }]);
-      toast.success(msg);
+      toast.success(`Tela "${d.refined_screen || selected}" alterada`);
       // O protótipo mostrava a tela ANTIGA até alguém clicar de novo em "Protótipo" — quem pedia a
       // mudança via a confirmação e o desenho velho ao lado, sem saber se tinha pegado. Agora ele é
       // remontado sozinho e o quadro recarrega: o pedido e o resultado ficam na mesma respiração.

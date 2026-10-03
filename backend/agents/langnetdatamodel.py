@@ -315,7 +315,9 @@ def _call_llm(prompt: str, temperature: float = 0.2) -> str:
     # LM Studio local: chamada DIRETA em streaming (evita o estol do litellm do CrewAI
     # em respostas longas — mesmo fix do executor principal e do LLMClient).
     import os as _os
-    if (_os.getenv("LLM_PROVIDER", "openai") or "").lower() == "lmstudio":
+    # claude_code entra aqui também: o caminho do CrewAI abaixo cai no DeepSeek (pago) para
+    # qualquer provedor que não seja o LM Studio — medido em 03/10/2026.
+    if (_os.getenv("LLM_PROVIDER", "openai") or "").lower() in ("lmstudio", "claude_code"):
         from agents.langnetagents import _direct_llm_complete
         return _direct_llm_complete(prompt)
     llm = _get_llm()

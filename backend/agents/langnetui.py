@@ -17,6 +17,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
+from agents.langnetfichatela import aplicar_ficha, conferir_tela
 from prompts.generate_ui_spec import (
     parse_uc_blocks, parse_schema_tables, select_relevant_tables,
     build_sub_schema, is_agentic_screen, build_single_screen_prompt,
@@ -161,7 +162,9 @@ def _get_llm():
 
 def _call_llm(prompt: str) -> str:
     import os as _os
-    if (_os.getenv("LLM_PROVIDER", "openai") or "").lower() == "lmstudio":
+    # claude_code entra aqui também: o caminho do CrewAI abaixo cai no DeepSeek (pago) para
+    # qualquer provedor que não seja o LM Studio — medido em 03/10/2026.
+    if (_os.getenv("LLM_PROVIDER", "openai") or "").lower() in ("lmstudio", "claude_code"):
         from agents.langnetagents import _direct_llm_complete
         return _direct_llm_complete(prompt)
     llm = _get_llm()
@@ -273,7 +276,7 @@ def _generate_one_screen(uc: Dict[str, str], sub_schema: str,
     if screen:
         ok, _ = validate_screen(screen)
         if ok:
-            return screen
+            return _corrigir_pela_ficha(screen, uc, prompt)
 
     # Retry com instrução explícita
     retry_prompt = prompt + (
@@ -288,10 +291,42 @@ def _generate_one_screen(uc: Dict[str, str], sub_schema: str,
             screen2 = json.loads(obj2)
             ok2, _ = validate_screen(screen2)
             if ok2:
-                return screen2
+                return _corrigir_pela_ficha(screen2, uc, prompt)
         except Exception:
             pass
     return None
+
+
+def _corrigir_pela_ficha(screen: Dict[str, Any], uc: Dict[str, str], prompt: str) -> Dict[str, Any]:
+    """Aplica a ficha (executor de cada ação tirado da Especificação, blocos de agente, mensagens,
+    nada sensível) e confere a tela PELO PROGRAMA. Se reprovar, pede UMA correção ao modelo com os
+    motivos, e fica com a versão de menos problemas — o defeito nunca passa calado: o que sobrar
+    fica em `screen["ficha"]["problemas"]` e aparece no protótipo."""
+    import copy
+    uc_id = uc.get("id", "")
+    cand = copy.deepcopy(screen)
+    aplicar_ficha(cand, uc.get("raw", ""), uc_id)
+    probs = conferir_tela(cand)
+    if probs:
+        raw = _call_llm(prompt + "\n\n⚠️ A tela abaixo foi REPROVADA pela conferência por estes motivos:\n- "
+                        + "\n- ".join(probs[:25])
+                        + "\n\nTELA REPROVADA:\n" + json.dumps(screen, ensure_ascii=False)[:60000]
+                        + "\n\nCorrija SÓ esses pontos e devolva o JSON completo da tela.")
+        obj = extract_json_object(raw or "")
+        try:
+            nova = json.loads(obj) if obj else None
+        except Exception:
+            nova = None
+        if nova and validate_screen(nova)[0]:
+            aplicar_ficha(nova, uc.get("raw", ""), uc_id)
+            p2 = conferir_tela(nova)
+            if len(p2) < len(probs):
+                cand, probs = nova, p2
+    cand.setdefault("ficha", {})["problemas"] = probs
+    ucs = cand.get("uc") or []
+    if uc_id and uc_id not in ucs:
+        cand["uc"] = [uc_id] + [u for u in ucs if u != uc_id]
+    return cand
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -363,10 +398,29 @@ def execute_ui_spec_workflow(
     mockups: Dict[str, str] = {}
     action_map: Dict[str, Dict[str, str]] = {}
 
-    for idx, uc in enumerate(ucs, 1):
+    # Telas em paralelo: cada tela é um pedido independente ao modelo (~4 min na ponte do Claude);
+    # 31 telas em série davam duas horas. UI_SPEC_PARALELO ajusta (1 = em série, como antes).
+    from concurrent.futures import ThreadPoolExecutor
+    _par = int(os.getenv("UI_SPEC_PARALELO") or (4 if (os.getenv("LLM_PROVIDER") or "").lower() == "claude_code" else 1))
+
+    def _gerar(uc):
         picked = select_relevant_tables(uc, tables)
-        sub_schema = build_sub_schema(picked, tables)
-        screen = _generate_one_screen(uc, sub_schema, project_name, nav_items)
+        try:
+            return _generate_one_screen(uc, build_sub_schema(picked, tables), project_name, nav_items)
+        except Exception as e:
+            print(f"[UI_SPEC] {uc.get('id')} falhou: {e}")
+            return None
+
+    with ThreadPoolExecutor(max_workers=max(1, _par)) as _ex:
+        _geradas = list(_ex.map(_gerar, ucs))
+    # A tela que falhou na rodada paralela é refeita UMA vez, sozinha (medido em 03/10/2026: as 4
+    # últimas do BioByte falharam juntas quando a ponte do modelo estava com pedidos demais).
+    for _i, _scr in enumerate(_geradas):
+        if not _scr and _par > 1:
+            print(f"[UI_SPEC] {ucs[_i].get('id')}: refazendo sozinha")
+            _geradas[_i] = _gerar(ucs[_i])
+
+    for idx, (uc, screen) in enumerate(zip(ucs, _geradas), 1):
         if not screen:
             log_lines.append(f"[{idx}/{len(ucs)}] {uc.get('id')} FALHOU")
             print(f"[UI_SPEC] [{idx}/{len(ucs)}] {uc.get('id')} falhou")
@@ -379,14 +433,13 @@ def execute_ui_spec_workflow(
         # Tipo de tela derivado da INTENÇÃO do UC (fonte: comportamento).
         screen["kind"] = derive_screen_kind(uc)
         _align_layout_to_kind(screen)
-        # CONSISTÊNCIA protótipo↔código: só telas de LISTAGEM de entidade recebem o
-        # mockup de CRUD CONVENCIONAL determinístico. Telas de criar/editar/aprovar
-        # NÃO são forçadas a tabela — respeitam o verbo do UC (evita over-CRUD).
-        _ent = screen.get("entity")
-        if _ent and _ent in tables and screen["kind"] == "list":
+        # O desenho do modelo NÃO é mais trocado pelo molde genérico de CRUD (03/10/2026): o
+        # molde punha "Exemplo A/B/C", sem menu, e TODAS as colunas da tabela — inclusive
+        # SENHA HASH na tela de Usuários. Eram as 5 telas genéricas do BioByte v5. Desde a F4
+        # a tela do aplicativo É o desenho aprovado, então a razão do molde (casar com o
+        # código) deixou de existir.
+        if screen["kind"] == "list":
             screen["layout"] = "table"
-            screen["mockup_html"] = _crud_mockup_html(
-                screen.get("name") or _ent, _ent, tables[_ent])
 
         # Separa o HTML pesado do PNG
         html = screen.get("mockup_html", "")
@@ -397,10 +450,10 @@ def execute_ui_spec_workflow(
 
         # action_map: agrega ações task/crud
         for act in (screen.get("actions") or []):
-            tgt = act.get("target")
-            kind = act.get("kind")
-            if tgt and kind in ("task", "crud"):
-                action_map[tgt] = {"kind": kind, "screen": screen["id"]}
+            if act.get("passo"):
+                action_map[f"{act.get('uc')} · {act['passo']}"] = {
+                    "executado_por": act.get("executado_por"), "screen": screen["id"],
+                    "label": act.get("label")}
 
         screens.append(screen)
         log_lines.append(
@@ -459,11 +512,8 @@ def regenerate_one_screen_from_spec(
     # CRUD-tabela determinístico (usa a intenção do UC, não 'agêntico ou não').
     screen["kind"] = derive_screen_kind(uc)
     _align_layout_to_kind(screen)
-    _ent = screen.get("entity")
-    if _ent and _ent in tables and screen["kind"] == "list":
+    if screen["kind"] == "list":
         screen["layout"] = "table"
-        screen["mockup_html"] = _crud_mockup_html(
-            screen.get("name") or _ent, _ent, tables[_ent])
 
     # Garante o vínculo do UC de origem na tela regenerada.
     ucs = screen.get("uc") or []
@@ -509,8 +559,13 @@ REGRAS:
   de reposicionamento, devolvendo a lista na ordem original e dizendo que tinha aplicado.
 - "Preservar o que não foi pedido" vale para o CONTEÚDO dos itens, não para a ordem: se a
   instrução é sobre posição, a ordem TEM de mudar.
+- 🔴 PRESERVE AS LIGAÇÕES: cada ação continua com o seu `id` e o seu `passo`; cada botão do
+  mockup_html continua com `data-acao`, cada bloco de agente com `data-agente`, cada valor com
+  `data-campo`, cada mensagem com `data-mensagem`. Botão novo precisa de `passo` (um dos passos
+  abaixo) ou de `navegar_para`. Nada de senha, hash, token ou segredo em tela.
+- Ignore os campos `ficha`, `mensagens` e `executado_por`: o programa os recalcula.
 - Retorne SOMENTE o objeto JSON da tela, começando com {{ e terminando com }}.
-
+{passos}
 ## TELA ATUAL (JSON)
 {screen_json}
 
@@ -520,12 +575,17 @@ REGRAS:
 Retorne a tela atualizada (apenas o JSON):"""
 
 
-def refine_one_screen(screen: Dict[str, Any], instruction: str, render_png: bool = True) -> Dict[str, Any]:
+def refine_one_screen(screen: Dict[str, Any], instruction: str, render_png: bool = True,
+                      uc: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Refina UMA tela conforme a instrução. Regenera estrutura + mockup_html e
-    re-renderiza o PNG. Retorna {'screen': novo_screen, 'png': data_uri|None}."""
+    re-renderiza o PNG. Retorna {'screen': novo_screen, 'png': data_uri|None}.
+    Com `uc` (o caso de uso da tela, lido da Especificação), a ficha é reaplicada e conferida."""
+    from agents.langnetfichatela import passos_para_prompt
     prompt = _REFINE_SCREEN_PROMPT.format(
-        screen_json=json.dumps(screen, ensure_ascii=False),
+        screen_json=json.dumps({k: v for k, v in screen.items() if k not in ("ficha",)}, ensure_ascii=False),
         instruction=instruction,
+        passos=("\n## PASSOS DO CASO DE USO (chave · quem executa · o que acontece)\n"
+                + passos_para_prompt(uc.get("raw", "")) + "\n") if uc else "",
     )
     raw = _call_llm(prompt)
     obj = extract_json_object(raw or "")
@@ -557,6 +617,11 @@ def refine_one_screen(screen: Dict[str, Any], instruction: str, render_png: bool
     # preserva id/route se o LLM os removeu
     new_screen.setdefault("id", screen.get("id"))
     new_screen.setdefault("route", screen.get("route"))
+    new_screen.setdefault("uc", screen.get("uc"))
+    new_screen.setdefault("kind", screen.get("kind"))
+    if uc:
+        aplicar_ficha(new_screen, uc.get("raw", ""), uc.get("id", ""))
+        new_screen.setdefault("ficha", {})["problemas"] = conferir_tela(new_screen)
 
     png = None
     if render_png and new_screen.get("mockup_html"):
@@ -565,7 +630,8 @@ def refine_one_screen(screen: Dict[str, Any], instruction: str, render_png: bool
 
 
 def refine_ui_spec(current_ui_spec_json: str, instruction: str, schema_sql: str = "",
-                   screen_id: Optional[str] = None) -> Dict[str, Any]:
+                   screen_id: Optional[str] = None,
+                   specification_document: str = "") -> Dict[str, Any]:
     """Refina a UI spec. Se screen_id é dado, refina SÓ aquela tela (robusto e
     barato); senão tenta inferir a tela alvo pela instrução; se não achar, aplica
     à primeira tela. Re-renderiza o PNG da tela alterada.
@@ -596,7 +662,15 @@ def refine_ui_spec(current_ui_spec_json: str, instruction: str, schema_sql: str 
     if target_idx is None:
         target_idx = 0
 
-    result = refine_one_screen(screens[target_idx], instruction)
+    uc = None
+    if specification_document:
+        for uc_id in (screens[target_idx].get("uc") or []):
+            achado = find_uc_block(specification_document, uc_id)
+            if achado:
+                uc = achado["uc"]
+                break
+    antes = screens[target_idx]
+    result = refine_one_screen(antes, instruction, uc=uc)
     new_screen = result["screen"]
     screens[target_idx] = new_screen
     ui_spec["screens"] = screens
@@ -605,4 +679,38 @@ def refine_ui_spec(current_ui_spec_json: str, instruction: str, schema_sql: str 
     if result.get("png"):
         mockup_update[new_screen.get("id")] = result["png"]
 
-    return {"ui_spec": ui_spec, "mockup_update": mockup_update, "refined_screen": new_screen.get("id")}
+    return {"ui_spec": ui_spec, "mockup_update": mockup_update, "refined_screen": new_screen.get("id"),
+            "mudancas": diferencas_de_tela(antes, new_screen)}
+
+
+def diferencas_de_tela(antes: Dict[str, Any], depois: Dict[str, Any]) -> List[str]:
+    """O que mudou na tela, em palavras — escrito pelo PROGRAMA comparando antes e depois.
+    A conversa não pode afirmar "tela atualizada" se nada mudou."""
+    out = []
+    def rot(c):
+        return c.get("label") or c.get("field") or c.get("id") or "?"
+    ca = [rot(c) for c in antes.get("components") or []]
+    cd = [rot(c) for c in depois.get("components") or []]
+    for x in cd:
+        if x not in ca:
+            out.append(f"campo novo: {x}")
+    for x in ca:
+        if x not in cd:
+            out.append(f"campo retirado: {x}")
+    comuns_a = [x for x in ca if x in cd]
+    comuns_d = [x for x in cd if x in ca]
+    if comuns_a != comuns_d:
+        out.append("ordem dos campos mudou")
+    aa = {a.get("label"): a for a in antes.get("actions") or []}
+    ad = {a.get("label"): a for a in depois.get("actions") or []}
+    for k in ad:
+        if k not in aa:
+            out.append(f"botão novo: {k} ({ad[k].get('executado_por') or 'sem executor'})")
+        elif aa[k].get("passo") != ad[k].get("passo"):
+            out.append(f"botão {k}: passo {aa[k].get('passo')} → {ad[k].get('passo')}")
+    for k in aa:
+        if k not in ad:
+            out.append(f"botão retirado: {k}")
+    if (antes.get("mockup_html") or "") != (depois.get("mockup_html") or "") and not out:
+        out.append("desenho da tela alterado")
+    return out

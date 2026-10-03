@@ -436,13 +436,22 @@ def montar_prototipo_de_telas(ui_spec: dict, destino: Path, project_name: str) -
         partes.append('</nav>')
         return "".join(partes)
 
+    from agents.langnetfichatela import injetar_prototipo, agentes_do_sistema
+    agentes = agentes_do_sistema(telas)
     gravadas = 0
+    sem_executor = {}
     for t in telas:
         doc = t["mockup_html"]
         # a tela já vem com o próprio menu lateral (estático); troca pelo menu NAVEGÁVEL
         doc = _re.sub(r"<aside\b.*?</aside>", menu_html(t), doc, count=1, flags=_re.S|_re.I)
         if "<aside" not in (t["mockup_html"] or "") .lower():
             doc = _re.sub(r"(<body[^>]*>)", r"\1" + menu_html(t), doc, count=1, flags=_re.I)
+        # protótipo EXECUTÁVEL: cada botão diz quem o executa; sem executor aparece marcado;
+        # o bloco do agente mostra os cinco estados; as mensagens aparecem por situação.
+        doc = injetar_prototipo(doc, t, agentes)
+        faltam = [a.get("label") for a in (t.get("actions") or []) if not a.get("executado_por")]
+        if faltam:
+            sem_executor[t.get("id")] = faltam
         (destino / arquivo(t)).write_text(doc, encoding="utf-8")
         gravadas += 1
 
@@ -450,7 +459,8 @@ def montar_prototipo_de_telas(ui_spec: dict, destino: Path, project_name: str) -
         f'<!doctype html><meta charset="utf-8">'
         f'<title>{_html.escape(project_name)} — protótipo</title>'
         f'<meta http-equiv="refresh" content="0; url=./{arquivo(telas[0])}">', encoding="utf-8")
-    return {"ok": True, "erro": "", "telas": gravadas,
+    return {"ok": True, "erro": "", "telas": gravadas, "agentes": len(agentes),
+            "acoes_sem_executor": sem_executor,
             "bytes": sum((destino / arquivo(t)).stat().st_size for t in telas)}
 
 
