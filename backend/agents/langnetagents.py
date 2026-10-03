@@ -5007,9 +5007,53 @@ def _observador_de_agente(ws, loop):
     return _ao_passo
 
 
+def _erro_de_banco_em_palavras(tecnico: str) -> str:
+    """O erro do banco dito em português de usuário. O código e o texto técnico seguem à parte,
+    em `detalhe_tecnico`, para quem depura."""
+    import re as _re
+    _t = str(tecnico or "")
+    _col = _re.search(r"column '([^']+)'", _t)
+    _campo = (_col.group(1).replace("_", " ") if _col else "")
+    if "1452" in _t or "foreign key constraint fails" in _t:
+        _fk = _re.search(r"FOREIGN KEY \(`([^`]+)`\)", _t)
+        _c = (_fk.group(1).replace("_", " ") if _fk else "um dos campos")
+        return f"Não foi possível salvar: {{_c}} aponta para um registro que não existe."
+    if "1265" in _t or "1366" in _t or "Data truncated" in _t or "Incorrect" in _t:
+        return f"Não foi possível salvar: o valor informado não é aceito para {{_campo or 'um dos campos'}}."
+    if "1062" in _t or "Duplicate entry" in _t:
+        return "Não foi possível salvar: já existe um registro com esse valor."
+    if "1048" in _t or "cannot be null" in _t:
+        return f"Não foi possível salvar: {{_campo or 'um campo obrigatório'}} não foi preenchido."
+    if "1406" in _t or "Data too long" in _t:
+        return f"Não foi possível salvar: o texto de {{_campo or 'um dos campos'}} é maior que o permitido."
+    return ""
+
+
 async def _concluir_tarefa(ws, task_name: str, resultado, inicio: float) -> None:
     """Fecha a tarefa do jeito que a tela espera: etiquetas primeiro, depois o
-    envelope completo — com duracao, sucesso e as etiquetas junto."""
+    envelope completo — com duracao, sucesso e as etiquetas junto.
+
+    RESULTADO COM ERRO NÃO É SUCESSO. Medido no BioByte v5 em 03/10/2026: o banco recusava o
+    cadastro (vínculo inexistente, valor fora da lista fechada), o adaptador devolvia
+    {{"status": "erro"}}, e esta função mandava `task_completed` com `success: True` — a tela
+    voltava para a lista sem nenhum aviso. Agora o erro vai como `error`, com a mensagem do caso
+    de uso (ou o erro do banco dito em português) e o detalhe técnico à parte."""
+    if isinstance(resultado, dict) and str(resultado.get("status", "")).lower() in ("erro", "error"):
+        _tec = str(resultado.get("error") or resultado.get("erro") or resultado.get("mensagem") or "falha sem detalhe")
+        _humano = _erro_de_banco_em_palavras(_tec) or _tec
+        _etiqueta("TASK_OUTPUT", resultado)
+        await _passo(ws, "task_output", "a tarefa terminou com erro", output_data=resultado)
+        await _consolidar_etiquetas(ws, task_name, False)
+        await _send(ws, "error", {{
+            "task_name": task_name,
+            "success": False,
+            "error": _msg_negocio(task_name, "erro", _humano),
+            "detalhe_tecnico": _tec,
+            "duration": round(time.time() - inicio, 3),
+            "result": resultado,
+            "timestamp": datetime.utcnow().isoformat(),
+        }})
+        return
     _etiqueta("TASK_OUTPUT", resultado)
     _etiqueta("TASK_OUTPUT_TYPE", "json" if isinstance(resultado, (dict, list)) else "texto")
     await _passo(ws, "task_output", "saida final da tarefa", output_data=resultado)
@@ -13117,7 +13161,15 @@ def _template_ws_client(ws_port: int) -> str:
         '    ws.onmessage = (ev) => {\n'
         '      let m; try { m = JSON.parse(ev.data); } catch (e) { return; }\n'
         '      if (m.type === "task_completed" || m.type === "task_result") {\n'
-        '        clearTimeout(timer); ws.close(); resolve(m.data && m.data.result !== undefined ? m.data.result : (m.data || {}));\n'
+        '        clearTimeout(timer); ws.close();\n'
+        '        const r = m.data && m.data.result !== undefined ? m.data.result : (m.data || {});\n'
+        '        // Resposta marcada como erro NUNCA vira sucesso na tela (BioByte v5, 03/10/2026:\n'
+        '        // o cadastro recusado pelo banco voltava para a lista sem aviso).\n'
+        '        const st = r && typeof r === "object" ? String(r.status || "").toLowerCase() : "";\n'
+        '        if ((m.data && m.data.success === false) || st === "erro" || st === "error") {\n'
+        '          reject(new Error((r && (r.error || r.erro || r.mensagem)) || (m.data && m.data.error) || "a tarefa terminou com erro")); return;\n'
+        '        }\n'
+        '        resolve(r);\n'
         '      } else if (m.type === "error") {\n'
         '        clearTimeout(timer); ws.close(); reject(new Error((m.data && m.data.error) || "erro na task"));\n'
         '      }\n'
