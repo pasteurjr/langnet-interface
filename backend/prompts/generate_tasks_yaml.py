@@ -36,7 +36,6 @@ Exemplo para uma task cadastrar_persona_alvo em schema normalizado com PK UUID:
 
 ```yaml
 cadastrar_persona_alvo:
-  agent: persona_manager_agent
   description: >
     Cadastrar persona-alvo no banco respeitando o schema normalizado.
     Input data format:
@@ -84,7 +83,6 @@ FORMATO tasks.yaml (seguir EXATAMENTE o padrão do framework):
 
 ```yaml
 task_name:
-  execution: deterministic   # ou 'agent' — classifique pela natureza (ver REGRA 7)
   description: >
     Descrição detalhada da tarefa.
     Input data format: [descrição do input]

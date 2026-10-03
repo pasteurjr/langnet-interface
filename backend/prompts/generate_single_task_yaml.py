@@ -417,8 +417,6 @@ _EXAMPLE_HDR = "EXEMPLO REAL de task com SQL (siga este padrão EXATO):"
 
 _EXAMPLE_SQL = """```
 cadastrar_pessoa:
-  execution: deterministic
-  agent: pessoa_manager_agent
   description: >
     Cadastrar pessoa no banco respeitando o schema normalizado.
     Input data format:

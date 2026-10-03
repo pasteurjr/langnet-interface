@@ -474,27 +474,9 @@ async def _generate_one_task_with_retry(
     if ok2:
         return chunk2, True
 
-    # TERCEIRA TENTATIVA quando o que falta são OS PASSOS. A lógica já está escrita na descrição
-    # que veio do documento de Agentes e Tarefas — é transcrição, não invenção; insistir resolve.
-    if "steps" in (reason2 or ""):
-        print(f"[TASKS_YAML]   ⚠️ attempt 2 sem steps: {reason2} — 3ª tentativa")
-        prompt3 = build_single_task_prompt(
-            task, sub_schema, persistence,
-            retry_hint=("VOCÊ ESQUECEU `steps:` DE NOVO. Não invente nada: pegue os itens "
-                        "numerados de `Process steps` da descrição e transcreva CADA UM como um "
-                        "passo, na ordem, usando os tipos permitidos. O YAML é RECUSADO sem isso."))
-        raw3 = await get_llm_response_async(
-            prompt=prompt3,
-            system="Você é especialista em CrewAI e YAML. Gere APENAS um bloco YAML de task.",
-            temperature=0.0,
-            max_tokens=3500,
-        )
-        chunk3 = extract_task_block(task_name, raw3 or "")
-        chunk3 = _escrever_procedencia(chunk3, task_name, (dependencias or {}).get(task_name) or [])
-        ok3, reason3 = validate_task_yaml(task_name, chunk3, persistence)
-        if ok3:
-            return chunk3, True
-        chunk2, reason2 = (chunk3 or chunk2), reason3
+    # A 3ª tentativa forçava o campo `steps:`, que NÃO faz parte do padrão do framework
+    # (CrewAI): a tarefa tem `description` e `expected_output`, e a lógica mora na prosa de
+    # `Process steps` DENTRO da descrição. Desligada ao voltar ao padrão, em 27/09/2026.
 
     # Nem depois das tentativas: a tarefa ENTRA (senão some do aplicativo), mas SÓ se o bloco
     # for YAML legível. Medido em 23/09/2026: um bloco com uma frase contendo dois-pontos entrou
@@ -845,8 +827,10 @@ Abaixo está UMA tarefa do arquivo de tarefas. Aplique NELA a parte do pedido qu
 ## REGRAS
 
 1. Devolva a tarefa COMPLETA, do nome dela até o fim, em YAML válido.
-2. NÃO mude o nome da tarefa nem remova campos existentes (traceability, execution, agent,
-   description, expected_output, steps). Se ela tem `steps:`, devolva os passos INTEIROS.
+2. NÃO mude o nome da tarefa. O padrão do framework (CrewAI) tem DOIS campos e só:
+   `description` e `expected_output`. NÃO acrescente `agent:`, `tools:`, `execution:`,
+   `traceability:` nem `steps:` — o vínculo com o agente é preenchido na geração de código,
+   a partir do documento de Agentes e Tarefas, não aqui.
 3. Mexa APENAS no que o pedido determina. O resto fica idêntico, caractere por caractere.
 4. Sem preâmbulo, sem explicação, sem cerca de código. Só o YAML da tarefa.
 """
@@ -898,7 +882,7 @@ Você é um especialista em CrewAI e configuração de tarefas.
 
 1. Preserve a estrutura YAML existente e os nomes das tarefas.
 2. Aplique APENAS as mudanças pedidas; o resto fica idêntico.
-3. Se uma tarefa tem `steps:`, devolva os passos INTEIROS.
+3. Mantenha a prosa de `Process steps` dentro da `description` — é lá que a lógica mora.
 4. Retorne o tasks.yaml COMPLETO, sem preâmbulo nem explicação.
 """
             refined_yaml = await get_llm_response_async(
@@ -923,7 +907,8 @@ Você é um especialista em CrewAI e configuração de tarefas.
                 f"o refino devolveu {depois} tarefas e o documento tinha {antes} — "
                 "a versão anterior foi mantida"
             )
-        passos_antes = current_yaml.count("steps:")
+        # Guarda do formato antigo (`steps:`), desativada: o padrão não tem esse campo.
+        passos_antes = 0
         if passos_antes and refined_yaml.count("steps:") < passos_antes:
             raise Exception(
                 f"o refino perdeu contrato de passos ({refined_yaml.count('steps:')} de "

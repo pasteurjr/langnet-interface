@@ -630,6 +630,17 @@ research_additional_info:
 
 enrich_requirements:
   description: >
+    REGRA DE NATUREZA (obrigatoria — nao perca este campo):
+
+    Cada requisito funcional carrega `natureza` ("convencional" ou "agentica") e, quando
+    agentica, `decisao_do_agente`. PRESERVE nos que ja tem; PREENCHA nos que nao tem e nos que
+    voce sugerir. NUNCA devolva requisito funcional sem `natureza`.
+
+    Criterio: "um programa comum, sem modelo de linguagem, resolveria isso lendo o banco e
+    seguindo uma regra escrita?" Sim = convencional. Nao = agentica. A MAIORIA e convencional:
+    cadastro, consulta, login, relatorio, painel, auditoria, notificacao e tratamento de erro
+    sao SEMPRE convencionais.
+
     [Requirements Enrichment] Validate completeness and add critical missing requirements.
 
     ═══════════════════════════════════════════════════════════
@@ -759,7 +770,9 @@ enrich_requirements:
       "validation_status": "APPROVED" or "REJECTED",
       "validation_message": "explanation if rejected",
       "enriched_requirements": {
-        "functional_requirements": [...all FRs including AI-suggested],
+        "functional_requirements": [...all FRs including AI-suggested. PRESERVE os campos
+          `natureza` e `decisao_do_agente` de quem ja os tem, e PREENCHA em quem nao tem,
+          inclusive nos que voce sugerir. Requisito funcional sem `natureza` e ERRO.],
         "non_functional_requirements": [...all NFRs including AI-suggested],
         "business_rules": [...all BRs including AI-suggested]
       },
@@ -779,6 +792,17 @@ enrich_requirements:
 
 validate_quality:
   description: >
+    REGRA DE NATUREZA (obrigatoria — nao perca este campo):
+
+    Cada requisito funcional carrega `natureza` ("convencional" ou "agentica") e, quando
+    agentica, `decisao_do_agente`. PRESERVE nos que ja tem; PREENCHA nos que nao tem e nos que
+    voce sugerir. NUNCA devolva requisito funcional sem `natureza`.
+
+    Criterio: "um programa comum, sem modelo de linguagem, resolveria isso lendo o banco e
+    seguindo uma regra escrita?" Sim = convencional. Nao = agentica. A MAIORIA e convencional:
+    cadastro, consulta, login, relatorio, painel, auditoria, notificacao e tratamento de erro
+    sao SEMPRE convencionais.
+
     [Quality Validation] Review requirements quality, identify gaps, and assign severity.
 
     YOU WILL RECEIVE:

@@ -29,7 +29,7 @@ const shot = async (p, tag) => { const f = `${OUT}/${N}-langnet-${tag}.png`; awa
     await sleep(500);
     await shot(p, 'implantacao-versao-escolhida');
     // preenche a configuração da implantação (banco + provedor de IA) como o operador faria
-    const CFG = { 'Servidor do banco': '127.0.0.1', 'Porta do banco': '3308', 'Banco de dados': 'biobyte_app',
+    const CFG = { 'Servidor do banco': '127.0.0.1', 'Porta do banco': '3308', 'Banco de dados': 'biobyte_zero',
                   'Usuário do banco': 'producao', 'Senha do banco': '112358123',
                   'Provedor de IA': 'deepseek', 'Chave da IA (se nuvem)': process.env.DEEPSEEK_KEY || '' };
     for (const [rot, val] of Object.entries(CFG)) {
