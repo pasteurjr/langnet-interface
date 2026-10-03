@@ -23,7 +23,10 @@ import {
   getSpecification,
   updateSpecification,
   listSpecificationVersions,
-  getSpecificationVersion
+  getSpecificationVersion,
+  getExecucao,
+  anotarExecucao,
+  andamentoAnotarExecucao
 } from '../services/specificationService';
 import {
   refineSpecification,
@@ -90,6 +93,10 @@ const SpecificationPage: React.FC = () => {
   const [reviewSuggestions, setReviewSuggestions] = useState<string>('');
   const [isReviewing, setIsReviewing] = useState(false);
   const [isApplyingSuggestions, setIsApplyingSuggestions] = useState(false);
+
+  // "Executado por" (padrão de interação com agentes v1.0): conferência e anotação
+  const [execConferencia, setExecConferencia] = useState<any>(null);
+  const [execAndamento, setExecAndamento] = useState<any>(null);
 
   useEffect(() => {
     loadDocuments();
@@ -527,6 +534,54 @@ const SpecificationPage: React.FC = () => {
   };
 
   // Review: Analisa documento e mostra sugestões em modal
+  const carregarConferenciaExecucao = useCallback(async (sid?: string) => {
+    if (!sid) return;
+    try {
+      const r = await getExecucao(sid);
+      setExecConferencia(r.conferencia);
+    } catch (e) {
+      setExecConferencia(null);
+    }
+  }, []);
+
+  useEffect(() => { carregarConferenciaExecucao(currentSessionId); }, [currentSessionId, carregarConferenciaExecucao]);
+
+  const handleAnotarExecucao = async () => {
+    if (!currentSessionId) return;
+    try {
+      const r = await anotarExecucao(currentSessionId);
+      if (r.status === 'nada_a_fazer') {
+        toast.info(r.mensagem);
+        return;
+      }
+      setExecAndamento(r);
+      const timer = setInterval(async () => {
+        try {
+          const a = await andamentoAnotarExecucao(currentSessionId);
+          setExecAndamento(a);
+          if (a.status !== 'executando') {
+            clearInterval(timer);
+            if (a.status === 'concluido' && a.versao) {
+              const doc = await getSpecification(currentSessionId);
+              const texto = (doc as any)?.specification_document || (doc as any)?.content;
+              if (texto) setGeneratedDocument(texto);
+              toast.success(a.mensagem);
+            } else if (a.status === 'erro') {
+              toast.error(a.mensagem);
+            } else {
+              toast.info(a.mensagem);
+            }
+            carregarConferenciaExecucao(currentSessionId);
+          }
+        } catch (e) {
+          clearInterval(timer);
+        }
+      }, 4000);
+    } catch (e: any) {
+      toast.error(e.message || 'Falha ao iniciar a anotação');
+    }
+  };
+
   const handleReview = async () => {
     if (!currentSessionId) {
       toast.error('Gere uma especificação primeiro');
@@ -753,6 +808,32 @@ const SpecificationPage: React.FC = () => {
                 <p style={{ fontSize: '11px', color: '#666', marginTop: '8px' }}>
                   💡 Gere uma especificação primeiro para revisar
                 </p>
+              )}
+
+              <button
+                className="btn-review"
+                onClick={handleAnotarExecucao}
+                disabled={!currentSessionId || execAndamento?.status === 'executando'}
+                title="Marca, em cada passo dos fluxos, quem executa a resposta do sistema: pronto, código gerado ou agente"
+              >
+                {execAndamento?.status === 'executando'
+                  ? `⏳ Anotando ${execAndamento.atual || ''} (${execAndamento.feitos}/${execAndamento.total})`
+                  : '🧭 Anotar quem executa cada passo'}
+              </button>
+              {execConferencia && (
+                <div style={{ fontSize: '11px', color: execConferencia.aprovado ? '#166534' : '#92400e', marginTop: '6px', lineHeight: 1.4 }}>
+                  {execConferencia.aprovado
+                    ? `✅ ${execConferencia.casos_de_uso} casos de uso com "Executado por" conferido`
+                    : `⚠️ ${execConferencia.problemas.length} pendência(s) em "Executado por"`}
+                  <br />
+                  pronto {execConferencia.por_valor?.['pronto'] || 0} · código gerado {execConferencia.por_valor?.['código gerado'] || 0} · agente {execConferencia.por_valor?.['agente'] || 0}
+                  {execAndamento?.recusados && Object.keys(execAndamento.recusados).length > 0 && (
+                    <>
+                      <br />
+                      Recusados: {Object.entries(execAndamento.recusados).map(([uc, m]: any) => `${uc} (${(m as string[])[0]})`).join('; ')}
+                    </>
+                  )}
+                </div>
               )}
             </div>
           </div>

@@ -249,6 +249,41 @@ export const refineSpecification = async (
 };
 
 /**
+ * "Executado por" — quem executa cada passo dos fluxos (pronto · código gerado · agente)
+ */
+export const getExecucao = async (sessionId: string): Promise<any> => {
+  const response = await fetch(`${API_BASE_URL}/specifications/${sessionId}/execucao`, {
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || 'Falha ao ler quem executa cada passo');
+  }
+  return response.json();
+};
+
+export const anotarExecucao = async (sessionId: string, ucIds?: string[]): Promise<any> => {
+  const response = await fetch(`${API_BASE_URL}/specifications/${sessionId}/anotar-execucao`, {
+    method: 'POST',
+    headers: getAuthHeaders(),
+    body: JSON.stringify(ucIds && ucIds.length ? { uc_ids: ucIds } : {}),
+  });
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.detail || 'Falha ao iniciar a anotação');
+  }
+  return response.json();
+};
+
+export const andamentoAnotarExecucao = async (sessionId: string): Promise<any> => {
+  const response = await fetch(`${API_BASE_URL}/specifications/${sessionId}/anotar-execucao`, {
+    headers: getAuthHeaders(),
+  });
+  if (!response.ok) throw new Error('Falha ao ler o andamento da anotação');
+  return response.json();
+};
+
+/**
  * Export all specification service functions
  */
 export default {

@@ -377,6 +377,28 @@ critério clínico" → não, exige julgamento, é agêntica. "exibir campo vazi
 ⚠️ Espere que a **maioria** dos casos de uso seja convencional. Um sistema com 30 casos de uso
 costuma ter menos de 10 agênticos. Se você classificar quase tudo como agêntico, você errou.
 
+🔴 **EXECUTADO POR — preencha em TODO passo dos três fluxos (principal, alternativos, exceção).**
+
+A última coluna diz QUEM produz a "Resposta do Sistema" daquele passo. Só três valores:
+
+- **pronto** — o que todo sistema tem e o gerador faz por molde: login e sessão; cadastrar, alterar,
+  listar, filtrar, abrir e apagar registro; gravar em auditoria; relatório ou painel que só mostra o
+  que está no banco; mensagem de erro de validação de formulário; navegar entre telas.
+- **código gerado** — regra própria DESTE caso de uso que um programa comum resolve lendo o banco e
+  seguindo uma regra escrita: cálculo, conferência, filtro com condição de negócio, importação de
+  serviço externo, montar e enviar notificação, escolher a mensagem a partir do dado.
+- **agente** — só o passo em que a IA INTERPRETA, CLASSIFICA, DECIDE, RECOMENDA, ESTIMA ou REDIGE:
+  é a "Decisão do Agente" do caso de uso.
+
+Caso de uso **convencional** nunca tem passo **agente**. Caso de uso **agêntico** tem **agente**
+no(s) passo(s) do fluxo principal em que a decisão acontece — e só neles: mostrar o resultado,
+gravar e avisar continuam **pronto** ou **código gerado**. Nos fluxos de exceção, a resposta é quase
+sempre a tela mostrando uma mensagem.
+
+As mensagens dos fluxos (sobretudo de exceção) são TEXTO que aparece quando o caso acontece, não
+campo de tela: escreva-as entre aspas logo depois da palavra "mensagem", e não as desenhe no
+wireframe como campo.
+
 #### Fluxo Principal
 
 🔵 Descreva a INTERAÇÃO REAL coerente com o arquétipo da tela — não reduza tudo a "preenche campo/
@@ -385,27 +407,27 @@ camada"/"clica no lote"; em **chart/dashboard**, "escolhe o período"/"passa o m
 gráfico"; em **upload**, "arrasta o Shapefile"/"confere a prévia das feições"; em **gallery**,
 "abre a imagem". Cada elemento rico citado aqui DEVE aparecer no wireframe (regra 6.1).
 
-| # | Ação do Ator | Resposta do Sistema |
-|---|--------------|---------------------|
-| 1 | [ação concreta e real do ator — usar nome real do elemento UI clicado/preenchido/desenhado] | [o sistema exibe/faz: descrever elementos UI visíveis — nome da tela, campos, botões, mapa/gráfico/prévia, mensagens com texto exato] |
-| 2 | [próxima ação — pode ser "O usuário pode opcionalmente:"] | [resposta do sistema ou deixar em branco se for cabeçalho de sub-ações] |
-| 2.1 | [sub-ação opcional A — ex: "Clica em 'Cancelar'"] | [resposta específica — ex: "Sistema fecha o modal e retorna à tela anterior sem salvar dados"] |
-| 2.2 | [sub-ação opcional B] | [resposta específica com elementos UI] |
-| 3 | [próxima ação principal] | [resposta detalhada] |
+| # | Ação do Ator | Resposta do Sistema | Executado por |
+|---|--------------|---------------------|---------------|
+| 1 | [ação concreta e real do ator — usar nome real do elemento UI clicado/preenchido/desenhado] | [o sistema exibe/faz: descrever elementos UI visíveis — nome da tela, campos, botões, mapa/gráfico/prévia, mensagens com texto exato] | [pronto / código gerado / agente] |
+| 2 | [próxima ação — pode ser "O usuário pode opcionalmente:"] | [resposta do sistema ou deixar em branco se for cabeçalho de sub-ações] | [executor, ou — se a resposta estiver em branco] |
+| 2.1 | [sub-ação opcional A — ex: "Clica em 'Cancelar'"] | [resposta específica — ex: "Sistema fecha o modal e retorna à tela anterior sem salvar dados"] | [executor] |
+| 2.2 | [sub-ação opcional B] | [resposta específica com elementos UI] | [executor] |
+| 3 | [próxima ação principal] | [resposta detalhada] | [executor] |
 
 #### Fluxos Alternativos
 
-| ID | Condição | Ação do Ator | Resposta do Sistema |
-|----|----------|--------------|---------------------|
-| A1 | [condição real que desvia o fluxo] | [o que o ator faz nessa condição] | [como o sistema responde, mensagem exibida, próxima tela] |
-| A2 | [outra condição alternativa] | [ação do ator] | [resposta do sistema] |
+| ID | Condição | Ação do Ator | Resposta do Sistema | Executado por |
+|----|----------|--------------|---------------------|---------------|
+| A1 | [condição real que desvia o fluxo] | [o que o ator faz nessa condição] | [como o sistema responde, mensagem exibida, próxima tela] | [executor] |
+| A2 | [outra condição alternativa] | [ação do ator] | [resposta do sistema] | [executor] |
 
 #### Fluxos de Exceção
 
-| ID | Erro/Problema | Resposta do Sistema |
-|----|--------------|---------------------|
-| E1 | [erro real que pode ocorrer] | [mensagem exata exibida ao usuário + ação disponível ex: botão "Tentar novamente"] |
-| E2 | [outro erro possível] | [tratamento e recuperação] |
+| ID | Erro/Problema | Resposta do Sistema | Executado por |
+|----|--------------|---------------------|---------------|
+| E1 | [erro real que pode ocorrer] | [a mensagem exata, entre aspas, depois da palavra "mensagem" — ex: exibe a mensagem **"Não foi possível salvar."** — + ação disponível ex: botão "Tentar novamente"] | [executor] |
+| E2 | [outro erro possível] | [tratamento e recuperação] | [executor] |
 
 {('#### 🔴 Subseções Específicas Pedidas pelas Instruções Customizadas' + chr(10) + chr(10) + 'Se as INSTRUÇÕES CUSTOMIZADAS DO USUÁRIO (no topo do prompt e recallada na seção 5) pediram subseções específicas para cada UC (ex.: Autenticação/Autorização, Dados Sensíveis LGPD, Registros de Auditoria, Riscos de Segurança e mitigações), você DEVE incluir essas subseções AQUI para cada UC — com conteúdo real e específico deste UC (não copiado de outros).' + chr(10)) if custom_instructions and custom_instructions.strip() else ''}
 

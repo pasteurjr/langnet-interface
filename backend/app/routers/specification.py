@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from typing import List, Optional
 from pydantic import BaseModel, Field, validator
 import uuid
+import json
 import os
 from datetime import datetime
 import asyncio
@@ -1487,6 +1488,174 @@ async def recompor_rastreabilidade(session_id: str, current_user: dict = Depends
     return {"session_id": session_id, "mudou": True, "versao": atual + 1,
             "requisitos": len(frs), "sem_caso_de_uso": lacunas,
             "tamanho_antes": len(doc), "tamanho_depois": len(doc_novo)}
+
+
+# ── Executado por (padrão de interação com agentes v1.0) ─────────────────────────────────────
+# Anota, numa especificação JÁ gerada, quem executa cada passo dos fluxos: pronto · código gerado
+# · agente. Um caso de uso por vez (pedido pequeno — pedido único acima de ~50 KB falha em todo
+# provedor). O modelo só devolve o executor de cada passo; o programa escreve a coluna e confere
+# (valor válido, convencional sem agente, agêntico com agente, nenhuma célula alterada). Grava
+# UMA versão nova no fim, e só se algo mudou.
+_ANOTACOES_EXECUCAO: dict = {}
+
+
+def _rascunho_anotacao(session_id: str):
+    """Andamento em disco: a anotação leva ~1 min por caso de uso; se o backend reiniciar no
+    meio (medido em 03/10/2026: recarga automática perdeu 10 casos já anotados), a próxima
+    rodada retoma do rascunho em vez de recomeçar — desde que a especificação não tenha mudado."""
+    from pathlib import Path
+    d = Path.home() / ".langnet" / "anotacoes"
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{session_id}.json"
+
+
+def _hash_doc(doc: str) -> str:
+    import hashlib
+    return hashlib.sha256((doc or "").encode("utf-8")).hexdigest()
+
+
+class AnotarExecucaoRequest(BaseModel):
+    uc_ids: Optional[List[str]] = None   # vazio = todos os casos de uso sem a coluna completa
+
+
+@router.get("/{session_id}/execucao")
+async def ler_execucao(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Quem executa cada passo, lido do documento, e a conferência (programa, sem modelo)."""
+    from agents.langnetexecucao import extrair_execucao, conferir_execucao
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT specification_document FROM execution_specification_sessions WHERE id=%s",
+                    (session_id,))
+        row = cur.fetchone()
+        cur.close()
+    if not row or not row.get("specification_document"):
+        raise HTTPException(status_code=404, detail="Especificação não encontrada")
+    doc = row["specification_document"]
+    return {"session_id": session_id, "conferencia": conferir_execucao(doc),
+            "casos_de_uso": extrair_execucao(doc)}
+
+
+@router.get("/{session_id}/anotar-execucao")
+async def andamento_anotar_execucao(session_id: str, current_user: dict = Depends(get_current_user)):
+    job = _ANOTACOES_EXECUCAO.get(session_id)
+    if not job:
+        return {"session_id": session_id, "status": "nenhuma"}
+    return {k: v for k, v in job.items() if k != "doc"}
+
+
+@router.post("/{session_id}/anotar-execucao")
+async def anotar_execucao(session_id: str, request: AnotarExecucaoRequest = None,
+                          current_user: dict = Depends(get_current_user)):
+    from agents.langnetexecucao import extrair_execucao, conferir_uc
+    job = _ANOTACOES_EXECUCAO.get(session_id)
+    if job and job.get("status") == "executando":
+        raise HTTPException(status_code=409, detail="A anotação desta especificação já está em andamento")
+    with get_db_connection() as conn:
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT specification_document FROM execution_specification_sessions WHERE id=%s",
+                    (session_id,))
+        row = cur.fetchone()
+        cur.close()
+    if not row or not row.get("specification_document"):
+        raise HTTPException(status_code=404, detail="Especificação não encontrada")
+    doc_base = row["specification_document"]
+    doc = doc_base
+    retomado = 0
+    try:
+        rasc = json.loads(_rascunho_anotacao(session_id).read_text())
+        if rasc.get("base") == _hash_doc(doc_base) and rasc.get("doc"):
+            doc = rasc["doc"]
+            retomado = len(rasc.get("anotados") or [])
+    except Exception:
+        pass
+    pedidos = (request.uc_ids if request and request.uc_ids else None)
+    alvo = [u["uc"] for u in extrair_execucao(doc)
+            if (u["uc"] in pedidos if pedidos else bool(conferir_uc(u)))]
+    if not alvo and doc == doc_base:
+        return {"session_id": session_id, "status": "nada_a_fazer",
+                "mensagem": "Todos os casos de uso já têm a coluna \"Executado por\" conferida."}
+    _ANOTACOES_EXECUCAO[session_id] = {
+        "session_id": session_id, "status": "executando", "total": len(alvo), "feitos": 0,
+        "atual": None, "anotados": [], "recusados": {}, "versao": None, "mensagem": "",
+        "iniciado_em": datetime.now().isoformat()}
+    _ANOTACOES_EXECUCAO[session_id]["retomados_do_rascunho"] = retomado
+    asyncio.create_task(_executar_anotacao(session_id, doc_base, alvo, current_user["id"], doc))
+    return {"session_id": session_id, "status": "executando", "total": len(alvo), "casos_de_uso": alvo,
+            "retomados_do_rascunho": retomado}
+
+
+async def _executar_anotacao(session_id: str, doc_inicial: str, alvo: list, user_id: str,
+                             doc_de_partida: str = None):
+    from agents.langnetexecucao import anotar_uc
+    job = _ANOTACOES_EXECUCAO[session_id]
+    llm = get_llm_client()
+    sistema = ("Você classifica quem executa cada passo de um caso de uso de software. "
+               "Responda só com JSON.")
+
+    def responder(pedido, observacao):
+        texto = pedido + (("\n\n" + observacao) if observacao else "")
+        return llm.complete(prompt=texto, system=sistema, temperature=0.1, max_tokens=4000)
+
+    doc = doc_de_partida or doc_inicial
+    rascunho = _rascunho_anotacao(session_id)
+    try:
+        anotados_antes = json.loads(rascunho.read_text()).get("anotados", []) if doc != doc_inicial else []
+    except Exception:
+        anotados_antes = []
+    try:
+        for uc_id in alvo:
+            job["atual"] = uc_id
+            try:
+                r = await asyncio.to_thread(anotar_uc, doc, uc_id, responder)
+            except Exception as e:  # falha do modelo não passa calada: o caso fica recusado
+                r = {"doc": doc, "mudou": False, "problemas": [f"falha ao chamar o modelo: {e}"]}
+            if r["problemas"]:
+                job["recusados"][uc_id] = r["problemas"]
+            else:
+                doc = r["doc"]
+                job["anotados"].append(uc_id)
+                rascunho.write_text(json.dumps({"base": _hash_doc(doc_inicial), "doc": doc,
+                                                "anotados": anotados_antes + job["anotados"]}))
+            job["feitos"] += 1
+        job["atual"] = None
+        if doc == doc_inicial:
+            job.update(status="concluido", mensagem="Nenhum caso de uso foi anotado; nada foi gravado.")
+            return
+        with get_db_connection() as conn:
+            cur = conn.cursor(dictionary=True)
+            cur.execute("SELECT specification_document FROM execution_specification_sessions WHERE id=%s",
+                        (session_id,))
+            atual_doc = (cur.fetchone() or {}).get("specification_document")
+            if atual_doc != doc_inicial:
+                cur.close()
+                job.update(status="erro", mensagem="A especificação mudou durante a anotação; nada foi "
+                                                   "gravado. Rode a anotação de novo.")
+                return
+            cur.execute("""UPDATE execution_specification_sessions
+                           SET specification_document=%s, updated_at=NOW() WHERE id=%s""", (doc, session_id))
+            cur.execute("""SELECT MAX(version) v FROM specification_version_history
+                           WHERE specification_session_id=%s""", (session_id,))
+            v = ((cur.fetchone() or {}).get("v") or 0) + 1
+            cur.execute("""INSERT INTO specification_version_history
+                           (specification_session_id, version, specification_document, created_by,
+                            change_description, change_type, doc_size)
+                           VALUES (%s,%s,%s,%s,%s,'ai_refinement',%s)""",
+                        (session_id, v, doc, user_id,
+                         f"Coluna \"Executado por\" anotada em {len(job['anotados'])} caso(s) de uso "
+                         f"(pronto · código gerado · agente), conferida pelo programa"
+                         + (f"; recusados: {', '.join(job['recusados'])}" if job['recusados'] else ""),
+                         len(doc)))
+            conn.commit()
+            cur.close()
+        try:
+            rascunho.unlink()
+        except Exception:
+            pass
+        job.update(status="concluido", versao=v,
+                   mensagem=f"{len(job['anotados'])} caso(s) de uso anotado(s); versão {v} gravada."
+                            + (f" {len(job['recusados'])} recusado(s) — veja os motivos." if job['recusados'] else ""))
+    except Exception as e:
+        job.update(status="erro", mensagem=f"Falha na anotação: {e}")
 
 
 @router.post("/{session_id}/refine")
