@@ -66,7 +66,7 @@ def parse_task_blocks(agent_task_spec_document: str) -> List[Dict[str, str]]:
     blocks = []
     # Split on task section headers (#### T-...) or agent headers (#### AG-)
     pattern = re.compile(
-        r'(####\s+T-[\w-]+.*?)(?=####\s+T-|####\s+AG-|\Z)',
+        r'(?m)(^#{3,4}\s+T-[\w-]+.*?)(?=^#{3,4}\s+T-|^#{3,4}\s+AG-|^#{1,3}\s+\d+\.|\Z)',
         re.S,
     )
     for m in pattern.finditer(agent_task_spec_document):
@@ -92,7 +92,7 @@ def _parse_single_block(raw: str, agent_map: Optional[Dict[str, str]] = None,
     fields: Dict[str, str] = {"raw": raw}
     agent_map = agent_map or {}
 
-    header_m = re.search(r'####\s+(T-[\w-]+):\s*(.+)', raw)
+    header_m = re.search(r'#{3,4}\s+(T-[\w-]+):\s*(.+)', raw)
     if header_m:
         fields["id"] = header_m.group(1).strip()
         fields["title"] = header_m.group(2).strip()
@@ -104,7 +104,7 @@ def _parse_single_block(raw: str, agent_map: Optional[Dict[str, str]] = None,
         # unescape \n typography
         val = val.replace("\\n", "\n").strip()
         if key == "nome":
-            fields["name"] = val
+            fields["name"] = val.strip().strip("`").strip()
         elif "descri" in key:
             fields["description"] = val
         elif key == "agent":
@@ -137,6 +137,8 @@ def _parse_single_block(raw: str, agent_map: Optional[Dict[str, str]] = None,
             fields["agent_snake"] = _snake
         elif key == "tools":
             fields["tools"] = val
+        elif "origem" in key and "entrada" in key:
+            fields["origens_txt"] = val
         elif "input" in key and "schema" in key:
             fields["input_schema"] = val
         elif "output" in key and "schema" in key:
@@ -536,9 +538,10 @@ def build_single_task_prompt(
 
 **ID:** {task.get('id', '')}
 **Nome (chave YAML):** {task_name}
-**Agent (use EXATAMENTE este valor em `agent:`):** {agent_val}
+**Agent (contexto; NÃO escreva `agent:` — o programa preenche pelo documento):** {agent_val}
 **Descrição (do ATS):** {task.get('description', '')}
 **Input Schema:** {task.get('input_schema', '')}
+**Origem das entradas (escreva no `Input data format`, um campo por linha, com a origem):** {task.get('origens_txt', '') or 'não declarada'}
 **Output Schema:** {task.get('output_schema', '')}
 **Tools:** {task.get('tools', '')}
 """

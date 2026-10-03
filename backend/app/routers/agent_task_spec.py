@@ -183,6 +183,8 @@ async def execute_agent_task_spec_generation(
             custom_instructions=request.custom_instructions,
             data_model_schema_sql=data_model_schema_sql,
         )
+        from agents.langnettarefas import bloco_para_o_prompt
+        prompt += "\n\n" + bloco_para_o_prompt(spec_document)
 
         # Inserção C (Fase 6): reforço de QUALIDADE DE REQUISITO por task (8 elementos + gap-analysis).
         prompt += (
@@ -215,93 +217,66 @@ async def execute_agent_task_spec_generation(
             max_tokens=65536  # DeepSeek-Reasoner suporta até 64K em thinking mode
         )
 
-        # COBERTURA (determinístico): todo UC da spec tem de virar task. Loop de até 3 tentativas
-        # gerando SÓ os blocos de task dos UCs faltantes e ANEXANDO (append não regride, ao contrário
-        # de reescrever o doc). Evita que UCs de cálculo (Calcular CA/TO, Recuos) sumam.
-        try:
-            import re as _re
-            _spec_ucs = set(_re.findall(r'\bUC-\d+\b', spec_document))
-            for _attempt in range(3):
-                _covered = set(_re.findall(r'\bUC-\d+\b', agent_task_spec_document))
-                _missing = sorted(_spec_ucs - _covered, key=lambda x: (len(x), x))
-                if not _missing:
-                    break
-                print(f"[AGENT_TASK_SPEC] ⚠️ cobertura tentativa {_attempt+1}: UCs sem task: {_missing}")
-                _focus = (
-                    "# GERAÇÃO DE TASKS FALTANTES (apenas blocos de task)\n\n"
-                    "A partir da ESPECIFICAÇÃO FUNCIONAL abaixo, gere APENAS os blocos de task no formato "
-                    "`#### T-XXX-YYY: Título` seguido da tabela |Atributo|Especificação|, para os casos de "
-                    f"uso que AINDA NÃO têm task: {', '.join(_missing)}. UMA task no mínimo por UC. Cada "
-                    "bloco DEVE ter os campos: **Nome**, **Descrição** (com PASSOS SQL/fórmula — se o UC é "
-                    "de cálculo, a fórmula REAL, ex.: area_construida/area_terreno AS ca), **Agent**, "
-                    "**Tools**, **Input Schema**, **Output Schema**, **Módulo**, **UC Relacionado**, "
-                    "**RF Relacionado**, **Rationale**. NÃO gere agentes, matriz nem texto fora dos "
-                    "blocos `#### T-`.\n\n## ESPECIFICAÇÃO FUNCIONAL\n" + spec_document + "\n"
-                    + (f"\n## SCHEMA REAL\n```sql\n{data_model_schema_sql}\n```\n" if data_model_schema_sql else ""))
-                _blocks = await get_llm_response_async(prompt=_focus,
-                    system="Você é um arquiteto de sistemas multi-agente especializado em CrewAI.",
-                    temperature=0.5, max_tokens=32000)
-                _new = "\n".join(_re.findall(r'(?s)####\s+T-.*?(?=####\s+T-|\Z)', _blocks)).strip()
-                if not _new or not (_spec_ucs & set(_re.findall(r'\bUC-\d+\b', _new))):
-                    print("[AGENT_TASK_SPEC] retry não trouxe blocos úteis; parando loop de cobertura")
-                    break
-                # insere os blocos ANTES da Seção 4 (matriz) se existir, senão no fim
-                _m4 = _re.search(r'(?m)^###\s+4\.', agent_task_spec_document)
-                if _m4:
-                    agent_task_spec_document = (agent_task_spec_document[:_m4.start()]
-                                                + _new + "\n\n" + agent_task_spec_document[_m4.start():])
+        # PADRÃO (03/10/2026): só caso de uso com passo `agente` vira tarefa. Os dois laços de
+        # cobertura que havia aqui (uma tarefa por UC e uma por requisito, sem olhar a natureza)
+        # anexaram 31 tarefas ao BioByte v5 — login, cadastro, backup — com agentes inventados, e
+        # esconderam as 5 tarefas certas. No lugar: o programa tira as tarefas de caso de uso
+        # convencional, confere (uma tarefa por caso agêntico, agente declarado e usado, origem de
+        # cada entrada) e pede até DUAS correções dirigidas pelos motivos. O que sobrar fica escrito
+        # no fim do documento — nunca passa calado.
+        from agents.langnettarefas import conferir_ats, remover_tarefas_convencionais, casos_agenticos
+        import re as _re
+        agent_task_spec_document, _tirados = remover_tarefas_convencionais(agent_task_spec_document, spec_document)
+        if _tirados:
+            print(f"[AGENT_TASK_SPEC] tarefas de caso de uso convencional retiradas: {_tirados}")
+        _conf = conferir_ats(agent_task_spec_document, spec_document, data_model_schema_sql)
+        for _rodada in range(2):
+            if not _conf["problemas"]:
+                break
+            print(f"[AGENT_TASK_SPEC] conferência rodada {_rodada+1}: {len(_conf['problemas'])} problema(s)")
+            _ucs_txt = "\n".join(f"- {c['uc']} — {c['nome']}: " + "; ".join(p['passo'] + ' ' + p['acao'][:160] for p in c['passos'])
+                                  for c in casos_agenticos(spec_document))
+            _pedido = (
+                "# CORREÇÃO DO DOCUMENTO DE AGENTES E TAREFAS\n\n"
+                "O documento abaixo foi REPROVADO pela conferência do programa por estes motivos:\n- "
+                + "\n- ".join(_conf["problemas"][:40])
+                + "\n\nCasos de uso agênticos (uma tarefa para cada, e só para estes):\n" + _ucs_txt
+                + "\n\nDevolva SOMENTE os blocos de tarefa corrigidos ou novos, cada um começando por "
+                "`### T-XXX-NNN: Título` seguido da tabela |Atributo|Especificação| COMPLETA (Nome, "
+                "Descrição, Agent, Tools, Input Schema, Output Schema, **Origem das entradas**, Objetivo, "
+                "Input format, Expected output, CONSTRAINTS, EDGE CASES, Dependencies, Módulo, UC "
+                "Relacionado, RF Relacionado, Rationale). Bloco corrigido mantém o MESMO ID. Para tirar "
+                "uma tarefa duplicada, escreva uma linha `REMOVER: T-XXX-NNN`. O **Agent** é um agente da "
+                "Seção 1 (AG-NN). Em **Origem das entradas**: `campo: tela <campo>` | `campo: banco "
+                "<tabela>.<coluna>` | `campo: tarefa <nome>` | `campo: contexto`, um por campo do Input Schema.\n\n"
+                "## DOCUMENTO ATUAL\n" + agent_task_spec_document
+                + (f"\n\n## SCHEMA REAL\n```sql\n{data_model_schema_sql}\n```\n" if data_model_schema_sql else ""))
+            _resp = await get_llm_response_async(prompt=_pedido,
+                system="Você é um arquiteto de sistemas multi-agente especializado em CrewAI.",
+                temperature=0.3, max_tokens=32000)
+            for _rid in _re.findall(r"REMOVER:\s*(T-[\w-]+)", _resp or ""):
+                agent_task_spec_document = _re.sub(
+                    rf"(?ms)^#{{3,4}}\s+{_re.escape(_rid)}:.*?(?=^#{{1,4}}\s|\Z)", "", agent_task_spec_document)
+            for _b in _re.findall(r"(?ms)^#{3,4}\s+T-[\w-]+:.*?(?=^#{3,4}\s+T-|^REMOVER:|\Z)", _resp or ""):
+                _id = _re.match(r"#{3,4}\s+(T-[\w-]+)", _b).group(1)
+                _b = _b.strip() + "\n\n"
+                _alvo = _re.search(rf"(?ms)^#{{3,4}}\s+{_re.escape(_id)}:.*?(?=^#{{1,4}}\s|\Z)", agent_task_spec_document)
+                if _alvo:
+                    agent_task_spec_document = agent_task_spec_document[:_alvo.start()] + _b + agent_task_spec_document[_alvo.end():]
                 else:
-                    agent_task_spec_document = agent_task_spec_document.rstrip() + "\n\n" + _new + "\n"
-            _fc = len(_spec_ucs & set(_re.findall(r'\bUC-\d+\b', agent_task_spec_document)))
-            print(f"[AGENT_TASK_SPEC] ✅ cobertura final: {_fc}/{len(_spec_ucs)} UCs")
-        except Exception as _cov_exc:
-            print(f"[AGENT_TASK_SPEC] checagem de cobertura pulada: {_cov_exc}")
-
-        # COBERTURA POR-FR (guardrail de rastreabilidade): a cobertura por-UC NÃO basta —
-        # a matriz da spec costuma mapear só uma parte dos FR a UCs, então FR sem UC ficam
-        # órfãos (no v3 do uso do solo: 19/37 FR sem NENHUMA task). Aqui garantimos ≥1 task
-        # por FR: geramos blocos SÓ para os FR ainda não citados por task alguma, exigindo que
-        # cada bloco cite o **RF Relacionado: FR-XXX**. Ver agents/langnettraceability.py.
-        try:
-            import re as _re
-            _spec_frs = set(_re.findall(r'\bFR-\d{2,3}\b', spec_document))
-            for _attempt in range(3):
-                _covered_fr = set(_re.findall(r'\bFR-\d{2,3}\b', agent_task_spec_document))
-                _missing_fr = sorted(_spec_frs - _covered_fr, key=lambda x: int(x.split('-')[1]))
-                if not _missing_fr:
-                    break
-                print(f"[AGENT_TASK_SPEC] ⚠️ cobertura FR tentativa {_attempt+1}: FR sem task: {_missing_fr}")
-                _focus = (
-                    "# GERAÇÃO DE TASKS FALTANTES POR REQUISITO (apenas blocos `#### T-`)\n\n"
-                    "Da ESPECIFICAÇÃO abaixo, gere APENAS blocos de task `#### T-XXX-YYY: Título` (com a "
-                    "tabela |Atributo|Especificação|) para COBRIR os requisitos funcionais que AINDA NÃO têm "
-                    f"task: {', '.join(_missing_fr)}. 🔴 Gere UM bloco de task por FEATURE, cada um cobrindo NO "
-                    "MÁXIMO 2-3 FR AFINS (mesma entidade/fluxo). É PROIBIDO fazer UMA task catch-all que "
-                    "empilha muitos FR — se há N FR faltando, gere ~N/2 tasks focadas, não 1. O nome da task "
-                    "deve refletir a FEATURE real (ex.: `gerenciar_controle_acesso`, `exportar_para_orgaos`), "
-                    "não um rótulo genérico. Cada bloco DEVE ter **Nome**, **Descrição** (com PASSOS SQL/fórmula reais quando "
-                    "for cálculo), **Agent**, **Tools**, **Input Schema**, **Output Schema**, **Módulo**, "
-                    "**UC Relacionado**, **RF Relacionado** (citando EXPLICITAMENTE os FR-XXX cobertos), "
-                    "**Rationale**. NÃO gere agentes/matriz/texto fora dos blocos.\n\n## ESPECIFICAÇÃO "
-                    "FUNCIONAL\n" + spec_document + "\n"
-                    + (f"\n## SCHEMA REAL\n```sql\n{data_model_schema_sql}\n```\n" if data_model_schema_sql else ""))
-                _blocks = await get_llm_response_async(prompt=_focus,
-                    system="Você é um arquiteto de sistemas multi-agente especializado em CrewAI.",
-                    temperature=0.5, max_tokens=32000)
-                _new = "\n".join(_re.findall(r'(?s)####\s+T-.*?(?=####\s+T-|\Z)', _blocks)).strip()
-                if not _new or not (_spec_frs & set(_re.findall(r'\bFR-\d{2,3}\b', _new))):
-                    print("[AGENT_TASK_SPEC] retry FR não trouxe blocos úteis; parando loop")
-                    break
-                _m4 = _re.search(r'(?m)^###\s+4\.', agent_task_spec_document)
-                if _m4:
-                    agent_task_spec_document = (agent_task_spec_document[:_m4.start()]
-                                                + _new + "\n\n" + agent_task_spec_document[_m4.start():])
-                else:
-                    agent_task_spec_document = agent_task_spec_document.rstrip() + "\n\n" + _new + "\n"
-            _ffc = len(_spec_frs & set(_re.findall(r'\bFR-\d{2,3}\b', agent_task_spec_document)))
-            print(f"[AGENT_TASK_SPEC] ✅ cobertura FR final: {_ffc}/{len(_spec_frs)} FRs")
-        except Exception as _cov_exc:
-            print(f"[AGENT_TASK_SPEC] checagem de cobertura FR pulada: {_cov_exc}")
+                    _m4 = _re.search(r"(?m)^#{2,3}\s+4\.", agent_task_spec_document)
+                    _pos = _m4.start() if _m4 else len(agent_task_spec_document)
+                    agent_task_spec_document = agent_task_spec_document[:_pos] + _b + agent_task_spec_document[_pos:]
+            agent_task_spec_document, _t2 = remover_tarefas_convencionais(agent_task_spec_document, spec_document)
+            _conf = conferir_ats(agent_task_spec_document, spec_document, data_model_schema_sql)
+        _sec = ["", "---", "", "## Conferência do programa", "",
+                f"Casos de uso agênticos: {_conf['casos_agenticos']} · tarefas: {_conf['tarefas']} · "
+                f"tarefas por agente: " + ", ".join(f"{a} {n}" for a, n in _conf['por_agente'].items())]
+        _sec += (["", "✅ Aprovado: uma tarefa por caso de uso agêntico, agente declarado e usado, toda "
+                  "entrada com origem que existe."] if not _conf["problemas"] else
+                 ["", f"⚠️ {len(_conf['problemas'])} pendência(s):"] + [f"- {p}" for p in _conf["problemas"]])
+        agent_task_spec_document = agent_task_spec_document.rstrip() + "\n" + "\n".join(_sec) + "\n"
+        print(f"[AGENT_TASK_SPEC] conferência final: {len(_conf['problemas'])} pendência(s)")
 
         end_time = datetime.now()
         generation_time_ms = int((end_time - start_time).total_seconds() * 1000)
@@ -310,8 +285,8 @@ async def execute_agent_task_spec_generation(
         print(f"[AGENT_TASK_SPEC] ⏱️ Tempo: {generation_time_ms / 1000:.1f}s")
 
         # 5. Parsear contadores (contar ## em Markdown)
-        total_agents = agent_task_spec_document.count("#### AG-")  # Contadores de seções de agentes
-        total_tasks = agent_task_spec_document.count("#### T-")    # Contadores de seções de tasks
+        total_agents = len(_re.findall(r"(?m)^#{3,4}\s+AG-", agent_task_spec_document))  # Contadores de seções de agentes
+        total_tasks = len(_re.findall(r"(?m)^#{3,4}\s+T-", agent_task_spec_document))
 
         # 6. Atualizar sessão
         update_agent_task_spec_session(session_id, {

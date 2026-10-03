@@ -163,7 +163,7 @@ PASSOS DO CÁLCULO (a fórmula real, em SQL quando possível), ex.:
 Essas tasks são de natureza COMPUTAÇÃO (o próximo estágio emite `execution: deterministic`); a
 Descrição precisa dos passos numerados com as fórmulas/queries, não uma frase genérica.
 
-1. **Número de Agentes:** Gerar entre 8 e {max_agents} agentes especializados
+1. **Número de Agentes:** o MENOR número que cubra as competências de julgamento das tarefas (no máximo {max_agents}); cada agente tem pelo menos uma tarefa — agente sem tarefa não existe
 2. **Princípio SRP:** Cada agente tem UMA responsabilidade única
 3. **LLM Assignment:** Especificar LLM apropriado para cada agente:
    - **Claude 3.5 Sonnet**: Tarefas complexas (análise profunda, raciocínio, validação de lógica)
@@ -226,6 +226,7 @@ Para cada task, criar tabela individual:
 | **Agent**          | AG-01 (Portfolio Manager Agent) |
 | **Tools**          | pdf_reader, docx_reader, database_tool |
 | **Input Schema**   | \\n- manual_file: File (PDF/DOCX)\\n- product_class: String (classe do produto) |
+| **Origem das entradas** | manual_file: tela manual_file; product_class: banco produto.classe |
 | **Output Schema**  | \\n- document_id: UUID (ID do documento armazenado)\\n- extracted_text: Text (texto extraído)\\n- structure_metadata: JSON (metadados de estrutura) |
 | **Dependencies**   | None (primeira task do módulo) |
 | **Módulo**         | Cadastro do Portfólio |

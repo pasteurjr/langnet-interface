@@ -450,7 +450,9 @@ async def _generate_one_task_with_retry(
         prompt=prompt,
         system="Você é especialista em CrewAI e YAML. Gere APENAS um bloco YAML de task.",
         temperature=0.2,
-        max_tokens=3500,
+        # 3500 cortava a tarefa grande (15 entradas, passos SQL): a ponte do Claude devolvia só o
+        # FINAL da resposta e a classificação NHSN ficou fora do tasks.yaml (03/10/2026).
+        max_tokens=16000,
     )
     chunk = extract_task_block(task_name, raw or "")
     chunk = _escrever_procedencia(chunk, task_name, (dependencias or {}).get(task_name) or [])
@@ -466,7 +468,9 @@ async def _generate_one_task_with_retry(
         prompt=prompt2,
         system="Você é especialista em CrewAI e YAML. Gere APENAS um bloco YAML de task.",
         temperature=0.1,
-        max_tokens=3500,
+        # 3500 cortava a tarefa grande (15 entradas, passos SQL): a ponte do Claude devolvia só o
+        # FINAL da resposta e a classificação NHSN ficou fora do tasks.yaml (03/10/2026).
+        max_tokens=16000,
     )
     chunk2 = extract_task_block(task_name, raw2 or "")
     chunk2 = _escrever_procedencia(chunk2, task_name, (dependencias or {}).get(task_name) or [])
@@ -546,9 +550,9 @@ def _dependencias_do_ats(ats_md: str) -> dict:
     """
     import re as _re
     texto = ats_md or ""
-    id_para_nome = dict(_re.findall(r"####\s*(T-[A-Z]+-\d+)\s*:\s*([a-z][a-z0-9_]{2,60})", texto))
+    id_para_nome = dict(_re.findall(r"#{3,4}\s*(T-[A-Z]+-\d+)\s*:\s*([a-z][a-z0-9_]{2,60})", texto))
     depende = {}
-    for m in _re.finditer(r"####\s*(T-[A-Z]+-\d+)\s*:\s*([a-z][a-z0-9_]{2,60})(.*?)(?=\n####|\Z)",
+    for m in _re.finditer(r"#{3,4}\s*(T-[A-Z]+-\d+)\s*:\s*([a-z][a-z0-9_]{2,60})(.*?)(?=\n#{3,4}\s|\Z)",
                           texto, _re.S):
         tid, nome, bloco = m.group(1), m.group(2), m.group(3)
         m_dep = _re.search(r"\*\*(?:Dependencies|Depend[êe]ncias|Depende)\*\*\s*\|\s*([^|\n]+)", bloco)

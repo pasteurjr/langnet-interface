@@ -4567,6 +4567,12 @@ def _load_yaml(path: str) -> Dict[str, Any]:
 
 AGENTS_CONFIG = _load_yaml("agents.yaml")
 TASKS_CONFIG = _load_yaml("tasks.yaml")
+# tasks.yaml segue o formato do CrewAI; o que é do LangNet (rastreabilidade, esquema de saída,
+# natureza, verificação) vem de tasks_meta.yaml e é juntado aqui, tarefa por tarefa.
+if os.path.exists("tasks_meta.yaml"):
+    for _tn, _meta in (_load_yaml("tasks_meta.yaml") or {{}}).items():
+        if isinstance(TASKS_CONFIG.get(_tn), dict) and isinstance(_meta, dict):
+            TASKS_CONFIG[_tn].update(_meta)
 
 # Nome exibido na apresentacao do servidor (a tela mostra no cabecalho).
 PROJECT_NAME = os.environ.get("PROJECT_NAME") or os.path.basename(os.getcwd()) or "LangNet App"
@@ -12238,7 +12244,14 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     # matando qualquer capacidade real do agente. Bindings vêm do agent_task_spec.
     agents_yaml = _inject_tools_into_agents_yaml(agents_yaml, agents_map)
 
-    # Autofill 'agent:' nas tasks do tasks.yaml — sem isso o websocket_server
+    # O agente de cada tarefa é o que o documento de Agentes e Tarefas DECLARA (coluna Agent).
+    # Antes era escolhido pela ferramenta em comum: no BioByte v5 as 5 tarefas caíram no agente
+    # clínico, inclusive a recomendação de tratamento (03/10/2026).
+    from agents.langnettarefas import agente_do_documento, separar_yaml_crewai
+    tasks_yaml, _ag_doc = agente_do_documento(tasks_yaml, spec_md or "", agents_yaml)
+    if _ag_doc:
+        print(f"[CODE-GEN][AGENTE] agente tirado do documento: {_ag_doc}")
+    # Autofill 'agent:' só no que o documento não declarou — sem isso o websocket_server
     # rejeita execute_task com "task sem agente vinculado"
     tasks_yaml = _autofill_tasks_yaml_agents(tasks_yaml, agents_yaml, agents_map, tasks_map)
 
@@ -12368,8 +12381,12 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
     if agents_yaml:
         add("ws-server/agents.yaml", agents_yaml if agents_yaml.endswith("\n") else agents_yaml + "\n", "yaml")
     if tasks_yaml:
-        _ty = tasks_yaml if tasks_yaml.endswith("\n") else tasks_yaml + "\n"
-        add("ws-server/tasks.yaml", _trace_hdr + _ty, "yaml")
+        # Formato do CrewAI no tasks.yaml (description, expected_output, agent…); rastreabilidade,
+        # esquema de saída, natureza e verificação vão para tasks_meta.yaml, que o servidor junta.
+        _ty_canon, _ty_meta = separar_yaml_crewai(tasks_yaml)
+        add("ws-server/tasks.yaml", _ty_canon if _ty_canon.endswith("\n") else _ty_canon + "\n", "yaml")
+        if _ty_meta:
+            add("ws-server/tasks_meta.yaml", _trace_hdr + _ty_meta, "yaml")
     if petri_with_logica:
         add("ws-server/petri_net.json", json.dumps(petri_with_logica, ensure_ascii=False, indent=2), "json")
     _extra_pkgs = _detect_extra_packages(tools_py)
@@ -12547,6 +12564,40 @@ def _build_project_templates(state: LangNetFullState, llm_files: Dict[str, Any])
         files = [f for f in files if f["path"] not in _subst]
         files.extend(screen_files)
 
+        # TELAS = PROTÓTIPO APROVADO (F4 do plano v1.1, 03/10/2026). Quando as telas trazem a ficha
+        # (ação → caso de uso + passo + executor), o aplicativo é montado do DESENHO aprovado, com um
+        # controlador por tela; saem as telas do molde antigo, os cadastros soltos e o console
+        # Admin/Petri (a orquestração se testa na Bancada do LangNet, não no aplicativo).
+        if any(isinstance(_s.get("ficha"), dict) for _s in (ui_spec.get("screens") or [])):
+            from agents.langnetapptelas import emitir_aplicativo, ARQUIVOS_QUE_SAEM, ARQUIVOS_QUE_FICAM
+            _app_files, _app_rel = emitir_aplicativo(ui_spec, state.get("specification_document", "") or "",
+                                                     spec_md or "", _schema_sql_cg or "", project_name,
+                                                     ajustes=state.get("ajustes_de_codigo") or [])
+            files = [f for f in files if f["path"] in ARQUIVOS_QUE_FICAM or not f["path"].startswith(ARQUIVOS_QUE_SAEM)]
+            _subst2 = {f["path"] for f in _app_files}
+            files = [f for f in files if f["path"] not in _subst2] + _app_files
+            state.setdefault("portoes", {})["telas_do_prototipo"] = _app_rel
+            if _app_rel.get("reprovado"):
+                state["portoes"]["reprovado"] = True
+            print(f"[CODE-GEN][PROTÓTIPO] {_app_rel['aprovadas']}/{_app_rel['telas']} telas aprovadas; "
+                  f"pendências: {sum(len(v) for v in _app_rel['pendencias'].values())}")
+            # PORTÕES DOS ELOS (F5): o programa confere o elo entre as etapas, não cada uma isolada.
+            try:
+                from agents.langnetportoes import conferir_elos
+                _ty_files = next((f["content"] for f in files if f["path"] == "ws-server/tasks.yaml"), tasks_yaml)
+                _elos = conferir_elos(state.get("specification_document", "") or "", ui_spec, spec_md or "",
+                                      _ty_files or "", _schema_sql_cg or "", files)
+                state["portoes"]["elos"] = _elos
+                if not _elos["aprovado"]:
+                    state["portoes"]["reprovado"] = True
+                print("[CODE-GEN][ELOS] " + " · ".join(
+                    f"{'OK' if p['aprovado'] else 'REPROVADO'} {p['nome']} ({len(p['problemas'])})" for p in _elos["portoes"]))
+            except Exception as _e_elos:
+                state["portoes"]["elos"] = {"aprovado": False, "problemas": 1,
+                                            "portoes": [{"nome": "portões dos elos", "aprovado": False,
+                                                         "problemas": [f"falha ao conferir: {_e_elos}"]}]}
+                state["portoes"]["reprovado"] = True
+
     # === COERÊNCIA: o app carrega o PRÓPRIO schema (DDL) ===
     # Sem isso, o app assumia um banco pré-existente com o schema certo — se não batesse,
     # as telas ficavam vazias/erro. Agora o schema viaja com o código: db/schema.sql pode
@@ -12620,10 +12671,10 @@ def _parse_task_modules(spec_md: str) -> Dict[str, str]:
     modules: Dict[str, str] = {}
     if not spec_md:
         return modules
-    for block in _re.split(r'(?=####\s+T-)', spec_md):
-        if not block.startswith("####"):
+    for block in _re.split(r'(?m)(?=^#{3,4}\s+T-)', spec_md):
+        if not _re.match(r'#{3,4}\s+T-', block):
             continue
-        nm = _re.search(r'\|\s*\*\*Nome\*\*\s*\|\s*(\w+)\s*\|', block)
+        nm = _re.search(r'\|\s*\*\*Nome\*\*\s*\|\s*`?(\w+)`?\s*\|', block)
         md = _re.search(r'\|\s*\*\*M[oó]dulo\*\*\s*\|\s*([^|]+?)\s*\|', block)
         if nm and md:
             modules[nm.group(1)] = md.group(1).strip()
